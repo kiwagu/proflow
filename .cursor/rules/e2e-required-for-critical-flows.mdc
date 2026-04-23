@@ -1,0 +1,102 @@
+---
+description: Use when: deciding whether a change to a critical flow requires end-to-end coverage.
+---
+
+# E2E Requirement for Critical Flows
+
+## Pyramid Layer
+
+- Layer: L1 policy rule.
+
+## Use This When
+
+- Start here when a change may require preserving or extending end-to-end coverage.
+
+## Stop Here If
+
+- Stop once the minimum required E2E coverage level is clear.
+
+## Descend To
+
+- Workflow and commands: `/.agents/skills/e2e-dx-workflow/SKILL.md`
+- Continue within this file for impacted areas and minimum coverage.
+
+This rule defines when end-to-end tests are mandatory and what minimum coverage must be preserved.
+
+## Scope
+
+Apply this rule whenever changes touch authentication, session handling, protected-route behavior, or profile editing in shell apps.
+
+Examples of impacted areas:
+
+- `apps/platform/components/login-form.tsx`
+- `apps/platform/components/logout-button.tsx`
+- `apps/platform/app/(account)/profile/*`
+- `apps/platform/lib/supabase/proxy.ts`
+- `apps/platform/proxy.ts`
+- `apps/author/**` (Supabase proxy, Payload bridge, guest policy, admin entry)
+- `packages/gateway-auth/*`
+- `tests/e2e/*` (new tests or updates)
+
+## New gateway-mounted apps
+
+When scaffolding or significantly changing a **new** shell app mounted under the gateway (new `apps/*` Next app with `basePath`, Supabase proxy, and `ShellGuestAccessPolicy`):
+
+- Propose extending `tests/e2e` with at least **smoke** coverage:
+  - guest cannot access protected in-app routes without platform sign-in (or the app’s chosen login flow)
+  - authenticated entry from the shared gateway origin (session cookies on the public host)
+- Align new `data-testid` contracts with existing platform auth selectors where flows share the platform login UI.
+
+## Mandatory checks
+
+For changes in scope, the implementation must include or update e2e coverage in `tests/e2e`.
+
+At minimum:
+
+1. Guest access to protected route is verified.
+2. Login flow is verified.
+3. Session invalidation after logout is verified.
+4. Profile edit persistence (save + reload) is verified when profile behavior changes.
+5. **Author (`/author`)**: guest redirect to platform sign-in and authenticated entry to admin (Payload bridge) are covered when author auth or proxy behavior changes.
+
+## Test Pyramid Decision Rule (Integration vs E2E)
+
+Choose the lowest layer that can verify the behavior without losing product signal.
+
+Use **integration tests** (`apps/platform/tests/**/*.integration.test.ts`) when assertions are primarily backend contract checks:
+
+- permission matrices (`allow/deny` by role/scope)
+- RLS visibility and isolation
+- RPC/table mutation policies
+- audit side-effects where UI is not required for proof
+
+Use **E2E tests** (`tests/e2e/src/**/*.e2e.spec.ts`) when a browser is required to validate user value:
+
+- gateway redirects and route protection
+- login/logout/session propagation across app shells
+- form wiring, toasts, and visible outcomes
+- selector contracts (`data-testid`) and navigation UX
+
+When migrating matrix-heavy suites from E2E to integration:
+
+1. Keep a thin E2E smoke slice that proves UI wiring still works.
+2. Move combinatorial allow/deny matrices to integration.
+3. Avoid duplicating the same matrix in both layers unless there is a known regression risk.
+4. Before deleting the old E2E matrix file, run at least one relevant UI-contract E2E spec (selectors, route protection, visible outcomes) and record that it passed.
+
+## UI stability contract
+
+For critical auth/profile interactions, provide deterministic selectors and keep them stable across refactors:
+
+- Use `data-testid` on key controls and outcomes:
+  - login form, email/password inputs, submit
+  - logout button
+  - profile form inputs, submit, success/error state
+- Avoid rewriting existing test IDs unless a test migration is included in the same change.
+
+## CI and local DX expectation
+
+- PR validation baseline: `bun run test:e2e:smoke`
+- Full regression/nightly: `bun run test:e2e:full`
+
+If local/CI infrastructure is unavailable, explicitly document why the test was not executed and what should be run by the reviewer.

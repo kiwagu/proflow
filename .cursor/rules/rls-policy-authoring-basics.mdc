@@ -1,0 +1,65 @@
+---
+description: Use when: authoring new RLS policies and deciding operation-specific `using`, `with check`, and `to` clause structure.
+alwaysApply: false
+---
+
+# RLS Policies: Authoring Basics
+
+## Pyramid Layer
+
+- Layer: L3 SQL leaf.
+
+## Use This When
+
+- Load this after the RLS router when the task is to write the actual policy statement shape.
+
+## Stop Here If
+
+- Stop once the operation-specific policy contract is clear.
+
+## Descend To
+
+- Return to `/.cursor/rules/create-rls-policies.mdc` for helper-function or performance siblings.
+
+## Authoring Contract
+
+- Generate only `create policy` or `alter policy` statements.
+- Use `auth.uid()` rather than `current_user`.
+- Keep explanations outside SQL blocks.
+- Avoid `for all`; create separate policies per operation.
+- Prefer `permissive` policies over `restrictive` unless there is a very specific reason.
+
+Operation rules:
+
+1. `select` policies use `using` and not `with check`.
+2. `insert` policies use `with check` and not `using`.
+3. `update` policies usually need both `using` and `with check`.
+4. `delete` policies use `using` and not `with check`.
+
+## Roles and Ordering
+
+Supabase maps requests to `anon` or `authenticated`, and the `to` clause should appear after `for`.
+
+```sql
+create policy "Public profiles are viewable only by authenticated users"
+on profiles
+for select
+to authenticated
+using ( true );
+```
+
+## Separate Policies per Operation
+
+```sql
+create policy "Profiles can be created by any user"
+on profiles
+for insert
+to authenticated
+with check ( true );
+
+create policy "Profiles can be deleted by any user"
+on profiles
+for delete
+to authenticated
+using ( true );
+```

@@ -1,0 +1,63 @@
+---
+description: Use when: fixing or preventing Next.js App Router blocking-route errors around Suspense, dynamic data, or connection access.
+alwaysApply: false
+---
+
+# Next.js 16+ blocking routes (`connection`, `searchParams`, session)
+
+## Pyramid Layer
+
+- Layer: L2 focused rule.
+
+## Use This When
+
+- Load this after a shell or auth router doc when the task hits `blocking-route` errors or async server data in pages/layouts.
+
+## Stop Here If
+
+- Stop once the correct Suspense boundary pattern is clear.
+
+## Descend To
+
+- Continue within this file for symptoms, causes, and fixes.
+- Return to `/.cursor/rules/gateway-shell-routing.mdc` or `/.agents/skills/nextjs-shell-supabase-auth/SKILL.md` if the task broadens.
+
+## Symptom
+
+Dev / Turbopack: **Route "…": Uncached data or `connection()` was accessed outside of `<Suspense>`** — the shell delays the whole page.
+
+## Cause
+
+In Next.js 16, using **dynamic** server APIs in a **page** (or layout) without a **Suspense** boundary treats the segment as blocking for the parent shell.
+
+Typical triggers:
+
+- `await connection()` from `next/server`
+- `await searchParams` / `await params` (Promise form)
+- `cookies()`, `headers()` (and thus many `createClient()` + Supabase session reads) in the same async component as the page default export
+
+## Required pattern
+
+1. **Prefer** a thin **sync** `page.tsx` that only returns:
+
+   ```tsx
+   <Suspense fallback={<YourSkeleton />}>
+     <YourAsyncPageContent searchParams={searchParams} />
+   </Suspense>
+   ```
+
+2. Move **all** async work (`await searchParams`, auth, DB, `cookies()`) into **`YourAsyncPageContent`** (or a named server component in the same file or imported).
+
+3. **`connection()`** — only use inside that Suspense-wrapped async tree, or **omit** if `searchParams` / `cookies()` already make the subtree dynamic.
+
+4. Match existing app patterns: e.g. `apps/platform/app/(account)/profile/page.tsx` wraps `ProfileContent` in `<Suspense>`.
+
+## Do not
+
+- Call `await connection()` at the top of the default exported async page without Suspense.
+- Rely on “it worked in Next 15” — stricter in 16.
+
+## References
+
+- [Next.js: Blocking route](https://nextjs.org/docs/messages/blocking-route)
+- Skill: `.agents/skills/nextjs-shell-supabase-auth/SKILL.md` (checklist + anti-patterns)

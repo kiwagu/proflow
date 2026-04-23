@@ -1,0 +1,49 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing
+coverage
+playwright-report/
+test-results/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/e2e/.env
+tests/e2e/.runtime/
+tests/e2e/.stagehand/
+
+# Turbo
+.turbo
+
+# Vercel
+.vercel
+
+# Build Outputs
+.next/
+out/
+build
+dist
+
+
+# Debug
+npm-debug.log*
+
+# Misc
+.DS_Store
+*.pem
+
+*.tsbuildinfo
+next-env.d.ts
+.temp
+
+.cursor/plans

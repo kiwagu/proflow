@@ -1,0 +1,64 @@
+---
+description: Use when: adding or changing user-facing UI text so i18n keys and JSON catalog updates stay required.
+alwaysApply: true
+---
+
+# UI I18n JSON Is Mandatory
+
+## Pyramid Layer
+
+- Layer: L1 core UI rule.
+
+## Use This When
+
+- Keep this rule active for any new or changed user-facing UI text.
+
+## Stop Here If
+
+- Stop here once the translation-key and JSON-catalog policy is clear.
+
+## Descend To
+
+- No sibling descent required. Apply the rule directly to touched UI text.
+
+## Policy
+
+- Any new or changed user-facing UI text MUST use a translation key.
+- Keys MUST be added to JSON catalogs in `packages/i18n-catalogs/src/catalogs/` (not inline TS objects).
+- Do not hardcode UI strings directly in TS/TSX (except test-only fixtures).
+
+## Catalog location
+
+- All translation catalogs are centralized in `packages/i18n-catalogs/src/catalogs/<domain>/`.
+- For Platform Space Settings flow use:
+  - `packages/i18n-catalogs/src/catalogs/platform/space-settings.en.json`
+  - `packages/i18n-catalogs/src/catalogs/platform/space-settings.es.json`
+- For Author admin use:
+  - `packages/i18n-catalogs/src/catalogs/author/admin.en.json`
+  - `packages/i18n-catalogs/src/catalogs/author/admin.es.json`
+- For Notifications email templates use:
+  - `packages/i18n-catalogs/src/catalogs/notifications/messages.en.json`
+  - `packages/i18n-catalogs/src/catalogs/notifications/messages.es.json`
+
+## Key format
+
+- Use flat dotted keys: `"domain.section.key": "value"` — NO nested JSON objects.
+
+## Required implementation steps for UI changes
+
+1. Add translation key(s) to EN and ES JSON catalogs.
+2. Use translator lookups in UI code (`t('...')`) instead of literals.
+3. Keep interpolation in message templates (for example `{spaceLabel}`).
+4. Ensure new keys are present in both locales before merging.
+
+## Validation checklist
+
+- No new hardcoded user-facing strings in touched UI components.
+- Both locale JSON files include the same key set for new keys.
+- Fallback behavior remains deterministic (EN fallback).
+- `bun run --cwd packages/i18n-catalogs validate` passes for catalog parity and flat-key validation.
+- `bun run --cwd packages/i18n-catalogs test` passes for catalog structure and locale parity coverage.
+
+## Related rules
+
+- `ui-i18n-direct-keys`: pass literal keys directly to `t(...)`; no key indirection.

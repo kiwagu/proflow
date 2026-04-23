@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+set -e
+. "$(dirname -- "$0")/_/ensure-path.sh"
+bun run typecheck
+bun run lint
+bun run format
+
+# Re-stage paths that were already part of this commit so formatter output is included.
+_gitdir=$(git rev-parse --git-dir)
+_staged_paths="$_gitdir/pre-commit-staged-paths-$$"
+trap "rm -f \"$_staged_paths\"" EXIT HUP INT TERM
+git diff --cached --name-only --diff-filter=ACM > "$_staged_paths"
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+  git add -- "$path"
+done < "$_staged_paths"
+unset _gitdir path

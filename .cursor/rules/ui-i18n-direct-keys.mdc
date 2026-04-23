@@ -1,0 +1,61 @@
+---
+description: Use when: writing translation lookups so keys stay statically analyzable.
+alwaysApply: true
+---
+
+# UI I18n Keys Must Be Direct
+
+## Pyramid Layer
+
+- Layer: L1 core UI rule.
+
+## Use This When
+
+- Keep this rule active for any code using `t(...)` style translation calls.
+
+## Stop Here If
+
+- Stop here once direct-key and no-indirection policy is clear.
+
+## Descend To
+
+- No sibling descent required. Apply this rule directly in touched UI code.
+
+## Policy
+
+- Pass translation keys to `t(...)` as direct literals.
+- Do not resolve keys through intermediate variables, helper functions, or object indirection.
+- Keep key strings visible at call sites so extraction and lint tooling can detect them.
+
+## Prohibited patterns
+
+```ts
+const key = 'auth.login.title';
+t(key);
+
+const KEYS = { login: 'auth.login.title' };
+t(KEYS.login);
+
+function getKey() {
+  return 'auth.login.title';
+}
+t(getKey());
+```
+
+## Approved patterns
+
+```ts
+t('auth.login.title');
+t(`auth.login.title`);
+t(isAdmin ? 'admin.title' : 'user.title');
+```
+
+## Validation checklist
+
+- `t(...)` first argument is a literal string or a ternary with literal branches.
+- No variable/object/function indirection for translation keys.
+- Extraction tooling can find all keys in touched files.
+
+## Related rules
+
+- `ui-i18n-json-required`: keys must exist in JSON catalogs under `i18n/`.

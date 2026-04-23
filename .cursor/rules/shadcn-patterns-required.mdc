@@ -1,0 +1,81 @@
+---
+description: Use when: a task touches shadcn/ui and must follow the repository's mandatory component-composition rules.
+alwaysApply: false
+---
+
+# Mandatory shadcn Patterns
+
+## Pyramid Layer
+
+- Layer: L0 rule router for shadcn work.
+
+## Use This When
+
+- Start here for any shadcn component, styling, form, composition, icon, registry, or CLI request.
+
+## Stop Here If
+
+- Stop after selecting one or two focused shadcn references.
+- Do not keep the full shadcn pack loaded when only one rule leaf is needed.
+
+## Descend To
+
+- Skill router: `/.agents/skills/shadcn/SKILL.md`
+- React bridge: `/.cursor/rules/shadcn-patterns-react-ui.mdc`
+- Continue within this file for mandatory loading behavior and project-wide enforcement.
+
+Use the shadcn patterns below as required project conventions, not optional suggestions.
+
+Reference sources:
+- `/.agents/skills/shadcn/rules/`
+- `/.agents/skills/shadcn/SKILL.md`
+- `/.agents/skills/shadcn/cli.md`
+- `/.agents/skills/shadcn/customization.md`
+
+## Mandatory context loading
+
+For any request that touches shadcn UI (new component, visual refactor, styling, composition, forms, icons, or CLI updates), first load the shadcn skill pack context from:
+
+- `/.agents/skills/shadcn/SKILL.md`
+- all files in `/.agents/skills/shadcn/rules/`
+- `/.agents/skills/shadcn/cli.md`
+- `/.agents/skills/shadcn/customization.md`
+
+Do not rely on memory-only assumptions when these references are available.
+
+## Forms and fields
+
+- Always structure forms with `FieldGroup` + `Field`.
+- Use `FieldLabel` and `FieldDescription` for label/help text.
+- Use `FieldSet` + `FieldLegend` for grouped options.
+- Do not use raw `div` stacks as a replacement for `FieldGroup`/`Field`.
+
+## Inputs and composition
+
+- Use the standardized UI components from `@workspace/ui/components/*`.
+- Use `Textarea` for multiline input (not raw `<textarea>`).
+- Inside `InputGroup`, only use `InputGroupInput` / `InputGroupTextarea`.
+- For action buttons attached to input controls, use `InputGroupAddon` (no ad-hoc absolute positioning).
+
+## State and accessibility
+
+- For invalid/disabled controls, apply both container and control states:
+  - container: `data-invalid` / `data-disabled` on `Field`
+  - control: `aria-invalid` / `disabled` on the input control
+
+## Global shadcn checks (not forms-only)
+
+- Prefer existing shadcn components over custom markup.
+- Use semantic tokens and variants instead of raw color utility overrides.
+- Use `gap-*` in flex/grid layouts, avoid `space-x-*` / `space-y-*`.
+- Follow composition constraints from shadcn rules (groups, titles, required subcomponents).
+- Follow icon rules (`data-icon`, no forced icon sizing in component children).
+
+## New form default
+
+- For new interactive forms, default to TanStack Form + schema validation.
+- Follow shadcn TanStack form pattern (`Field`, `FieldGroup`, `FieldError`, `data-invalid`, `aria-invalid`).
+- Prefer shared TanStack re-export from `@workspace/ui/components/tanstack-form`.
+- If a form intentionally does not use TanStack Form, document the reason in task notes.
+
+If there is a conflict between existing code and these rules, prefer refactoring toward these patterns.

@@ -1,0 +1,49 @@
+---
+description: Use when: adding or changing user lifecycle, operator CRUD, identity sync, or user admin UX so Platform remains the only source of truth.
+globs:
+  - apps/**
+  - packages/**
+alwaysApply: false
+---
+
+# Platform: single source for user management
+
+## Pyramid Layer
+
+- Layer: L1 domain rule.
+
+## Use This When
+
+- Start here when a task may create a second source of truth for users outside Platform.
+
+## Stop Here If
+
+- Stop once write ownership and allowed mirror behavior are clear.
+
+## Descend To
+
+- Workflow skill: `/.agents/skills/platform-centralized-user-management/SKILL.md`
+- Identity mirror transport: `/.cursor/rules/supabase-identity-sync-author.mdc`
+- Payload bridge workflow: `/.agents/skills/payload-supabase-gateway-auth/SKILL.md`
+
+**Platform** is the only place where operators (and product flows) may **create, update, or delete** end-user accounts and related identity data for the product. Today that is the `apps/platform` application; the rule stays the same as the stack evolves.
+
+## Applies to
+
+- **Any Payload-based app** in the monorepo (Author today, future CMS or admin shells): user tables/collections are **mirrors** for sign-in, relationships, and internal APIs — not a parallel user directory.
+- **Any other data/UI stack** (e.g. **Drizzle + custom UI**, headless services): the same governance — **no** second admin or public API for arbitrary user CRUD unless Platform (or an explicitly approved service acting on its behalf) remains the authority.
+
+## Rules
+
+- **Do not** add operator-facing “manage users” flows outside Platform without an explicit product/architecture decision documented in the PRD or ADR.
+- **Mirroring apps** must ingest identity from the **central pipeline** (sync jobs, webhooks, internal APIs with service auth) — not from ad-hoc operator edits in that app’s UI.
+- **Payload mirrors** (per-app pattern): deny or guard **`create` / `delete`** for normal `req`; allow **`read`** where support needs visibility; block **HTTP writes** with **`beforeChange` / `beforeDelete`** (or equivalent) unless a **trusted Local API context** flags intentional sync (see Author: `AUTHOR_USERS_WRITE_CONTEXT`, `users.sync-context.ts`). Sync and tests pass that context with **`overrideAccess: true`** where Payload requires it.
+- **Non-Payload mirrors:** enforce the same outcome — **server-side** guards on mutations, no bypass via “just a form”; surface **read-only or explain** UX when operators must not edit accounts locally.
+- **Do not** hide re-enablement of user CRUD in optional `.env` toggles without product sign-off.
+
+## Reference implementation (Payload / Author)
+
+- `apps/author/src/collections/Users.ts` — access, hooks, custom Save UX
+- `apps/author/src/collections/users.sync-context.ts` — sync-only context flag
+- `apps/author/src/identity/identity.lifecycle.apply.ts` — centralized identity fan-out into Payload
+- `.agents/skills/platform-centralized-user-management/SKILL.md` — checklist and patterns

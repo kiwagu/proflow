@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "zod": "npm:zod@4.3.6",
+    "@nats-io/transport-deno": "jsr:@nats-io/transport-deno@3.3.1",
+    "@nats-io/jetstream": "jsr:@nats-io/jetstream@3.3.1",
+    "@workspace/domain-events": "./domain_events_dist/index.js",
+    "@workspace/logger": "../logger_dist/index.js",
+    "pino": "npm:pino@9.14.0"
+  }
+}

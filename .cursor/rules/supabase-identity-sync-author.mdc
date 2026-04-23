@@ -1,0 +1,72 @@
+---
+description: Use when: integrating with Supabase self-hosted identity lifecycle events or mirroring auth users into application tables.
+alwaysApply: false
+---
+
+# Identity sync: Supabase Auth → JetStream → mirror apps
+
+## Pyramid Layer
+
+- Layer: L1 domain rule.
+
+## Use This When
+
+- Start here when a task mirrors Supabase Auth users into another app, worker, or support store.
+
+## Stop Here If
+
+- Stop once it is clear that JetStream is the canonical transport and HTTP fan-out is not allowed.
+
+## Descend To
+
+- User-ownership boundary: `/.cursor/rules/platform-centralized-user-management.mdc`
+- Payload mirror workflow: `/.agents/skills/platform-centralized-user-management/SKILL.md`
+- Continue within this file for transport, delivery, and idempotency details.
+
+**Scope:** `auth.users` changes are fanned out as canonical lifecycle events (`user.created` | `user.updated` | `user.deleted`). **Any** application that keeps a mirror of Supabase user identifiers (Payload `users`, CRM rows, support DBs, future shells) should **subscribe via JetStream** using **`@workspace/domain-events`** — not a bespoke HTTP push.
+
+**Reference consumer in this repo:** Author (`apps/author`) runs a JetStream worker next to Next dev; the pattern applies equally to new gateway-mounted apps or services that need the same mirror.
+
+Studio and Auth admin API mutate `auth.users`. **Delete**, **update**, and **Studio/Admin create** use Postgres triggers → Edge **`identity_lifecycle_fanout`** **internal ingest** (header `X-Identity-Internal-Secret` = DB `identity_sync.outbound_config.internal_secret`). **Public signup** also invokes GoTrue **`after-user-created`** (signed hook; URI + `whsec` in `infra/dev/supabase/docker-compose.yml`). `make db-push` syncs DB `internal_secret` from **`DEV_IDENTITY_INTERNAL_INGEST_SECRET`** in the root `Makefile` (must match compose `IDENTITY_INTERNAL_INGEST_SECRET`). **`user.created`** is safe if both trigger and hook fire (idempotent handlers).
+
+Wire format: **`@workspace/domain-events`** (Zod v4 envelopes + NATS subject helpers).
+
+## Delivery: JetStream only
+
+- Edge validates and **publishes** to NATS (`NATS_URL`, default `nats://nats:4222` on the shared Docker network for this project; **`nats`** service lives in **`infra/dev/docker-compose.yml`**; stream `IDENTITY_NATS_STREAM`, subjects `identity.lifecycle.v1.*`).
+- **Do not** add an HTTP subscriber path, `IDENTITY_SUBSCRIBER_*`, or app-specific HTTP push secrets for this pipeline.
+- **Edge runtime:** `identity_lifecycle_fanout` must **`await`** JetStream publish **before** returning `200`. Background-only work (e.g. `waitUntil` without awaiting) can be cut off by isolate **wall-clock / early termination**, so events never reach the stream while callers still see success.
+- **`@workspace/domain-events` in Edge:** workers resolve imports under the function directory. Compose bind-mounts **`packages/domain-events/dist`** → `identity_lifecycle_fanout/domain_events_dist`; `deno.json` maps `@workspace/domain-events` → **`./domain_events_dist/index.js`**. Run **`bun run build --filter=@workspace/domain-events`** (or rely on **`turbo` `dev` → `dependsOn: ["^build"]`** where the mirror app pulls that package) so **`dist/`** exists before Edge starts or after contract changes.
+- **`@workspace/logger` in Edge:** bind-mount **`packages/logger/dist`** → **`logger_dist`**; `deno.json` maps **`@workspace/logger`** → **`../logger_dist/index.js`** (and **`pino`** → **`npm:pino@…`**). Build with **`bun run build --filter=@workspace/logger`**. Use **`withLogContext({ requestId })`** so **`requestId`** is mixed into every log line; **`LOG_LEVEL`** / **`LOG_FORMAT`** env on the `functions` service.
+
+## Mirror consumers (Author and beyond)
+
+- Each mirror app needs a **process** (or task) that consumes the stream: durable consumer, `NATS_URL` reachable from that host (e.g. `nats://127.0.0.1:4222` published from compose), optional `IDENTITY_NATS_STREAM` / `IDENTITY_NATS_CONSUMER` / `filter_subject` when multiple apps share the stream.
+- **Author (example):** `bun run dev` runs Next + `identity:jetstream` worker concurrently; **`bun run identity:jetstream`** runs the worker alone.
+- Consumers must be **idempotent**:
+  - treat `user.created` as safe to apply more than once
+  - use stable identifiers (`auth.users.id` / `user_id` and `profiles.entity_id`) as the mirror key
+  - on mismatch (same `auth.users.id` but different `entity_id`), fail loudly (do not silently “fix” by overwriting a primary key)
+- Notification-style side effects must not piggyback directly on duplicate-prone identity stream traffic. Persist delivery intent in `public.outbox_jobs` (or the current canonical dedupe ledger) and let a worker deliver from that store; keep JetStream focused on transport/replay for mirrors and other replay-safe consumers.
+
+## `user.deleted` / `user.created` / `user.updated`
+
+- **Mechanism:** Postgres triggers → `pg_net.http_post` → Edge internal ingest (or verified GoTrue hook) → **await** JetStream publish.
+- **Migrations:** `20260328211000_identity_sync_auth_users_fanout.sql`, `20260329120000_identity_sync_auth_user_updated.sql`.
+
+## Symptom mapping
+
+| Observation | Likely cause |
+|-------------|----------------|
+| Mirror DB never updates | Consumer not running, wrong `NATS_URL`/stream/consumer, or Edge cannot reach NATS |
+| Create/delete/update not in stream | `internal_secret` null / drift, triggers not applied (`make db-push`), or Edge publish aborted (see `await` above) |
+| Edge logs: wall clock / early termination on old traffic | Historical isolates from pre-`await` behavior; verify **new** requests with `--since` and a fresh fanout call |
+
+## Agent / reviewer checklist
+
+1. `infra/dev/docker-compose.yml` — **`nats`** (ports 4222/8222). `infra/dev/supabase/docker-compose.yml` — `functions` env (`NATS_URL`, `IDENTITY_INTERNAL_INGEST_SECRET`, `IDENTITY_NATS_STREAM`, `LOG_LEVEL`, `LOG_FORMAT`), **`domain_events_dist`** + **`logger_dist`** volumes from **`packages/domain-events/dist`** and **`packages/logger/dist`**. Stack scripts start **infra/dev** before Supabase so NATS exists before Edge.
+2. `infra/dev/supabase/volumes/functions/identity_lifecycle_fanout/` — `deno.json` import map + **`await`** publish in `index.ts`.
+3. `packages/domain-events` — **`dist/`** built when contracts or Edge wiring change. **`packages/logger`** — same for Edge imports.
+4. `infra/dev/supabase/.env.example` identity block; `infra/dev/README.md` + **`make db-push`** / **`make db-sync-identity-secret`** for `internal_secret`.
+5. Changing ingest secret: compose, **`Makefile` `DEV_IDENTITY_INTERNAL_INGEST_SECRET`**, and DB sync **together**.
+6. New mirror app: add a JetStream consumer (and guest/auth routing for its shell separately via `ShellGuestAccessPolicy` if it is a Next shell).

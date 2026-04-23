@@ -1,0 +1,25 @@
+{
+  "name": "@workspace/db",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "gen:types": "./scripts/gen-types.sh",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": "./src/database.types.ts",
+    "./contracts/users-filter": "./src/contracts/users-filter.ts"
+  }
+}

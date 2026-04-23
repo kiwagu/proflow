@@ -1,0 +1,99 @@
+# Included in http {} — local edge: redirect HTTP, proxy HTTPS to dev on host.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Browser Origin → Access-Control-Allow-Origin (UI on proflow.local or localhost:* dev servers)
+map $http_origin $supabase_cors_origin {
+    "~^https://proflow\.local$" $http_origin;
+    "~^http://proflow\.local$" $http_origin;
+    "~^http://localhost:[0-9]+$" $http_origin;
+    "~^https://localhost:[0-9]+$" $http_origin;
+    default "https://proflow.local";
+}
+
+# Docker embedded DNS — required when proxy_pass uses a variable (runtime resolve for host.docker.internal)
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name proflow.local api.proflow.local;
+
+    return 301 https://$host$request_uri;
+}
+
+# App shell (Next dev on host)
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
+    server_name proflow.local;
+
+    ssl_certificate     /etc/nginx/ssl/proflow.local.crt;
+    ssl_certificate_key /etc/nginx/ssl/proflow.local.key;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    set $proflow_dev_upstream http://host.docker.internal:@PROFLOW_DEV_APP_PORT@;
+
+    location / {
+        proxy_pass $proflow_dev_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
+
+# Self-hosted Supabase API (Kong upstream from env). Use NEXT_PUBLIC_SUPABASE_URL=https://api.proflow.local
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name api.proflow.local;
+
+    ssl_certificate     /etc/nginx/ssl/proflow.local.crt;
+    ssl_certificate_key /etc/nginx/ssl/proflow.local.key;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin $supabase_cors_origin;
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, upload-length, tus-resumable, upload-metadata";
+            add_header Access-Control-Allow-Credentials true;
+            add_header Access-Control-Max-Age 86400;
+            return 204;
+        }
+
+        proxy_pass http://@SUPABASE_UPSTREAM_HOST@:@SUPABASE_UPSTREAM_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Kong emits permissive CORS headers (`*`) which conflict with credentialed browser requests.
+        # Normalize CORS at nginx edge to a single origin value.
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Access-Control-Allow-Credentials;
+
+        add_header Access-Control-Allow-Origin $supabase_cors_origin always;
+        add_header Access-Control-Allow-Credentials true always;
+    }
+}

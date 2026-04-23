@@ -1,0 +1,47 @@
+{
+  "name": "@workspace/gateway-auth",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "bunx vitest run",
+    "test": "bunx vitest run"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.100.0",
+    "@workspace/db": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": ">=15"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "next": "^16.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.1"
+  },
+  "exports": {
+    "./dev-mutating-request-log": "./src/dev-mutating-request-log.ts",
+    "./env": "./src/env.ts",
+    "./gateway-paths": "./src/gateway-paths.ts",
+    "./gateway-return-path": "./src/gateway-return-path.ts",
+    "./password-recovery": "./src/password-recovery.ts",
+    "./path-within-base": "./src/path-within-base.ts",
+    "./post-auth-navigation": "./src/post-auth-navigation.ts",
+    "./safe-next-path": "./src/safe-next-path.ts",
+    "./shell-guest-access": "./src/shell-guest-access.ts",
+    "./site-origin": "./src/site-origin.ts",
+    "./supabase/browser": "./src/supabase-browser.ts",
+    "./supabase/server": "./src/supabase-server.ts",
+    "./active-space.constants": "./src/active-space.constants.ts",
+    "./active-space.cookie": "./src/active-space.cookie.ts",
+    "./resolve-active-space": "./src/resolve-active-space.ts"
+  }
+}

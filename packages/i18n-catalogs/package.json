@@ -1,0 +1,49 @@
+{
+  "name": "@workspace/i18n-catalogs",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint . && bun src/validate.ts",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "validate": "bun src/validate.ts",
+    "test": "vitest run",
+    "test:vitest": "vitest run"
+  },
+  "dependencies": {
+    "@workspace/settings-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    },
+    "./author": {
+      "types": "./dist/author/index.d.ts",
+      "import": "./dist/author/index.js"
+    },
+    "./notifications": {
+      "types": "./dist/notifications/index.d.ts",
+      "import": "./dist/notifications/index.js"
+    }
+  }
+}

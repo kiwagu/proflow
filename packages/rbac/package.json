@@ -1,0 +1,49 @@
+{
+  "name": "@workspace/rbac",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.100.0",
+    "@workspace/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./roles": {
+      "types": "./dist/roles.d.ts",
+      "import": "./dist/roles.js"
+    },
+    "./permissions": {
+      "types": "./dist/permissions.d.ts",
+      "import": "./dist/permissions.js"
+    },
+    "./has-permission": {
+      "types": "./dist/has-permission.d.ts",
+      "import": "./dist/has-permission.js"
+    },
+    "./can-access-resource": {
+      "types": "./dist/can-access-resource.d.ts",
+      "import": "./dist/can-access-resource.js"
+    },
+    "./critical-capability": {
+      "types": "./dist/critical-capability.d.ts",
+      "import": "./dist/critical-capability.js"
+    }
+  }
+}

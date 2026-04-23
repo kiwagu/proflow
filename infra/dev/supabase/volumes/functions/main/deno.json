@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@workspace/logger": "../logger_dist/index.js",
+    "pino": "npm:pino@9.14.0"
+  }
+}

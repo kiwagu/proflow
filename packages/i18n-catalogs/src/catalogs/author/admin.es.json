@@ -1,0 +1,5 @@
+{
+  "author.usersCentralized.cannotSave.title": "No se pueden guardar los cambios",
+  "author.usersCentralized.cannotSave.description": "Las cuentas de usuario se administran centralmente en Platform. Author las refleja solo para iniciar sesión; no puede guardar cambios en los usuarios aquí.",
+  "author.usersCentralized.actions.confirm": "Aceptar"
+}

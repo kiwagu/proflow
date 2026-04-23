@@ -1,0 +1,34 @@
+{
+  "name": "@workspace/payload-plugins",
+  "version": "0.1.0",
+  "description": "Plugins for Payload CMS",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "payload": "3.83.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@workspace/entity-id": "workspace:^",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "format": {
+      "dependsOn": ["^format"]
+    },
+    "gen:types": {
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test:vitest": {
+      "cache": false
+    },
+    "test:e2e": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "test:e2e:smoke": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "test:e2e:smoke:ni": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "test:e2e:full": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "test:e2e:full:ni": {
+      "cache": false,
+      "dependsOn": ["^build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  },
+  "globalEnv": [
+    "CI",
+    "NODE_ENV",
+    "VERCEL_URL",
+    "AUTHOR_DEV_PORT",
+    "GATEWAY_ENTRY_ORIGIN",
+    "GATEWAY_UPSTREAM_HOST",
+    "GATEWAY_UPSTREAM_PROBE_TIMEOUT_MS",
+    "PLATFORM_DEV_PORT",
+    "PLAYWRIGHT_BASE_URL",
+    "PLAYWRIGHT_WEB_SERVER_URL",
+    "PAYLOAD_SECRET",
+    "MONGO_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "E2E_SUPABASE_URL",
+    "E2E_SUPABASE_ANON_KEY",
+    "E2E_SUPABASE_SERVICE_ROLE_KEY",
+    "E2E_AUTHOR_MONGO_URL",
+    "E2E_NOTIFICATIONS_URL",
+    "E2E_NOTIFICATIONS_INTERNAL_TOKEN",
+    "E2E_MAILDEV_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "NOTIFICATIONS_SERVICE_URL",
+    "PLATFORM_INITIAL_SUPER_ADMIN_EMAIL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_GATEWAY_ORIGIN",
+    "NEXT_PUBLIC_APP_BASE_PATH",
+    "NEXT_PUBLIC_GATEWAY_PLATFORM_PATH",
+    "NEXT_PUBLIC_GATEWAY_AUTHOR_PATH",
+    "SUPABASE_JWT_SECRET",
+    "NOTIFICATIONS_INTERNAL_TOKEN",
+    "NOTIFICATIONS_OUTBOX_CONSUMER",
+    "NOTIFICATIONS_OUTBOX_BATCH_SIZE",
+    "NOTIFICATIONS_OUTBOX_POLL_INTERVAL_MS",
+    "NOTIFICATIONS_OUTBOX_RETRY_SECONDS",
+    "SMTP_ADMIN_EMAIL",
+    "SMTP_FROM",
+    "SMTP_HOST",
+    "SMTP_PASS",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "AUTH_EMAIL_CONFIRM_PATH",
+    "HOST",
+    "PORT",
+    "AUTHOR_E2E_BYPASS_SUPABASE_PROXY",
+    "DEV_FULL_REQUEST_LOG",
+    "NATS_URL",
+    "IDENTITY_NATS_STREAM",
+    "IDENTITY_NATS_CONSUMER",
+    "SPACE_ORG_NATS_STREAM",
+    "SPACE_ORG_NATS_CONSUMER",
+    "NOTIFICATIONS_DEFAULT_LOCALE",
+    "LOG_LEVEL",
+    "LOG_FORMAT",
+    "S3_ENDPOINT",
+    "S3_ACCESS_KEY_ID",
+    "S3_PROTOCOL_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "S3_PROTOCOL_ACCESS_KEY_SECRET",
+    "S3_REGION"
+  ]
+}

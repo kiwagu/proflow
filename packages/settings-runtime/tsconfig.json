@@ -1,0 +1,10 @@
+{
+  "extends": "@workspace/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true,
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts", "eslint.config.js"],
+  "exclude": ["node_modules", "dist"]
+}

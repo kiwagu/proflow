@@ -1,0 +1,65 @@
+name: proflow
+
+services:
+  # Ensure your DATABASE_URL uses 'mongo' as the hostname ie. mongodb://mongo/my-db-name
+  mongo:
+    image: mongo:latest
+    ports:
+      - '27017:27017'
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongo_user
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    command:
+      - --storageEngine=wiredTiger
+    volumes:
+      - data:/data/db
+    logging:
+      driver: none
+
+  maildev:
+    image: maildev/maildev:2.2.1
+    ports:
+      - '127.0.0.1:2500:1025' # SMTP
+      - '127.0.0.1:9090:1080' # Web UI
+    logging:
+      driver: none
+
+  # JetStream for identity lifecycle (Edge `identity_lifecycle_fanout` + Author worker).
+  # Same Docker project (`proflow`) as Supabase so `functions` resolves `nats://nats:4222`.
+  # Start order: this file is applied before `infra/dev/supabase` in stack-up.sh / recreate-stack.sh.
+  nats:
+    container_name: supabase-nats
+    image: nats:2.12-alpine
+    restart: unless-stopped
+    command: ['-js', '-m', '8222']
+    ports:
+      - '127.0.0.1:4222:4222'
+      - '127.0.0.1:8222:8222'
+    logging:
+      driver: none
+
+  # Local HTTPS edge for proflow.local (80 -> 443 redirect, self-signed TLS by default).
+  # Conflicts with any other compose binding host 80/443 (e.g. Supabase docker-compose.nginx.yml).
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      # Host port where apps/web gateway listens (`next dev -p 3000` by default)
+      PROFLOW_DEV_APP_PORT: ${PROFLOW_DEV_APP_PORT:-3000}
+      # Kong upstream for api.proflow.local passthrough
+      PROFLOW_SUPABASE_UPSTREAM_HOST: ${PROFLOW_SUPABASE_UPSTREAM_HOST:-host.docker.internal}
+      PROFLOW_SUPABASE_UPSTREAM_PORT: ${PROFLOW_SUPABASE_UPSTREAM_PORT:-8000}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    command: ['/bin/sh', '/docker-entrypoint.sh']
+    logging:
+      driver: none
+
+volumes:
+  data:

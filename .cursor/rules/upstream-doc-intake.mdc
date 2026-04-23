@@ -1,0 +1,53 @@
+---
+description: Use when: ingesting new upstream documentation batches and adapting them into the repository's current rule or skill pyramid.
+alwaysApply: false
+---
+
+# Upstream documentation intake
+
+## Pyramid Layer
+
+- Layer: L1 documentation intake rule.
+
+## Use This When
+
+- Start here when new vendor or framework docs are dropped into `docs/upstream-inbox/pending/` and need to be reconciled with the current pyramid.
+- Use this rule when raw docs still follow an older or external structure that should not be copied directly into active rules or skills.
+
+## Stop Here If
+
+- Stop once the batch location, affected domains, and adaptation plan are clear.
+- Do not keep raw upstream docs in the active context after the adaptation target is identified.
+
+## Descend To
+
+- Inbox contract and lifecycle: `/docs/upstream-inbox/README.md`
+- Batch manifest template: `/docs/upstream-inbox/_templates/intake-manifest.md`
+- Return to `/.cursor/rules/process-check-rules-skills.mdc` once the affected active router or skill is identified.
+
+## Intake Rules
+
+1. Treat inbox files as staging inputs, not authoritative rules.
+2. Adapt upstream meaning into the current pyramid instead of mirroring vendor structure one-for-one.
+3. Prefer updating an existing router or leaf before creating a new document.
+4. For runtime-backed frameworks, anchor the sync to the installed package version from the repository before adapting docs.
+5. Create new leaves only when the upstream change introduces a stable, reusable concern.
+6. Update `docs/agent-context-smoke-test.md` whenever routing boundaries or retrieval expectations change.
+
+## Expected Batch Flow
+
+1. Find the batch under `docs/upstream-inbox/pending/<batch>/`.
+2. Read `manifest.md` first, then verify the installed runtime version if the batch targets a versioned framework such as Payload.
+3. Inspect `raw/` only as needed.
+4. Map the incoming changes to existing rules or skills.
+5. Rewrite the result in the repository's pyramid format, keeping the repository's installed version as the authority when upstream docs differ.
+6. Record integrated targets and any version mismatch in the batch manifest.
+7. Move the batch to `processed/` or `archived/` after completion.
+
+## Avoid
+
+- Loading the entire raw batch into active context when only one domain changed.
+- Updating version-sensitive guidance without checking the installed runtime version in the repository first.
+- Treating vendor docs as active rules without adaptation.
+- Duplicating an existing leaf with near-identical meaning.
+- Leaving smoke-test routes stale after integration.

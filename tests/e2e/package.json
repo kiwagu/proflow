@@ -1,0 +1,33 @@
+{
+  "name": "@workspace/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "bunx eslint .",
+    "format": "bunx prettier --write \"src/**/*.ts\" \"*.{json,md,ts}\"",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
+    "test:e2e:smoke": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --grep @smoke",
+    "test:e2e:smoke:ni": "cross-env CI=1 NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --grep @smoke --reporter=line",
+    "test:e2e:full": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
+    "test:e2e:full:ni": "cross-env CI=1 NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --reporter=line -x",
+    "test:e2e:headed": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --headed",
+    "stagehand:smoke": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" tsx src/stagehand.chat.ts",
+    "test:e2e:db-sweep": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" tsx src/helpers/e2e-artifact-sweep.ts"
+  },
+  "devDependencies": {
+    "@browserbasehq/stagehand": "^2.0.5",
+    "@playwright/test": "^1.58.2",
+    "@supabase/supabase-js": "^2.100.0",
+    "@workspace/db": "workspace:*",
+    "@workspace/rbac": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "cross-env": "^10.1.0",
+    "dotenv": "^17.3.1",
+    "mongodb": "^6.12.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "zod": "^4.3.6"
+  }
+}

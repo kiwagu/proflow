@@ -1,0 +1,47 @@
+{
+  "name": "platform",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "NODE_OPTIONS=--use-system-ca next dev -p 3001",
+    "build": "NODE_OPTIONS=\"--use-system-ca\" next build",
+    "start": "NODE_OPTIONS=\"--use-system-ca\" next start",
+    "lint": "eslint",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "cross-env NODE_OPTIONS=--use-system-ca bunx vitest run",
+    "test": "cross-env NODE_OPTIONS=--use-system-ca bunx vitest run"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.100.0",
+    "@workspace/db": "workspace:*",
+    "@workspace/gateway-auth": "workspace:*",
+    "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/logger": "workspace:*",
+    "@workspace/rbac": "workspace:*",
+    "@workspace/settings-runtime": "workspace:*",
+    "@workspace/ui": "workspace:*",
+    "dotenv": "^17.4.0",
+    "lucide-react": "^1.0.1",
+    "next": "^16.2.3",
+    "next-themes": "^0.4.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "server-only": "^0.0.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:*",
+    "eslint": "^10.1.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}

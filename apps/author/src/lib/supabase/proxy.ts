@@ -1,0 +1,328 @@
+import { ACTIVE_SPACE_COOKIE } from '@workspace/gateway-auth/active-space.constants';
+import {
+  clearCanonicalActiveSpaceCookie,
+  setCanonicalActiveSpaceCookie,
+} from '@workspace/gateway-auth/active-space.cookie';
+import type { Database } from '@workspace/db';
+import { hasSupabaseShellEnv } from '@workspace/gateway-auth/env';
+import { getAppBasePath } from '@workspace/gateway-auth/gateway-paths';
+import { pathWithinAppBasePath } from '@workspace/gateway-auth/path-within-base';
+import { isNextOrPublicAssetPathWithinApp } from '@workspace/gateway-auth/password-recovery';
+import {
+  AUTHOR_SHELL_GUEST_ACCESS,
+  isShellPathAllowedForGuest,
+} from '@workspace/gateway-auth/shell-guest-access';
+import { resolvePublicSiteOrigin } from '@workspace/gateway-auth/site-origin';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
+
+import {
+  authorPlatformSignInReturnPath,
+  buildPlatformSignInUrl,
+} from '@/lib/auth-redirect';
+
+const AUTHOR_BASE = getAppBasePath('/author');
+
+/** Payload default cookie prefix is `payload`; token cookie = `{prefix}-token`. */
+const PAYLOAD_TOKEN_COOKIE = 'payload-token';
+const PAYLOAD_TENANT_COOKIE = 'payload-tenant';
+const PAYLOAD_TENANT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+type PayloadTenantSync =
+  | { kind: 'none' }
+  | { kind: 'clear' }
+  | { kind: 'set'; value: string };
+
+type ActiveSpaceOptions = {
+  activeSpaceIds: Set<string>;
+  defaultSpaceId?: string;
+};
+
+async function loadActiveSpaceOptions(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<ActiveSpaceOptions> {
+  const { data: membershipRows } = await supabase
+    .from('space_memberships')
+    .select('space_id')
+    .eq('user_id', userId)
+    .eq('status', 'active');
+
+  const activeSpaceIds =
+    membershipRows
+      ?.map((row) => row.space_id)
+      .filter((spaceId): spaceId is string => Boolean(spaceId)) ?? [];
+  if (activeSpaceIds.length === 0) {
+    return { activeSpaceIds: new Set(), defaultSpaceId: undefined };
+  }
+
+  const { data: spaces } = await supabase
+    .from('spaces')
+    .select('id')
+    .in('id', activeSpaceIds)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  return {
+    activeSpaceIds: new Set(activeSpaceIds),
+    defaultSpaceId: spaces?.[0]?.id,
+  };
+}
+
+function resolvePayloadTenantSync(input: {
+  activeSpaceId?: string;
+  payloadTenantId?: string;
+  userPresent: boolean;
+  activeSpaceIds: ReadonlySet<string>;
+  defaultSpaceId?: string;
+}): PayloadTenantSync {
+  const {
+    activeSpaceId,
+    payloadTenantId,
+    userPresent,
+    activeSpaceIds,
+    defaultSpaceId,
+  } = input;
+
+  if (!userPresent) {
+    return payloadTenantId ? { kind: 'clear' } : { kind: 'none' };
+  }
+
+  if (activeSpaceId && activeSpaceIds.has(activeSpaceId)) {
+    return { kind: 'set', value: activeSpaceId };
+  }
+
+  if (payloadTenantId && activeSpaceIds.has(payloadTenantId)) {
+    return { kind: 'set', value: payloadTenantId };
+  }
+
+  if (defaultSpaceId && activeSpaceIds.has(defaultSpaceId)) {
+    return { kind: 'set', value: defaultSpaceId };
+  }
+
+  return activeSpaceId || payloadTenantId
+    ? { kind: 'clear' }
+    : { kind: 'none' };
+}
+
+function isPrefetchOrDataRequest(request: NextRequest): boolean {
+  const purpose = request.headers.get('purpose');
+  const nextData = request.headers.get('x-nextjs-data');
+  return purpose === 'prefetch' || nextData === '1';
+}
+
+function applyPayloadTenantSyncToRequest(
+  request: NextRequest,
+  sync: PayloadTenantSync
+) {
+  if (sync.kind === 'set') {
+    request.cookies.set(PAYLOAD_TENANT_COOKIE, sync.value);
+    request.cookies.set(ACTIVE_SPACE_COOKIE, sync.value);
+    return;
+  }
+
+  if (sync.kind === 'clear') {
+    request.cookies.set(PAYLOAD_TENANT_COOKIE, '');
+    request.cookies.set(ACTIVE_SPACE_COOKIE, '');
+  }
+}
+
+function applyPayloadTenantSyncToResponse(
+  response: NextResponse,
+  sync: PayloadTenantSync,
+  request?: NextRequest
+): NextResponse {
+  if (sync.kind === 'none') {
+    return response;
+  }
+
+  const isPrefetch = request && isPrefetchOrDataRequest(request);
+
+  if (sync.kind === 'set') {
+    response.cookies.set(PAYLOAD_TENANT_COOKIE, sync.value, {
+      path: '/',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: PAYLOAD_TENANT_MAX_AGE_SECONDS,
+    });
+    if (!isPrefetch) {
+      setCanonicalActiveSpaceCookie(response.cookies, sync.value);
+    }
+    return response;
+  }
+
+  response.cookies.set(PAYLOAD_TENANT_COOKIE, '', {
+    path: '/',
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 0,
+  });
+  if (!isPrefetch) {
+    clearCanonicalActiveSpaceCookie(response.cookies);
+  }
+  return response;
+}
+
+function gatewayBase(): string {
+  return AUTHOR_BASE === '/' ? '' : AUTHOR_BASE.replace(/\/$/, '');
+}
+
+function platformLoginResponse(
+  request: NextRequest,
+  sync: PayloadTenantSync
+): NextResponse {
+  const returnPath = authorPlatformSignInReturnPath(request);
+  const url = buildPlatformSignInUrl(returnPath, request.headers);
+  return applyPayloadTenantSyncToResponse(
+    NextResponse.redirect(url, 307),
+    sync,
+    request
+  );
+}
+
+/** Payload's email/password admin login — not used when Supabase is the IdP. */
+function isPayloadNativeAdminLoginPath(path: string): boolean {
+  return path === '/admin/login' || path.startsWith('/admin/login/');
+}
+
+function isAdminPath(path: string): boolean {
+  return path === '/admin' || path.startsWith('/admin/');
+}
+
+/**
+ * Builds a 307 to the Payload session bridge, which issues a Payload JWT cookie and then
+ * redirects to `nextAdminPath` (e.g. `/admin` or `/admin/collections/users`).
+ */
+function payloadBridgeRedirect(
+  request: NextRequest,
+  nextAdminPath: string,
+  sync: PayloadTenantSync
+): NextResponse {
+  const origin = resolvePublicSiteOrigin(request.headers);
+  const base = gatewayBase();
+  const qs = new URLSearchParams({ next: nextAdminPath });
+  return applyPayloadTenantSyncToResponse(
+    NextResponse.redirect(
+      new URL(`${base}/api/auth/admin-payload-bridge?${qs}`, origin),
+      307
+    ),
+    sync,
+    request
+  );
+}
+
+/**
+ * Refreshes the Supabase session from cookies (same pattern as `apps/platform`).
+ *
+ * Redirect priority (all server-side 307, no client hops):
+ * 1. No Supabase session + authenticated path → platform sign-in
+ * 2. Supabase session + admin path + no Payload cookie → bridge (issues JWT + 307 to target)
+ * 3. `/` + session → `/author/admin`
+ * 4. `/admin/login` → never rendered: guests → platform (`next=` avoids `/admin/login`); signed-in → bridge to `/admin`
+ */
+export async function updateSession(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
+
+  if (process.env.AUTHOR_E2E_BYPASS_SUPABASE_PROXY === '1') {
+    return supabaseResponse;
+  }
+
+  if (!hasSupabaseShellEnv) {
+    return supabaseResponse;
+  }
+
+  const path = pathWithinAppBasePath(request.nextUrl.pathname, AUTHOR_BASE);
+  if (isNextOrPublicAssetPathWithinApp(path)) {
+    return supabaseResponse;
+  }
+
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims;
+  const activeSpaceId = request.cookies.get(ACTIVE_SPACE_COOKIE)?.value?.trim();
+  const payloadTenantId = request.cookies
+    .get(PAYLOAD_TENANT_COOKIE)
+    ?.value?.trim();
+  const activeSpaceOptions = user
+    ? await loadActiveSpaceOptions(supabase, user.sub)
+    : { activeSpaceIds: new Set<string>(), defaultSpaceId: undefined };
+  const payloadTenantSync = resolvePayloadTenantSync({
+    activeSpaceId,
+    payloadTenantId,
+    userPresent: Boolean(user),
+    activeSpaceIds: activeSpaceOptions.activeSpaceIds,
+    defaultSpaceId: activeSpaceOptions.defaultSpaceId,
+  });
+
+  applyPayloadTenantSyncToRequest(request, payloadTenantSync);
+  applyPayloadTenantSyncToResponse(
+    supabaseResponse,
+    payloadTenantSync,
+    request
+  );
+
+  if (isPayloadNativeAdminLoginPath(path)) {
+    if (!user) {
+      return applyPayloadTenantSyncToResponse(
+        NextResponse.redirect(
+          buildPlatformSignInUrl(
+            authorPlatformSignInReturnPath(request),
+            request.headers
+          ),
+          307
+        ),
+        payloadTenantSync,
+        request
+      );
+    }
+    return payloadBridgeRedirect(request, '/admin', payloadTenantSync);
+  }
+
+  if (!user && !isShellPathAllowedForGuest(path, AUTHOR_SHELL_GUEST_ACCESS)) {
+    return platformLoginResponse(request, payloadTenantSync);
+  }
+
+  if (path === '/' && user) {
+    const adminUrl = new URL(
+      `${gatewayBase()}/admin`,
+      resolvePublicSiteOrigin(request.headers)
+    );
+    adminUrl.search = request.nextUrl.search;
+    return applyPayloadTenantSyncToResponse(
+      NextResponse.redirect(adminUrl, 307),
+      payloadTenantSync,
+      request
+    );
+  }
+
+  if (user && isAdminPath(path) && !request.cookies.get(PAYLOAD_TOKEN_COOKIE)) {
+    return payloadBridgeRedirect(request, path, payloadTenantSync);
+  }
+
+  return supabaseResponse;
+}

@@ -1,0 +1,5 @@
+{
+  "author.usersCentralized.cannotSave.title": "Cannot save changes",
+  "author.usersCentralized.cannotSave.description": "User accounts are managed centrally on the Platform. Author mirrors them for sign-in only - you cannot save changes to users here.",
+  "author.usersCentralized.actions.confirm": "OK"
+}

@@ -1,0 +1,42 @@
+---
+description: Use when: a workstream already has planning artifacts and you need to decide whether to reuse or create a plan.
+---
+
+# Prefer one master plan per active scope
+
+## Pyramid Layer
+
+- Layer: L1 planning rule.
+
+## Use This When
+
+- Start here when an active workstream already has planning docs, checklists, or a master plan.
+
+## Stop Here If
+
+- Stop once the correct master plan artifact is identified.
+
+## Descend To
+
+- Continue within this file for planning constraints.
+- Return to the active plan document for scope-specific detail.
+
+When an active workstream already has a plan, treat that plan as the canonical source of truth. If the AI is tempted to create a new plan for the same scope, it should prefer updating the existing master plan unless the user explicitly decides to split the work.
+
+## Required behavior
+
+- Maintain one master plan artifact for the active scope.
+- When new ideas, subtasks, or clarifications appear, fold them into the current master plan instead of starting a parallel plan.
+- Do not create a second active plan for the same scope unless the user explicitly asks to separate or split the work.
+- If auxiliary plans are created, explicitly mark them as superseded or subordinate and link back to the master plan.
+- Do not execute divergent parallel plans for the same scope.
+- Keep intentionally separate tracks under the same master planning context until the user decides they should become independent plans.
+
+## Applies to
+
+- Any multi-step implementation, refactor, migration, investigation, or cross-functional workstream
+- Existing planning docs, checklists, task notes, and follow-up plan updates for the same active scope
+
+## Rationale
+
+Multiple competing plans for one active scope create contradictory assumptions, duplicate work, and unclear execution. A single master plan keeps decisions, status, and scope changes in one place until the user chooses to split it.

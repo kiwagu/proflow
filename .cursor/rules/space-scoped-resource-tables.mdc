@@ -1,0 +1,105 @@
+---
+description: Use when: creating a new space-scoped domain resource table and related schema objects.
+globs:
+  - supabase/migrations/*.sql
+  - packages/**
+  - apps/**
+alwaysApply: false
+---
+
+# Space-scoped resource tables
+
+## Pyramid Layer
+
+- Layer: L1 database rule.
+
+## Use This When
+
+- Start here when creating a new domain resource that belongs to a space and participates in RBAC or RLS.
+
+## Stop Here If
+
+- Stop once the required table shape and mandatory columns are clear.
+
+## Descend To
+
+- Naming and entity ids: `/.cursor/rules/db-domain-ids-and-naming.mdc`
+- SQL authoring leaves: `/.cursor/rules/create-migration.mdc`, `/.cursor/rules/create-rls-policies.mdc`, `/.cursor/rules/create-db-functions.mdc`, `/.cursor/rules/postgres-sql-style-guide.mdc`
+- Continue within this file for the resource-table contract.
+
+Use this rule when adding a new domain resource that belongs to one space and must participate in RBAC and RLS.
+
+## Required shape
+
+- Primary key: text entity id generated with `public.entity_id_generate('<prefix>')`
+- `space_id text not null references public.spaces (id) on delete cascade`
+- `created_by uuid not null` when creator attribution must survive user deletion
+- `created_at timestamptz not null default timezone('utc', now())`
+- `updated_at timestamptz not null default timezone('utc', now())`
+- Optional owner column: `owner_user_id uuid references auth.users (id) on delete set null`
+- Always enable row level security
+- Add at least one index beginning with `space_id`
+
+## Minimal migration template
+
+```sql
+create table public.example_resources (
+  id text primary key default public.entity_id_generate('exr'),
+  space_id text not null references public.spaces (id) on delete cascade,
+  created_by uuid not null,
+  owner_user_id uuid references auth.users (id) on delete set null,
+  status text not null default 'draft',
+  visibility text not null default 'private',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.example_resources enable row level security;
+
+create index example_resources_space_id_status_idx
+  on public.example_resources (space_id, status);
+```
+
+## Policy template
+
+Prefer the shared helper function instead of inlining permission logic repeatedly.
+
+```sql
+create policy "example_resources select for scoped readers"
+on public.example_resources
+for select
+to authenticated
+using (
+  public.auth_user_can_access_in_space(
+    example_resources.space_id,
+    'space.example.read'
+  )
+);
+```
+
+Repeat the same pattern for `insert`, `update`, and `delete` with the correct permission key. No policy means no access.
+
+## Permission key naming
+
+Use `space.<entity>.<verb>`.
+
+Examples:
+
+- `space.content.read`
+- `space.content.create`
+- `space.materials.delete`
+
+Whenever you introduce a new key:
+
+1. Register it in `packages/rbac/src/permissions.ts`
+2. Seed it in the RBAC migration set
+3. Use the same key in resource-table RLS policies and server-side helper checks
+
+## Access helper guidance
+
+- Use immutable UUID attribution (`created_by uuid not null`) when you need historical actor recovery even after auth-user deletion.
+- Use `owner_user_id ... on delete set null` for mutable ownership links that should detach cleanly during offboarding.
+
+- Prefer RLS-filtered `.from('<table>').select(...)` for list queries so Postgres filters server-side.
+- Use `canAccessResource(...)` only for explicit preflight checks before a navigation or mutation.
+- Deny by default on missing membership, missing permission, or missing policy.

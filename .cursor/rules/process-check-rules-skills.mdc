@@ -1,0 +1,46 @@
+---
+description: Use when: starting any non-trivial task and choosing which project rule or skill to load first.
+alwaysApply: true
+---
+
+# Process: check rules/skills before changes
+
+## Pyramid Layer
+
+- Layer: L0 process router.
+
+## Use This When
+
+- Start here for any non-trivial implementation, refactor, migration, or investigation.
+- Use this file to choose the first domain rule or skill instead of loading many long docs at once.
+- Before descending into framework- or transport-specific guidance, establish the bounded context and domain source of truth.
+
+## Stop Here If
+
+- Stop after selecting the smallest relevant domain entry point below.
+- Do not keep unrelated domains in context once the right branch is chosen.
+
+## Descend To
+
+- Context-first architecture rule: `/.cursor/rules/domain-context-first-analysis.mdc`
+- Payload domain router: `/.cursor/rules/payload-overview.md`
+- shadcn skill router: `/.agents/skills/shadcn/SKILL.md`
+- Next.js shell auth workflow: `/.agents/skills/nextjs-shell-supabase-auth/SKILL.md`
+- Payload gateway auth workflow: `/.agents/skills/payload-supabase-gateway-auth/SKILL.md`
+- User-management workflow: `/.agents/skills/platform-centralized-user-management/SKILL.md`
+- E2E workflow: `/.agents/skills/e2e-dx-workflow/SKILL.md`
+- Gateway routing rule: `/.cursor/rules/gateway-shell-routing.mdc`
+- Supabase runtime rules: `/.cursor/rules/use-realtime.mdc`, `/.cursor/rules/writing-supabase-edge-functions.mdc`
+- Database identity and table shape rules: `/.cursor/rules/db-domain-ids-and-naming.mdc`, `/.cursor/rules/space-scoped-resource-tables.mdc`
+- Cross-cutting operational rules: `/.cursor/rules/notifications-central-email.mdc`, `/.cursor/rules/ui-i18n-json-required.mdc`, `/.cursor/rules/ui-i18n-direct-keys.mdc`, `/.cursor/rules/e2e-required-for-critical-flows.mdc`, `/.cursor/rules/upstream-doc-intake.mdc`, `/.cursor/rules/standard-design-patterns.mdc`
+- Contract rule: `/.cursor/rules/zod-schema-first-contracts.mdc`
+- AI artifact wording rule: `/.cursor/rules/ai-artifacts-generic-wording.mdc`
+
+For migrations, RLS policies, database functions, or SQL style, enter through the database L1 rule first and then descend into the matching SQL leaf.
+
+- Before implementing feature work, refactors, or configuration changes — and especially **before commits** — quickly review relevant workspace guidance:
+  - `.cursor/rules/` (project-specific constraints, conventions, security notes — e.g. `nextjs-blocking-routes-suspense.mdc` for Next.js 16 `Suspense` + dynamic pages; `notifications-central-email.mdc` for outbound email / SMTP; `monorepo-env-minimalism.mdc` for when to add shared `process.env` names)
+  - applicable skill packs (when the change matches a skill area: shadcn UI, Next shells + Supabase auth, Payload auth bridge, e2e workflow, Supabase edge functions, etc.)
+- For growing codepaths, explicitly choose a standard pattern before adding more branches: prefer `strategy + registry`, `adapter`, `policy object`, `factory`, or another named pattern that keeps responsibilities separated.
+- If you ask the agent for help on a topic, the agent should load the relevant rule/skill context first to avoid missing project-specific constraints.
+

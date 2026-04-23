@@ -1,0 +1,45 @@
+{
+  "name": "@workspace/notifications",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "build:deno": "bun run ./scripts/build-deno-bundle.ts",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "dependencies": {
+    "@react-email/components": "^0.5.7",
+    "@react-email/render": "^1.4.0",
+    "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/settings-runtime": "workspace:*",
+    "intl-messageformat": "^10.7.16",
+    "nodemailer": "^6.10.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^7.0.4",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "esbuild": "^0.27.2",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
+  }
+}

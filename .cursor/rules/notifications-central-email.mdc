@@ -1,0 +1,48 @@
+---
+description: Use when: a feature sends outbound email so delivery stays centralized in @workspace/notifications.
+alwaysApply: false
+---
+
+# Central notifications (email)
+
+## Pyramid Layer
+
+- Layer: L1 domain rule.
+
+## Use This When
+
+- Start here for any task that sends email, introduces SMTP behavior, or emits notification jobs.
+
+## Stop Here If
+
+- Stop once the canonical package, runtime host, and no-direct-SMTP boundary are clear.
+
+## Descend To
+
+- Shared env naming: `/.cursor/rules/monorepo-env-minimalism.mdc`
+- Continue within this file for package/runtime boundaries and email-template rules.
+
+## Canonical package: `@workspace/notifications`
+
+- **All SMTP email** is sent through **`@workspace/notifications`**: **`createSmtpTransportFromEnv()`** / **`SmtpEmailTransport`** (**nodemailer** lives only in this package), plus **`sendNotification`** with **`EmailTransport`** for templated mail (same path as registration-style messages).
+- **React Email is mandatory** for every outbound message body: add a **`.tsx` template** under **`packages/notifications/src/email/templates/`**, register it in **`renderEmail()`**, add **ICU strings** in **`src/i18n/messages.ts`**, and send only **`renderEmail()`** output (HTML + plain text + subject). **Do not** hand-build HTML strings or bypass **`renderEmail()`** when sending SMTP.
+- **Do not** add **nodemailer** (or other SMTP clients) to **`apps/platform`**, **`apps/author`**, or other shell apps.
+
+## Runtime host: `services/notifications`
+
+- The **Bun HTTP service** is the long-running process: GoTrue hook forwarding, **`POST /v1/notifications/email`**, and the **JetStream** consumer for space-invite envelopes. It **imports** transport and dispatch from **`@workspace/notifications`** — it does not implement SMTP itself.
+- Configure **`SMTP_*`**, **`NATS_URL`**, and invite link env vars on the **service** process (see `services/notifications/.env.examples`).
+
+## Monorepo dev
+
+- Root **`bun run dev`** runs **Turbo** `dev`, which includes **`@workspace/notifications-service`** alongside shells. **`apps/platform` `bun run dev`** is **Next only** on port 3001.
+
+## Space invite notify
+
+- **`apps/platform`** publishes **`space_invite.email_requested`** to JetStream after **`rpc_create_space_invite`** succeeds (`NATS_URL` on the platform server; same broker as **`services/notifications`**). **Do not** add Postgres triggers or Edge fan-out for this path.
+
+## Agent checklist
+
+1. New email → **React Email component** + **`renderEmail()`** branch + i18n keys; then **`sendNotification`** or **`transport.send(rendered)`** — never inline HTML.
+2. New **JetStream** mail job → consumer in **`services/notifications`** calling **`renderEmail()`** then SMTP transport; **producer** for space invites stays in **platform** (not DB/Edge).
+3. Invite links on **`services/notifications`** use **`GATEWAY_ENTRY_ORIGIN`** and **`NEXT_PUBLIC_GATEWAY_PLATFORM_PATH`** — the **same** keys as the gateway / platform (`@workspace/gateway-auth`). See `.cursor/rules/monorepo-env-minimalism.mdc`.

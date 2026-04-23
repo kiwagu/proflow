@@ -1,0 +1,73 @@
+---
+description: Use when: scaffolding a new apps/*, packages/*, services/*, or tests/* workspace member in this monorepo.
+globs: apps/**,packages/**,services/**,tests/**
+alwaysApply: false
+---
+
+# New workspace member scaffold
+
+## Pyramid Layer
+
+- Layer: L1 scaffold rule.
+
+## Use This When
+
+- Start here when adding a new member under `apps/*`, `packages/*`, `services/*`, or `tests/*`.
+
+## Stop Here If
+
+- Stop after the scaffold checklist covers the new workspace shape.
+
+## Descend To
+
+- E2E package workflow: `/.agents/skills/e2e-dx-workflow/SKILL.md`
+- Shared env guidance: `/.cursor/rules/monorepo-env-minimalism.mdc`
+- Continue within this file for package-level scaffolding details.
+
+Use when adding **`apps/*`**, **`packages/*`**, **`services/*`**, or **`tests/*`**. Root **`package.json`** **`workspaces`** already lists **`apps/*`**, **`packages/*`**, **`services/*`**, and **`tests/*`** — no manual registration unless you introduce a **new top-level** directory (then extend **`workspaces`**).
+
+## `package.json`
+
+- **`name`:** follow repo convention (`@workspace/<kebab>` for shared packages; app names as existing apps).
+- **`private: true`** for internal packages.
+- **`"type": "module"`** when using ESM (most TS packages/apps here).
+- **Scripts** (align with siblings): at minimum **`lint`**, **`typecheck`**, and **`format`** where the package owns source; add **`build`** if it emits **`dist/`** or another artifact consumed elsewhere.
+- **Test-only packages** (e.g. **`tests/e2e`**): add **`test:*`** scripts as needed (**`playwright`**, **`vitest`**, etc.); wire them in root **`turbo.json`** if invoked via **`turbo run`** from the repo root.
+- **devDependencies:** **`@workspace/eslint-config`**, **`@workspace/typescript-config`**, **`eslint`**, **`typescript`** (and app-specific peers as needed). E2E packages that run **`eslint .`** use the same **`eslint.config.js`** pattern as **`tests/e2e`** (re-export **`@workspace/eslint-config/base`**).
+
+## TypeScript
+
+- **`tsconfig.json`** extending **`@workspace/typescript-config/base.json`** (libraries) or **`nextjs.json`** / **`react-library.json`** for Next/React apps — copy structure from **`packages/gateway-auth`** or **`apps/web`**.
+- If the package **emits** JS (Edge consumers, npm-style exports), add a **`tsconfig.build.json`** (or equivalent) and wire **`"build": "tsc -p ..."`**; document **`dist/`** in **`package.json` `exports`** and **`.gitignore` / `.prettierignore`**.
+
+## ESLint
+
+- **`eslint.config.js`** re-exporting **`@workspace/eslint-config/base`** (or the flat config variant used by sibling apps). Match **`packages/gateway-auth/eslint.config.js`** unless the app needs a different preset.
+
+## Prettier
+
+- Add **`.prettierrc`** and **`.prettierignore`** at the package root whenever **`format`** runs Prettier from that directory — **do not** rely on the monorepo root alone; local ignores must cover this tree’s artifacts.
+- **Templates:** config / source-only package → **`packages/gateway-auth`**; TS lib that **emits `dist/`** (same Prettier layout) → **`packages/domain-events`** or **`packages/logger`**; Next / Tailwind / shadcn app → **`apps/web`** or **`apps/platform`**.
+- Extend **`.prettierignore`** for outputs (**`dist/`**, **`.next/`**, **`.turbo/`**, **`coverage/`**, etc.) and keep **`node_modules/`**, lockfiles, **`.pnpm-store/`**.
+
+## Integration / E2E packages (`tests/*`)
+
+- **Reference layout:** **`tests/e2e`** (`@workspace/e2e`) — Playwright **`playwright.config.ts`**, **`src/**/*.spec.ts`**, **`global-setup` / `global-teardown`**, **`fixtures`**, helpers under **`src/helpers/`**.
+- **`tsconfig.json`** + **`typecheck`** for spec and helper TS (ESM **`"type": "module"`** where used).
+- **`.env.example`** (and documented vars in **`tests/e2e/README.md`** or the skill **`e2e-dx-workflow`**) — never commit secrets; list **`PLAYWRIGHT_*`**, Supabase keys, and any infra-only vars (**`E2E_AUTHOR_MONGO_URL`**, etc.).
+- **Prettier / ESLint:** same rules as above — add **`.prettierrc`** + **`.prettierignore`** if **`format`** runs from this package; ignore Playwright artifacts (**`test-results/`**, **`playwright-report/`**, **`blob-report/`**, **`.cache/`**) in **`.prettierignore`** and ESLint **`ignores`** where applicable.
+- **Turbo:** E2E tasks often set **`cache: false`** and **`dependsOn: ["^build"]`** when the suite assumes built apps; mirror **`turbo.json`** patterns for **`test:e2e`**, **`test:e2e:smoke`**, **`test:e2e:full`** when adding new suites or packages.
+
+## Turbo / consumers
+
+- If **`turbo.json`** tasks need this package’s outputs (e.g. **`dist/**`** for **`build`**), set **`outputs`** on the **`build`** task and use **`dependsOn: ["^build"]`** where dependents must compile first.
+- If the package is consumed by **Docker / Edge** with path constraints, document bind mounts or copied artifacts in **`infra/`** (see identity lifecycle + **`domain_events_dist`** pattern).
+
+## Final checklist
+
+1. `package.json` scripts and workspace naming match neighbors (including **`tests/*`** / E2E **`test:*`** scripts and Turbo wiring).
+2. `tsconfig.json` (+ build config if emitting).
+3. `eslint.config.js` present where the package runs **`eslint .`**.
+4. `.prettierrc` + `.prettierignore` when **`format`** uses Prettier (recommended for **`tests/*`** too).
+5. No formatting/linting of generated dirs (ignore files + ESLint ignores if needed).
+6. For E2E: `.env.example`, stable selectors / tags (**`@smoke`**, **`@full`**) per repo conventions, and docs or skill pointers for prerequisites.

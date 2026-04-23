@@ -1,0 +1,29 @@
+{
+  "name": "@workspace/notifications-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --env-file=.env --watch src/index.ts",
+    "start": "bun --env-file=.env src/index.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "@workspace/db": "workspace:*",
+    "@workspace/gateway-auth": "workspace:*",
+    "@workspace/notifications": "workspace:*",
+    "@workspace/settings-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.11",
+    "@types/node": "^25.5.0",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
+  }
+}

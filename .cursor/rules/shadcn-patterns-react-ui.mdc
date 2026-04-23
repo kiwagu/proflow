@@ -1,0 +1,39 @@
+---
+description: Use when: editing React UI files that should follow the repository's global shadcn patterns.
+globs: **/*.{tsx,jsx}
+alwaysApply: false
+---
+
+# shadcn Rule Bridge For React UI
+
+## Pyramid Layer
+
+- Layer: L1 bridge rule.
+
+## Use This When
+
+- Use this bridge automatically for React UI files before loading deeper shadcn references.
+
+## Stop Here If
+
+- Stop here if it is already clear that the task needs the main shadcn router.
+
+## Descend To
+
+- Main shadcn router: `/.agents/skills/shadcn/SKILL.md`
+- Mandatory project rule: `/.cursor/rules/shadcn-patterns-required.mdc`
+
+This file intentionally avoids duplicating policy text.
+
+For all React UI work, use:
+- `/.cursor/rules/shadcn-patterns-required.mdc` as the single source of truth.
+
+## Scope
+
+This bridge rule only narrows applicability to React UI files (`*.tsx`, `*.jsx`).
+All actual requirements are defined in the global mandatory rule above.
+
+## Maintenance
+
+If you update shadcn requirements, edit only:
+- `/.cursor/rules/shadcn-patterns-required.mdc`

@@ -1,0 +1,50 @@
+{
+  "name": "proflow",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "build:libs": "turbo run build --filter=\"./packages/*\"",
+    "db:types": "make db-types",
+    "db:types:check": "make db-types && git diff --exit-code -- packages/db/src/database.types.ts",
+    "dev:apps": "bun run ./scripts/turbo-with-exclude.ts dev",
+    "dev": "bun run build:libs && bun run dev:apps",
+    "lint": "turbo lint",
+    "format": "turbo format",
+    "typecheck": "turbo typecheck",
+    "test:e2e:headed": "turbo test:e2e:headed --filter=@workspace/e2e",
+    "test:e2e:smoke": "turbo test:e2e:smoke --filter=@workspace/e2e",
+    "test:e2e:smoke:ni": "CI=1 turbo test:e2e:smoke:ni --filter=@workspace/e2e",
+    "test:e2e:full": "turbo test:e2e:full --filter=@workspace/e2e",
+    "test:e2e:full:ni": "CI=1 turbo test:e2e:full:ni --filter=@workspace/e2e",
+    "test:e2e": "turbo test:e2e --filter=@workspace/e2e",
+    "test:vitest": "CI=1 turbo run test:vitest",
+    "test:full:ni": "bun run test:vitest && bun run test:e2e:full:ni",
+    "check": "bun run db:types && bun run format && bun run lint && bun run typecheck",
+    "notifications:bundle": "bun run --cwd packages/notifications build:deno",
+    "postinstall": "husky",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "husky": "^9.1.7",
+    "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "turbo": "^2.9.6",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.3.11"
+  },
+  "packageManager": "bun@1.3.11",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*",
+    "tests/*"
+  ],
+  "dependencies": {
+    "supabase": "^2.84.4"
+  }
+}

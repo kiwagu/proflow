@@ -1,0 +1,57 @@
+---
+description: Use when: routing requests between gateway web and shell apps, or deciding guest versus authenticated path behavior.
+alwaysApply: false
+---
+
+# Gateway and shell HTTP routing
+
+## Pyramid Layer
+
+- Layer: L1 routing rule.
+
+## Use This When
+
+- Start here for any task that touches `apps/web`, shell `proxy.ts`, guest-vs-authenticated paths, or gateway return URLs.
+
+## Stop Here If
+
+- Stop once responsibility split and guest-policy boundaries are clear.
+
+## Descend To
+
+- Next.js shell workflow: `/.agents/skills/nextjs-shell-supabase-auth/SKILL.md`
+- Payload shell workflow: `/.agents/skills/payload-supabase-gateway-auth/SKILL.md`
+- Blocking-route details: `/.cursor/rules/nextjs-blocking-routes-suspense.mdc`
+- Continue within this file for the routing contract itself.
+
+## Split of responsibility
+
+- **`apps/web` (gateway web)** — Dev routing / CORS / upstream checks / nginx-style path prefixes. It does **not** enforce Supabase session or classify platform/author routes as public vs authenticated.
+- **Each shell Next app** (`apps/platform`, `apps/author`, and any new gateway-mounted app) — Use a **Supabase SSR proxy** (e.g. `lib/supabase/proxy.ts` or `src/lib/supabase/proxy.ts`) invoked from **`proxy.ts` / `middleware`**: refresh cookies, `supabase.auth.getClaims()`, treat presence of claims as authenticated.
+
+## Guest vs authenticated paths (default: authenticated, requires auth)
+
+- **Default:** Without a valid session, requests to in-app paths (relative to the app `basePath`) should redirect to platform sign-in (or the app’s chosen login flow), except where explicitly allowed.
+- **Do not** scatter `path.startsWith(...)` checks across the codebase for guest access. Use the shared policy API:
+  - Module: `packages/gateway-auth/src/shell-guest-access.ts`
+  - Types: `ShellGuestAccessPolicy`, helpers: `isShellPathAllowedForGuest`
+  - Per-app constants: e.g. `PLATFORM_SHELL_GUEST_ACCESS`, `AUTHOR_SHELL_GUEST_ACCESS` — extend **`allowGuestPrefixes`** / **`allowGuestAtRoot`** when adding public areas.
+- Paths passed into `isShellPathAllowedForGuest` must be **inside the app base path** (use `pathWithinAppBasePath` from `@workspace/gateway-auth/path-within-base`), not full gateway paths.
+- Still apply existing **static / Next internals** and **password-recovery** rules where relevant (`isNextOrPublicAssetPathWithinApp`, recovery cookie flow on platform) before or alongside guest policy — do not duplicate their logic.
+
+## Adding a new gateway-mounted Next app (typical HTTP)
+
+1. Align **env** gateway path prefixes with `apps/web` / nginx (`NEXT_PUBLIC_GATEWAY_*`, forwarded headers for public origin).
+2. Add **`proxy.ts`** (or middleware) that calls the app’s **`updateSession`**-style Supabase proxy, matching the pattern used in `apps/platform` / `apps/author`. **Next.js 16:** place it next to `app` — if the App Router lives in **`src/app`**, the file must be **`src/proxy.ts`**, not the package root (root-level `proxy.ts` is ignored and auth redirects never run).
+3. Define a **`ShellGuestAccessPolicy`** for the app (new export next to existing ones in `shell-guest-access.ts` or a dedicated file re-exported from `gateway-auth`) and gate with **`!user && !isShellPathAllowedForGuest(path, policy)`** before allowing `NextResponse.next()`.
+4. Prefer **narrow prefixes** for guests; widening `/api` or `/` has security impact.
+5. Consider a **test or lint** when introducing new top-level public segments so policy stays in sync with `app/` routes.
+
+## Next.js 16 shell pages
+
+- Public or auth-heavy routes that use `await searchParams`, `cookies()`, or `connection()` must follow **Suspense-wrapped async content** (see `.cursor/rules/nextjs-blocking-routes-suspense.mdc`) to avoid **blocking route** dev errors.
+
+## Anti-patterns
+
+- Implementing “open vs closed” only in **React** (`redirect()` in pages) for shell entry routes when a **server redirect in the proxy** is needed to avoid flash/wrong UX.
+- Putting Supabase session enforcement only in **`apps/web`** for routes that are served by another Next app on a subpath.

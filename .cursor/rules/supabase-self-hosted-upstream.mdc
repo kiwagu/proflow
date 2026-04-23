@@ -1,0 +1,44 @@
+---
+description: Use when: changing self-hosted Supabase infrastructure so upstream-aligned docker assets remain untouched unless necessary.
+alwaysApply: false
+---
+
+# Supabase self-hosted stack vs upstream
+
+## Pyramid Layer
+
+- Layer: L1 operational rule.
+
+## Use This When
+
+- Start here when a task proposes edits inside `infra/dev/supabase/` or upstream-aligned self-hosted assets.
+
+## Stop Here If
+
+- Stop once it is clear whether the change belongs in upstream-aligned files or in repo-owned alternatives.
+
+## Descend To
+
+- Migration path: `/.cursor/rules/create-migration.mdc`
+- Edge functions path: `/.cursor/rules/writing-supabase-edge-functions.mdc`
+- Continue within this file for preferred alternatives.
+
+The tree under `infra/dev/supabase/` is aligned with the **official Supabase self-hosted Docker** layout. Those files are **periodically updated from upstream**; local edits create merge pain and drift.
+
+## Default
+
+- **Avoid changing** upstream-style deploy files when another approach exists. Examples: `volumes/pooler/pooler.exs`, stock `volumes/db/*.sql` init/migration snippets shipped with the template, and baseline `docker-compose.yml` service definitions that you expect to refresh from docs/GitHub.
+- **Do not** add explanatory comments or guard logic to those files solely for our repo — document behavior in `.env.example`, Makefile `help`, or repo `supabase/` CLI project instead.
+
+## Preferred alternatives
+
+- **Schema and DB logic:** `supabase/migrations/` at the monorepo root (Supabase CLI), not ad hoc edits inside `volumes/db/` unless upstream requires it.
+- **App-specific behavior:** Next/shell apps, `packages/*`, Edge functions under `infra/dev/supabase/volumes/functions/` (or `supabase/functions/` if that is the canonical path for your workflow).
+- **Configuration:** `infra/dev/supabase/.env` (from `.env.example`), Makefile targets, small scripts under `scripts/`.
+- **Compose extensions:** prefer an **override** file (e.g. `docker-compose.override.yml`, gitignored locally) or a **separate compose fragment** merged by your dev workflow, instead of forking the main compose for one-off needs.
+- **Operational docs:** comments in `.env.example` and focused rules (this file), not scattered edits in upstream copies.
+
+## When you must touch upstream-shaped files
+
+- Keep the **smallest possible diff** and call it out in the PR/commit.
+- After pulling upstream updates, **re-apply or re-evaluate** the change; consider whether an override or migration can replace it long term.
