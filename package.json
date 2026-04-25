@@ -20,6 +20,8 @@
     "test:e2e": "turbo test:e2e --filter=@workspace/e2e",
     "test:vitest": "CI=1 turbo run test:vitest",
     "test:full:ni": "bun run test:vitest && bun run test:e2e:full:ni",
+    "trace:collector": "bun .github/agents/debug-trace/trace-collector.server.ts",
+    "trace:collector:ensure": "bash .github/agents/debug-trace/ensure-trace-collector.sh",
     "check": "bun run db:types && bun run format && bun run lint && bun run typecheck",
     "notifications:bundle": "bun run --cwd packages/notifications build:deno",
     "postinstall": "husky",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "bun-types": "^1.3.11",
     "husky": "^9.1.7",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",

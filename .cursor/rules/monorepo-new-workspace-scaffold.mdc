@@ -71,3 +71,4 @@ Use when adding **`apps/*`**, **`packages/*`**, **`services/*`**, or **`tests/*`
 4. `.prettierrc` + `.prettierignore` when **`format`** uses Prettier (recommended for **`tests/*`** too).
 5. No formatting/linting of generated dirs (ignore files + ESLint ignores if needed).
 6. For E2E: `.env.example`, stable selectors / tags (**`@smoke`**, **`@full`**) per repo conventions, and docs or skill pointers for prerequisites.
+7. **Every `process.env.*` introduced in this workspace is registered in root `turbo.json → globalEnv`.** Missing entries silently break Turbo cache and cause hard-to-reproduce env propagation bugs. See `/.cursor/rules/monorepo-env-minimalism.mdc`.

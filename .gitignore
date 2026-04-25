@@ -47,3 +47,6 @@ next-env.d.ts
 .temp
 
 .cursor/plans
+
+# Trace collector output
+debug/traces/

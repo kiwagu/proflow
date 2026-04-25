@@ -160,6 +160,26 @@ bun run test:e2e:smoke:ni
 bun run check
 ```
 
+## Debug trace workflow (local only)
+
+Debug tracing is a local diagnosis workflow and is not part of production runtime behavior.
+
+The custom debug-trace agent file layout below is relevant to VS Code agent discovery. In Cursor, a comparable debugging agent may already exist as a built-in capability, so this repository layout constraint does not apply there.
+
+```bash
+# Ensure local trace collector is running (idempotent)
+bun run trace:collector:ensure
+
+# Run collector directly
+bun run trace:collector
+```
+
+- For VS Code, keep the agent entry file at [.github/agents/debug-trace.agent.md](.github/agents/debug-trace.agent.md) and keep helper artifacts in [.github/agents/debug-trace](.github/agents/debug-trace).
+- Collector endpoint: `POST http://127.0.0.1:7788/trace`.
+- Collector output: `debug/traces/trace.ndjson` (gitignored).
+- During debug sessions, keep temporary trace calls isolated in `TRACE` regions for easy cleanup.
+- Before finishing a debug session, remove temporary trace clients and helper emitters from app code unless explicitly requested to keep them.
+
 ## Shared packages
 
 Most reusable pieces live in `packages/*`. For example:

@@ -33,7 +33,19 @@ alwaysApply: false
 - Reuse **existing** monorepo names (`GATEWAY_ENTRY_ORIGIN`, `NEXT_PUBLIC_GATEWAY_PLATFORM_PATH`, `NATS_URL`, …) so `.env` stays copy-paste aligned with `apps/web` / shells.
 - Fixed infrastructure contracts (JetStream stream name, durable consumer name, subject prefix) belong in **code** (`@workspace/domain-events`, local `const`) — not in env — unless multiple repos or operators must diverge without redeploying code.
 
+## `turbo.json` — mandatory registration
+
+Every `process.env.*` reference used inside any Turborepo workspace **must** appear in root `turbo.json → globalEnv` (or in `tasks.<task>.env` for task-scoped vars). If a variable is missing from `globalEnv`, Turbo will not propagate it to cached builds, causing silent failures that are hard to reproduce.
+
+**Rules:**
+
+- When you **add or rename** an env variable in any workspace, **immediately** add it to `turbo.json → globalEnv` in the same commit / PR.
+- When you **remove** a variable from all workspaces, remove it from `globalEnv` too.
+- Do not add `NEXT_PUBLIC_*` variables only to `next.config.ts` env mapping without also registering them in `turbo.json`.
+- `turbo.json` is the **single source of truth** for the monorepo env surface — treat it as part of the "API" of each variable.
+
 ## Agent checklist
 
 1. Before adding `FOO_SERVICE_URL`, check whether **`BAR` already used elsewhere** can carry the same value.
 2. Before env-toggling a constant, ask: will **another** service read this same key? If no, prefer a **typed constant** in the package.
+3. **After deciding to add an env var** — add it to `turbo.json → globalEnv` before finishing the task. This step is **not optional**.
