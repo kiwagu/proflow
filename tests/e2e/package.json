@@ -13,6 +13,7 @@
     "test:e2e:full": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
     "test:e2e:full:ni": "cross-env CI=1 NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --reporter=line -x",
     "test:e2e:headed": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts --headed",
+    "open-browser": "cross-env NODE_OPTIONS=\"--no-deprecation\" tsx src/open-browser.ts",
     "stagehand:smoke": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" tsx src/stagehand.chat.ts",
     "test:e2e:db-sweep": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" tsx src/helpers/e2e-artifact-sweep.ts"
   },

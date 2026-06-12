@@ -9,6 +9,7 @@
     "db:types:check": "make db-types && git diff --exit-code -- packages/db/src/database.types.ts",
     "dev:apps": "bun run ./scripts/turbo-with-exclude.ts dev",
     "dev": "bun run build:libs && bun run dev:apps",
+    "dev:browser": "bun run --cwd tests/e2e open-browser",
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck",
