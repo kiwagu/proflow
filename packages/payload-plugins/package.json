@@ -15,15 +15,15 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "payload": "3.83.0"
+    "payload": "catalog:payload"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "catalog:",
     "@workspace/entity-id": "workspace:^",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "eslint": "^10.1.0",
-    "typescript": "^5.9.3"
+    "eslint": "catalog:",
+    "typescript": "catalog:"
   },
   "exports": {
     ".": {

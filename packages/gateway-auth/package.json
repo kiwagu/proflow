@@ -11,21 +11,23 @@
     "test": "bunx vitest run"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.9.0",
-    "@supabase/supabase-js": "^2.100.0",
+    "@supabase/ssr": "catalog:",
+    "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*"
   },
   "peerDependencies": {
     "next": ">=15"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "eslint": "^10.1.0",
-    "next": "^16.2.3",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.1"
+    "eslint": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "exports": {
     "./dev-mutating-request-log": "./src/dev-mutating-request-log.ts",
