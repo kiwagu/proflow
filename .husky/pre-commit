@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -e
-. "$(dirname -- "$0")/_/ensure-path.sh"
+. "$(dirname -- "$0")/ensure-path.sh"
 bun run typecheck
 bun run lint
 bun run format
