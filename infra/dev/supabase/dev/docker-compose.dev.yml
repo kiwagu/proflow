@@ -1,34 +1,20 @@
 services:
   studio:
-    build:
-      context: ..
-      dockerfile: apps/studio/Dockerfile
-      target: dev
+    # Use the prebuilt prod image from the base compose (this repo has no apps/studio
+    # source to build from). Studio listens on 3000 inside the container; expose it on
+    # host 8082 → open http://localhost:8082.
     ports:
-      - 8082:8082
-    develop:
-      watch:
-        - action: sync
-          path: ../apps/studio
-          target: /app/apps/studio
-          ignore:
-            - node_modules/
-        - action: rebuild
-          path: package.json
+      - 8082:3000
 
-  mail:
-    container_name: supabase-mail
-    image: inbucket/inbucket:3.0.3
-    ports:
-      - '127.0.0.1:2500:2500' # SMTP
-      - '127.0.0.1:9090:9000' # web interface
-      - '127.0.0.1:1100:1100' # POP3
   auth:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # Dev mail goes to the Maildev container (infra/dev/docker-compose.yml). Auth and
+    # Maildev share the `proflow` Docker network, so reach it by service name on its
+    # INTERNAL port (1025) — NOT host.docker.internal:2500 (that host port is bound to
+    # 127.0.0.1 and is unreachable from the Docker bridge, so GoTrue fails with
+    # "dial ... 2500: connection refused").
     environment:
-      - GOTRUE_SMTP_HOST=host.docker.internal
-      - GOTRUE_SMTP_PORT=2500
+      - GOTRUE_SMTP_HOST=maildev
+      - GOTRUE_SMTP_PORT=1025
       - GOTRUE_SMTP_ADMIN_EMAIL=admin@proflow.local
       - GOTRUE_SMTP_SENDER_NAME=ProFlow Dev
       - GOTRUE_SMTP_USER=
