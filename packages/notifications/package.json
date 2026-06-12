@@ -22,23 +22,23 @@
     }
   },
   "dependencies": {
-    "@react-email/components": "^0.5.7",
-    "@react-email/render": "^1.4.0",
+    "@react-email/components": "^1.0.12",
+    "@react-email/render": "^2.0.8",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/settings-runtime": "workspace:*",
-    "intl-messageformat": "^10.7.16",
-    "nodemailer": "^6.10.1",
+    "intl-messageformat": "^11.2.8",
+    "nodemailer": "^8.0.11",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
-    "@types/nodemailer": "^7.0.4",
+    "@types/nodemailer": "^8.0.1",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "esbuild": "^0.27.2",
+    "esbuild": "^0.28.1",
     "eslint": "catalog:",
     "typescript": "catalog:"
   }
