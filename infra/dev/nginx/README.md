@@ -43,6 +43,14 @@ In apps:
   - `infra/dev/nginx/ssl/proflow.local.crt`
   - `infra/dev/nginx/ssl/proflow.local.key`
 
+  > Running mkcert from a snap-confined shell (e.g. VS Code's integrated
+  > terminal) can put `CAROOT` under `~/snap/.../mkcert` instead of
+  > `~/.local/share/mkcert`, so `mkcert -install` trusts a different CA than the
+  > one that signed the cert. Pin `CAROOT=~/.local/share/mkcert` for both
+  > `mkcert <domains>` and `mkcert -install` so they match. Symptom of a
+  > mismatch: a silent redirect loop back to the platform login page (the
+  > browser sign-in returns 200, but server-side `getUser()` fails TLS).
+
 ## Troubleshooting
 
 - `CORS failed` with duplicate `Access-Control-Allow-Origin`
@@ -52,6 +60,10 @@ In apps:
 - `UNABLE_TO_VERIFY_LEAF_SIGNATURE` in Next server logs
   - Ensure Node uses system CAs (`--use-system-ca` in app scripts).
   - Ensure cert SAN includes both `proflow.local` and `api.proflow.local`.
+
+- Login redirect loop: sign-in returns 200 but the app bounces back to the platform login page
+  - The local CA is not trusted by Node, so server-side `getUser()` fails TLS. Run `mkcert -install` (see TLS setup) and confirm `--use-system-ca` is set in the app dev scripts.
+  - If you already ran `mkcert -install`, check for the CAROOT/snap mismatch noted in TLS setup.
 
 - `Blocked cross-origin request to .../_next/webpack-hmr`
   - Add `proflow.local`/`https://proflow.local` to `allowedDevOrigins` in each Next app and restart dev servers.

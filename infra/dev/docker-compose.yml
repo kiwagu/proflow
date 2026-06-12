@@ -2,8 +2,10 @@ name: proflow
 
 services:
   # Ensure your DATABASE_URL uses 'mongo' as the hostname ie. mongodb://mongo/my-db-name
+  # Pinned to 7.0: mongo 8.x (tcmalloc-google) SIGSEGVs (exit 139) ~30s after start in some
+  # sandboxed/non-standard-kernel dev hosts. 7.0 is stable. Bump only after verifying it stays up.
   mongo:
-    image: mongo:latest
+    image: mongo:7.0
     ports:
       - '27017:27017'
     environment:

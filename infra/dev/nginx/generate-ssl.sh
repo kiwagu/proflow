@@ -38,7 +38,10 @@ prompt = no
 CN = ${cn}
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
+# digitalSignature is required for TLS 1.3 / ECDHE-RSA suites (the RSA key signs the
+# handshake, not just key-encipherment). Without it, modern Chrome rejects the cert
+# with ERR_SSL_KEY_USAGE_INCOMPATIBLE even when ignoreHTTPSErrors is set.
+keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 

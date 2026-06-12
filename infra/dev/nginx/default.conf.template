@@ -39,10 +39,12 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    set $proflow_dev_upstream http://host.docker.internal:@PROFLOW_DEV_APP_PORT@;
-
     location / {
-        proxy_pass $proflow_dev_upstream;
+        # Static proxy_pass (not a variable): nginx resolves host.docker.internal at
+        # startup via /etc/hosts, where Docker's host-gateway entry lives on native Linux.
+        # The variable form would force the resolver (Docker DNS 127.0.0.11), which returns
+        # NXDOMAIN for host.docker.internal on Linux → 502. Matches the Supabase upstream below.
+        proxy_pass http://host.docker.internal:@PROFLOW_DEV_APP_PORT@;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

@@ -3,6 +3,12 @@
  * Local dev: `bun run dev` in `apps/author` starts Next and this worker (concurrently). For worker only: `bun run identity:jetstream`.
  *
  * Requires NATS_URL, PAYLOAD_SECRET, MONGO_URL (and Payload env). Set IDENTITY_NATS_STREAM / IDENTITY_NATS_CONSUMER if needed.
+ *
+ * Runtime: executed under tsx (Node), not the Bun runtime. Importing @payload-config
+ * pulls @lexical/react, which trips an upstream Bun ESM circular-import bug
+ * (oven-sh/bun#17056, still open in 1.4 canary) and crashes with
+ * "Cannot access 'DecoratorNode' before initialization". Node evaluates the cycle
+ * correctly. `bun run …:jetstream` still works — bun only acts as the script runner.
  */
 import 'dotenv/config';
 

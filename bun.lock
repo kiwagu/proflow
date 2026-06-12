@@ -19,7 +19,7 @@
     },
     "apps/author": {
       "name": "author",
-      "version": "1.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@aws-sdk/client-s3": "^3.1033.0",
         "@eslint/eslintrc": "^3.3.5",
@@ -55,7 +55,7 @@
         "tw-animate-css": "^1.4.0",
       },
       "devDependencies": {
-        "@playwright/test": "1.58.2",
+        "@playwright/test": "1.61.0-alpha-2026-06-12",
         "@tailwindcss/postcss": "^4.2.2",
         "@testing-library/react": "16.3.2",
         "@types/node": "25.5.0",
@@ -76,7 +76,7 @@
     },
     "apps/platform": {
       "name": "platform",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@supabase/ssr": "^0.9.0",
         "@supabase/supabase-js": "^2.100.0",
@@ -111,7 +111,7 @@
     },
     "apps/web": {
       "name": "web",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@workspace/gateway-auth": "workspace:*",
         "@workspace/settings-runtime": "workspace:*",
@@ -135,7 +135,7 @@
     },
     "packages/db": {
       "name": "@workspace/db",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "zod": "^4.3.6",
       },
@@ -148,7 +148,7 @@
     },
     "packages/domain-events": {
       "name": "@workspace/domain-events",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "zod": "^4.3.6",
       },
@@ -162,7 +162,7 @@
     },
     "packages/entity-id": {
       "name": "@workspace/entity-id",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "bin": {
         "entity-id": "./dist/cli.js",
       },
@@ -181,7 +181,7 @@
     },
     "packages/eslint-config": {
       "name": "@workspace/eslint-config",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@next/eslint-plugin-next": "^16.2.3",
@@ -200,7 +200,7 @@
     },
     "packages/gateway-auth": {
       "name": "@workspace/gateway-auth",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@supabase/ssr": "^0.9.0",
         "@supabase/supabase-js": "^2.100.0",
@@ -221,7 +221,7 @@
     },
     "packages/i18n-catalogs": {
       "name": "@workspace/i18n-catalogs",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@workspace/settings-runtime": "workspace:*",
       },
@@ -236,7 +236,7 @@
     },
     "packages/logger": {
       "name": "@workspace/logger",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "pino": "^9.6.0",
       },
@@ -250,7 +250,7 @@
     },
     "packages/notifications": {
       "name": "@workspace/notifications",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@react-email/components": "^0.5.7",
         "@react-email/render": "^1.4.0",
@@ -290,7 +290,7 @@
     },
     "packages/rbac": {
       "name": "@workspace/rbac",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@supabase/supabase-js": "^2.100.0",
         "@workspace/db": "workspace:*",
@@ -305,7 +305,7 @@
     },
     "packages/settings-runtime": {
       "name": "@workspace/settings-runtime",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "zod": "^4.3.6",
       },
@@ -319,11 +319,11 @@
     },
     "packages/typescript-config": {
       "name": "@workspace/typescript-config",
-      "version": "0.0.0",
+      "version": "0.1.0",
     },
     "packages/ui": {
       "name": "@workspace/ui",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@radix-ui/react-checkbox": "^1.3.3",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -355,7 +355,7 @@
     },
     "services/notifications": {
       "name": "@workspace/notifications-service",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@supabase/supabase-js": "^2.57.4",
         "@workspace/db": "workspace:*",
@@ -374,9 +374,10 @@
     },
     "tests/e2e": {
       "name": "@workspace/e2e",
+      "version": "0.1.0",
       "devDependencies": {
         "@browserbasehq/stagehand": "^2.0.5",
-        "@playwright/test": "^1.58.2",
+        "@playwright/test": "1.61.0-alpha-2026-06-12",
         "@supabase/supabase-js": "^2.100.0",
         "@workspace/db": "workspace:*",
         "@workspace/rbac": "workspace:*",
@@ -985,7 +986,7 @@
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
-    "@playwright/test": ["@playwright/test@1.58.2", "", { "dependencies": { "playwright": "1.58.2" }, "bin": { "playwright": "cli.js" } }, "sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA=="],
+    "@playwright/test": ["@playwright/test@1.61.0-alpha-2026-06-12", "", { "dependencies": { "playwright": "1.61.0-alpha-2026-06-12" }, "bin": { "playwright": "cli.js" } }, "sha512-7/pG01SzB7+mDBx4mbMvVhsJ2BF0Hahu/u3lsGiFLMFBsOiNQnLxjeJPAYtVEXRCzQF+wL7TYbSMXl2CTLdXlQ=="],
 
     "@preact/signals-core": ["@preact/signals-core@1.14.0", "", {}, "sha512-AowtCcCU/33lFlh1zRFf/u+12rfrhtNakj7UpaGEsmMwUKpKWMVvcktOGcwBBNiB4lWrZWc01LhiyyzVklJyaQ=="],
 
@@ -3301,6 +3302,8 @@
 
     "@payloadcms/ui/scheduler": ["scheduler@0.25.0", "", {}, "sha512-xFVuu11jh+xcO7JOAGJNOXld8/TcEHK/4CituBUeUb5hqxJLj9YuemAEuvm9gQ/+pgXYfbQuqAkiYu+u7YEsNA=="],
 
+    "@playwright/test/playwright": ["playwright@1.61.0-alpha-2026-06-12", "", { "dependencies": { "playwright-core": "1.61.0-alpha-2026-06-12" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-QesdffgWIeUv7XvxVIZY/Bzo3zPzbRqCid6HoJIYk6nNNVJJermrA/6KPvG2LfIzNBoPxjPvzEg92u7xhfFvtw=="],
+
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" }, "bundled": true }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/runtime": ["@emnapi/runtime@1.9.1", "", { "dependencies": { "tslib": "^2.4.0" }, "bundled": true }, "sha512-VYi5+ZVLhpgK4hQ0TAjiQiZ6ol0oe4mBx7mVv7IflsiEp0OWoVsp/+f9Vc1hOhE0TtkORVrI1GvzyreqpgWtkA=="],
@@ -3427,6 +3430,8 @@
 
     "mongoose-lean-virtuals/mpath": ["mpath@0.8.4", "", {}, "sha512-DTxNZomBcTWlrMW76jy1wvV37X/cNNxPW1y2Jzd4DZkAaC5ZGsm8bfGfNOthcDuRJujXLqiuS6o3Tpy0JEoh7g=="],
 
+    "next/@playwright/test": ["@playwright/test@1.58.2", "", { "dependencies": { "playwright": "1.58.2" }, "bin": { "playwright": "cli.js" } }, "sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA=="],
+
     "npm-run-path/path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
 
     "openai/@types/node": ["@types/node@18.19.130", "", { "dependencies": { "undici-types": "~5.26.4" } }, "sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg=="],
@@ -3546,6 +3551,10 @@
     "@inquirer/core/wrap-ansi/strip-ansi": ["strip-ansi@6.0.1", "", { "dependencies": { "ansi-regex": "^5.0.1" } }, "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A=="],
 
     "@modelcontextprotocol/sdk/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
+
+    "@playwright/test/playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
+
+    "@playwright/test/playwright/playwright-core": ["playwright-core@1.61.0-alpha-2026-06-12", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-7f9p/MtwbfOTVH+NzvLWaIYuxDvFxOo3UxY2tVHGRf4+pvpy0Jg/hEspikDx0x6U+3ypc2pE7JdpjphNx8l0Ig=="],
 
     "@testing-library/dom/pretty-format/ansi-regex": ["ansi-regex@5.0.1", "", {}, "sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ=="],
 

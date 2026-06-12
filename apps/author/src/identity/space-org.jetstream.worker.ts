@@ -1,6 +1,12 @@
 /**
  * JetStream consumer for space/org lifecycle (Postgres -> Author Payload mirror).
  * Run with `bun run space-org:jetstream` or alongside `bun run dev`.
+ *
+ * Runtime: executed under tsx (Node), not the Bun runtime. Importing @payload-config
+ * pulls @lexical/react, which trips an upstream Bun ESM circular-import bug
+ * (oven-sh/bun#17056, still open in 1.4 canary) and crashes with
+ * "Cannot access 'DecoratorNode' before initialization". Node evaluates the cycle
+ * correctly. `bun run …:jetstream` still works — bun only acts as the script runner.
  */
 import 'dotenv/config';
 
