@@ -14,8 +14,8 @@
     "test": "cross-env NODE_OPTIONS=--use-system-ca bunx vitest run"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.9.0",
-    "@supabase/supabase-js": "^2.100.0",
+    "@supabase/ssr": "catalog:",
+    "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
@@ -23,25 +23,25 @@
     "@workspace/rbac": "workspace:*",
     "@workspace/settings-runtime": "workspace:*",
     "@workspace/ui": "workspace:*",
-    "dotenv": "^17.4.0",
-    "lucide-react": "^1.0.1",
-    "next": "^16.2.3",
-    "next-themes": "^0.4.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "dotenv": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "catalog:",
+    "next-themes": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "server-only": "^0.0.1",
-    "zod": "^4.3.6"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0",
-    "@tailwindcss/postcss": "^4.2.2",
-    "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "cross-env": "catalog:",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
-    "eslint": "^10.1.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

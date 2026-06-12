@@ -2,6 +2,13 @@ SHELL := /bin/bash
 
 SUPABASE ?= supabase
 SUPABASE_CMD ?= $(shell if command -v $(SUPABASE) >/dev/null 2>&1; then echo "$(SUPABASE)"; elif command -v bunx >/dev/null 2>&1; then echo "bunx supabase"; fi)
+# Supabase CLI >= ~2.9x reads ~/.supabase/profile for an access token on startup and aborts
+# (NotFound / LegacyPlatformAuthRequiredError) when it is missing — even for self-hosted
+# --db-url / --local commands that never call the platform. Any non-empty token satisfies the
+# guard; the DB connection uses --db-url, not this token. Real `supabase login` token (or a CI
+# secret) is honored when present in the environment (?= keeps it); placeholder unblocks local.
+SUPABASE_ACCESS_TOKEN ?= sbp_local_selfhosted_unused
+export SUPABASE_ACCESS_TOKEN
 SUPABASE_STACK_DIR ?= infra/dev/supabase
 COMPOSE_PROJECT_NAME ?= proflow
 PROJECT_REF ?=

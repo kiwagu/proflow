@@ -10,15 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.100.0",
+    "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "eslint": "^10.1.0",
-    "typescript": "^5.9.3"
+    "eslint": "catalog:",
+    "typescript": "catalog:"
   },
   "exports": {
     ".": {

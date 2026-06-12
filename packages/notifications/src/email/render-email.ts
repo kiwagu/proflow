@@ -1,4 +1,4 @@
-import { render } from '@react-email/render';
+import { render, toPlainText } from '@react-email/render';
 import * as React from 'react';
 
 import { getTranslator } from '../i18n/get-translator.js';
@@ -58,7 +58,7 @@ export async function renderEmail(
     });
 
     const html = await render(element);
-    const text = await render(element, { plainText: true });
+    const text = toPlainText(html);
 
     return { subject, html, text };
   }
@@ -95,7 +95,7 @@ export async function renderEmail(
     });
 
     const html = await render(element);
-    const text = await render(element, { plainText: true });
+    const text = toPlainText(html);
 
     return { subject, html, text };
   }

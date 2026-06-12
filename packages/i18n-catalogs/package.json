@@ -17,12 +17,12 @@
     "@workspace/settings-runtime": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "eslint": "^10.1.0",
-    "typescript": "^5.9.3",
-    "vitest": "^1.6.0"
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "exports": {
     ".": {

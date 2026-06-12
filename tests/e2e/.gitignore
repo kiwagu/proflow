@@ -1,0 +1,7 @@
+# Persistent profile + side-loaded extensions for `bun run dev:browser`
+.dev-browser-profile/
+.dev-browser-extensions/
+
+# Playwright artifacts
+test-results/
+playwright-report/

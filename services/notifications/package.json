@@ -12,18 +12,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/notifications": "workspace:*",
     "@workspace/settings-runtime": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.11",
-    "@types/node": "^25.5.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "catalog:",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
-    "eslint": "^10.1.0",
-    "typescript": "^5.9.3"
+    "eslint": "catalog:",
+    "typescript": "catalog:"
   }
 }
