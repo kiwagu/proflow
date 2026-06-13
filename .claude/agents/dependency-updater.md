@@ -8,6 +8,9 @@ description: >-
   set on one exact version, and verifies with the repo's own check/build/e2e
   gates before reporting. Invoke it whenever the user says "update deps",
   "bump Next", "upgrade Payload", "upgrade React", or asks what is safe to update.
+  It also owns syncing the self-hosted Supabase stack (`infra/dev/supabase/`) with
+  upstream `supabase/docker` — invoke it for "sync supabase", "update self-hosted
+  supabase", or "bump the supabase stack".
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, TodoWrite
 model: inherit
 ---
@@ -125,6 +128,63 @@ do not exceed it even if mainstream is newer. Say so explicitly in your report.
 6. **Report** concisely: a table of `package | old → new`, which bumps were held
    back and WHY (quote the peer range), the verification results, and any manual
    follow-up that genuinely cannot be automated.
+
+## Self-hosted Supabase stack (`infra/dev/supabase/`) — upstream sync
+
+This tree mirrors the official `supabase/docker` layout (it originated as an upstream
+pull). You own keeping it synced. Read `.cursor/rules/supabase-self-hosted-upstream.mdc`
+first — upstream-shaped files take the **smallest possible diff**, customizations are
+merged by hand, never blanket-overwritten.
+
+### Procedure
+
+1. Sparse-clone the upstream docker dir (don't clone the whole monorepo):
+   `git clone --depth 1 --filter=blob:none --sparse https://github.com/supabase/supabase /tmp/sb && (cd /tmp/sb && git sparse-checkout set docker)`
+2. `diff -rq /tmp/sb/docker infra/dev/supabase` → classify: upstream-only (add),
+   ours-only (keep), shared-differ (sync pure-upstream, merge customized).
+3. Bulk-copy with `rsync -a` **excluding the customized files below**; new upstream
+   files come along.
+4. Bump image versions in `docker-compose.yml` to upstream — **except Postgres**.
+5. Verify (below).
+
+### proflow conditions — preserve / decide every sync
+
+- **Postgres stays on 17.x.** Upstream master defaults to PG15 with a
+  `docker-compose.pg17.yml` overlay; never downgrade our inline PG17 to 15.
+- **Analytics (Logflare) + Vector stay OUT of the main compose.** Upstream removed
+  them (resource-heavy) into the opt-in `docker-compose.logs.yml` overlay. Keep that
+  overlay + `volumes/logs/vector.yml`; `.env.example` keeps `LOGFLARE_*` /
+  `DOCKER_SOCKET_LOCATION` / `GOOGLE_PROJECT_*` (the overlay needs them).
+- **Never overwrite these customized files — merge by hand:**
+  - `docker-compose.yml`: PG17 image; the send-email + identity hook env on
+    `auth`/`functions` (`GOTRUE_HOOK_SEND_EMAIL_*`, `AUTH_HOOK_SEND_EMAIL_SECRETS`,
+    `NOTIFICATIONS_*`, `IDENTITY_LIFECYCLE_HOOK_SECRETS`); the `functions` volume
+    mounts for `@workspace/domain-events`/`logger` dist; `NOTIFICATIONS_SERVICE_URL`
+    default `http://host.docker.internal:3010`.
+  - `volumes/api/kong.yml`: our `/mcp` route uses `ip-restriction`
+    (allow `127.0.0.1`, `::1`, `172.16.0.0/12`) instead of upstream's
+    `request-termination`; re-apply after any kong sync. (Upstream also adds SSO/SAML
+    and realtime openapi/tenants-block routes — adopt only if needed.)
+  - `dev/docker-compose.dev.yml` + `dev/data.sql`: our dev override (Maildev SMTP
+    `maildev:1025`, Studio `8082:3000`, seed) — not upstream's.
+  - `volumes/functions/*`: our edge functions (`email_sender`,
+    `identity_lifecycle_fanout`, `space_org_lifecycle_fanout`, `_shared`,
+    `logger_dist`) and the logger-integrated `main/index.ts`.
+  - `volumes/api/server.crt|key`, `README.md`.
+- **Role switch awareness:** upstream is moving Studio/postgres-meta operations from
+  `supabase_admin` to `postgres`. `make db-push` already runs as `postgres`; re-check.
+- The dev HTTPS edge is **our** `infra/dev/nginx` (proflow.local), not upstream's
+  caddy/nginx/envoy proxy variants — those stay as inert upstream mirrors.
+
+### Verify (mandatory)
+
+- `cd infra/dev/supabase && docker compose -p proflow -f docker-compose.yml -f ./dev/docker-compose.dev.yml config` (also validate `-f docker-compose.logs.yml` and `-f docker-compose.pg17.yml`).
+- Recreate with the dev override and confirm health: `… up -d --no-build`. Remove
+  deleted services with a **targeted** `docker rm -f <name>` — **never
+  `--remove-orphans`**: the sibling infra/dev containers (mongo, nginx, maildev, nats)
+  share the `proflow` project and would be deleted.
+- Smoke: signup → 200 + styled email (send-email hook → Maildev), REST via Kong,
+  `make db-status` / migrations intact.
 
 ## Guardrails
 
