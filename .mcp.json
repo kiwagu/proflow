@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "supabase-self-hosted": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    },
+    "stagehand-docs": {
+      "type": "http",
+      "url": "https://docs.stagehand.dev/mcp"
+    },
+    "deepwiki": {
+      "type": "http",
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "shadcn": {
+      "command": "bunx",
+      "args": ["shadcn@latest", "mcp"],
+      "env": {
+        "PATH": "${PATH}:${HOME}/.bun/bin"
+      }
+    },
+    "stagehand-local": {
+      "command": "bunx",
+      "args": ["stagehand-mcp-local"],
+      "env": {
+        "STAGEHAND_ENV": "LOCAL",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "PLAYWRIGHT_BASE_URL": "https://proflow.local/platform",
+        "PATH": "${PATH}:${HOME}/.bun/bin"
+      }
+    },
+    "context7": {
+      "command": "bunx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "PATH": "${PATH}:${HOME}/.bun/bin"
+      }
+    }
+  }
+}
