@@ -460,7 +460,11 @@ services:
       LOG_FORMAT: "${LOG_FORMAT:-}"
       # Used by `email_sender` (GoTrue send_email hook): must match GOTRUE_HOOK_SEND_EMAIL_SECRETS (whsec_ value).
       AUTH_HOOK_SEND_EMAIL_SECRETS: ${GOTRUE_HOOK_SEND_EMAIL_SECRETS:-}
-      NOTIFICATIONS_SERVICE_URL: ${NOTIFICATIONS_SERVICE_URL:-http://172.22.0.1:3010}
+      # host.docker.internal resolves to the Docker host gateway (functions has the
+      # host-gateway extra_hosts in dev/docker-compose.dev.yml); the host runs
+      # services/notifications on :3010. A hardcoded bridge IP (e.g. 172.x.0.1) is
+      # brittle — it varies per network — so prefer the host alias.
+      NOTIFICATIONS_SERVICE_URL: ${NOTIFICATIONS_SERVICE_URL:-http://host.docker.internal:3010}
       NOTIFICATIONS_INTERNAL_TOKEN: ${NOTIFICATIONS_INTERNAL_TOKEN:-}
       IDENTITY_LIFECYCLE_HOOK_SECRETS: ${GOTRUE_HOOK_AFTER_USER_CREATED_SECRETS:-}
       IDENTITY_INTERNAL_INGEST_SECRET: dev_proflow_identity_internal_ingest

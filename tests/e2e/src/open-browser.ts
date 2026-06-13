@@ -60,7 +60,9 @@ const extArgs =
       ]
     : [];
 
-const base = (process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local').replace(/\/$/, '');
+const base = (
+  process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local'
+).replace(/\/$/, '');
 const arg = process.argv[2] ?? '/platform';
 const url = `${base}${arg.startsWith('/') ? arg : `/${arg}`}`;
 
@@ -76,7 +78,9 @@ const page = context.pages()[0] ?? (await context.newPage());
 await page.goto(url, { waitUntil: 'domcontentloaded' });
 console.log(`Opened ${url} (profile: ${profileDir})`);
 if (extensions.length > 0) {
-  console.log(`Loaded ${extensions.length} extension(s): ${extensions.map((p) => path.basename(p)).join(', ')}`);
+  console.log(
+    `Loaded ${extensions.length} extension(s): ${extensions.map((p) => path.basename(p)).join(', ')}`
+  );
 }
 console.log('Close the window to exit.');
 

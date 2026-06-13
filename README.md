@@ -133,10 +133,47 @@ This starts all apps through Turbo. Everything is served through the nginx gatew
 | `https://proflow.local/platform` | Platform admin (`apps/platform`) |
 | `https://proflow.local/author` | Payload CMS authoring (`apps/author`) |
 | `https://api.proflow.local` | Supabase API (Kong) |
+| `http://localhost:8082` | Supabase Studio |
+| `http://localhost:9090` | Maildev — captured dev email |
+
+> `bun run dev` (Turbo) also starts `services/notifications`, which the styled-email
+> pipeline below needs. `bun run dev:apps` starts only the shell apps (no notifications).
 
 ### 9. Create the first platform super-admin
 
 Set `PLATFORM_INITIAL_SUPER_ADMIN_EMAIL` in `apps/platform/.env` to the email you plan to sign in with. On the first sign-in, if no super-admin grant exists yet, the server seals the bootstrap path and grants `platform.admin.override` once.
+
+### 10. Styled transactional email (GoTrue send-email hook)
+
+By default GoTrue sends its **plain built-in** auth emails. The styled ProFlow
+templates (`@workspace/notifications`, React Email) are delivered through the
+**send-email hook**: GoTrue → Edge `email_sender` → `services/notifications` →
+SMTP → Maildev. It is **off by default** because it needs a shared secret and the
+notifications service running. To enable it:
+
+1. In `infra/dev/supabase/.env` set (generate the secret/token):
+
+   ```bash
+   GOTRUE_HOOK_SEND_EMAIL_ENABLED=true
+   GOTRUE_HOOK_SEND_EMAIL_URI=https://kong:8443/functions/v1/email_sender
+   GOTRUE_HOOK_SEND_EMAIL_SECRETS=$(openssl rand -base64 32 | tr -d '\n' | sed 's/^/v1,whsec_/')
+   NOTIFICATIONS_INTERNAL_TOKEN=$(openssl rand -hex 24)
+   NOTIFICATIONS_SERVICE_URL=http://host.docker.internal:3010
+   ```
+
+2. Create `services/notifications/.env` (`cp services/notifications/.env.examples services/notifications/.env`)
+   and set SMTP at Maildev (`SMTP_HOST=127.0.0.1`, `SMTP_PORT=2500`), the **same**
+   `NOTIFICATIONS_INTERNAL_TOKEN`, and `SUPABASE_SERVICE_ROLE_KEY`.
+
+3. Recreate the affected containers so they pick up the env, then (re)start dev:
+
+   ```bash
+   make stack-up                     # recreates auth + functions with the new env
+   bun run dev                       # includes services/notifications
+   ```
+
+Sign up a user and the confirmation email lands styled in Maildev
+(`http://localhost:9090`). Without this, you still get a working — just plain — email.
 
 ## Useful commands
 
