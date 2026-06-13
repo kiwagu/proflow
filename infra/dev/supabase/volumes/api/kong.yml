@@ -370,7 +370,12 @@ services:
           allow:
             - 127.0.0.1
             - ::1
-            - 172.22.0.1
+            # Docker bridge gateways always fall in 172.16.0.0/12 (default pool
+            # 172.17–172.31), so host clients reaching Kong through a published port
+            # (NAT'd to the gateway IP) match on any machine without per-host tweaks.
+            # Dev-only: Kong:8000 is on 0.0.0.0, but typical LANs (192.168/16, 10/8)
+            # don't overlap this range.
+            - 172.16.0.0/12
           deny: []
 
   ## Protected Dashboard - catch all remaining routes
