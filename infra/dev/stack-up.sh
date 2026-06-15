@@ -3,7 +3,7 @@
 set -euo pipefail
 
 compose_project_name="${COMPOSE_PROJECT_NAME:-proflow}"
-supabase_dev_services_raw="${SUPABASE_DEV_SERVICES:-studio kong auth rest realtime storage imgproxy meta functions analytics db vector supavisor}"
+supabase_dev_services_raw="${SUPABASE_DEV_SERVICES:-studio kong auth rest realtime storage imgproxy meta functions db supavisor}"
 from_scratch=0
 force_recreate=0
 
@@ -22,7 +22,7 @@ Options:
 Environment:
   COMPOSE_PROJECT_NAME       docker compose project name (default: proflow)
   SUPABASE_DEV_SERVICES      explicit services to start from dev override
-                             (default: "studio kong auth rest realtime storage imgproxy meta functions analytics db vector supavisor")
+                             (default: "studio kong auth rest realtime storage imgproxy meta functions db supavisor")
 EOF
 }
 

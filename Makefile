@@ -73,7 +73,7 @@ help:
 	@echo "  make stack-recreate FORCE_CLEAN=1"
 	@echo "  make stack-recreate-clean RECREATE_YES=1   # non-interactive; auto db-push unless SKIP_STACK_DB_PUSH=1"
 	@echo "  make stack-recreate COMPOSE_PROJECT_NAME=proflow"
-	@echo "  make stack-recreate SUPABASE_DEV_SERVICES='studio kong auth rest realtime storage imgproxy meta functions analytics db vector supavisor'"
+	@echo "  make stack-recreate SUPABASE_DEV_SERVICES='studio kong auth rest realtime storage imgproxy meta functions db supavisor'"
 	@echo "  make db-status"
 	@echo "  make mcp-test"
 	@echo "  make db-new NAME=create_lms_assignments"
