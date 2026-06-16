@@ -26,6 +26,10 @@ alwaysApply: false
 
 Use the shadcn patterns below as required project conventions, not optional suggestions.
 
+## Exception — `apps/author` admin
+
+The `apps/author` Payload admin panel uses Payload's own component library (`@payloadcms/ui`) for its admin views — it consolidates on one design system inside the Payload admin runtime. shadcn (`@workspace/ui`) stays mandatory for every other surface: `apps/platform`, `apps/web`, and any end-user-facing pages (including a future end-user authoring surface, should one exist). Do not convert author admin views to shadcn.
+
 Reference sources:
 - `/.agents/skills/shadcn/rules/`
 - `/.agents/skills/shadcn/SKILL.md`

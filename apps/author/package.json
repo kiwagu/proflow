@@ -43,9 +43,12 @@
     "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
     "@workspace/domain-events": "workspace:*",
+    "@workspace/entity-id": "workspace:*",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/knowledge-contracts": "workspace:*",
+    "@workspace/knowledge-engine": "workspace:*",
     "@workspace/payload-plugins": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@workspace/ui": "workspace:*",
@@ -59,7 +62,8 @@
     "react-dom": "catalog:",
     "shadcn": "catalog:",
     "sharp": "0.35.1",
-    "tw-animate-css": "catalog:"
+    "tw-animate-css": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

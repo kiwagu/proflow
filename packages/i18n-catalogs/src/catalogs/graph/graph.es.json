@@ -1,0 +1,15 @@
+{
+  "graph.page.title": "Conocimiento",
+  "graph.page.description": "Un solo grafo de conocimiento, renderizado como distintas apps al cambiar la proyección guardada.",
+  "graph.switcher.label": "Vista",
+  "graph.switcher.placeholder": "Selecciona una proyección",
+  "graph.switcher.empty": "No hay proyecciones disponibles en este espacio.",
+  "graph.grid.empty": "No hay recursos para mostrar.",
+  "graph.grid.bodyPresent": "Tiene contenido de cuerpo",
+  "graph.course.locked": "Se desbloquea tras el paso anterior (el ritmo real es una función por usuario, próximamente).",
+  "graph.course.step": "Paso {position}",
+  "graph.course.empty": "No hay pasos del curso para mostrar.",
+  "graph.view.unsupported": "Esta vista aún no es compatible.",
+  "graph.body.present": "Cuerpo",
+  "graph.noSpace": "No hay espacio activo seleccionado."
+}

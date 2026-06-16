@@ -20,8 +20,11 @@
   "devDependencies": {
     "@browserbasehq/stagehand": "^3.5.0",
     "@playwright/test": "catalog:",
+    "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
+    "@workspace/knowledge-contracts": "workspace:*",
+    "@workspace/knowledge-engine": "workspace:*",
     "@workspace/rbac": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "cross-env": "catalog:",

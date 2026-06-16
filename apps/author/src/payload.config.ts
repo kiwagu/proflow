@@ -15,6 +15,7 @@ import { Organizations } from './collections/Organizations';
 import { Spaces } from './collections/Spaces';
 import { Users } from './collections/Users';
 import { Media } from './collections/Media';
+import { Bodies } from './collections/Bodies';
 import { customTranslations } from './i18n/custom-translations';
 
 const filename = fileURLToPath(import.meta.url);
@@ -56,9 +57,17 @@ export default buildConfig({
       logout: {
         Button: '/admin/logout-button',
       },
+      views: {
+        knowledgeNewText: {
+          // Thin custom admin-view: the single authoring flow (slice-03 §4).
+          // Reachable at /admin/knowledge/new-text.
+          path: '/knowledge/new-text',
+          Component: '/admin/knowledge/new-text-resource.view.client',
+        },
+      },
     },
   },
-  collections: [Organizations, Spaces, Users, Media],
+  collections: [Organizations, Spaces, Users, Media, Bodies],
   editor: lexicalEditor(),
   i18n: {
     supportedLanguages: {
@@ -85,6 +94,7 @@ export default buildConfig({
       tenantsSlug: 'spaces',
       collections: {
         media: {},
+        bodies: {},
       },
       userHasAccessToAllTenants: (user) =>
         Boolean(
@@ -93,7 +103,7 @@ export default buildConfig({
         ),
     }),
     customIdPlugin(
-      { organizations: 'org', spaces: 'spc' },
+      { organizations: 'org', spaces: 'spc', bodies: 'bod' },
       { field: 'id', mode: 'validate' }
     ),
     s3Storage({

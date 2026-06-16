@@ -1,0 +1,15 @@
+{
+  "graph.page.title": "Knowledge",
+  "graph.page.description": "One knowledge graph, rendered as different apps by switching the saved projection.",
+  "graph.switcher.label": "View",
+  "graph.switcher.placeholder": "Select a projection",
+  "graph.switcher.empty": "No projections available in this space.",
+  "graph.grid.empty": "No resources to show.",
+  "graph.grid.bodyPresent": "Has body content",
+  "graph.course.locked": "Unlocks after the previous step (real pacing is a per-user feature, coming later).",
+  "graph.course.step": "Step {position}",
+  "graph.course.empty": "No course steps to show.",
+  "graph.view.unsupported": "This view is not supported yet.",
+  "graph.body.present": "Body",
+  "graph.noSpace": "No active space selected."
+}
