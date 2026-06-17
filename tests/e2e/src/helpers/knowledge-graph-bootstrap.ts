@@ -991,6 +991,389 @@ export async function bootstrapPerUserGatingActors(
   };
 }
 
+// ── slice-07: access-layer (cohort + hierarchy) demo ─────────────────────────
+//
+// Hard-access dimensions are RLS, never gating: a failing dimension HIDES the
+// node (absent from `items`). The demo lives entirely in the harness (the
+// identity-sync lesson): a cohort scope + memberships + knowledge_resource_scopes
+// on SOME nodes, a reporting_lines chain (mgr2 → mgr → subordinate), and nodes
+// owned by the subordinate. Vocab/tables are migrated; cohorts/lines/links are
+// data (INSERT rows, zero DDL per cohort).
+
+export type AccessLayerActors = {
+  /** Member of cohort scope-A (sees scope-restricted nodes via the cohort branch). */
+  cohortMember: KnowledgeActor;
+  /** NOT a member of scope-A (scope-restricted nodes are hidden). */
+  cohortStranger: KnowledgeActor;
+  /** Manager of `subordinate` (sees subordinate-owned nodes via hierarchy). */
+  manager: KnowledgeActor;
+  /** Owner of the hierarchy-owned demo nodes; reports to `manager`. */
+  subordinate: KnowledgeActor;
+  /** Peer of `subordinate` (no line) — does NOT see subordinate-owned nodes. */
+  peer: KnowledgeActor;
+  /** Manager of `manager` (transitivity: sees subordinate-owned nodes via recursion). */
+  managerOfManager: KnowledgeActor;
+  /** Extra user ids to cascade-clean on teardown. */
+  extraUserIds: string[];
+};
+
+export type AccessLayerGraph = {
+  /** scope-A id (the cohort restricting `cohortRestrictedNodeId`). */
+  scopeAId: string;
+  /** A node linked to scope-A: visible to members only (cohort hides it). */
+  cohortRestrictedNodeId: string;
+  cohortRestrictedTitle: string;
+  /** A node with NO scope link: visible to everyone with read (scope_gate=true). */
+  unrestrictedNodeId: string;
+  unrestrictedTitle: string;
+  /** A node owned by `subordinate`, restricted to an empty cohort: hierarchy-only visibility. */
+  hierarchyNodeId: string;
+  hierarchyTitle: string;
+  /** A node BOTH scope-A-restricted AND owned by `subordinate` (composition test). */
+  composedNodeId: string;
+  composedTitle: string;
+  /** 'Access KB' tag node + saved KB projection selecting the demo nodes via `tagged`. */
+  tagNodeId: string;
+  projectionId: string;
+};
+
+/**
+ * Add the slice-07 access-layer actors to an existing tenant: cohort member /
+ * stranger, a manager → subordinate → (mgr-of-mgr) chain, and a peer. All are
+ * active space members carrying the `admin` role (so base read access holds —
+ * the access DIMENSION, not the verb, is what the test exercises). Created
+ * through the real RBAC path (service-role memberships + `user_role`).
+ */
+export async function bootstrapAccessLayerActors(
+  tenant: KnowledgeGraphTenant
+): Promise<AccessLayerActors> {
+  const { service, organizationId, spaceId } = tenant;
+  const { adminRoleId } = await resolveRoleIds(service);
+
+  const labels = [
+    'cohort-member',
+    'cohort-stranger',
+    'manager',
+    'subordinate',
+    'peer',
+    'manager-of-manager',
+  ] as const;
+
+  const created = await Promise.all(
+    labels.map((label) => createActor(service, label))
+  );
+
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert(
+      created.map((u) => ({ organization_id: organizationId, user_id: u.id }))
+    );
+  if (omErr) throw new Error(`access org_membership: ${omErr.message}`);
+
+  const { error: smErr } = await service.from('space_memberships').insert(
+    created.map((u) => ({
+      space_id: spaceId,
+      user_id: u.id,
+      status: 'active',
+    }))
+  );
+  if (smErr) throw new Error(`access space_membership: ${smErr.message}`);
+
+  const { error: urErr } = await service.from('user_role').insert(
+    created.map((u) => ({
+      user_id: u.id,
+      space_id: spaceId,
+      role_id: adminRoleId,
+    }))
+  );
+  if (urErr) throw new Error(`access user_role: ${urErr.message}`);
+
+  const actors: KnowledgeActor[] = await Promise.all(
+    created.map(async (u) => ({
+      userId: u.id,
+      email: u.email,
+      password: u.password,
+      client: await authenticatedClient(u.email, u.password),
+    }))
+  );
+
+  const [
+    cohortMember,
+    cohortStranger,
+    manager,
+    subordinate,
+    peer,
+    managerOfManager,
+  ] = actors;
+  if (
+    !cohortMember ||
+    !cohortStranger ||
+    !manager ||
+    !subordinate ||
+    !peer ||
+    !managerOfManager
+  ) {
+    throw new Error('bootstrapAccessLayerActors: actor set incomplete');
+  }
+
+  return {
+    cohortMember,
+    cohortStranger,
+    manager,
+    subordinate,
+    peer,
+    managerOfManager,
+    extraUserIds: created.map((u) => u.id),
+  };
+}
+
+/**
+ * Seed the slice-07 access-layer demo over the tenant, as the granted admin actor
+ * (every write passes RLS `with check`):
+ *  - a cohort scope-A with `cohortMember` enrolled (NOT `cohortStranger`);
+ *  - a cohort scope-B with NOBODY enrolled (isolates the hierarchy branch: a node
+ *    restricted to scope-B fails the (base AND scope) branch for everyone, so only
+ *    the hierarchy OR-branch can reveal it);
+ *  - a `reporting_lines` chain managerOfManager → manager → subordinate;
+ *  - four demo nodes tagged into an 'Access KB' tag:
+ *      • cohortRestricted — linked to scope-A (cohort hides it from non-members);
+ *      • unrestricted — no scope link, default-visible to all space members;
+ *      • hierarchy — owned by `subordinate` AND restricted to scope-B (nobody is a
+ *        member), so it surfaces ONLY through the manager-hierarchy branch;
+ *      • composed — scope-A-restricted AND owned by `subordinate` (composition:
+ *        cohort member sees via scope, manager sees via hierarchy, stranger neither);
+ *  - a saved KB projection selecting these via the incoming `tagged` traversal.
+ */
+export async function seedAccessLayerDemo(
+  tenant: KnowledgeGraphTenant,
+  actors: AccessLayerActors
+): Promise<AccessLayerGraph> {
+  const { granted, spaceId, service } = tenant;
+  const db = granted.client;
+
+  // ── cohort scope-A + membership (cohortMember only) ────────────────────────
+  const { data: scope, error: scopeErr } = await db
+    .from('scopes')
+    .insert({
+      space_id: spaceId,
+      key: `cohort-a-${slug()}`,
+      name: 'Cohort A',
+      created_by: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (scopeErr || !scope?.id) {
+    throw new Error(
+      `seedAccessLayerDemo scope: ${scopeErr?.message ?? 'no id'}`
+    );
+  }
+  const scopeAId = scope.id;
+
+  const { error: memErr } = await db.from('scope_memberships').insert({
+    scope_id: scopeAId,
+    user_id: actors.cohortMember.userId,
+    created_by: granted.userId,
+  });
+  if (memErr)
+    throw new Error(`seedAccessLayerDemo membership: ${memErr.message}`);
+
+  // ── cohort scope-B with NO members (isolates the hierarchy branch) ─────────
+  const { data: scopeB, error: scopeBErr } = await db
+    .from('scopes')
+    .insert({
+      space_id: spaceId,
+      key: `cohort-b-${slug()}`,
+      name: 'Cohort B',
+      created_by: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (scopeBErr || !scopeB?.id) {
+    throw new Error(
+      `seedAccessLayerDemo scope-B: ${scopeBErr?.message ?? 'no id'}`
+    );
+  }
+  const scopeBId = scopeB.id;
+
+  // ── reporting lines: managerOfManager → manager → subordinate ──────────────
+  const { error: rlErr } = await db.from('reporting_lines').insert([
+    {
+      space_id: spaceId,
+      manager_id: actors.manager.userId,
+      subordinate_id: actors.subordinate.userId,
+      created_by: granted.userId,
+    },
+    {
+      space_id: spaceId,
+      manager_id: actors.managerOfManager.userId,
+      subordinate_id: actors.manager.userId,
+      created_by: granted.userId,
+    },
+  ]);
+  if (rlErr)
+    throw new Error(`seedAccessLayerDemo reporting_lines: ${rlErr.message}`);
+
+  // ── demo nodes (tag + four content nodes) ──────────────────────────────────
+  const cohortRestrictedTitle = 'Access Node — Cohort Restricted';
+  const unrestrictedTitle = 'Access Node — Unrestricted';
+  const hierarchyTitle = 'Access Node — Hierarchy Owned';
+  const composedTitle = 'Access Node — Composed';
+
+  const { data: tag, error: tagErr } = await db
+    .from('knowledge_resources')
+    .insert({
+      space_id: spaceId,
+      kind: 'tag',
+      title: 'Access KB',
+      status: 'active',
+      created_by: granted.userId,
+      owner_user_id: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (tagErr || !tag?.id) {
+    throw new Error(`seedAccessLayerDemo tag: ${tagErr?.message ?? 'no id'}`);
+  }
+  const tagNodeId = tag.id;
+
+  const { data: nodes, error: nodesErr } = await db
+    .from('knowledge_resources')
+    .insert([
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: cohortRestrictedTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: unrestrictedTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: hierarchyTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: actors.subordinate.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: composedTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: actors.subordinate.userId,
+      },
+    ])
+    .select('id,title');
+  if (nodesErr || !nodes || nodes.length !== 4) {
+    throw new Error(
+      `seedAccessLayerDemo nodes: ${nodesErr?.message ?? 'count'}`
+    );
+  }
+  const byTitle = new Map(nodes.map((n) => [n.title, n.id]));
+  const cohortRestrictedNodeId = byTitle.get(cohortRestrictedTitle);
+  const unrestrictedNodeId = byTitle.get(unrestrictedTitle);
+  const hierarchyNodeId = byTitle.get(hierarchyTitle);
+  const composedNodeId = byTitle.get(composedTitle);
+  if (
+    !cohortRestrictedNodeId ||
+    !unrestrictedNodeId ||
+    !hierarchyNodeId ||
+    !composedNodeId
+  ) {
+    throw new Error('seedAccessLayerDemo nodes: title ids missing');
+  }
+
+  // ── tagged edges (node → tag), the Variant-B selection seam ────────────────
+  const { error: edgeErr } = await db.from('knowledge_edges').insert(
+    [
+      cohortRestrictedNodeId,
+      unrestrictedNodeId,
+      hierarchyNodeId,
+      composedNodeId,
+    ].map((nodeId, i) => ({
+      space_id: spaceId,
+      from_id: nodeId,
+      to_id: tagNodeId,
+      relation_type: 'tagged',
+      position: i,
+      created_by: granted.userId,
+    }))
+  );
+  if (edgeErr)
+    throw new Error(`seedAccessLayerDemo tagged: ${edgeErr.message}`);
+
+  // ── cohort links ───────────────────────────────────────────────────────────
+  //  - cohortRestricted + composed → scope-A (cohortMember is a member);
+  //  - hierarchy → scope-B (NO members), so its (base AND scope) branch fails for
+  //    everyone and it can surface ONLY through the manager-hierarchy OR-branch.
+  const { error: krsErr } = await db.from('knowledge_resource_scopes').insert([
+    {
+      resource_id: cohortRestrictedNodeId,
+      scope_id: scopeAId,
+      linked_by: granted.userId,
+    },
+    {
+      resource_id: composedNodeId,
+      scope_id: scopeAId,
+      linked_by: granted.userId,
+    },
+    {
+      resource_id: hierarchyNodeId,
+      scope_id: scopeBId,
+      linked_by: granted.userId,
+    },
+  ]);
+  if (krsErr)
+    throw new Error(`seedAccessLayerDemo resource_scopes: ${krsErr.message}`);
+
+  // ── saved KB projection over the demo nodes (incoming `tagged`) ────────────
+  const { data: prj, error: prjErr } = await db
+    .from('projections')
+    .insert({
+      space_id: spaceId,
+      app_type: 'knowledge_base',
+      name: 'Access KB',
+      view: 'grid',
+      spec: buildKnowledgeBaseSpec(tagNodeId),
+      created_by: granted.userId,
+      owner_user_id: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (prjErr || !prj?.id) {
+    throw new Error(
+      `seedAccessLayerDemo projection: ${prjErr?.message ?? 'no id'}`
+    );
+  }
+
+  // `service` is intentionally unused for assertions here; keep the signature
+  // aligned with the other seeders (tenant carries it for the spec).
+  void service;
+
+  return {
+    scopeAId,
+    cohortRestrictedNodeId,
+    cohortRestrictedTitle,
+    unrestrictedNodeId,
+    unrestrictedTitle,
+    hierarchyNodeId,
+    hierarchyTitle,
+    composedNodeId,
+    composedTitle,
+    tagNodeId,
+    projectionId: prj.id,
+  };
+}
+
 /**
  * Cascade-delete the org (→ spaces → resources/edges/projections/memberships/
  * user_role) and both auth users + profiles. `extraUserIds` (slice-05 gating

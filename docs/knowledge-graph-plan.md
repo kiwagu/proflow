@@ -157,10 +157,25 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
       authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
       while a reader without `space.knowledge.read` sees no documents at all (access = RLS)
-- [ ] Access-layer extensions (the COMPLEMENTARY mechanism): `scopes` / `scope_memberships` as the
-      generic audience/grouping primitive (cohort / folder ACL / section audience) and graph-derived
-      access predicates (e.g. manager→subordinate hierarchy as edges + an RLS predicate). Deferred to
-      a future slice so security rules never leak into the gating layer
+- [x] Access-layer extensions (the COMPLEMENTARY mechanism): the hard/access layer (L1/RLS) is now a
+      set of COMPOSABLE predicate dimensions over a node's visibility — symmetric to the gating-rule
+      registry, but hard (RLS, auditable, non-bypassable). A failed dimension HIDES the node (absent
+      from the result), unlike gating which keeps it visible. Two dimensions landed: (a) COHORT via the
+      existing `scopes` / `scope_memberships` primitive (generic audience / folder ACL / section
+      audience) — a thin `knowledge_resource_scopes` link plus a `scope_gate` predicate (an
+      unrestricted node stays visible; a restricted node is visible iff the user is a member of ≥1 of
+      its scopes); (b) manager→subordinate HIERARCHY — a space-scoped `reporting_lines` table plus a
+      RECURSIVE RLS predicate granting a manager access to resources OWNED (`owner_user_id`) by their
+      transitive subordinates (assignment-based access is a documented future option). The dimensions
+      COMPOSE through one resource-level helper `auth_user_can_access_resource` (the SELECT policy
+      passes the row's `id` / `space_id` / `owner_user_id` so it also holds under `... RETURNING`) —
+      `(base AND scope) OR hierarchy` — so adding a dimension is a sub-predicate plus one helper line,
+      not a rewrite of every policy; cohorts/lines are DATA (a new cohort = inserted rows, not a
+      migration). The resolver is unchanged (the projection query runs `security invoker`, so the new
+      RLS hides nodes natively across all projections/traversal). These are L1 ACCESS, NOT gating: they
+      are never placed in the gating registry; a hidden node is ABSENT, never a visible `available=false`
+      flag — keeping the authorization ≠ gating boundary intact. Demo data lives in the e2e harness, not
+      a migration
 
 ## 6. First projection — validate the invariant
 

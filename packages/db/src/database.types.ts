@@ -182,6 +182,42 @@ export type Database = {
           },
         ];
       };
+      knowledge_resource_scopes: {
+        Row: {
+          created_at: string;
+          linked_by: string;
+          resource_id: string;
+          scope_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          linked_by: string;
+          resource_id: string;
+          scope_id: string;
+        };
+        Update: {
+          created_at?: string;
+          linked_by?: string;
+          resource_id?: string;
+          scope_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'knowledge_resource_scopes_resource_id_fkey';
+            columns: ['resource_id'];
+            isOneToOne: false;
+            referencedRelation: 'knowledge_resources';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'knowledge_resource_scopes_scope_id_fkey';
+            columns: ['scope_id'];
+            isOneToOne: false;
+            referencedRelation: 'scopes';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       knowledge_resources: {
         Row: {
           body_ref: Json | null;
@@ -531,6 +567,41 @@ export type Database = {
           label?: string;
         };
         Relationships: [];
+      };
+      reporting_lines: {
+        Row: {
+          created_at: string;
+          created_by: string;
+          id: string;
+          manager_id: string;
+          space_id: string;
+          subordinate_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          created_by: string;
+          id?: string;
+          manager_id: string;
+          space_id: string;
+          subordinate_id: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string;
+          id?: string;
+          manager_id?: string;
+          space_id?: string;
+          subordinate_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'reporting_lines_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       resource_kinds: {
         Row: {
@@ -1109,6 +1180,15 @@ export type Database = {
         Args: { p_permission_key: string; p_space_id: string };
         Returns: boolean;
       };
+      auth_user_can_access_resource: {
+        Args: {
+          p_owner_user_id: string;
+          p_resource_id: string;
+          p_space_id: string;
+          p_verb: string;
+        };
+        Returns: boolean;
+      };
       auth_user_can_manage_space_invites: {
         Args: { p_space_id: string; p_user_id: string };
         Returns: boolean;
@@ -1133,6 +1213,10 @@ export type Database = {
         Args: { p_space_id: string; p_user_id: string };
         Returns: boolean;
       };
+      auth_user_manages_owner: {
+        Args: { p_resource_owner: string; p_space_id: string };
+        Returns: boolean;
+      };
       auth_user_member_of_org: {
         Args: { p_organization_id: string; p_user_id: string };
         Returns: boolean;
@@ -1149,6 +1233,10 @@ export type Database = {
       entity_id_encode_rand_16: { Args: { bytes: string }; Returns: string };
       entity_id_encode_ts_10: { Args: { ms: number }; Returns: string };
       entity_id_generate: { Args: { prefix: string }; Returns: string };
+      knowledge_resource_scope_gate: {
+        Args: { p_resource_id: string };
+        Returns: boolean;
+      };
       outbox_queue_name: { Args: { p_channel: string }; Returns: string };
       platform_feature_flag_actor_can_manage_scope: {
         Args: { p_scope: string; p_scope_id?: string };
