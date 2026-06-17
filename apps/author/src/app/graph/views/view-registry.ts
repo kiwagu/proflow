@@ -1,8 +1,9 @@
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
-import type { GatedSequence } from '@workspace/knowledge-engine';
+import type { GatedSequence, GatingResult } from '@workspace/knowledge-engine';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { ReactNode } from 'react';
 
+import { BoardProjectionView } from './board-projection.view';
 import { CourseProjectionView } from './course-projection.view';
 import { GridProjectionView } from './grid-projection.view';
 import { UnknownProjectionView } from './unknown-projection.view';
@@ -32,6 +33,16 @@ export type ProjectionViewProps = {
    */
   gating?: GatedSequence;
   /**
+   * Per-node display gating computed server-side (slice-06 §4.2). A SEPARATE,
+   * optional prop ALONGSIDE the slice-05 `gating?: GatedSequence` — the `board`
+   * view consumes this `GatingResult` (e.g. the `requires_state` rule's per-node
+   * verdicts); the course view keeps using `gating` untouched. Optional so a new
+   * view = one registry entry with zero changes to the existing paths. The view
+   * stays purely presentational: it consumes the already-computed verdicts, it
+   * never fetches state or calls a gating rule itself (ADR-0005 guardrail b).
+   */
+  nodeGates?: GatingResult;
+  /**
    * Active space id — the write target for the course mark-complete action
    * (slice-05 §4.3 POSTs `{ spaceId, resourceId, coarseStatus }`). Passed
    * alongside `gating` for the `course` view; other views ignore it. The result
@@ -47,6 +58,7 @@ export type ProjectionView = (props: ProjectionViewProps) => ReactNode;
 export const PROJECTION_VIEW_REGISTRY: Record<string, ProjectionView> = {
   grid: GridProjectionView,
   course: CourseProjectionView,
+  board: BoardProjectionView,
 };
 
 /**

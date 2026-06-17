@@ -7,6 +7,7 @@ import {
   loadGraphTranslator,
   resolveActiveSpaceId,
   resolveCourseGating,
+  resolveProjectionGating,
   resolveSpaceProjection,
 } from '../graph-page.data';
 import { ProjectionSwitcher } from '../views/projection-switcher';
@@ -57,12 +58,23 @@ async function ProjectionPanel({
       ? await resolveCourseGating({ spaceId, result })
       : undefined;
 
+  // Per-NODE display gating (slice-06): when the projection declares a gating
+  // rule (e.g. the `board` view's `requires_state`), resolve the rule's verdicts
+  // server-side from the already-resolved item statuses and pass them as a
+  // SEPARATE `nodeGates` prop — the course path above is untouched. A gated node
+  // stays in `result.items`; only `available` changes (display, not access).
+  const nodeGates =
+    result.view === 'board'
+      ? ((await resolveProjectionGating({ spaceId, projectionId, result })) ??
+        undefined)
+      : undefined;
+
   // Registry dispatch: pick the renderer by `result.view` and invoke it directly
   // (it is a presentational function returning ReactNode, not a stateful
   // component instantiated per render). A new view = a new registry entry, zero
   // changes here — Invariant #1 in the presentation layer.
   const renderProjectionView = resolveProjectionView(result.view);
-  return <>{renderProjectionView({ result, t, gating, spaceId })}</>;
+  return <>{renderProjectionView({ result, t, gating, nodeGates, spaceId })}</>;
 }
 
 export default async function GraphProjectionPage({

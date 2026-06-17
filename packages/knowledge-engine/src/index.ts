@@ -21,3 +21,19 @@ export {
   type GatedSequence,
   type GatedStep,
 } from './sequence-gating.js';
+
+export {
+  GATING_RULE_REGISTRY,
+  requiresStateRule,
+  resolveGatingRule,
+  sequenceRule,
+  type GatingCtx,
+  type GatingResult,
+  type GatingRule,
+  type NodeGate,
+} from './gating-registry.js';
+
+export {
+  validateTransition,
+  type ValidateTransitionResult,
+} from './workflow.validator.js';

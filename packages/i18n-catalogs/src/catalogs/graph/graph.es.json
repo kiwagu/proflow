@@ -14,6 +14,13 @@
   "graph.course.markError": "No se pudo guardar tu progreso. Inténtalo de nuevo.",
   "graph.course.step": "Paso {position}",
   "graph.course.empty": "No hay pasos del curso para mostrar.",
+  "graph.board.statusDraft": "Borrador",
+  "graph.board.statusInReview": "En revisión",
+  "graph.board.statusApproved": "Aprobado",
+  "graph.board.statusOther": "Otro",
+  "graph.board.notAvailable": "No disponible",
+  "graph.board.notAvailableHint": "Este elemento no está listo para acciones en su estado actual.",
+  "graph.board.empty": "No hay elementos para mostrar.",
   "graph.view.unsupported": "Esta vista aún no es compatible.",
   "graph.body.present": "Cuerpo",
   "graph.noSpace": "No hay espacio activo seleccionado."

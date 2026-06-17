@@ -4,6 +4,8 @@ export {
   filterLeafSchema,
   filterNodeSchema,
   filterOperatorSchema,
+  gatingDeclarationSchema,
+  gatingRuleKeySchema,
   parseProjectionSpec,
   projectionSpecSchema,
   traversalDirectionSchema,
@@ -15,6 +17,8 @@ export {
   type FilterLeaf,
   type FilterNode,
   type FilterOperator,
+  type GatingDeclaration,
+  type GatingRuleKey,
   type ProjectionSpec,
   type TraversalDirection,
   type TraversalOrderBy,
@@ -22,6 +26,16 @@ export {
   type TraversalStart,
   type ViewType,
 } from './projection.schema.js';
+
+export {
+  parseWorkflowDefinition,
+  workflowDefinitionSchema,
+  workflowStateSchema,
+  workflowTransitionSchema,
+  type WorkflowDefinition,
+  type WorkflowState,
+  type WorkflowTransition,
+} from './resource-workflow.schema.js';
 
 export {
   parseProjectionResult,

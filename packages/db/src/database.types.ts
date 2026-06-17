@@ -195,6 +195,7 @@ export type Database = {
           title: string;
           updated_at: string;
           visibility: string;
+          workflow_key: string | null;
         };
         Insert: {
           body_ref?: Json | null;
@@ -208,6 +209,7 @@ export type Database = {
           title: string;
           updated_at?: string;
           visibility?: string;
+          workflow_key?: string | null;
         };
         Update: {
           body_ref?: Json | null;
@@ -221,6 +223,7 @@ export type Database = {
           title?: string;
           updated_at?: string;
           visibility?: string;
+          workflow_key?: string | null;
         };
         Relationships: [
           {
@@ -236,6 +239,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'spaces';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'knowledge_resources_workflow_key_fkey';
+            columns: ['workflow_key'];
+            isOneToOne: false;
+            referencedRelation: 'resource_workflows';
+            referencedColumns: ['key'];
           },
         ];
       };
@@ -596,6 +606,33 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      resource_workflows: {
+        Row: {
+          created_at: string;
+          definition: Json;
+          description: string | null;
+          is_active: boolean;
+          key: string;
+          label: string;
+        };
+        Insert: {
+          created_at?: string;
+          definition: Json;
+          description?: string | null;
+          is_active?: boolean;
+          key: string;
+          label: string;
+        };
+        Update: {
+          created_at?: string;
+          definition?: Json;
+          description?: string | null;
+          is_active?: boolean;
+          key?: string;
+          label?: string;
+        };
+        Relationships: [];
       };
       role_permission: {
         Row: {

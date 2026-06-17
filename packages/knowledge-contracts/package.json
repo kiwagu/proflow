@@ -42,6 +42,10 @@
     "./resource-user-state": {
       "types": "./dist/resource-user-state.schema.d.ts",
       "import": "./dist/resource-user-state.schema.js"
+    },
+    "./resource-workflow": {
+      "types": "./dist/resource-workflow.schema.d.ts",
+      "import": "./dist/resource-workflow.schema.js"
     }
   }
 }

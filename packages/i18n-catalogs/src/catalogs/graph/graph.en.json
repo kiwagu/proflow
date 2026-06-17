@@ -14,6 +14,13 @@
   "graph.course.markError": "Could not save your progress. Please try again.",
   "graph.course.step": "Step {position}",
   "graph.course.empty": "No course steps to show.",
+  "graph.board.statusDraft": "Draft",
+  "graph.board.statusInReview": "In review",
+  "graph.board.statusApproved": "Approved",
+  "graph.board.statusOther": "Other",
+  "graph.board.notAvailable": "Not available",
+  "graph.board.notAvailableHint": "This item is not ready for action in its current status.",
+  "graph.board.empty": "No items to show.",
   "graph.view.unsupported": "This view is not supported yet.",
   "graph.body.present": "Body",
   "graph.noSpace": "No active space selected."

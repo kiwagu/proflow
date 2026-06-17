@@ -177,6 +177,30 @@ export const COURSE_SPEC = {
   view: 'course',
 } as const;
 
+/**
+ * Board ProjectionSpec — slice-06 third vertical, landed as PURE configuration.
+ * Selects the document nodes (incoming `tagged` traversal from the 'Docs' tag,
+ * Variant B — the same mechanism the KB grid uses, not a new filter field) and
+ * DECLARES the `requires_state` gating rule: a node is available iff its status
+ * is in `{ approved }`. The rule is DISPLAY gating (ADR-0006 §2): every node
+ * stays in `items`; only `available` changes.
+ */
+export function buildBoardSpec(docsTagNodeId: string) {
+  return {
+    schema_version: 1,
+    filter: { field: 'kind', op: 'in', value: ['text', 'link'] },
+    traversal: {
+      start: { ids: [docsTagNodeId] },
+      relation_types: ['tagged'],
+      direction: 'incoming',
+      max_depth: 1,
+      order_by: 'title',
+    },
+    view: 'board',
+    gating: { rule: 'requires_state', params: { allowed: ['approved'] } },
+  } as const;
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 function serviceSupabase(): SupabaseClient {
@@ -539,6 +563,243 @@ export async function seedProjectionEngineDemo(
   tenant: KnowledgeGraphTenant
 ): Promise<ProjectionEngineGraph> {
   return seedKnowledgeGraph(tenant);
+}
+
+// ── slice-06: resource-workflow + board (requires_state) demo ────────────────
+//
+// The third vertical lands as PURE CONFIGURATION over the SAME graph: a `board`
+// view_types row + document nodes carrying `workflow_key='document_review'` and
+// distinct statuses + a board `projections` row declaring the `requires_state`
+// gating rule. ZERO new tables, ZERO engine/resolver fork — added entirely as
+// data in the harness (the lesson from identity-sync: demo nodes/projections are
+// never migration-seeded; only the workflow DEFINITIONS are).
+
+/** Stable ids of the slice-06 workflow/board demo seeded over the one tenant. */
+export type WorkflowGatingGraph = {
+  /** The `kind='tag'` node titled 'Docs' — start node of the board spec. */
+  docsTagNodeId: string;
+  /** Document node currently in `draft` status. */
+  draftDocId: string;
+  /** Document node currently in `in_review` status. */
+  inReviewDocId: string;
+  /** Document node currently in `approved` status. */
+  approvedDocId: string;
+  /** Titles, for DOM assertions (sorted by title in the board). */
+  draftTitle: string;
+  inReviewTitle: string;
+  approvedTitle: string;
+  boardProjectionId: string;
+};
+
+/**
+ * Ensure the `board` view_types vocabulary row exists (service-role; global
+ * reference data). The slice-06 migration seeds workflow DEFINITIONS but NOT the
+ * `board` view row (per §4.1 the view_types row is harness data, not a core
+ * migration). `projections.view` is FK-checked against `view_types(key)`, so the
+ * row must exist before a board projection can be inserted. Idempotent.
+ */
+async function ensureBoardViewType(service: SupabaseClient): Promise<void> {
+  const { error } = await service.from('view_types').upsert(
+    {
+      key: 'board',
+      label: 'Board',
+      description: 'Status-segmented board view.',
+    },
+    { onConflict: 'key' }
+  );
+  if (error) {
+    throw new Error(`ensureBoardViewType: ${error.message}`);
+  }
+}
+
+/**
+ * Seed the slice-06 document-review demo over the existing tenant, AS the granted
+ * actor (every write passes RLS). Three document nodes with distinct statuses
+ * (draft / in_review / approved), all carrying `workflow_key='document_review'`,
+ * a 'Docs' tag node with `tagged` edges from each doc, and a board projection
+ * declaring `requires_state({ allowed: ['approved'] })`. Same resolver, same
+ * registry, different values — the third vertical as data.
+ */
+export async function seedWorkflowGatingDemo(
+  tenant: KnowledgeGraphTenant
+): Promise<WorkflowGatingGraph> {
+  const { granted, spaceId, service } = tenant;
+  const db = granted.client;
+
+  await ensureBoardViewType(service);
+
+  const draftTitle = 'Doc A — Draft Proposal';
+  const inReviewTitle = 'Doc B — Under Review';
+  const approvedTitle = 'Doc C — Approved Policy';
+
+  const { data: docs, error: docsErr } = await db
+    .from('knowledge_resources')
+    .insert([
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: draftTitle,
+        status: 'draft',
+        workflow_key: 'document_review',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: inReviewTitle,
+        status: 'in_review',
+        workflow_key: 'document_review',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: approvedTitle,
+        status: 'approved',
+        workflow_key: 'document_review',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+    ])
+    .select('id,title,status');
+  if (docsErr || !docs || docs.length !== 3) {
+    throw new Error(
+      `seedWorkflowGatingDemo docs: ${docsErr?.message ?? 'count'}`
+    );
+  }
+  const byStatus = new Map(docs.map((d) => [d.status, d.id]));
+  const draftDocId = byStatus.get('draft');
+  const inReviewDocId = byStatus.get('in_review');
+  const approvedDocId = byStatus.get('approved');
+  if (!draftDocId || !inReviewDocId || !approvedDocId) {
+    throw new Error('seedWorkflowGatingDemo docs: status ids missing');
+  }
+
+  // 'Docs' tag node + `tagged` edges (doc → tag), the Variant-B selection seam.
+  const { data: tag, error: tagErr } = await db
+    .from('knowledge_resources')
+    .insert({
+      space_id: spaceId,
+      kind: 'tag',
+      title: 'Docs',
+      status: 'active',
+      created_by: granted.userId,
+      owner_user_id: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (tagErr || !tag?.id) {
+    throw new Error(
+      `seedWorkflowGatingDemo tag: ${tagErr?.message ?? 'no id'}`
+    );
+  }
+  const docsTagNodeId = tag.id;
+
+  const { error: edgeErr } = await db.from('knowledge_edges').insert(
+    [draftDocId, inReviewDocId, approvedDocId].map((docId, i) => ({
+      space_id: spaceId,
+      from_id: docId,
+      to_id: docsTagNodeId,
+      relation_type: 'tagged',
+      position: i,
+      created_by: granted.userId,
+    }))
+  );
+  if (edgeErr) {
+    throw new Error(`seedWorkflowGatingDemo tagged: ${edgeErr.message}`);
+  }
+
+  const { data: prj, error: prjErr } = await db
+    .from('projections')
+    .insert({
+      space_id: spaceId,
+      app_type: 'knowledge_base',
+      name: 'Documents',
+      view: 'board',
+      spec: buildBoardSpec(docsTagNodeId),
+      created_by: granted.userId,
+      owner_user_id: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (prjErr || !prj?.id) {
+    throw new Error(
+      `seedWorkflowGatingDemo projection: ${prjErr?.message ?? 'no id'}`
+    );
+  }
+
+  return {
+    docsTagNodeId,
+    draftDocId,
+    inReviewDocId,
+    approvedDocId,
+    draftTitle,
+    inReviewTitle,
+    approvedTitle,
+    boardProjectionId: prj.id,
+  };
+}
+
+// ── slice-06: extra actor for the transition guard split ─────────────────────
+//
+// The guard test needs an actor that CAN move a workflow (space.knowledge.transition
+// + .read + .update) but CANNOT approve (lacks space.knowledge.approve). The
+// system `author` role fits exactly: the knowledge_graph migration grants it
+// read/create/update and the resource_workflow migration grants it `transition`,
+// but neither grants it `approve` (that maps onto `admin` only).
+
+export type WorkflowActors = {
+  /** Actor with the `author` role: transition + update, but NOT approve. */
+  transitioner: KnowledgeActor;
+  /** Extra user ids to cascade-clean on teardown. */
+  extraUserIds: string[];
+};
+
+export async function bootstrapWorkflowActors(
+  tenant: KnowledgeGraphTenant
+): Promise<WorkflowActors> {
+  const { service, organizationId, spaceId } = tenant;
+
+  const user = await createActor(service, 'workflow-author');
+
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: user.id });
+  if (omErr) throw new Error(`workflow org_membership: ${omErr.message}`);
+
+  const { error: smErr } = await service
+    .from('space_memberships')
+    .insert({ space_id: spaceId, user_id: user.id, status: 'active' });
+  if (smErr) throw new Error(`workflow space_membership: ${smErr.message}`);
+
+  const { data: authorRole, error: roleErr } = await service
+    .from('roles')
+    .select('id')
+    .eq('key', 'author')
+    .eq('role_kind', 'system')
+    .single();
+  if (roleErr || !authorRole?.id) {
+    throw new Error(`workflow author role: ${roleErr?.message ?? 'no id'}`);
+  }
+
+  const { error: urErr } = await service
+    .from('user_role')
+    .insert({ user_id: user.id, space_id: spaceId, role_id: authorRole.id });
+  if (urErr) throw new Error(`workflow user_role: ${urErr.message}`);
+
+  const client = await authenticatedClient(user.email, user.password);
+
+  return {
+    transitioner: {
+      userId: user.id,
+      email: user.email,
+      password: user.password,
+      client,
+    },
+    extraUserIds: [user.id],
+  };
 }
 
 /**

@@ -92,12 +92,39 @@ export type TraversalSpec = z.infer<typeof traversalSpecSchema>;
 export const viewTypeSchema = z.string();
 export type ViewType = z.infer<typeof viewTypeSchema>;
 
+// --- Gating declaration: which pluggable gating rule applies to this app. ---
+
+/**
+ * The key of a gating rule in the engine's GATING_RULE_REGISTRY (slice-06 §3.4).
+ * A neutral mechanism key (`sequence`, `requires_state`), never an application
+ * name. Gating is DISPLAY-only: a gated node stays in the result (the node is
+ * present, `available=false`); RLS remains the sole hard access authority.
+ */
+export const gatingRuleKeySchema = z.string();
+export type GatingRuleKey = z.infer<typeof gatingRuleKeySchema>;
+
+/**
+ * A ProjectionSpec DECLARES its gating rule (which rule + the rule's params). The
+ * common contract keeps `params` generic (`record`); each rule zod-parses its own
+ * params shape internally (e.g. `requires_state` parses `{ allowed: string[] }`).
+ * This mirrors how the filter leaf is strict while `metadata` stays generic.
+ */
+export const gatingDeclarationSchema = z.object({
+  rule: gatingRuleKeySchema, // 'sequence' | 'requires_state' | …
+  params: z.record(z.string(), z.unknown()).default({}), // e.g. { allowed: ['approved'] }
+});
+export type GatingDeclaration = z.infer<typeof gatingDeclarationSchema>;
+
 export const projectionSpecSchema = z.object({
   schema_version: z.literal(PROJECTION_SPEC_SCHEMA_VERSION),
   // projection filter (narrows only — never an access condition)
   filter: filterNodeSchema,
   traversal: traversalSpecSchema,
   view: viewTypeSchema,
+  // optional pluggable gating rule (display only — never an access condition).
+  // additive + optional: existing specs (KB grid, course) parse unchanged, so the
+  // pinned schema_version stays 1 (forward/backward compatible).
+  gating: gatingDeclarationSchema.optional(),
 });
 export type ProjectionSpec = z.infer<typeof projectionSpecSchema>;
 

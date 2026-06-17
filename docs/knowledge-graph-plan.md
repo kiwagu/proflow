@@ -109,31 +109,75 @@ plan facts; the deliberation behind them is kept out of this document on purpose
 
 ## 5. Traversal & workflow
 
+> The business apps (knowledge base, course, document management) are EXAMPLES. The engine hosts a
+> GENERAL conditional-access model, not those three special cases. Conditional node access is two
+> orthogonal mechanisms: an **access layer** (hard / security — RLS/RBAC; if it fails the node is
+> ABSENT from the result) and a **gating layer** (soft / business rule — a COMPUTED display flag; the
+> node STAYS in the result). Classification criterion: if bypassing a rule is a security incident it
+> belongs to the access layer; if it is just a broken process it belongs to the gating layer. The
+> gating layer is a PLUGGABLE RULE REGISTRY — a `ProjectionSpec` declares which named rule(s) apply.
+> An app = subgraph + chosen gating rule(s) + view + access scoping — all configuration.
+
 - [x] Recursive-CTE traversal helpers (prerequisites / lineage / associative) by `relation_type` —
       `@workspace/knowledge-engine` (`compileTraversal` + `resolveProjection`): depth-cap +
       path-array cycle-guard, outgoing/incoming, executed under the user's RLS session via the
       `security invoker` `resolve_projection_query` RPC (never service-role)
-- [ ] Workflow as data: states + allowed transitions + guards; generic validator
-- [ ] Enforce the authorization ≠ gating boundary (RLS for access; projection layer for pacing)
-- [ ] `scopes` / `scope_memberships` as the generic audience/grouping primitive (course cohort /
-      document folder ACL / knowledge-base section audience)
+- [x] Gating layer = a pluggable rule registry (mirror of the view registry). A gating rule is a
+      pure, UI-agnostic predicate over `(user-state | resource-state | graph-context | scope)`.
+      `sequence` (the ordered prerequisite rule) is one entry; `requires_state` (a node is available
+      iff its resource status is in an allowed set) is added as a second entry — NOT an engine fork.
+      The `ProjectionSpec` gains an optional `gating` declaration (which rule + params).
+      Landed in `@workspace/knowledge-engine` (`gating-registry.ts`: `GATING_RULE_REGISTRY` +
+      `resolveGatingRule`; `sequenceRule` is a thin adapter over the untouched `gateSequence`,
+      `requiresStateRule` parses its own `{ allowed }` params) and `@workspace/knowledge-contracts`
+      (`gatingDeclarationSchema`, optional `gating` on `projectionSpecSchema`; schema version unchanged
+      as the field is additive/compatible); both unit-covered, resolver untouched (projection-PURE)
+- [x] Workflow as data: states + allowed transitions + guards held as data (`resource_workflows`
+      definition jsonb over `knowledge_resources.status`), validated by one generic transition
+      validator; a thin `POST /author/graph/transition` under `space.knowledge.transition` (+ optional
+      per-transition guard verb, e.g. `space.knowledge.approve`) rejects illegal transitions. This is
+      the state source for the `requires_state` rule. Landed: the `resource_workflows` vocab table
+      (natural-key PK, XState-compatible `definition` jsonb, select-only RLS), an additive nullable
+      `knowledge_resources.workflow_key` FK, the status CHECK widened to
+      `draft/active/archived/in_review/approved`, `default` + `document_review` seed definitions, the
+      `space.knowledge.transition`/`space.knowledge.approve` verbs (admin+author→transition,
+      admin→approve), the pure `validateTransition` engine function, the UI-agnostic
+      `transitionResourceStatus` application module, and the thin endpoint (illegal → 422). The board
+      view + server gating wiring + e2e landed (§8.B); the transition-action UI is deferred (the
+      endpoint + e2e-through-API validate the write-path — board view stays display-only this slice)
+- [x] Document management = an EXAMPLE projection, not a separate app: a `view_types` row (`board`) +
+  a `projections` row filtering/segmenting by status with a `requires_state` gate (only `approved`
+  docs are "available"). Adding it = vocabulary rows + a projection row + (optional) a workflow
+  row, ZERO engine fork — the third vertical as pure configuration. Landed: the status-segmented
+  `board-projection.view.tsx` + its `board` registry entry, a separate optional `nodeGates`
+  view-prop, server wiring (`resolveProjectionGating` builds the resource-state map from the
+  already-resolved items and applies the declared rule under the user's RLS client), and the
+  `knowledge-workflow-gating` e2e (board renders all docs; non-approved gated as display)
+- [x] Enforce the authorization ≠ gating boundary (RLS for access; gating layer for pacing/process) —
+      the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
+      authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
+      while a reader without `space.knowledge.read` sees no documents at all (access = RLS)
+- [ ] Access-layer extensions (the COMPLEMENTARY mechanism): `scopes` / `scope_memberships` as the
+      generic audience/grouping primitive (cohort / folder ACL / section audience) and graph-derived
+      access predicates (e.g. manager→subordinate hierarchy as edges + an RLS predicate). Deferred to
+      a future slice so security rules never leak into the gating layer
 
 ## 6. First projection — validate the invariant
 
 - [x] Build one app (knowledge base) as a saved projection — no separate data model, no new
-  code path (data layer + saved projection + projection EXECUTION landed via
-  `@workspace/knowledge-engine`; the view render landed via the consumer render surface below.
-  KB tagging is graph-native: a tag is a `kind='tag'` node and "has tag" is an incoming `tagged`
-  traversal, not a column)
+      code path (data layer + saved projection + projection EXECUTION landed via
+      `@workspace/knowledge-engine`; the view render landed via the consumer render surface below.
+      KB tagging is graph-native: a tag is a `kind='tag'` node and "has tag" is an incoming `tagged`
+      traversal, not a column)
 - [x] Consumer render: a view registry keyed by `ProjectionSpec.view` (a new view =
-  a new component + one registry entry, zero model/resolver change), a `grid` renderer (knowledge
-  base) and a `course` renderer (ordered prerequisite stepper, static lock indicator; real per-user
-  gating deferred to §2), and a projection switcher that toggles the SAME graph between apps (the
-  visible Invariant #1). Server-side resolution runs the engine under the user's RLS (never
-  service-role); blocking resolve + Suspense. Render is an END-USER surface → shadcn (`@workspace/ui`).
-  Pages live at `apps/author/src/app/graph/*`; proven by
-  `tests/e2e/src/knowledge-projection-render.e2e.spec.ts` (grid ⇆ course over one graph; ungranted →
-  empty by RLS; guest GET → sign-in redirect, guest POST → 401 JSON)
+      a new component + one registry entry, zero model/resolver change), a `grid` renderer (knowledge
+      base) and a `course` renderer (ordered prerequisite stepper, static lock indicator; real per-user
+      gating deferred to §2), and a projection switcher that toggles the SAME graph between apps (the
+      visible Invariant #1). Server-side resolution runs the engine under the user's RLS (never
+      service-role); blocking resolve + Suspense. Render is an END-USER surface → shadcn (`@workspace/ui`).
+      Pages live at `apps/author/src/app/graph/*`; proven by
+      `tests/e2e/src/knowledge-projection-render.e2e.spec.ts` (grid ⇆ course over one graph; ungranted →
+      empty by RLS; guest GET → sign-in redirect, guest POST → 401 JSON)
 - [x] Confirm a second app type (a course) is pure configuration (vocabulary rows +
       ProjectionSpec) with zero core migration — proven by the slice 01 acceptance test
       (`tests/e2e/src/knowledge-graph-invariant.e2e.spec.ts`): both projections resolve over the

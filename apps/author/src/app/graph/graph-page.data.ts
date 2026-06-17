@@ -10,8 +10,10 @@ import {
 } from '@workspace/knowledge-contracts';
 import {
   gateSequence,
+  resolveGatingRule,
   resolveProjection,
   type GatedSequence,
+  type GatingResult,
 } from '@workspace/knowledge-engine';
 import { cookies } from 'next/headers';
 
@@ -118,4 +120,60 @@ export async function resolveCourseGating(args: {
   const db = await createRlsClientFromServerCookies();
   const state = await loadResourceUserStateMap(args.spaceId, { db });
   return gateSequence(args.result, state);
+}
+
+/**
+ * Compute per-node display gating for a projection that DECLARES a gating rule
+ * (slice-06 §4.2 / §8.B). A THIN server helper, separate from
+ * `resolveSpaceProjection` (which stays projection-PURE): it reads the saved
+ * `spec.gating` declaration under the caller's RLS-scoped client (never
+ * service-role), builds the `resourceStateMap` from the ALREADY-resolved
+ * `result.items[].status` (no second graph fetch), resolves the named rule from
+ * the engine's registry, and applies it.
+ *
+ * resource-state gating (e.g. `requires_state`) is DISPLAY only (ADR-0006 §2): a
+ * gated node stays in `result.items`; the rule merely computes `available`. RLS
+ * remains the sole hard access authority. Returns `null` when the projection has
+ * no gating declaration or its rule key is unknown — the view then renders every
+ * node as available.
+ */
+export async function resolveProjectionGating(args: {
+  spaceId: string;
+  projectionId: string;
+  result: ProjectionResult;
+}): Promise<GatingResult | null> {
+  const db = await createRlsClientFromServerCookies();
+  const { data: row, error } = await db
+    .from('projections')
+    .select('spec')
+    .eq('space_id', args.spaceId)
+    .eq('id', args.projectionId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`resolveProjectionGating: ${error.message}`);
+  }
+  if (!row) {
+    return null;
+  }
+
+  const parsed = parseProjectionSpec(row.spec);
+  if (!parsed.success || !parsed.data.gating) {
+    return null;
+  }
+
+  const rule = resolveGatingRule(parsed.data.gating.rule);
+  if (!rule) {
+    return null;
+  }
+
+  // resource-state map from the already-resolved items (no second graph fetch).
+  const resourceStateMap: Record<string, string> = {};
+  for (const item of args.result.items) {
+    resourceStateMap[item.id] = item.status;
+  }
+
+  return rule(args.result, {
+    resourceStateMap,
+    params: parsed.data.gating.params,
+  });
 }
