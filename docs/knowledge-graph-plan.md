@@ -85,6 +85,23 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       a SECURITY DEFINER seam under the user's node-authority, and an idempotent `reconcileBodyBridge`
       saga (heal missing `body_ref`; remove orphan body). The async JetStream consumer is a seamless
       future swap (same envelope, same row)
+- [x] Async durable bridge consumer (B2 hardening) — the sync fan-out is the fast path; this adds the
+      background worker that processes any OPEN body-bridge `outbox_jobs` row so the bridge is
+      eventually-consistent even when the sync path fails mid-way (the row is left open). REUSE the
+      existing universal-outbox machinery: the body-bridge job is a `channel='operation'` /
+      `operation_key='body-bridge'` row delivered over the same pgmq transport, claimed by the existing
+      `rpc_outbox_claim_jobs` and completed/retried/dead-lettered by `rpc_outbox_complete_job` /
+      `rpc_outbox_retry_job` — the same claim/ack/retry/DLQ loop the notifications outbox worker already
+      runs (NOT a new delivery path). The consumer MUST validate the claimed payload against
+      `bodyBridgeEnvelopeSchema` BEFORE acting (invalid → dead-letter, never silently processed), then
+      runs the idempotent `reconcileBodyBridge(node_id)` so at-least-once delivery is safe (re-processing
+      the same row is a no-op). The worker lives in the author app (it needs the Payload Local API for
+      reconciliation) and is a trusted backend process, so service-role is appropriate here for the
+      systemic reconcile (consistent with the existing orphan-repair path), kept separate from the
+      user-RLS fan-out endpoints. Zero new migrations / contracts / engine / render. Acceptance (e2e,
+      failure injected via the harness, not migrations): happy path → row closed, consumer no-op; injected
+      sync failure → row stays open → consumer reconciles → `body_ref` eventually linked (or orphan
+      removed); invalid envelope → dead-lettered, not processed; re-processing the same row is a no-op
 - [x] Body access goes only to callers who passed the Postgres (RLS) gate (Payload access subordinate
       to RLS, keyed on the node id) — `bodies` read/update/delete reduce to a Postgres-RLS check by
       `node_id` under the caller's JWT; `create` is closed to the admin UI (fan-out only). Proven by
@@ -105,7 +122,10 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       `@workspace/knowledge-engine` (`compileFilter`); values are positional params only, hard
       field/operator allow-list, zero value interpolation (unit-asserted)
 - [x] `projections` table (`ProjectionSpec` as jsonb), space-scoped + RLS
-- [ ] Query DX: enable `pg_graphql` / PostgREST (RLS-aware) — verify on self-hosted
+- [x] Query DX: `pg_graphql` / PostgREST (RLS-aware) — verified on self-hosted. PostgREST is in
+      active use (supabase-js under RLS); `pg_graphql` 1.5.11 is enabled, reflects the graph
+      tables, and runs under the caller's role (RLS-aware). Available as a GraphQL surface; not
+      wired into endpoints (the resolver + PostgREST cover current needs)
 
 ## 5. Traversal & workflow
 
