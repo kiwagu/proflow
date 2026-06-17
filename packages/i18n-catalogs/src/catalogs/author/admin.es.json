@@ -1,5 +1,18 @@
 {
   "author.usersCentralized.cannotSave.title": "No se pueden guardar los cambios",
   "author.usersCentralized.cannotSave.description": "Las cuentas de usuario se administran centralmente en Platform. Author las refleja solo para iniciar sesión; no puede guardar cambios en los usuarios aquí.",
-  "author.usersCentralized.actions.confirm": "Aceptar"
+  "author.usersCentralized.actions.confirm": "Aceptar",
+  "author.knowledge.newTextResource.title": "Crear recurso de texto",
+  "author.knowledge.newTextResource.activeSpace": "Espacio activo:",
+  "author.knowledge.newTextResource.fieldTitle": "Título",
+  "author.knowledge.newTextResource.fieldBody": "Cuerpo",
+  "author.knowledge.newTextResource.fieldEdge": "Relación",
+  "author.knowledge.newTextResource.edgeNone": "Sin relación",
+  "author.knowledge.newTextResource.fieldTarget": "Nodo destino",
+  "author.knowledge.newTextResource.selectNode": "Seleccione un nodo…",
+  "author.knowledge.newTextResource.save": "Guardar",
+  "author.knowledge.newTextResource.saving": "Guardando…",
+  "author.knowledge.newTextResource.saved": "Guardado.",
+  "author.knowledge.newTextResource.missingFields": "Se requieren un título y un espacio activo.",
+  "author.knowledge.newTextResource.saveFailed": "Error al guardar ({{status}})."
 }

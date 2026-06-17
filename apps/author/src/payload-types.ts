@@ -71,6 +71,7 @@ export interface Config {
     spaces: Space;
     users: User;
     media: Media;
+    bodies: Body;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -82,6 +83,7 @@ export interface Config {
     spaces: SpacesSelect<false> | SpacesSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
+    bodies: BodiesSelect<false> | BodiesSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents':
       | PayloadLockedDocumentsSelect<false>
@@ -238,6 +240,42 @@ export interface Media {
   };
 }
 /**
+ * Lexical bodies for kind=text knowledge nodes. Authority is the node (Postgres); access is subordinate to RLS by node_id.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "bodies".
+ */
+export interface Body {
+  id: string;
+  tenant?: (string | null) | Space;
+  /**
+   * Back-ref to knowledge_resources.id (knr_…). One body per node.
+   */
+  node_id: string;
+  /**
+   * Mirror of the node space (tenant consistency). Derived, not authoritative.
+   */
+  space_id: string;
+  body?: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  } | null;
+  updatedAt: string;
+  createdAt: string;
+  _status?: ('draft' | 'published') | null;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -276,6 +314,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'media';
         value: string | Media;
+      } | null)
+    | ({
+        relationTo: 'bodies';
+        value: string | Body;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -417,6 +459,20 @@ export interface MediaSelect<T extends boolean = true> {
               filename?: T;
             };
       };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "bodies_select".
+ */
+export interface BodiesSelect<T extends boolean = true> {
+  id?: T;
+  tenant?: T;
+  node_id?: T;
+  space_id?: T;
+  body?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  _status?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

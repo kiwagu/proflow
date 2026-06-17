@@ -191,6 +191,19 @@ function isAdminPath(path: string): boolean {
 }
 
 /**
+ * Graph endpoints (`/author/graph/*`, slice-03 §5.1). A SEPARATE auth context
+ * from `/admin/*`: they require the SUPABASE session (cookies) and build a
+ * Postgres-RLS client inside the handler — Postgres RLS is the sole authority.
+ * They are deliberately NOT Payload `/api` (so they never inherit the `/api`
+ * guest exception) and NOT `/admin/*` (so they never demand a `payload-token`).
+ * A guest reaching them falls through to the platform sign-in redirect below,
+ * exactly like any other authenticated path.
+ */
+function isGraphPath(path: string): boolean {
+  return path === '/graph' || path.startsWith('/graph/');
+}
+
+/**
  * Builds a 307 to the Payload session bridge, which issues a Payload JWT cookie and then
  * redirects to `nextAdminPath` (e.g. `/admin` or `/admin/collections/users`).
  */
@@ -301,6 +314,27 @@ export async function updateSession(request: NextRequest) {
       );
     }
     return payloadBridgeRedirect(request, '/admin', payloadTenantSync);
+  }
+
+  // Graph paths: Supabase session required, NEVER payload-token. A session-bearing
+  // request passes straight to the handler/page, which builds the user's RLS
+  // client and lets Postgres RLS decide (slice-03 §5.1 / slice-04 §5). A guest is
+  // refused by FORM of request: render pages are GET navigations → redirect to
+  // platform sign-in (a raw JSON 401 would break the page UX); the slice-03
+  // fan-out endpoints are POST → keep the clean 401 JSON. `method` is the cleanest
+  // signal and avoids coupling to specific sub-paths (§5.1 decision 5).
+  if (isGraphPath(path)) {
+    if (!user) {
+      if (request.method === 'GET') {
+        return platformLoginResponse(request, payloadTenantSync);
+      }
+      return applyPayloadTenantSyncToResponse(
+        NextResponse.json({ message: 'Not authenticated.' }, { status: 401 }),
+        payloadTenantSync,
+        request
+      );
+    }
+    return supabaseResponse;
   }
 
   if (!user && !isShellPathAllowedForGuest(path, AUTHOR_SHELL_GUEST_ACCESS)) {

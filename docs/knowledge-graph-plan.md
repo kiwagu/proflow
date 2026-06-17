@@ -33,58 +33,199 @@ plan facts; the deliberation behind them is kept out of this document on purpose
 
 ## 1. Graph schema (migrations)
 
-- [ ] `knowledge_resources` — node: `kind`, `title`, `status`, `visibility`, `body_ref`,
-  `created_by`, `owner_user_id`; space-scoped + RLS (per `space-scoped-resource-tables`)
-- [ ] `knowledge_edges` — directed edge: `from_id`, `to_id`, `relation_type`, `position`,
-  `metadata` (jsonb); space-scoped + RLS
-- [ ] Vocabulary reference tables (data, not enums): `resource_kinds`, `relation_types`,
-  `view_types` (+ workflow vocabulary, see §5)
-- [ ] Hot-path indexes: `(space_id, kind)`; edges `(from_id, relation_type, position)` and the
-  reverse `(to_id, …)`
-- [ ] Permission verbs `space.knowledge.<verb>` registered; verbs extensible
-- [ ] Register entity-id prefixes for nodes, edges, state, dictionaries
+- [x] `knowledge_resources` — node: `kind`, `title`, `status`, `visibility`, `body_ref`,
+      `created_by`, `owner_user_id`; space-scoped + RLS (per `space-scoped-resource-tables`)
+- [x] `knowledge_edges` — directed edge: `from_id`, `to_id`, `relation_type`, `position`,
+      `metadata` (jsonb); space-scoped + RLS
+- [x] Vocabulary reference tables (data, not enums): `resource_kinds`, `relation_types`,
+      `view_types` (workflow vocabulary deferred — see §5)
+- [x] Hot-path indexes: `(space_id, kind)`; edges `(from_id, relation_type, position)` and the
+      reverse `(to_id, …)`
+- [x] Permission verbs `space.knowledge.<verb>` registered; verbs extensible
+- [x] Register entity-id prefixes for nodes (`knr`), edges (`kne`), `projections` (`prj`)
+      (state/satellite prefixes deferred with per-user state)
 
 ## 2. Per-user state (anchor + satellites)
 
-- [ ] `resource_user_state` — anchor: `user_id`, `resource_id`, `space_id`, `coarse_status`
-  (not_started / in_progress / done / blocked), optional `progress`, `metadata` (jsonb); RLS
-- [ ] Child-satellite pattern documented (FK to the anchor; a child's growth never alters core)
-- [ ] Fine→coarse roll-up contract (how an app's fine statuses map to the coarse status)
+- [x] `resource_user_state` — anchor: `user_id`, `resource_id`, `space_id`, `coarse_status`
+      (not_started / in_progress / done / blocked), optional `progress`, `metadata` (jsonb); RLS.
+      RLS is **own-rows only**: a user reads/writes ONLY their own rows (`user_id = auth.uid()`)
+      within spaces they can access. Write is gated by a dedicated verb `space.knowledge.progress`
+      (separate from `update`: a learner may advance their own progress without editing the graph);
+      read uses `space.knowledge.read`. No cross-user reads in this slice (admin/reporting deferred).
+      `coarse_status` is a deliberately small, closed, cross-app CHECK set (the stable roll-up target),
+      not an app-extensibility vocabulary — per-app richness lives in fine statuses on a future child
+      satellite. Anchor + entity-id prefix `rus`.
+- [x] Authorization ≠ gating, landed: the course's previously-static lock is now a COMPUTED display
+      state driven by the user's progress, NOT an access denial. RLS still lets the user SEE every
+      course step (nodes stay in the projection result); the lock is decided by a pure, UI-agnostic
+      gating function (ordered steps + the user's state map → per-step locked/unlocked) in
+      `@workspace/knowledge-engine`. The resolver stays projection-PURE; the per-user overlay is a
+      SEPARATE fetch merged at render time. A thin `POST /author/graph/progress` (under the user's
+      RLS client, never service-role; `user_id` from the session) upserts the coarse status; a
+      "mark complete" action advances a step to `done` and the next step unlocks
+- [ ] Child-satellite pattern (FK to the anchor; a child's growth never alters core) — design
+      recorded; no satellite built yet (deferred)
+- [ ] Fine→coarse roll-up contract (how an app's fine statuses map to the coarse status) — applies
+      only once a child workflow exists; deferred with the satellite (this slice sets `coarse_status`
+      directly)
 - [ ] Start child state in `metadata` jsonb (schema-validated per kind); promote to a typed
-  satellite table when it earns it
+      satellite table when it earns it (the anchor `metadata jsonb` column is in place; not yet used)
 
 ## 3. Node ↔ body bridge
 
-- [ ] Schema-first domain events: create/update/delete of body ↔ node
-- [ ] `body_ref` (node → body) and back-reference (`space_id` + node id) on the body
-- [ ] Sync via outbox/JetStream (same pattern as identity sync); handle orphaned bodies
-- [ ] Body access goes only to callers who passed the Postgres (RLS) gate
-- [ ] Only `kind=text` flows through Payload; audio/video/link → Postgres + Supabase Storage
+- [x] Schema-first domain events: `body.linked` / `body.unlinked` (body ↔ node) — landed in
+      `@workspace/knowledge-contracts` (`body-bridge.schema.ts`, discriminatedUnion on `event` +
+      pinned `schema_version`), round-trip tested
+- [x] `body_ref` (node → body) and back-reference (`space_id` + node id) on the body — the `bodies`
+      Payload collection landed (projection-agnostic: `node_id`/`space_id`/`body` only, drafts on),
+      two-way link asserted by the slice-03 acceptance test
+- [x] Sync via outbox/JetStream (same pattern as identity sync); handle orphaned bodies — POC ships
+      a synchronous fan-out plus a durable `outbox_jobs` row (the `body.linked` envelope) enqueued via
+      a SECURITY DEFINER seam under the user's node-authority, and an idempotent `reconcileBodyBridge`
+      saga (heal missing `body_ref`; remove orphan body). The async JetStream consumer is a seamless
+      future swap (same envelope, same row)
+- [x] Async durable bridge consumer (B2 hardening) — the sync fan-out is the fast path; this adds the
+      background worker that processes any OPEN body-bridge `outbox_jobs` row so the bridge is
+      eventually-consistent even when the sync path fails mid-way (the row is left open). REUSE the
+      existing universal-outbox machinery: the body-bridge job is a `channel='operation'` /
+      `operation_key='body-bridge'` row delivered over the same pgmq transport, claimed by the existing
+      `rpc_outbox_claim_jobs` and completed/retried/dead-lettered by `rpc_outbox_complete_job` /
+      `rpc_outbox_retry_job` — the same claim/ack/retry/DLQ loop the notifications outbox worker already
+      runs (NOT a new delivery path). The consumer MUST validate the claimed payload against
+      `bodyBridgeEnvelopeSchema` BEFORE acting (invalid → dead-letter, never silently processed), then
+      runs the idempotent `reconcileBodyBridge(node_id)` so at-least-once delivery is safe (re-processing
+      the same row is a no-op). The worker lives in the author app (it needs the Payload Local API for
+      reconciliation) and is a trusted backend process, so service-role is appropriate here for the
+      systemic reconcile (consistent with the existing orphan-repair path), kept separate from the
+      user-RLS fan-out endpoints. Zero new migrations / contracts / engine / render. Acceptance (e2e,
+      failure injected via the harness, not migrations): happy path → row closed, consumer no-op; injected
+      sync failure → row stays open → consumer reconciles → `body_ref` eventually linked (or orphan
+      removed); invalid envelope → dead-lettered, not processed; re-processing the same row is a no-op
+- [x] Body access goes only to callers who passed the Postgres (RLS) gate (Payload access subordinate
+      to RLS, keyed on the node id) — `bodies` read/update/delete reduce to a Postgres-RLS check by
+      `node_id` under the caller's JWT; `create` is closed to the admin UI (fan-out only). Proven by
+      the acceptance test (ungranted cannot read the body)
+- [x] Only `kind=text` flows through Payload; audio/video/link → Postgres + Supabase Storage — the
+      fan-out creates a `bodies` doc only for `kind=text`; no other kind touches Payload
+- [x] One author action = fan-out save (node in Postgres under RLS, body in Payload), with partial-
+      failure reconciliation; minimal authoring admin-view + two auth-contexts (Supabase session for
+      graph endpoints, `payload-token` for `/admin/*`) — `/author/graph/*` endpoints (RLS) + a thin
+      `@payloadcms/ui` admin-view (`/admin/knowledge/new-text`) over a UI-agnostic server module;
+      `proxy.ts` splits the two auth contexts
 
 ## 4. Projection layer
 
-- [ ] `ProjectionSpec` schema = filter AST + traversal spec + view type
-- [ ] Compiler: filter AST → RLS-safe SQL/CTE (parameterized; field/operator allow-list)
-- [ ] `projections` table (`ProjectionSpec` as jsonb), space-scoped + RLS
-- [ ] Query DX: enable `pg_graphql` / PostgREST (RLS-aware) — verify on self-hosted
+- [x] `ProjectionSpec` schema = filter AST + traversal spec + view type
+      (`@workspace/knowledge-contracts`)
+- [x] Compiler: filter AST → RLS-safe SQL/CTE (parameterized; field/operator allow-list) —
+      `@workspace/knowledge-engine` (`compileFilter`); values are positional params only, hard
+      field/operator allow-list, zero value interpolation (unit-asserted)
+- [x] `projections` table (`ProjectionSpec` as jsonb), space-scoped + RLS
+- [x] Query DX: `pg_graphql` / PostgREST (RLS-aware) — verified on self-hosted. PostgREST is in
+      active use (supabase-js under RLS); `pg_graphql` 1.5.11 is enabled, reflects the graph
+      tables, and runs under the caller's role (RLS-aware). Available as a GraphQL surface; not
+      wired into endpoints (the resolver + PostgREST cover current needs)
 
 ## 5. Traversal & workflow
 
-- [ ] Recursive-CTE traversal helpers (prerequisites / lineage / associative) by `relation_type`
-- [ ] Workflow as data: states + allowed transitions + guards; generic validator
-- [ ] Enforce the authorization ≠ gating boundary (RLS for access; projection layer for pacing)
-- [ ] `scopes` / `scope_memberships` as the generic audience/grouping primitive (course cohort /
-  document folder ACL / knowledge-base section audience)
+> The business apps (knowledge base, course, document management) are EXAMPLES. The engine hosts a
+> GENERAL conditional-access model, not those three special cases. Conditional node access is two
+> orthogonal mechanisms: an **access layer** (hard / security — RLS/RBAC; if it fails the node is
+> ABSENT from the result) and a **gating layer** (soft / business rule — a COMPUTED display flag; the
+> node STAYS in the result). Classification criterion: if bypassing a rule is a security incident it
+> belongs to the access layer; if it is just a broken process it belongs to the gating layer. The
+> gating layer is a PLUGGABLE RULE REGISTRY — a `ProjectionSpec` declares which named rule(s) apply.
+> An app = subgraph + chosen gating rule(s) + view + access scoping — all configuration.
+
+- [x] Recursive-CTE traversal helpers (prerequisites / lineage / associative) by `relation_type` —
+      `@workspace/knowledge-engine` (`compileTraversal` + `resolveProjection`): depth-cap +
+      path-array cycle-guard, outgoing/incoming, executed under the user's RLS session via the
+      `security invoker` `resolve_projection_query` RPC (never service-role)
+- [x] Gating layer = a pluggable rule registry (mirror of the view registry). A gating rule is a
+      pure, UI-agnostic predicate over `(user-state | resource-state | graph-context | scope)`.
+      `sequence` (the ordered prerequisite rule) is one entry; `requires_state` (a node is available
+      iff its resource status is in an allowed set) is added as a second entry — NOT an engine fork.
+      The `ProjectionSpec` gains an optional `gating` declaration (which rule + params).
+      Landed in `@workspace/knowledge-engine` (`gating-registry.ts`: `GATING_RULE_REGISTRY` +
+      `resolveGatingRule`; `sequenceRule` is a thin adapter over the untouched `gateSequence`,
+      `requiresStateRule` parses its own `{ allowed }` params) and `@workspace/knowledge-contracts`
+      (`gatingDeclarationSchema`, optional `gating` on `projectionSpecSchema`; schema version unchanged
+      as the field is additive/compatible); both unit-covered, resolver untouched (projection-PURE)
+- [x] Workflow as data: states + allowed transitions + guards held as data (`resource_workflows`
+      definition jsonb over `knowledge_resources.status`), validated by one generic transition
+      validator; a thin `POST /author/graph/transition` under `space.knowledge.transition` (+ optional
+      per-transition guard verb, e.g. `space.knowledge.approve`) rejects illegal transitions. This is
+      the state source for the `requires_state` rule. Landed: the `resource_workflows` vocab table
+      (natural-key PK, XState-compatible `definition` jsonb, select-only RLS), an additive nullable
+      `knowledge_resources.workflow_key` FK, the status CHECK widened to
+      `draft/active/archived/in_review/approved`, `default` + `document_review` seed definitions, the
+      `space.knowledge.transition`/`space.knowledge.approve` verbs (admin+author→transition,
+      admin→approve), the pure `validateTransition` engine function, the UI-agnostic
+      `transitionResourceStatus` application module, and the thin endpoint (illegal → 422). The board
+      view + server gating wiring + e2e landed (§8.B); the transition-action UI is deferred (the
+      endpoint + e2e-through-API validate the write-path — board view stays display-only this slice)
+- [x] Document management = an EXAMPLE projection, not a separate app: a `view_types` row (`board`) +
+  a `projections` row filtering/segmenting by status with a `requires_state` gate (only `approved`
+  docs are "available"). Adding it = vocabulary rows + a projection row + (optional) a workflow
+  row, ZERO engine fork — the third vertical as pure configuration. Landed: the status-segmented
+  `board-projection.view.tsx` + its `board` registry entry, a separate optional `nodeGates`
+  view-prop, server wiring (`resolveProjectionGating` builds the resource-state map from the
+  already-resolved items and applies the declared rule under the user's RLS client), and the
+  `knowledge-workflow-gating` e2e (board renders all docs; non-approved gated as display)
+- [x] Enforce the authorization ≠ gating boundary (RLS for access; gating layer for pacing/process) —
+      the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
+      authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
+      while a reader without `space.knowledge.read` sees no documents at all (access = RLS)
+- [x] Access-layer extensions (the COMPLEMENTARY mechanism): the hard/access layer (L1/RLS) is now a
+      set of COMPOSABLE predicate dimensions over a node's visibility — symmetric to the gating-rule
+      registry, but hard (RLS, auditable, non-bypassable). A failed dimension HIDES the node (absent
+      from the result), unlike gating which keeps it visible. Two dimensions landed: (a) COHORT via the
+      existing `scopes` / `scope_memberships` primitive (generic audience / folder ACL / section
+      audience) — a thin `knowledge_resource_scopes` link plus a `scope_gate` predicate (an
+      unrestricted node stays visible; a restricted node is visible iff the user is a member of ≥1 of
+      its scopes); (b) manager→subordinate HIERARCHY — a space-scoped `reporting_lines` table plus a
+      RECURSIVE RLS predicate granting a manager access to resources OWNED (`owner_user_id`) by their
+      transitive subordinates (assignment-based access is a documented future option). The dimensions
+      COMPOSE through one resource-level helper `auth_user_can_access_resource` (the SELECT policy
+      passes the row's `id` / `space_id` / `owner_user_id` so it also holds under `... RETURNING`) —
+      `(base AND scope) OR hierarchy` — so adding a dimension is a sub-predicate plus one helper line,
+      not a rewrite of every policy; cohorts/lines are DATA (a new cohort = inserted rows, not a
+      migration). The resolver is unchanged (the projection query runs `security invoker`, so the new
+      RLS hides nodes natively across all projections/traversal). These are L1 ACCESS, NOT gating: they
+      are never placed in the gating registry; a hidden node is ABSENT, never a visible `available=false`
+      flag — keeping the authorization ≠ gating boundary intact. Demo data lives in the e2e harness, not
+      a migration
 
 ## 6. First projection — validate the invariant
 
-- [ ] Build one app (e.g. knowledge base) end-to-end as a saved projection — no separate data
-  model, no new code path
-- [ ] Confirm a second app type (document management or a course) is pure configuration
-  (vocabulary rows + ProjectionSpec + optional satellite) with zero core migration
+- [x] Build one app (knowledge base) as a saved projection — no separate data model, no new
+      code path (data layer + saved projection + projection EXECUTION landed via
+      `@workspace/knowledge-engine`; the view render landed via the consumer render surface below.
+      KB tagging is graph-native: a tag is a `kind='tag'` node and "has tag" is an incoming `tagged`
+      traversal, not a column)
+- [x] Consumer render: a view registry keyed by `ProjectionSpec.view` (a new view =
+      a new component + one registry entry, zero model/resolver change), a `grid` renderer (knowledge
+      base) and a `course` renderer (ordered prerequisite stepper, static lock indicator; real per-user
+      gating deferred to §2), and a projection switcher that toggles the SAME graph between apps (the
+      visible Invariant #1). Server-side resolution runs the engine under the user's RLS (never
+      service-role); blocking resolve + Suspense. Render is an END-USER surface → shadcn (`@workspace/ui`).
+      Pages live at `apps/author/src/app/graph/*`; proven by
+      `tests/e2e/src/knowledge-projection-render.e2e.spec.ts` (grid ⇆ course over one graph; ungranted →
+      empty by RLS; guest GET → sign-in redirect, guest POST → 401 JSON)
+- [x] Confirm a second app type (a course) is pure configuration (vocabulary rows +
+      ProjectionSpec) with zero core migration — proven by the slice 01 acceptance test
+      (`tests/e2e/src/knowledge-graph-invariant.e2e.spec.ts`): both projections resolve over the
+      identical resource/edge set, the course is one removable `projections` row, and the
+      empty-schema-diff is asserted at the data level (demo data lives in the e2e harness, not a
+      migration — production carries zero hardcoded demo rows)
 
 ## Open items
 
-- [ ] Assign entity-id prefixes for state, satellites, dictionaries, `projections`
-- [ ] Concrete filter/traversal schema — pin down with the first projection
+- [x] Assign entity-id prefixes for per-user state and its satellites — the anchor prefix `rus`
+      (`resource_user_state`) is registered; satellite prefixes are deferred with the satellites.
+      Node/edge/projection prefixes `knr`/`kne`/`prj` are registered, and vocabularies use
+      natural-key PKs, so no prefix is needed there
+- [x] Concrete filter/traversal schema — `FilterNode` + `TraversalSpec` landed in
+      `@workspace/knowledge-contracts`; the remaining concrete work is the compiler (tracked in §4)
 - [ ] Verify `pg_graphql` and (future) graph-extension feasibility on self-hosted Supabase

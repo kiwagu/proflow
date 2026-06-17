@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CATALOG_FILES: Record<string, string> = {
   platform: 'space-settings',
   author: 'admin',
+  graph: 'graph',
   notifications: 'messages',
 };
 

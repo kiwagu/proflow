@@ -1,7 +1,7 @@
 import type { PlatformLocale } from '@workspace/settings-runtime';
 import { PLATFORM_LOCALES } from '@workspace/settings-runtime';
 
-export type I18nDomain = 'platform' | 'author' | 'notifications';
+export type I18nDomain = 'platform' | 'author' | 'graph' | 'notifications';
 
 export type I18nLocale = PlatformLocale;
 
@@ -16,6 +16,11 @@ export const CATALOG_MANIFEST = {
     domains: ['admin'] as const,
     supportedLocales: SUPPORTED_LOCALES,
   },
+  graph: {
+    // Knowledge-graph CONSUMER render surface (shadcn, not the Payload admin).
+    domains: ['graph'] as const,
+    supportedLocales: SUPPORTED_LOCALES,
+  },
   notifications: {
     domains: ['messages'] as const,
     supportedLocales: SUPPORTED_LOCALES,
@@ -26,6 +31,8 @@ export type PlatformCatalogDomain =
   (typeof CATALOG_MANIFEST.platform.domains)[number];
 export type AuthorCatalogDomain =
   (typeof CATALOG_MANIFEST.author.domains)[number];
+export type GraphCatalogDomain =
+  (typeof CATALOG_MANIFEST.graph.domains)[number];
 export type NotificationsCatalogDomain =
   (typeof CATALOG_MANIFEST.notifications.domains)[number];
 

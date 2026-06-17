@@ -41,6 +41,10 @@
       "types": "./dist/author/index.d.ts",
       "import": "./dist/author/index.js"
     },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph/index.js"
+    },
     "./notifications": {
       "types": "./dist/notifications/index.d.ts",
       "import": "./dist/notifications/index.js"

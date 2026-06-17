@@ -1,0 +1,51 @@
+{
+  "name": "@workspace/knowledge-contracts",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bunx vitest run",
+    "test:vitest": "bunx vitest run"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./projection": {
+      "types": "./dist/projection.schema.d.ts",
+      "import": "./dist/projection.schema.js"
+    },
+    "./projection-result": {
+      "types": "./dist/projection-result.schema.d.ts",
+      "import": "./dist/projection-result.schema.js"
+    },
+    "./body-bridge": {
+      "types": "./dist/body-bridge.schema.d.ts",
+      "import": "./dist/body-bridge.schema.js"
+    },
+    "./resource-user-state": {
+      "types": "./dist/resource-user-state.schema.d.ts",
+      "import": "./dist/resource-user-state.schema.js"
+    },
+    "./resource-workflow": {
+      "types": "./dist/resource-workflow.schema.d.ts",
+      "import": "./dist/resource-workflow.schema.js"
+    }
+  }
+}

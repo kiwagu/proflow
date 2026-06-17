@@ -113,6 +113,26 @@ wait_for_supabase_db() {
   return 1
 }
 
+wait_for_storage_schema() {
+  # storage-api creates the `storage` schema (storage.buckets/objects) asynchronously
+  # on startup. Migrations that touch storage.* (e.g.
+  # 20260421141800_storage_buckets_media.sql) race ahead of it on a fresh stack, so
+  # gate db-push on the schema existing (Postgres pg_isready alone is not enough).
+  local max_attempts=40
+  local attempt=0
+  echo "===> Waiting for the storage schema (storage.buckets) created by storage-api..."
+  while [ "${attempt}" -lt "${max_attempts}" ]; do
+    if [ "$(docker exec supabase-db psql -U postgres -d postgres -tAc "select to_regclass('storage.buckets')" 2>/dev/null)" = "storage.buckets" ]; then
+      echo "Storage schema is ready."
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 3
+  done
+  echo "ERROR: storage.buckets not created in time (storage-api not ready). Storage migrations will fail. Fix the storage service, then run: make db-push"
+  return 1
+}
+
 run_repo_db_push() {
   local repo_root
   repo_root="$(cd "${script_dir}/../.." && pwd)"
@@ -214,7 +234,7 @@ echo "  cd ${supabase_dir} && docker compose ps"
 
 if [ "${force_clean}" = "1" ] && [ "${SKIP_STACK_DB_PUSH:-}" != "1" ]; then
   echo ""
-  if wait_for_supabase_db && run_repo_db_push; then
+  if wait_for_supabase_db && wait_for_storage_schema && run_repo_db_push; then
     echo ""
     echo "Repo migrations applied and identity_sync internal_secret synced (see Makefile DEV_IDENTITY_INTERNAL_INGEST_SECRET)."
   else
