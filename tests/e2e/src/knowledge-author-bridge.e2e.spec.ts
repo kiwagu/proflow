@@ -39,6 +39,10 @@ import {
   type KnowledgeActor,
   type KnowledgeGraphTenant,
 } from './helpers/knowledge-graph-bootstrap.js';
+import {
+  closeResolveTransportPool,
+  transportForActor,
+} from './helpers/projection-resolve-transport.js';
 
 const GRAPH_BASE = '/author/graph';
 
@@ -79,6 +83,7 @@ test.describe('knowledge author bridge (node↔body fan-out) @full', () => {
     if (tenant) {
       await teardownKnowledgeGraphTenant(tenant);
     }
+    await closeResolveTransportPool();
   });
 
   test('fan-out creates node + body + edge, two-way linked, RLS-enforced, projection resolves', async ({
@@ -199,6 +204,7 @@ test.describe('knowledge author bridge (node↔body fan-out) @full', () => {
         projectionId: fixture.knowledgeBaseProjectionId,
         spaceId: tenant.spaceId,
         db: tenant.granted.client,
+        transport: await transportForActor(tenant.granted.client),
       });
       const resolved = projection.items.find((i) => i.id === out.node_id);
       expect(

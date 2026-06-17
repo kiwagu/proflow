@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { createLocalReq, getPayload } from 'payload';
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 import {
   createTextResourceWithBody,
   reconcileBodyBridge,
@@ -48,15 +51,11 @@ export async function POST(request: Request) {
     );
   }
 
-  // User's RLS-scoped client (never service-role) — Postgres RLS is the authority.
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db, userId } = session;
 
   const payload = await getPayload({ config });
   // Build a Local API req carrying the user identity, the same construction the
@@ -70,7 +69,7 @@ export async function POST(request: Request) {
     const result = await createTextResourceWithBody(parsed.data, {
       db,
       payload,
-      userId: userData.user.id,
+      userId,
       req,
     });
 

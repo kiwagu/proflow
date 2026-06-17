@@ -1,4 +1,4 @@
-import type { Database, Json } from '@workspace/db';
+import type { Database } from '@workspace/db';
 import type {
   ProjectionResult,
   ProjectionSpec,
@@ -15,31 +15,63 @@ import { compileTraversal } from './traversal.compiler.js';
 
 /**
  * Projection resolver: composes the start-set + walk CTE + traverse-then-filter
- * join + order, executes it under the user's RLS-scoped client, and validates
- * the output against the domain `ProjectionResult` contract.
+ * join + order, executes it under the user's RLS, and validates the output
+ * against the domain `ProjectionResult` contract.
  *
- * RLS safety (ADR-0003 §2): `db` MUST be the user's JWT-scoped Supabase client,
- * NEVER service-role. The resolver can only NARROW what RLS already allows — it
- * runs the whole resolve as one query under the caller's session.
+ * RLS safety (ADR-0003 §2): the resolve MUST run AS THE USER, NEVER service-role.
+ * The resolver can only NARROW what RLS already allows.
  *
- * Transport (§8.4 decision): supabase-js cannot run arbitrary text SQL, and the
- * harness has no raw Postgres connection for the `SET LOCAL request.jwt.claims`
- * route (option c). We use option (b): a narrow `security invoker` RPC
- * (`resolve_projection_query`) that EXECUTEs the TS-compiled, fully-parameterized
- * SQL as the CALLER, so RLS is enforced natively. The allow-list stays entirely
- * in TS (this is the only SQL the RPC ever runs); values travel as positional
- * params. `security definer` is forbidden (it would bypass RLS).
+ * Transport (ADR-0009 — RATIFIED 2026-06-17, supersedes the slice-02 §8.4 open
+ * item and closes P0 finding #1): the prior transport was a `security invoker`
+ * RPC `resolve_projection_query(p_sql, p_params)` `grant`ed to `authenticated`.
+ * Because it `execute`d caller-supplied `p_sql` behind only a `with recursive%`
+ * prefix check, any authenticated user could call it via PostgREST and run
+ * arbitrary read/write SQL bounded only by table RLS. That RPC is now REVOKED /
+ * dropped (migration `…_revoke_resolve_projection_query_from_authenticated`).
+ *
+ * Instead the TS-compiled, fully-parameterized recursive-CTE SELECT is executed
+ * SERVER-SIDE over a direct pg connection that adopts the requesting user's JWT
+ * claims inside one explicit transaction (`SET LOCAL ROLE authenticated` +
+ * `SET LOCAL request.jwt.claims`), via a dedicated non-owner / non-bypass-RLS
+ * backend role. RLS is enforced natively as the user; raw SQL never crosses the
+ * client→server boundary (the client sends only `projectionId`). Compilation
+ * stays entirely in TS (ADR-0003 §1.1): the engine is transport-agnostic and
+ * receives the execution transport by injection (`args.transport`) — it never
+ * imports `pg`. The implementing transport lives in `apps/author`
+ * (`projection-resolve.transport.ts`); `security definer` is forbidden (bypasses
+ * RLS).
  */
 
 const RESOURCE_ALIAS = 'kr';
 
-const RPC_NAME = 'resolve_projection_query';
+/**
+ * The execution transport the engine calls with the compiled query. The `sql` is
+ * the engine's own compiler output (recursive-CTE SELECT, `$1` = bound jsonb
+ * param array); the implementation runs it under the user's RLS context and
+ * returns the resolved rows. Injected so the engine never depends on a Postgres
+ * driver (ADR-0009 §C) — the author server supplies the pg-based transport, the
+ * e2e harness supplies one built on the actor's session.
+ */
+export type ResolveQueryTransport = (request: {
+  sql: string;
+  paramsJson: unknown[];
+}) => Promise<ResolveRow[]>;
 
 type ResolveProjectionArgs = {
   projectionId: string;
   spaceId: string;
-  // user JWT / RLS-scoped client — never service-role
+  /**
+   * User JWT / RLS-scoped client — never service-role. Carried for callers that
+   * still derive the resolve context from it; the actual execution goes through
+   * `transport`.
+   */
   db: SupabaseClient<Database>;
+  /**
+   * Server-side execution transport (ADR-0009). MUST run the compiled SQL under
+   * the requesting user's RLS context (`SET LOCAL ROLE authenticated` +
+   * `request.jwt.claims`), never service-role.
+   */
+  transport: ResolveQueryTransport;
 };
 
 export function compileProjectionQuery(
@@ -112,11 +144,17 @@ type ResolveRow = {
 };
 
 /**
- * Render the canonical `$n` SQL into the transport form the RPC executes: a
- * single bound jsonb param (`$1`) carrying the ordered value array, with each
- * `$n` rewritten to a typed jsonb extraction. This confines the transport detail
- * to the resolver — the compilers stay transport-agnostic (`$n` + values), and
- * still zero value text reaches the SQL (values live only in the jsonb param).
+ * Render the canonical `$n` SQL into the transport form: a single bound jsonb
+ * param (`$1`) carrying the ordered value array, with each `$n` rewritten to a
+ * typed jsonb extraction. This confines the transport detail to the resolver —
+ * the compilers stay transport-agnostic (`$n` + values), and still zero value
+ * text reaches the SQL (values live only in the jsonb param).
+ *
+ * `$1` is referenced as `($1::jsonb)` so the rendered SELECT is self-typed and
+ * runs identically whoever binds it: the ADR-0009 server transport binds `$1` as
+ * a plain JSON string and the `::jsonb` cast lifts it to jsonb at execution
+ * (the old `security invoker` RPC relied on a declared `p_params jsonb` arg for
+ * the same cast; that RPC is gone).
  */
 export function renderRpcQuery(fragment: SqlFragment): {
   sql: string;
@@ -129,13 +167,13 @@ export function renderRpcQuery(fragment: SqlFragment): {
     if (Array.isArray(value)) {
       // text[] for `= any(...)`: `array(subquery)` yields the array value inline,
       // so the surrounding `any(...)` receives an array, not a scalar subquery.
-      return `array(select jsonb_array_elements_text($1 -> ${idx}))`;
+      return `array(select jsonb_array_elements_text(($1::jsonb) -> ${idx}))`;
     }
     if (typeof value === 'number') {
-      return `(($1 ->> ${idx})::int)`;
+      return `((($1::jsonb) ->> ${idx})::int)`;
     }
     // scalar text (kind/status/visibility/title/id/space_id/relation_type)
-    return `($1 ->> ${idx})`;
+    return `(($1::jsonb) ->> ${idx})`;
   });
   return { sql, paramsJson: fragment.params };
 }
@@ -149,16 +187,17 @@ export async function resolveProjection(
   });
   const { sql, paramsJson } = renderRpcQuery(fragment);
 
-  const { data, error } = await args.db.rpc(RPC_NAME, {
-    p_sql: sql,
-    p_params: paramsJson as unknown as Json,
-  });
-
-  if (error) {
-    throw new Error(`resolveProjection: ${error.message}`);
+  // Defence-in-depth (ADR-0009 §F): the compiler only ever emits a
+  // `with recursive … select` resolve. This is NOT the security boundary (that
+  // is the REVOKE + per-user RLS transport); it guards against the engine being
+  // handed a non-resolve shape by a future caller.
+  if (!/^\s*with\s+recursive/i.test(sql)) {
+    throw new Error(
+      'resolveProjection: refusing to execute a non-resolve statement'
+    );
   }
 
-  const rows = (data ?? []) as ResolveRow[];
+  const rows = await args.transport({ sql, paramsJson });
   const result: ProjectionResult = {
     projection_id: args.projectionId,
     view: spec.view,

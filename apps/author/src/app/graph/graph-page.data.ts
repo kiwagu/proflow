@@ -17,6 +17,10 @@ import {
 } from '@workspace/knowledge-engine';
 import { cookies } from 'next/headers';
 
+import {
+  createProjectionResolveTransport,
+  resolveJwtClaimsFromSession,
+} from '@/knowledge/projection-resolve.transport';
 import { loadResourceUserStateMap } from '@/knowledge/resource-user-state';
 import { createRlsClientFromServerCookies } from '@/lib/supabase/rls-from-cookies';
 
@@ -94,10 +98,15 @@ export async function resolveSpaceProjection(args: {
     );
   }
 
+  // ADR-0009: execute the compiled resolve server-side under the user's own RLS
+  // context (claims lifted from the SAME session that backs `db`), via the
+  // dedicated non-bypass-RLS resolver connection. No raw SQL ever leaves TS.
+  const claims = await resolveJwtClaimsFromSession(db);
   return resolveProjection(parsed.data, {
     projectionId: row.id,
     spaceId: args.spaceId,
     db,
+    transport: createProjectionResolveTransport(claims),
   });
 }
 

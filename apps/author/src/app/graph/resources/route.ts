@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 
 /**
  * GET /author/graph/resources?space_id=…&kind=… — RLS-scoped node listing for
@@ -23,14 +26,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db } = session;
 
   let query = db
     .from('knowledge_resources')

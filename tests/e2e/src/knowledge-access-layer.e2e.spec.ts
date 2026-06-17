@@ -50,6 +50,10 @@ import {
   type AccessLayerGraph,
   type KnowledgeGraphTenant,
 } from './helpers/knowledge-graph-bootstrap.js';
+import {
+  closeResolveTransportPool,
+  transportForActor,
+} from './helpers/projection-resolve-transport.js';
 
 function kbSpec(tagNodeId: string): ProjectionSpec {
   const parsed = parseProjectionSpec({
@@ -81,6 +85,7 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
       projectionId: graph.projectionId,
       spaceId: tenant.spaceId,
       db,
+      transport: await transportForActor(db),
     });
     return new Set(result.items.map((i) => i.id));
   }
@@ -95,6 +100,7 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
     if (tenant) {
       await teardownKnowledgeGraphTenant(tenant, actors?.extraUserIds ?? []);
     }
+    await closeResolveTransportPool();
   });
 
   test('(1) cohort hides (RLS hard): member sees it, stranger → absent', async () => {
@@ -146,6 +152,7 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
         spaceId: tenantB.spaceId,
         // tenant-A manager's RLS client probing tenant B.
         db: actors.manager.client,
+        transport: await transportForActor(actors.manager.client),
       });
       // Not a member of tenant B at all → empty set, and certainly no
       // subordinate-owned node leaks across the space boundary.
@@ -173,6 +180,54 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
     expect(memberIds.has(graph.composedNodeId)).toBe(true);
     // stranger: neither member nor manager → absent (both branches fail).
     expect(strangerIds.has(graph.composedNodeId)).toBe(false);
+  });
+
+  test('(7) edge SELECT does not leak a cohort-hidden endpoint (finding #2)', async () => {
+    // The `tagged` edge cohortRestrictedNodeId → tagNodeId touches a node the
+    // stranger may NOT see (cohort-fenced). Before the fix the edge was readable
+    // on plain space.knowledge.read, leaking the hidden node id via from_id (plus
+    // relation_type/metadata/neighbour). After the fix an edge is visible only
+    // when BOTH endpoints are access-visible, so the stranger sees no such edge.
+    const { data: strangerEdges, error: strangerErr } =
+      await actors.cohortStranger.client
+        .from('knowledge_edges')
+        .select('id,from_id,to_id,relation_type,metadata')
+        .eq('from_id', graph.cohortRestrictedNodeId);
+    expect(strangerErr).toBeNull();
+    expect(strangerEdges ?? []).toEqual([]);
+
+    // The cohort MEMBER (who can see both endpoints) still reads the edge — the
+    // tightening hides leaks without breaking legitimate edge visibility.
+    const { data: memberEdges, error: memberErr } =
+      await actors.cohortMember.client
+        .from('knowledge_edges')
+        .select('id,from_id')
+        .eq('from_id', graph.cohortRestrictedNodeId);
+    expect(memberErr).toBeNull();
+    expect((memberEdges ?? []).length).toBeGreaterThan(0);
+  });
+
+  test('(8) resource_scopes SELECT does not leak cohort fencing of a hidden node (finding #3)', async () => {
+    // The link row (cohortRestrictedNodeId, scopeAId) records that a node the
+    // stranger cannot see is cohort-fenced. Gating the link SELECT on the
+    // resource's OWN access (not base read) means the stranger cannot enumerate
+    // it: a caller who cannot see the resource cannot learn it is scope-fenced.
+    const { data: strangerLinks, error: strangerErr } =
+      await actors.cohortStranger.client
+        .from('knowledge_resource_scopes')
+        .select('resource_id,scope_id')
+        .eq('resource_id', graph.cohortRestrictedNodeId);
+    expect(strangerErr).toBeNull();
+    expect(strangerLinks ?? []).toEqual([]);
+
+    // The cohort member (who can access the resource) still reads its scope link.
+    const { data: memberLinks, error: memberErr } =
+      await actors.cohortMember.client
+        .from('knowledge_resource_scopes')
+        .select('resource_id,scope_id')
+        .eq('resource_id', graph.cohortRestrictedNodeId);
+    expect(memberErr).toBeNull();
+    expect((memberLinks ?? []).length).toBeGreaterThan(0);
   });
 
   test('(6) authz ≠ gating: hidden node absent from items; not a gating rule', async () => {

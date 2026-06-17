@@ -14,6 +14,7 @@ export {
   compileProjectionQuery,
   renderRpcQuery,
   resolveProjection,
+  type ResolveQueryTransport,
 } from './projection.resolver.js';
 
 export {

@@ -1242,19 +1242,6 @@ export type Database = {
         Args: { p_scope: string; p_scope_id?: string };
         Returns: boolean;
       };
-      resolve_projection_query: {
-        Args: { p_params: Json; p_sql: string };
-        Returns: {
-          body_ref: Json;
-          depth: number;
-          id: string;
-          kind: string;
-          status: string;
-          title: string;
-          via_edge_id: string;
-          visibility: string;
-        }[];
-      };
       role_assignment_is_valid: {
         Args: {
           p_organization_id: string;

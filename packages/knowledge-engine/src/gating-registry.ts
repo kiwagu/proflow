@@ -108,6 +108,17 @@ export const GATING_RULE_REGISTRY: Record<string, GatingRule> = {
   requires_state: requiresStateRule, // §3.3 — new
 };
 
+/**
+ * Resolve a named gating rule from the registry. The rule key is a `z.string()`
+ * (pluggable-by-data), so a malicious/garbage spec could carry an inherited
+ * Object property name (`constructor`, `valueOf`, `__proto__`, `toString`, …). A
+ * bare `REGISTRY[key]` index would return the inherited function for those keys,
+ * slipping past a `!rule` guard and degrading gating to "rule found but wrong".
+ * `Object.hasOwn` confines resolution to the registry's OWN keys, so any
+ * non-registered key (including prototype members) resolves to `undefined`.
+ */
 export function resolveGatingRule(key: string): GatingRule | undefined {
-  return GATING_RULE_REGISTRY[key];
+  return Object.hasOwn(GATING_RULE_REGISTRY, key)
+    ? GATING_RULE_REGISTRY[key]
+    : undefined;
 }

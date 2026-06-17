@@ -129,4 +129,22 @@ describe('GATING_RULE_REGISTRY', () => {
   it('resolveGatingRule returns undefined for an unknown key', () => {
     expect(resolveGatingRule('nope')).toBeUndefined();
   });
+
+  // Review finding #7: the rule key is a z.string(), so a garbage/malicious spec
+  // could carry an inherited Object property name. A bare object index would
+  // return the inherited function for these and slip past the `!rule` guard,
+  // degrading gating to "rule found but wrong". resolveGatingRule must treat
+  // every prototype member as unknown (Object.hasOwn confinement).
+  it('rejects inherited prototype keys (constructor/valueOf/__proto__/toString)', () => {
+    for (const key of [
+      'constructor',
+      'valueOf',
+      '__proto__',
+      'toString',
+      'hasOwnProperty',
+      'isPrototypeOf',
+    ]) {
+      expect(resolveGatingRule(key)).toBeUndefined();
+    }
+  });
 });

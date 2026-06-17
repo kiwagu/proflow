@@ -1,5 +1,5 @@
 import type { Database } from '@workspace/db';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, parseCookieHeader } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -15,31 +15,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * endpoints/access functions never mutate the session (the proxy refreshes it).
  */
 
-function parseCookieHeader(
-  cookieHeader: string | null
-): { name: string; value: string }[] {
-  if (!cookieHeader) {
-    return [];
-  }
-  const out: { name: string; value: string }[] = [];
-  for (const part of cookieHeader.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0) {
-      continue;
-    }
-    const name = part.slice(0, eq).trim();
-    const value = part.slice(eq + 1).trim();
-    if (name.length > 0) {
-      out.push({ name, value });
-    }
-  }
-  return out;
-}
-
 export function createRlsClientFromCookieHeader(
   cookieHeader: string | null
 ): SupabaseClient<Database> {
-  const cookies = parseCookieHeader(cookieHeader);
+  // Reuse the SDK's own cookie-header parser instead of hand-rolling one: it is
+  // the exact inverse of the `@supabase/ssr` chunk encoding the proxy writes, so
+  // the JWT chunks round-trip byte-for-byte. Drop value-less cookies — the
+  // cookie jar `getAll()` contract is `{ name, value }`.
+  const cookies = (cookieHeader ? parseCookieHeader(cookieHeader) : [])
+    .filter((c): c is { name: string; value: string } => c.value !== undefined)
+    .map(({ name, value }) => ({ name, value }));
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,

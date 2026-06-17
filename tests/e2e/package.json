@@ -27,9 +27,11 @@
     "@workspace/knowledge-engine": "workspace:*",
     "@workspace/rbac": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "@types/pg": "catalog:",
     "cross-env": "catalog:",
     "dotenv": "catalog:",
     "mongodb": "^7.3.0",
+    "pg": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "zod": "catalog:"

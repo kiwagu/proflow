@@ -1,5 +1,18 @@
 {
   "author.usersCentralized.cannotSave.title": "Cannot save changes",
   "author.usersCentralized.cannotSave.description": "User accounts are managed centrally on the Platform. Author mirrors them for sign-in only - you cannot save changes to users here.",
-  "author.usersCentralized.actions.confirm": "OK"
+  "author.usersCentralized.actions.confirm": "OK",
+  "author.knowledge.newTextResource.title": "Create text resource",
+  "author.knowledge.newTextResource.activeSpace": "Active space:",
+  "author.knowledge.newTextResource.fieldTitle": "Title",
+  "author.knowledge.newTextResource.fieldBody": "Body",
+  "author.knowledge.newTextResource.fieldEdge": "Edge",
+  "author.knowledge.newTextResource.edgeNone": "No edge",
+  "author.knowledge.newTextResource.fieldTarget": "Target node",
+  "author.knowledge.newTextResource.selectNode": "Select a node…",
+  "author.knowledge.newTextResource.save": "Save",
+  "author.knowledge.newTextResource.saving": "Saving…",
+  "author.knowledge.newTextResource.saved": "Saved.",
+  "author.knowledge.newTextResource.missingFields": "A title and an active space are required.",
+  "author.knowledge.newTextResource.saveFailed": "Save failed ({{status}})."
 }

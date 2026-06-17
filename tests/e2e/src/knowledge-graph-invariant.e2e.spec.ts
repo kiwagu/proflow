@@ -238,4 +238,70 @@ test.describe('knowledge graph — Invariant #1 (course = data, zero migration) 
     expect(error).toBeNull();
     expect(resources).toHaveLength(4);
   });
+
+  test('owner_user_id defaults to created_by on insert (finding #4)', async () => {
+    // A node inserted WITHOUT owner_user_id must come back with owner_user_id =
+    // created_by (the BEFORE INSERT trigger), so the manager-hierarchy access
+    // dimension always has a non-null owner to resolve against (never inert).
+    const db = tenant.granted.client;
+    const { data: created, error: insErr } = await db
+      .from('knowledge_resources')
+      .insert({
+        space_id: tenant.spaceId,
+        kind: 'text',
+        title: 'Owner default probe',
+        created_by: tenant.granted.userId,
+        // owner_user_id intentionally OMITTED
+      })
+      .select('id,created_by,owner_user_id')
+      .single();
+    expect(insErr).toBeNull();
+    expect(created?.owner_user_id).toBe(tenant.granted.userId);
+    expect(created?.owner_user_id).toBe(created?.created_by);
+
+    await tenant.service
+      .from('knowledge_resources')
+      .delete()
+      .eq('id', created!.id);
+  });
+
+  test('created_by is immutable on update (finding #5)', async () => {
+    // created_by gates body-bridge creator authority; an editor must NOT be able
+    // to rewrite it and transfer that authority. The BEFORE UPDATE trigger rejects
+    // any attempt to change created_by.
+    const db = tenant.granted.client;
+    const { data: node, error: insErr } = await db
+      .from('knowledge_resources')
+      .insert({
+        space_id: tenant.spaceId,
+        kind: 'text',
+        title: 'created_by immutability probe',
+        created_by: tenant.granted.userId,
+        owner_user_id: tenant.granted.userId,
+      })
+      .select('id')
+      .single();
+    expect(insErr).toBeNull();
+
+    // Attempt to reassign created_by to the ungranted user → must be rejected.
+    const { error: rewriteErr } = await db
+      .from('knowledge_resources')
+      .update({ created_by: tenant.ungranted.userId })
+      .eq('id', node!.id);
+    expect(rewriteErr).not.toBeNull();
+    expect(rewriteErr?.message).toContain('immutable');
+
+    // created_by is unchanged (verified service-side, bypassing RLS).
+    const { data: after } = await tenant.service
+      .from('knowledge_resources')
+      .select('created_by')
+      .eq('id', node!.id)
+      .single();
+    expect(after?.created_by).toBe(tenant.granted.userId);
+
+    await tenant.service
+      .from('knowledge_resources')
+      .delete()
+      .eq('id', node!.id);
+  });
 });

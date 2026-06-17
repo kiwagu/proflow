@@ -4,6 +4,10 @@ import { Button, useTranslation } from '@payloadcms/ui';
 import { useCallback, useEffect, useState } from 'react';
 
 import { authorApiPath } from '@/lib/platform-login';
+import type {
+  CustomTranslationsKeys,
+  CustomTranslationsObject,
+} from '@/i18n/custom-translations';
 
 /**
  * Custom Payload admin-view — "create text resource" (slice-03 §4). ONE author
@@ -71,7 +75,10 @@ function toLexicalBody(text: string): unknown {
 }
 
 export default function NewTextResourceView() {
-  const { t } = useTranslation();
+  const { t } = useTranslation<
+    CustomTranslationsObject,
+    CustomTranslationsKeys
+  >();
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [bodyText, setBodyText] = useState('');
@@ -126,7 +133,7 @@ export default function NewTextResourceView() {
 
   const onSave = useCallback(async () => {
     if (!spaceId || !title.trim()) {
-      setMessage(t('general:error') as string);
+      setMessage(t('author:knowledge.newTextResource.missingFields'));
       return;
     }
     setSubmitting(true);
@@ -157,12 +164,14 @@ export default function NewTextResourceView() {
       if (!response.ok) {
         setMessage(
           (body && 'message' in body && body.message) ||
-            `Save failed (${response.status})`
+            t('author:knowledge.newTextResource.saveFailed', {
+              status: response.status,
+            })
         );
         return;
       }
       setResult(body as FanoutResult);
-      setMessage('Saved.');
+      setMessage(t('author:knowledge.newTextResource.saved'));
       setTitle('');
       setBodyText('');
       setRelationType(EDGE_NONE);
@@ -178,14 +187,15 @@ export default function NewTextResourceView() {
       style={{ maxWidth: 720, marginTop: 'var(--base)' }}
       data-testid="new-text-resource-view"
     >
-      <h1>Create text resource</h1>
+      <h1>{t('author:knowledge.newTextResource.title')}</h1>
       <p>
-        Active space: <code data-testid="ntr-space">{spaceId ?? '—'}</code>
+        {t('author:knowledge.newTextResource.activeSpace')}{' '}
+        <code data-testid="ntr-space">{spaceId ?? '—'}</code>
       </p>
 
       <div style={{ display: 'grid', gap: 'var(--base)' }}>
         <label>
-          Title
+          {t('author:knowledge.newTextResource.fieldTitle')}
           <input
             data-testid="ntr-title"
             type="text"
@@ -195,7 +205,7 @@ export default function NewTextResourceView() {
         </label>
 
         <label>
-          Body
+          {t('author:knowledge.newTextResource.fieldBody')}
           <textarea
             data-testid="ntr-body"
             rows={6}
@@ -205,13 +215,15 @@ export default function NewTextResourceView() {
         </label>
 
         <label>
-          Edge
+          {t('author:knowledge.newTextResource.fieldEdge')}
           <select
             data-testid="ntr-relation"
             value={relationType}
             onChange={(e) => setRelationType(e.target.value)}
           >
-            <option value={EDGE_NONE}>No edge</option>
+            <option value={EDGE_NONE}>
+              {t('author:knowledge.newTextResource.edgeNone')}
+            </option>
             <option value="prerequisite">prerequisite</option>
             <option value="relates_to">relates_to</option>
           </select>
@@ -219,13 +231,15 @@ export default function NewTextResourceView() {
 
         {relationType !== EDGE_NONE ? (
           <label>
-            Target node
+            {t('author:knowledge.newTextResource.fieldTarget')}
             <select
               data-testid="ntr-target"
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
             >
-              <option value="">Select a node…</option>
+              <option value="">
+                {t('author:knowledge.newTextResource.selectNode')}
+              </option>
               {resources.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.title} ({r.kind})
@@ -241,7 +255,9 @@ export default function NewTextResourceView() {
             disabled={submitting}
             onClick={() => void onSave()}
           >
-            {submitting ? 'Saving…' : 'Save'}
+            {submitting
+              ? t('author:knowledge.newTextResource.saving')
+              : t('author:knowledge.newTextResource.save')}
           </Button>
         </div>
 

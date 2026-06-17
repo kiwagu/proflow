@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 import {
   IllegalTransitionError,
   transitionResourceStatus,
@@ -43,15 +46,11 @@ export async function POST(request: Request) {
     );
   }
 
-  // User's RLS-scoped client (never service-role) — Postgres RLS is the authority.
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db, userId } = session;
 
   // Derive the caller's guard verbs from their ROLES (via the RLS-aware permission
   // helper), NEVER from the body. The set drives per-transition `guard` checks in
@@ -70,7 +69,7 @@ export async function POST(request: Request) {
   try {
     const result = await transitionResourceStatus(parsed.data, {
       db,
-      userId: userData.user.id,
+      userId,
       userVerbs,
     });
     return NextResponse.json(result, {

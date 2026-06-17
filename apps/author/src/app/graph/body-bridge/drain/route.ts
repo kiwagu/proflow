@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 import { drainBodyBridgeOutboxOnce } from '@/knowledge/body-bridge.outbox-worker';
 
 /**
@@ -47,14 +50,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db } = session;
 
   // Authority gate: only an author who can create in this space may trigger a
   // drain. Evaluated under the caller's RLS context (never service-role).

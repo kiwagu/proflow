@@ -76,8 +76,18 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
-/** Service-role Supabase client — trusted backend (§5). Mirrors the fan-out's. */
+/**
+ * Service-role Supabase client — trusted backend (§5). Mirrors the fan-out's.
+ * Memoized at module scope: the claim/complete/retry loop calls this on every
+ * RPC on the hot drain path, and a supabase-js client is a reusable connection
+ * factory — building a fresh one per call is pure overhead.
+ */
+let serviceClient: SupabaseClient<Database> | null = null;
+
 function serviceSupabase(): SupabaseClient<Database> {
+  if (serviceClient) {
+    return serviceClient;
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url) {
@@ -86,9 +96,10 @@ function serviceSupabase(): SupabaseClient<Database> {
   if (!serviceRole) {
     throw new Error('body-bridge worker: SUPABASE_SERVICE_ROLE_KEY is not set');
   }
-  return createClient<Database>(url, serviceRole, {
+  serviceClient = createClient<Database>(url, serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  return serviceClient;
 }
 
 export function isBodyBridgeOutboxConfigured(): boolean {

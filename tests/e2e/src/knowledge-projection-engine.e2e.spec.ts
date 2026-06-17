@@ -31,6 +31,10 @@ import {
   type KnowledgeGraphTenant,
   type ProjectionEngineGraph,
 } from './helpers/knowledge-graph-bootstrap.js';
+import {
+  closeResolveTransportPool,
+  transportForActor,
+} from './helpers/projection-resolve-transport.js';
 
 function kbSpec(tagNodeId: string): ProjectionSpec {
   const parsed = parseProjectionSpec({
@@ -101,6 +105,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
     if (tenant) {
       await teardownKnowledgeGraphTenant(tenant);
     }
+    await closeResolveTransportPool();
   });
 
   test('(1) KB projection resolves the tagged set via incoming `tagged` traversal', async () => {
@@ -108,6 +113,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.knowledgeBaseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.granted.client,
+      transport: await transportForActor(tenant.granted.client),
     });
 
     expect(result.view).toBe('grid');
@@ -131,6 +137,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.courseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.granted.client,
+      transport: await transportForActor(tenant.granted.client),
     });
 
     expect(result.view).toBe('course');
@@ -159,6 +166,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.knowledgeBaseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.ungranted.client,
+      transport: await transportForActor(tenant.ungranted.client),
     });
     expect(kb.items).toEqual([]);
 
@@ -166,6 +174,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.courseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.ungranted.client,
+      transport: await transportForActor(tenant.ungranted.client),
     });
     expect(course.items).toEqual([]);
   });
@@ -188,6 +197,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.courseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.granted.client,
+      transport: await transportForActor(tenant.granted.client),
     });
 
     // Terminates, and each node appears exactly once despite the cycle.
@@ -212,6 +222,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       projectionId: graph.courseProjectionId,
       spaceId: tenant.spaceId,
       db: tenant.granted.client,
+      transport: await transportForActor(tenant.granted.client),
     });
 
     const maxDepth = Math.max(...result.items.map((i) => i.depth));

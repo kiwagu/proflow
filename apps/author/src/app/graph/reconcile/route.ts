@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { createLocalReq, getPayload } from 'payload';
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 import { reconcileBodyBridge } from '@/knowledge/text-resource.fanout';
 
 /**
@@ -31,14 +34,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db } = session;
 
   const payload = await getPayload({ config });
   const req = await createLocalReq(

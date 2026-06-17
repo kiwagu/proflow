@@ -2,7 +2,10 @@ import { coarseStatusSchema } from '@workspace/knowledge-contracts/resource-user
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
-import { createRlsClientFromRequest } from '@/lib/supabase/rls-from-request';
+import {
+  isAuthFailure,
+  requireRlsSession,
+} from '@/lib/supabase/require-rls-session';
 import { setResourceUserState } from '@/knowledge/resource-user-state';
 
 /**
@@ -38,22 +41,18 @@ export async function POST(request: Request) {
     );
   }
 
-  // User's RLS-scoped client (never service-role) — Postgres RLS is the authority.
-  const db = createRlsClientFromRequest(request);
-  const { data: userData, error: userErr } = await db.auth.getUser();
-  if (userErr || !userData.user?.id) {
-    return NextResponse.json(
-      { message: 'Not authenticated.' },
-      { status: 401 }
-    );
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
   }
+  const { db, userId } = session;
 
   try {
     // user_id comes from the SESSION, never the body — a forged user_id cannot
     // write a foreign row, and RLS WITH CHECK is the final gate either way.
     const result = await setResourceUserState(parsed.data, {
       db,
-      userId: userData.user.id,
+      userId,
     });
     return NextResponse.json(result, {
       status: 200,
