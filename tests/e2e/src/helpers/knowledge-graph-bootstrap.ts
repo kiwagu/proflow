@@ -620,19 +620,131 @@ export async function seedBodyBridgeFixture(
   };
 }
 
+// ── slice-05: extra actors for the per-user-gating suite ─────────────────────
+//
+// The per-user-gating test needs, beyond the base tenant's `granted` (admin) and
+// `ungranted` (space_admin) actors:
+//  - a SECOND granted actor B in the same space (admin role → has progress) to
+//    prove own-rows isolation A↔B;
+//  - a READER actor with `space.knowledge.read` but NOT `space.knowledge.progress`
+//    (a learner who can see the course but lacks the write verb) to prove the
+//    read/progress split. No system role fits, so a tiny org-scoped custom role
+//    is minted at runtime carrying only `space.knowledge.read`.
+
+export type PerUserGatingActors = {
+  /** A second admin actor in the same space (own-rows isolation A↔B). */
+  actorB: KnowledgeActor;
+  /** Read-only actor: space.knowledge.read but NOT space.knowledge.progress. */
+  reader: KnowledgeActor;
+  /** Extra user ids to cascade-clean on teardown. */
+  extraUserIds: string[];
+};
+
+/**
+ * Add the slice-05 gating actors to an existing tenant: a second admin actor B
+ * and a read-only actor. Both are space members in the SAME space, created
+ * through the real RBAC path (service-role memberships + `user_role`), never raw
+ * inserts of dropped columns.
+ */
+export async function bootstrapPerUserGatingActors(
+  tenant: KnowledgeGraphTenant
+): Promise<PerUserGatingActors> {
+  const { service, organizationId, spaceId } = tenant;
+
+  // ── actor B: a second admin in the same space ──────────────────────────────
+  const userB = await createActor(service, 'gating-b');
+  // ── reader: read-only learner (no progress verb) ───────────────────────────
+  const readerUser = await createActor(service, 'gating-reader');
+
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert([
+      { organization_id: organizationId, user_id: userB.id },
+      { organization_id: organizationId, user_id: readerUser.id },
+    ]);
+  if (omErr) throw new Error(`gating org_membership: ${omErr.message}`);
+
+  const { error: smErr } = await service.from('space_memberships').insert([
+    { space_id: spaceId, user_id: userB.id, status: 'active' },
+    { space_id: spaceId, user_id: readerUser.id, status: 'active' },
+  ]);
+  if (smErr) throw new Error(`gating space_membership: ${smErr.message}`);
+
+  const { adminRoleId } = await resolveRoleIds(service);
+
+  // A custom org-scoped role carrying ONLY space.knowledge.read — proves the
+  // read/progress split: this actor reads the course but cannot write progress.
+  const { data: readRole, error: roleErr } = await service
+    .from('roles')
+    .insert({
+      key: `kg-reader-${slug()}`,
+      label: 'KG Reader (read-only)',
+      scope: 'space',
+      role_kind: 'custom',
+      owner_organization_id: organizationId,
+    })
+    .select('id')
+    .single();
+  if (roleErr || !readRole?.id) {
+    throw new Error(`gating reader role: ${roleErr?.message ?? 'no id'}`);
+  }
+  const { data: readPerm, error: permErr } = await service
+    .from('permissions')
+    .select('id')
+    .eq('key', 'space.knowledge.read')
+    .single();
+  if (permErr || !readPerm?.id) {
+    throw new Error(`gating read permission: ${permErr?.message ?? 'no id'}`);
+  }
+  const { error: rpErr } = await service
+    .from('role_permission')
+    .insert({ role_id: readRole.id, permission_id: readPerm.id });
+  if (rpErr) throw new Error(`gating role_permission: ${rpErr.message}`);
+
+  const { error: urErr } = await service.from('user_role').insert([
+    { user_id: userB.id, space_id: spaceId, role_id: adminRoleId },
+    { user_id: readerUser.id, space_id: spaceId, role_id: readRole.id },
+  ]);
+  if (urErr) throw new Error(`gating user_role: ${urErr.message}`);
+
+  const clientB = await authenticatedClient(userB.email, userB.password);
+  const readerClient = await authenticatedClient(
+    readerUser.email,
+    readerUser.password
+  );
+
+  return {
+    actorB: {
+      userId: userB.id,
+      email: userB.email,
+      password: userB.password,
+      client: clientB,
+    },
+    reader: {
+      userId: readerUser.id,
+      email: readerUser.email,
+      password: readerUser.password,
+      client: readerClient,
+    },
+    extraUserIds: [userB.id, readerUser.id],
+  };
+}
+
 /**
  * Cascade-delete the org (→ spaces → resources/edges/projections/memberships/
- * user_role) and both auth users + profiles.
+ * user_role) and both auth users + profiles. `extraUserIds` (slice-05 gating
+ * actors added after bootstrap) are cleaned alongside the base actors.
  */
 export async function teardownKnowledgeGraphTenant(
-  tenant: KnowledgeGraphTenant
+  tenant: KnowledgeGraphTenant,
+  extraUserIds: string[] = []
 ): Promise<void> {
   const { service, organizationId, granted, ungranted } = tenant;
 
   await service.from('organizations').delete().eq('id', organizationId);
 
-  for (const actor of [granted, ungranted]) {
-    await service.from('profiles').delete().eq('user_id', actor.userId);
-    await service.auth.admin.deleteUser(actor.userId);
+  for (const userId of [granted.userId, ungranted.userId, ...extraUserIds]) {
+    await service.from('profiles').delete().eq('user_id', userId);
+    await service.auth.admin.deleteUser(userId);
   }
 }

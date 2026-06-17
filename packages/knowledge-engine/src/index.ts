@@ -15,3 +15,9 @@ export {
   renderRpcQuery,
   resolveProjection,
 } from './projection.resolver.js';
+
+export {
+  gateSequence,
+  type GatedSequence,
+  type GatedStep,
+} from './sequence-gating.js';

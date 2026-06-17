@@ -8,9 +8,14 @@ import {
   parseProjectionSpec,
   type ProjectionResult,
 } from '@workspace/knowledge-contracts';
-import { resolveProjection } from '@workspace/knowledge-engine';
+import {
+  gateSequence,
+  resolveProjection,
+  type GatedSequence,
+} from '@workspace/knowledge-engine';
 import { cookies } from 'next/headers';
 
+import { loadResourceUserStateMap } from '@/knowledge/resource-user-state';
 import { createRlsClientFromServerCookies } from '@/lib/supabase/rls-from-cookies';
 
 import type { ProjectionOption } from './views/projection-switcher';
@@ -92,4 +97,25 @@ export async function resolveSpaceProjection(args: {
     spaceId: args.spaceId,
     db,
   });
+}
+
+/**
+ * Compute per-user course display gating (slice-05 §4.2). A THIN server helper,
+ * separate from `resolveSpaceProjection` (which stays projection-PURE): it fetches
+ * the caller's overlay state under their RLS-scoped client (own-rows only, never
+ * service-role) and overlays it onto the already-resolved course result via the
+ * pure `gateSequence` engine function. Call this ONLY when `result.view === 'course'`
+ * — grid/KB carries no per-user gating in this slice.
+ *
+ * Separation held: traversal (resolver) and per-user state (this overlay) are
+ * distinct layers, merged at render time — the resolver never learns about
+ * `resource_user_state`.
+ */
+export async function resolveCourseGating(args: {
+  spaceId: string;
+  result: ProjectionResult;
+}): Promise<GatedSequence> {
+  const db = await createRlsClientFromServerCookies();
+  const state = await loadResourceUserStateMap(args.spaceId, { db });
+  return gateSequence(args.result, state);
 }

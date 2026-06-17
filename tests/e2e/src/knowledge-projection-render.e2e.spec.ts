@@ -11,7 +11,8 @@
  *
  * Coverage maps to §7:
  *  (1) KB projection → grid cards for the tagged lessons only.
- *  (2) course projection → ordered steps L1→L2→L3 with static locks on depth>0.
+ *  (2) course projection → ordered steps L1→L2→L3; a fresh user sees the later
+ *      steps gated by per-user prerequisite state (slice-05).
  *  (3) the switcher toggles KB ⇄ course over ONE graph.
  *  (4) RLS: ungranted → empty grid (not an error).
  *  (5) guest GET page → sign-in redirect; guest POST endpoint → 401 JSON (slice-03).
@@ -96,7 +97,7 @@ test.describe('knowledge projection render (grid ⇆ course over one graph) @ful
     }
   });
 
-  test('(2) course projection renders ordered steps with locks on depth>0', async ({
+  test('(2) course projection renders ordered steps with per-user gating', async ({
     baseURL,
   }) => {
     const base = baseURL ?? 'https://proflow.local';
@@ -114,10 +115,12 @@ test.describe('knowledge projection render (grid ⇆ course over one graph) @ful
       expect(idxL2).toBeGreaterThan(idxL1);
       expect(idxL3).toBeGreaterThan(idxL2);
 
-      // Static lock affordance present on the gated (depth>0) steps. The start
-      // node (L1, depth 0) carries no lock; L2/L3 do — so at least one lock
-      // tooltip string is rendered.
-      expect(html.toLowerCase()).toContain('unlocks after the previous step');
+      // Dynamic gating for a fresh user (no progress rows): the first step is
+      // open and later steps are locked by the prerequisite, so the per-user
+      // lock tooltip string is rendered.
+      expect(html.toLowerCase()).toContain(
+        'complete the previous step to unlock'
+      );
     } finally {
       await http.dispose();
     }
@@ -148,10 +151,10 @@ test.describe('knowledge projection render (grid ⇆ course over one graph) @ful
       // The KB grid renders no lock tooltip; the course path does — proving the
       // SAME node set takes two forms purely by `view`.
       expect(kbHtml.toLowerCase()).not.toContain(
-        'unlocks after the previous step'
+        'complete the previous step to unlock'
       );
       expect(courseHtml.toLowerCase()).toContain(
-        'unlocks after the previous step'
+        'complete the previous step to unlock'
       );
     } finally {
       await http.dispose();

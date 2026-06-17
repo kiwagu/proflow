@@ -1,4 +1,5 @@
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
+import type { GatedSequence } from '@workspace/knowledge-engine';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { ReactNode } from 'react';
 
@@ -22,6 +23,21 @@ import { UnknownProjectionView } from './unknown-projection.view';
 export type ProjectionViewProps = {
   result: ProjectionResult;
   t: GraphTranslator;
+  /**
+   * Per-user display gating computed server-side (slice-05 §4.4). Passed ONLY for
+   * the `course` view (gating is course pedagogy); other views ignore it. Optional
+   * so a new view = one entry here with zero changes — Invariant #1 holds. The
+   * view stays purely presentational: it consumes the already-computed
+   * `GatedSequence`, it never fetches state or calls `gateSequence` itself.
+   */
+  gating?: GatedSequence;
+  /**
+   * Active space id — the write target for the course mark-complete action
+   * (slice-05 §4.3 POSTs `{ spaceId, resourceId, coarseStatus }`). Passed
+   * alongside `gating` for the `course` view; other views ignore it. The result
+   * contract intentionally does not echo `space_id`, so the page threads it here.
+   */
+  spaceId?: string;
 };
 
 export type ProjectionView = (props: ProjectionViewProps) => ReactNode;

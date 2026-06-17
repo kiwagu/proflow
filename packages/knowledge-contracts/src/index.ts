@@ -32,6 +32,16 @@ export {
 } from './projection-result.schema.js';
 
 export {
+  coarseStatusSchema,
+  parseResourceUserStateMap,
+  resourceUserStateMapSchema,
+  resourceUserStateSchema,
+  type CoarseStatus,
+  type ResourceUserState,
+  type ResourceUserStateMap,
+} from './resource-user-state.schema.js';
+
+export {
   BODY_BRIDGE_EVENTS,
   BODY_BRIDGE_SCHEMA_VERSION,
   bodyBridgeEnvelopeSchema,

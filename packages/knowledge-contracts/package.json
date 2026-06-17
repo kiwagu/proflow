@@ -38,6 +38,10 @@
     "./body-bridge": {
       "types": "./dist/body-bridge.schema.d.ts",
       "import": "./dist/body-bridge.schema.js"
+    },
+    "./resource-user-state": {
+      "types": "./dist/resource-user-state.schema.d.ts",
+      "import": "./dist/resource-user-state.schema.js"
     }
   }
 }

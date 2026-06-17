@@ -546,6 +546,57 @@ export type Database = {
         };
         Relationships: [];
       };
+      resource_user_state: {
+        Row: {
+          coarse_status: string;
+          created_at: string;
+          id: string;
+          metadata: Json;
+          progress: number | null;
+          resource_id: string;
+          space_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          coarse_status?: string;
+          created_at?: string;
+          id?: string;
+          metadata?: Json;
+          progress?: number | null;
+          resource_id: string;
+          space_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          coarse_status?: string;
+          created_at?: string;
+          id?: string;
+          metadata?: Json;
+          progress?: number | null;
+          resource_id?: string;
+          space_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'resource_user_state_resource_id_fkey';
+            columns: ['resource_id'];
+            isOneToOne: false;
+            referencedRelation: 'knowledge_resources';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'resource_user_state_space_id_fkey';
+            columns: ['space_id'];
+            isOneToOne: false;
+            referencedRelation: 'spaces';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       role_permission: {
         Row: {
           created_at: string;
@@ -1153,11 +1204,7 @@ export type Database = {
       };
       rpc_end_break_glass: { Args: { p_session_id: string }; Returns: Json };
       rpc_enqueue_body_bridge_job: {
-        Args: {
-          p_idempotency_key: string;
-          p_node_id: string;
-          p_payload?: Json;
-        };
+        Args: { p_idempotency_key: string; p_node_id: string; p_payload: Json };
         Returns: Json;
       };
       rpc_enqueue_outbox_job: {

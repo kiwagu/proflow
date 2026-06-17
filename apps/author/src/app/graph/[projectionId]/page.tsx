@@ -6,6 +6,7 @@ import {
   listSpaceProjections,
   loadGraphTranslator,
   resolveActiveSpaceId,
+  resolveCourseGating,
   resolveSpaceProjection,
 } from '../graph-page.data';
 import { ProjectionSwitcher } from '../views/projection-switcher';
@@ -48,12 +49,20 @@ async function ProjectionPanel({
     notFound();
   }
 
+  // Per-user gating is computed ONLY for the course view (gating is course
+  // pedagogy); grid/KB resolves PURE as before. The overlay fetch + gateSequence
+  // live in a thin helper, keeping resolveSpaceProjection projection-PURE.
+  const gating =
+    result.view === 'course'
+      ? await resolveCourseGating({ spaceId, result })
+      : undefined;
+
   // Registry dispatch: pick the renderer by `result.view` and invoke it directly
   // (it is a presentational function returning ReactNode, not a stateful
   // component instantiated per render). A new view = a new registry entry, zero
   // changes here — Invariant #1 in the presentation layer.
   const renderProjectionView = resolveProjectionView(result.view);
-  return <>{renderProjectionView({ result, t })}</>;
+  return <>{renderProjectionView({ result, t, gating, spaceId })}</>;
 }
 
 export default async function GraphProjectionPage({

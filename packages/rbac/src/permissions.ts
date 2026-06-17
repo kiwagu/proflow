@@ -12,6 +12,7 @@ export const RBAC_PERMISSION_KEYS = {
   spaceKnowledgeCreate: 'space.knowledge.create',
   spaceKnowledgeUpdate: 'space.knowledge.update',
   spaceKnowledgeDelete: 'space.knowledge.delete',
+  spaceKnowledgeProgress: 'space.knowledge.progress',
   spaceUsersCreate: 'space.users.create',
   spaceUsersRead: 'space.users.read',
   spaceUsersUpdate: 'space.users.update',

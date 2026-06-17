@@ -47,12 +47,30 @@ plan facts; the deliberation behind them is kept out of this document on purpose
 
 ## 2. Per-user state (anchor + satellites)
 
-- [ ] `resource_user_state` — anchor: `user_id`, `resource_id`, `space_id`, `coarse_status`
-      (not_started / in_progress / done / blocked), optional `progress`, `metadata` (jsonb); RLS
-- [ ] Child-satellite pattern documented (FK to the anchor; a child's growth never alters core)
-- [ ] Fine→coarse roll-up contract (how an app's fine statuses map to the coarse status)
+- [x] `resource_user_state` — anchor: `user_id`, `resource_id`, `space_id`, `coarse_status`
+      (not_started / in_progress / done / blocked), optional `progress`, `metadata` (jsonb); RLS.
+      RLS is **own-rows only**: a user reads/writes ONLY their own rows (`user_id = auth.uid()`)
+      within spaces they can access. Write is gated by a dedicated verb `space.knowledge.progress`
+      (separate from `update`: a learner may advance their own progress without editing the graph);
+      read uses `space.knowledge.read`. No cross-user reads in this slice (admin/reporting deferred).
+      `coarse_status` is a deliberately small, closed, cross-app CHECK set (the stable roll-up target),
+      not an app-extensibility vocabulary — per-app richness lives in fine statuses on a future child
+      satellite. Anchor + entity-id prefix `rus`.
+- [x] Authorization ≠ gating, landed: the course's previously-static lock is now a COMPUTED display
+      state driven by the user's progress, NOT an access denial. RLS still lets the user SEE every
+      course step (nodes stay in the projection result); the lock is decided by a pure, UI-agnostic
+      gating function (ordered steps + the user's state map → per-step locked/unlocked) in
+      `@workspace/knowledge-engine`. The resolver stays projection-PURE; the per-user overlay is a
+      SEPARATE fetch merged at render time. A thin `POST /author/graph/progress` (under the user's
+      RLS client, never service-role; `user_id` from the session) upserts the coarse status; a
+      "mark complete" action advances a step to `done` and the next step unlocks
+- [ ] Child-satellite pattern (FK to the anchor; a child's growth never alters core) — design
+      recorded; no satellite built yet (deferred)
+- [ ] Fine→coarse roll-up contract (how an app's fine statuses map to the coarse status) — applies
+      only once a child workflow exists; deferred with the satellite (this slice sets `coarse_status`
+      directly)
 - [ ] Start child state in `metadata` jsonb (schema-validated per kind); promote to a typed
-      satellite table when it earns it
+      satellite table when it earns it (the anchor `metadata jsonb` column is in place; not yet used)
 
 ## 3. Node ↔ body bridge
 
@@ -125,9 +143,10 @@ plan facts; the deliberation behind them is kept out of this document on purpose
 
 ## Open items
 
-- [ ] Assign entity-id prefixes for per-user state and its satellites (deferred with §2;
-      node/edge/projection prefixes `knr`/`kne`/`prj` are registered, and vocabularies use
-      natural-key PKs, so no prefix is needed there)
+- [x] Assign entity-id prefixes for per-user state and its satellites — the anchor prefix `rus`
+      (`resource_user_state`) is registered; satellite prefixes are deferred with the satellites.
+      Node/edge/projection prefixes `knr`/`kne`/`prj` are registered, and vocabularies use
+      natural-key PKs, so no prefix is needed there
 - [x] Concrete filter/traversal schema — `FilterNode` + `TraversalSpec` landed in
       `@workspace/knowledge-contracts`; the remaining concrete work is the compiler (tracked in §4)
 - [ ] Verify `pg_graphql` and (future) graph-extension feasibility on self-hosted Supabase

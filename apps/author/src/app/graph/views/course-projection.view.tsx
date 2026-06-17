@@ -12,24 +12,35 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@workspace/ui/components/tooltip';
-import { Lock } from 'lucide-react';
+import { Check, Lock } from 'lucide-react';
 
+import { MarkCompleteButton } from './mark-complete-button';
 import type { ProjectionViewProps } from './view-registry';
 
 /**
- * CourseProjectionView — ordered vertical stepper (§3.2). Consumes
- * `result.items` IN ORDER (the resolver already materialized the prerequisite
- * sequence via the positions chain; this view never re-sorts). Each item is a
- * step; `depth`/`via_edge_id` give the traversal context the view reads.
+ * CourseProjectionView — ordered vertical stepper (§3.2 / slice-05 §4.1).
+ * Consumes `result.items` IN ORDER (the resolver already materialized the
+ * prerequisite sequence; this view never re-sorts) and the per-step
+ * `GatedSequence` computed server-side. Each item is a step; its display state
+ * comes from the matching gated step.
  *
- * The lock indicator is a STATIC visual affordance: a step with `depth > 0`
- * (it has a prerequisite earlier in the chain) shows a lock. This is NOT
- * per-user gating — no user state is read; the lock is identical for everyone.
- * Real "locked until you pass the prerequisite" = per-user `resource_user_state`
- * and is DEFERRED (ADR-0004 §3/§5). Start nodes (`depth=0`, `via_edge_id=null`)
- * carry no lock — they are the entry point. Purely presentational.
+ * The lock is now DYNAMIC, driven by per-user progress (replacing the slice-04
+ * static `depth > 0`). Per step:
+ *  - unlocked & not done → a "mark complete" action (writes `done`, refreshes);
+ *  - done → a "done" badge, no button;
+ *  - locked → a lock + tooltip, no button (you cannot complete a closed step).
+ *
+ * Authorization ≠ gating (ADR-0004 §3): a locked step STILL renders (RLS let the
+ * user read it — it is in `result.items`); the lock is computed display state,
+ * not an access denial. The view stays purely presentational: gating arrives as
+ * a prop; it never reads state or calls `gateSequence` itself.
  */
-export function CourseProjectionView({ result, t }: ProjectionViewProps) {
+export function CourseProjectionView({
+  result,
+  t,
+  gating,
+  spaceId,
+}: ProjectionViewProps) {
   if (result.items.length === 0) {
     return (
       <p className="text-muted-foreground py-12 text-center text-sm">
@@ -38,11 +49,17 @@ export function CourseProjectionView({ result, t }: ProjectionViewProps) {
     );
   }
 
+  // Index gated steps by id so each item reads its own display state in order.
+  const gatedById = new Map((gating?.steps ?? []).map((s) => [s.id, s]));
+
   return (
     <TooltipProvider>
       <ol className="flex flex-col gap-0">
         {result.items.map((item, index) => {
-          const locked = item.depth > 0;
+          const step = gatedById.get(item.id);
+          // No gating wired (defensive) ⇒ treat as unlocked, not-started.
+          const locked = step?.locked ?? false;
+          const done = step?.coarse_status === 'done';
           const position = index + 1;
           return (
             <li key={item.id} className="flex flex-col gap-0">
@@ -52,16 +69,26 @@ export function CourseProjectionView({ result, t }: ProjectionViewProps) {
                     {position}
                   </Badge>
                   <CardTitle className="flex-1">{item.title}</CardTitle>
+                  {done ? (
+                    <Badge className="gap-1">
+                      <Check className="size-3" aria-hidden />
+                      {t('graph.course.done')}
+                    </Badge>
+                  ) : null}
                   {locked ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Badge variant="outline" className="gap-1">
+                        <Badge
+                          variant="outline"
+                          className="gap-1"
+                          data-state="locked"
+                        >
                           <Lock className="size-3" aria-hidden />
                           {t('graph.course.step', { position })}
                         </Badge>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {t('graph.course.locked')}
+                        {t('graph.course.lockedByPrereq')}
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
@@ -69,6 +96,18 @@ export function CourseProjectionView({ result, t }: ProjectionViewProps) {
                 <CardContent className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{item.kind}</Badge>
                   <Badge variant="outline">{item.status}</Badge>
+                  {/* Mark-complete only on an unlocked, not-yet-done step. A
+                      locked step has no button (UI gate); a done step shows the
+                      badge above instead. */}
+                  {!locked && !done && spaceId ? (
+                    <MarkCompleteButton
+                      spaceId={spaceId}
+                      resourceId={item.id}
+                      label={t('graph.course.markComplete')}
+                      pendingLabel={t('graph.course.marking')}
+                      errorLabel={t('graph.course.markError')}
+                    />
+                  ) : null}
                 </CardContent>
               </Card>
               {index < result.items.length - 1 ? (
