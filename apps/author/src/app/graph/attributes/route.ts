@@ -12,7 +12,7 @@ import {
   setResourceLink,
   setResourceMediaMeta,
   setResourceProvenance,
-} from '@/knowledge/kb-attribute.fanout';
+} from '@/knowledge/fanout';
 
 /**
  * KB application-attribute write for the consumer authoring surface (slice-11 Ф2).

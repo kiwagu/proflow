@@ -7,7 +7,7 @@ import { createLocalReq, getPayload } from 'payload';
 import {
   bodyBridgeEnvelopeSchema,
   reconcileBodyBridge,
-} from '@/knowledge/text-resource.fanout';
+} from '@/knowledge/fanout';
 
 /**
  * ASYNC durable consumer for the node↔body bridge (slice-08). This is the SECOND

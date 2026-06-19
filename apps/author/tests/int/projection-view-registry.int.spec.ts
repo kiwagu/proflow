@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PROJECTION_VIEW_REGISTRY,
   resolveProjectionView,
-} from '@/app/graph/views/view-registry';
+} from '@/app/graph/views/registry';
 
 /**
  * View-registry contract (slice-11 / ADR-0014 §3): the renderer is chosen ONLY by

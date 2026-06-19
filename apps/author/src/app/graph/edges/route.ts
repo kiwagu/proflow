@@ -10,7 +10,7 @@ import {
   createEdge,
   deleteEdge,
   tagResource,
-} from '@/knowledge/text-resource.fanout';
+} from '@/knowledge/fanout';
 
 /**
  * Edge-write for the consumer authoring surface (slice-09 §3.6, §8.4 Variant A).

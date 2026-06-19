@@ -23,23 +23,24 @@ import {
 } from 'lucide-react';
 import * as React from 'react';
 
+import type { ProjectionViewProps } from '@/app/graph/views/registry';
 import {
   buildContainment,
   childrenNodes,
+  iconForKind,
+  LensCreateResource,
   parentFolder,
   pathTo,
   rootFolders,
   type Containment,
+  type CreateRequest,
   type LensNode,
-} from './lens-containment';
-import { LensCreateResource, type CreateRequest } from './lens-create-resource';
-import { iconForKind } from './lens-presentation';
+} from '@/app/graph/views/lens';
 import {
   mockNotionBody,
   type MockBodyParagraph,
   type MockMentionTarget,
 } from './kb-notion-body-mock';
-import type { ProjectionViewProps } from './view-registry';
 
 /**
  * NotionProjectionView — the prototype `NotionView`, pixel-1:1 (slice-11 Ф4 §1,

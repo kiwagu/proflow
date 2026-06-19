@@ -3,17 +3,17 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload, PayloadRequest } from 'payload';
 
 import {
-  createBodylessResource,
-  createEdge,
-  createTextResourceWithBody,
-  tagResource,
-} from '@/knowledge/text-resource.fanout';
-import {
   setResourceDescription,
   setResourceLink,
   setResourceMediaMeta,
   setResourceProvenance,
-} from '@/knowledge/kb-attribute.fanout';
+} from './kb-attribute.fanout';
+import {
+  createBodylessResource,
+  createEdge,
+  createTextResourceWithBody,
+  tagResource,
+} from './text-resource.fanout';
 
 /**
  * Sample / illustrative knowledge-graph builder — UI-AGNOSTIC application module.

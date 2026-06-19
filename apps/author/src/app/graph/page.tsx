@@ -14,7 +14,7 @@ import {
   resolveCurrentUserId,
   resolveDefaultLensProjection,
 } from './graph-page.data';
-import { KbWorkbench } from './views/kb-workbench';
+import { KbWorkbench } from './views';
 
 /**
  * `/author/graph` — the knowledge-base editor. It opens an EDITOR ALWAYS (rev. 3,

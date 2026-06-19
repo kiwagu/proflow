@@ -10,7 +10,7 @@ import { LensCreateResource, type CreateRequest } from './lens-create-resource';
 import { LensFacets, type HealthFacet } from './lens-facets';
 import { LensRail } from './lens-rail';
 import { LensSampleButton } from './lens-sample-button';
-import type { ProjectionViewProps } from './view-registry';
+import type { ProjectionViewProps } from '@/app/graph/views/registry';
 
 /**
  * LensProjectionView — the KB lens, ported 1:1 with the prototype LensView

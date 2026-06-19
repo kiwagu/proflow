@@ -5,10 +5,7 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import {
-  createBodylessResource,
-  renameResource,
-} from '@/knowledge/text-resource.fanout';
+import { createBodylessResource, renameResource } from '@/knowledge/fanout';
 
 /**
  * Resource node read + body-less write for the consumer authoring surface.

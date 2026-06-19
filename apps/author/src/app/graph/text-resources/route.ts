@@ -10,7 +10,7 @@ import {
 import {
   createTextResourceWithBody,
   reconcileBodyBridge,
-} from '@/knowledge/text-resource.fanout';
+} from '@/knowledge/fanout';
 
 /**
  * POST /author/graph/text-resources — node↔body fan-out (slice-03 §5.2-1).

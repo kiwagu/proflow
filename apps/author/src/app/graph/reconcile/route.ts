@@ -7,7 +7,7 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import { reconcileBodyBridge } from '@/knowledge/text-resource.fanout';
+import { reconcileBodyBridge } from '@/knowledge/fanout';
 
 /**
  * POST /author/graph/reconcile — manual invocation of the node↔body reconciler

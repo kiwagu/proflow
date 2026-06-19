@@ -31,9 +31,12 @@ import {
   type GraphNode,
   type GraphRel,
 } from './graph-layout';
-import { buildContainment } from './lens-containment';
-import { iconForKind, kindLabel } from './lens-presentation';
-import type { ProjectionViewProps } from './view-registry';
+import type { ProjectionViewProps } from '@/app/graph/views/registry';
+import {
+  buildContainment,
+  iconForKind,
+  kindLabel,
+} from '@/app/graph/views/lens';
 
 /**
  * GraphProjectionView — the prototype `GraphView`, pixel-1:1 (slice-11 Ф5 §1,

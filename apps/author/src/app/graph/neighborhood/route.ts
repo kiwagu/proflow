@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
-} from '@/knowledge/projection-resolve.transport';
+} from '@/knowledge/resolve';
 import {
   isAuthFailure,
   requireRlsSession,

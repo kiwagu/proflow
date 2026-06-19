@@ -23,16 +23,18 @@ import * as React from 'react';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 
+import type { ProjectionViewProps } from '@/app/graph/views/registry';
 import {
   buildContainment,
   childContent,
   childFolders,
+  iconForKind,
+  kindLabel,
+  LensCreateResource,
   rootFolders,
+  type CreateRequest,
   type LensNode,
-} from './lens-containment';
-import { LensCreateResource, type CreateRequest } from './lens-create-resource';
-import { iconForKind, kindLabel } from './lens-presentation';
-import type { ProjectionViewProps } from './view-registry';
+} from '@/app/graph/views/lens';
 
 /**
  * DriveProjectionView — the prototype `DriveView`, pixel-1:1 (slice-11 Ф3 §2,

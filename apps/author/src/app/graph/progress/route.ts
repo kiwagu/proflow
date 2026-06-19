@@ -6,7 +6,7 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import { setResourceUserState } from '@/knowledge/resource-user-state';
+import { setResourceUserState } from '@/knowledge/workflow';
 
 /**
  * POST /author/graph/progress — upsert the caller's per-resource coarse status

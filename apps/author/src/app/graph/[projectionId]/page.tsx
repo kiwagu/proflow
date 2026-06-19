@@ -15,7 +15,7 @@ import {
   resolveCurrentUserId,
   resolveSpaceProjection,
 } from '../graph-page.data';
-import { KbWorkbench } from '../views/kb-workbench';
+import { KbWorkbench } from '../views';
 
 /**
  * `/author/graph/[projectionId]` — resolves ONE saved projection over the graph

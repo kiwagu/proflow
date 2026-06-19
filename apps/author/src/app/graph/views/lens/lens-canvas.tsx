@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@workspace/ui/components/card';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
+import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
 import {
   ChevronRight,
   Database,
@@ -22,7 +23,7 @@ import {
   Plus,
 } from 'lucide-react';
 
-import type { KbAttributes, ResourceTag } from '../graph-page.data';
+import type { KbAttributes, ResourceTag } from '@/app/graph/graph-page.data';
 import {
   childContent,
   childFolders,
@@ -231,9 +232,9 @@ export function LensCanvas({
       {subfolders.length > 0 ? (
         <section className="flex flex-col gap-2">
           {!hasActiveFilter && folder ? (
-            <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <RailSectionHeading className="tracking-wide uppercase">
               {t('graph.canvas.folders')}
-            </h3>
+            </RailSectionHeading>
           ) : null}
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {subfolders.map((sub) => (
@@ -270,9 +271,9 @@ export function LensCanvas({
       {contentItems.length > 0 ? (
         <section className="flex flex-col gap-2">
           {!hasActiveFilter && folder && subfolders.length > 0 ? (
-            <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <RailSectionHeading className="tracking-wide uppercase">
               {t('graph.canvas.files')}
-            </h3>
+            </RailSectionHeading>
           ) : null}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {contentItems.map((item) => {

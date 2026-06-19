@@ -7,6 +7,7 @@ import { Button } from '@workspace/ui/components/button';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
+import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
 import { Separator } from '@workspace/ui/components/separator';
 import {
   Sheet,
@@ -41,7 +42,7 @@ import type {
   NodeHealth,
   NodeMeta,
   ResourceTag,
-} from '../graph-page.data';
+} from '@/app/graph/graph-page.data';
 import {
   mockEmbedStatus,
   mockSuggestedLinks,
@@ -51,10 +52,12 @@ import {
 import {
   childContent,
   childFolders,
+  groupForNeighbor,
+  iconForKind,
+  kindLabel,
   parentFolder,
   type Containment,
-} from './lens-containment';
-import { groupForNeighbor, iconForKind, kindLabel } from './lens-presentation';
+} from '@/app/graph/views/lens';
 import { NodePicker, type PickableNode } from './node-picker';
 import { ResourceMiniGraph } from './resource-mini-graph';
 
@@ -375,9 +378,7 @@ export function ResourcePanel({
 
           {/* status transition */}
           <section className="flex flex-col gap-2">
-            <h3 className="text-muted-foreground text-xs font-medium">
-              {t('graph.panel.status')}
-            </h3>
+            <RailSectionHeading>{t('graph.panel.status')}</RailSectionHeading>
             <div className="flex flex-wrap gap-1.5">
               {['draft', 'in_review', 'approved', 'active'].map((status) => (
                 <Button
@@ -395,9 +396,7 @@ export function ResourcePanel({
 
           {/* tags */}
           <section className="flex flex-col gap-2">
-            <h3 className="text-muted-foreground text-xs font-medium">
-              {t('graph.panel.tags')}
-            </h3>
+            <RailSectionHeading>{t('graph.panel.tags')}</RailSectionHeading>
             <div className="flex flex-wrap gap-1.5">
               {tags.map((tag) => (
                 <FacetChip
@@ -451,9 +450,9 @@ export function ResourcePanel({
 
           {/* connections mini-graph */}
           <section className="flex flex-col gap-2">
-            <h3 className="text-muted-foreground text-xs font-medium">
+            <RailSectionHeading>
               {t('graph.panel.connections')}
-            </h3>
+            </RailSectionHeading>
             {neighborhood ? (
               <ResourceMiniGraph
                 centerTitle={node.title}
@@ -466,9 +465,9 @@ export function ResourcePanel({
           {/* related documents (editable: add/remove relates_to) */}
           {editable ? (
             <section className="flex flex-col gap-2">
-              <h3 className="text-muted-foreground text-xs font-medium">
+              <RailSectionHeading>
                 {t('graph.panel.related')}
-              </h3>
+              </RailSectionHeading>
               {picker ? (
                 <NodePicker
                   spaceId={spaceId}
@@ -529,9 +528,9 @@ export function ResourcePanel({
           {/* folder contents */}
           {folderChildren.length > 0 ? (
             <section className="flex flex-col gap-2">
-              <h3 className="text-muted-foreground text-xs font-medium">
+              <RailSectionHeading>
                 {t('graph.panel.contents', { count: folderChildren.length })}
-              </h3>
+              </RailSectionHeading>
               <ul className="flex flex-col gap-1">
                 {folderChildren.map((child) => {
                   const ChildIcon = iconForKind(child.kind);
@@ -558,9 +557,7 @@ export function ResourcePanel({
           {/* lives in (parent folder) */}
           {containmentParent ? (
             <section className="flex flex-col gap-2">
-              <h3 className="text-muted-foreground text-xs font-medium">
-                {t('graph.panel.parent')}
-              </h3>
+              <RailSectionHeading>{t('graph.panel.parent')}</RailSectionHeading>
               <button
                 type="button"
                 onClick={() => onSelect(containmentParent.id)}

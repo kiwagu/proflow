@@ -2,10 +2,6 @@ import type { ProjectionResult } from '@workspace/knowledge-contracts';
 import type { GatedSequence, GatingResult } from '@workspace/knowledge-engine';
 import type { ReactNode } from 'react';
 
-import { DriveProjectionView } from './drive-projection.view';
-import { GraphProjectionView } from './graph-projection.view';
-import { LensProjectionView } from './lens-projection.view';
-import { NotionProjectionView } from './notion-projection.view';
 import type {
   ContainmentEdge,
   KbAttributes,
@@ -13,8 +9,12 @@ import type {
   NodeMeta,
   ResourceTag,
   ShortcutEdge,
-} from '../graph-page.data';
-import { UnknownProjectionView } from './unknown-projection.view';
+} from '@/app/graph/graph-page.data';
+import { DriveProjectionView } from '../drive';
+import { GraphProjectionView } from '../graph';
+import { LensProjectionView } from '../lens';
+import { NotionProjectionView } from '../notion';
+import { UnknownProjectionView } from '../unknown';
 
 /**
  * View registry — keyed by `view_types.key`. One resolved dataset, many

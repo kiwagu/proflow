@@ -1,7 +1,6 @@
 import type { Neighbor } from '@workspace/knowledge-contracts';
 
-import type { Containment } from './lens-containment';
-import { pathTo } from './lens-containment';
+import { pathTo, type Containment } from '@/app/graph/views/lens';
 
 /**
  * Graph-view layout math — ported 1:1 from the prototype `GraphView.jsx`

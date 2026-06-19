@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from '@workspace/ui/components/card';
 
-import type { ProjectionViewProps } from './view-registry';
+import type { ProjectionViewProps } from '@/app/graph/views/registry';
 
 /**
  * UnknownProjectionView — graceful fallback (§2.3). Reached when the resolved

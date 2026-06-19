@@ -8,21 +8,21 @@ import { Bell, ChevronsUpDown, Info, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
-import { DriveProjectionView } from './drive-projection.view';
-import { GraphProjectionView } from './graph-projection.view';
-import { buildContainment } from './lens-containment';
-import { KbViewSwitcher } from './kb-view-switcher';
+import { DriveProjectionView } from '@/app/graph/views/drive';
+import { GraphProjectionView } from '@/app/graph/views/graph';
+import { buildContainment, LensProjectionView } from '@/app/graph/views/lens';
+import { NotionProjectionView } from '@/app/graph/views/notion';
 import {
   DEFAULT_KB_VARIANT,
   kbVariantLabel,
   kbVariantNote,
+  type KbViewData,
   type KbVariantId,
-} from './kb-variants';
-import { LensProjectionView } from './lens-projection.view';
-import { NotionProjectionView } from './notion-projection.view';
-import { ResourcePanel } from './resource-panel';
-import { UnknownProjectionView } from './unknown-projection.view';
-import type { KbViewData, ProjectionViewProps } from './view-registry';
+  type ProjectionViewProps,
+} from '@/app/graph/views/registry';
+import { ResourcePanel } from '@/app/graph/views/resource-panel';
+import { UnknownProjectionView } from '@/app/graph/views/unknown';
+import { KbViewSwitcher } from './kb-view-switcher';
 
 /**
  * KbWorkbench — the prototype `app.jsx` shell, the FULL-VIEWPORT oblast over

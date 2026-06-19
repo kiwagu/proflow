@@ -2,8 +2,9 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
+import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
 
-import type { ResourceTag } from '../graph-page.data';
+import type { ResourceTag } from '@/app/graph/graph-page.data';
 import { kindLabel } from './lens-presentation';
 
 /**
@@ -61,9 +62,7 @@ export function LensFacets({
     <div className="flex flex-col gap-4">
       {kinds.length > 0 ? (
         <section className="flex flex-col gap-2">
-          <h3 className="text-muted-foreground text-xs font-medium">
-            {t('graph.lens.filterType')}
-          </h3>
+          <RailSectionHeading>{t('graph.lens.filterType')}</RailSectionHeading>
           <div className="flex flex-wrap gap-1.5">
             {kinds.map((kind) => (
               <FacetChip
@@ -79,9 +78,7 @@ export function LensFacets({
 
       {tags.length > 0 ? (
         <section className="flex flex-col gap-2">
-          <h3 className="text-muted-foreground text-xs font-medium">
-            {t('graph.lens.filterTag')}
-          </h3>
+          <RailSectionHeading>{t('graph.lens.filterTag')}</RailSectionHeading>
           <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
               <FacetChip
@@ -96,9 +93,7 @@ export function LensFacets({
       ) : null}
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-muted-foreground text-xs font-medium">
-          {t('graph.lens.filterHealth')}
-        </h3>
+        <RailSectionHeading>{t('graph.lens.filterHealth')}</RailSectionHeading>
         <div className="flex flex-wrap gap-1.5">
           {HEALTH_FACETS.map((facet) => (
             <FacetChip

@@ -18,7 +18,7 @@ import 'dotenv/config';
 import {
   startBodyBridgeOutboxWorker,
   stopBodyBridgeOutboxWorker,
-} from '@/knowledge/body-bridge.outbox-worker';
+} from './body-bridge.outbox-worker';
 
 function main(): void {
   startBodyBridgeOutboxWorker();

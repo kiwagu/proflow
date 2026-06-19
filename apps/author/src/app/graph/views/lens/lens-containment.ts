@@ -1,6 +1,6 @@
 import type { ProjectionResultItem } from '@workspace/knowledge-contracts';
 
-import type { ContainmentEdge } from '../graph-page.data';
+import type { ContainmentEdge } from '@/app/graph/graph-page.data';
 
 /**
  * Client-side containment traversal over the FORWARD `contains` forest (ADR-0015)

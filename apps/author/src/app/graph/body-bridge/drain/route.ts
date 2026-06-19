@@ -5,7 +5,7 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import { drainBodyBridgeOutboxOnce } from '@/knowledge/body-bridge.outbox-worker';
+import { drainBodyBridgeOutboxOnce } from '@/knowledge/body-bridge';
 
 /**
  * POST /author/graph/body-bridge/drain — DETERMINISTIC trigger for one pass of the

@@ -19,7 +19,7 @@
 // backend lands, delete this file and read the real status/similar — the panel
 // shape does not change.
 
-import type { ResourceTag } from '../graph-page.data';
+import type { ResourceTag } from '@/app/graph/graph-page.data';
 
 /** The mocked embed-index status of a node's description. */
 export type MockEmbedStatus = 'indexed' | 'stale' | 'indexing';

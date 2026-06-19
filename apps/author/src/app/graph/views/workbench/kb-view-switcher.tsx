@@ -9,7 +9,11 @@ import {
 } from '@workspace/ui/components/tooltip';
 import { cn } from '@workspace/ui/lib/utils';
 
-import { KB_VARIANTS, kbVariantLabel, type KbVariantId } from './kb-variants';
+import {
+  KB_VARIANTS,
+  kbVariantLabel,
+  type KbVariantId,
+} from '@/app/graph/views/registry';
 
 /**
  * KbViewSwitcher — the prototype `app.jsx` variant segment, pixel-1:1 (slice-11

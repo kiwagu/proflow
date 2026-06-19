@@ -8,7 +8,7 @@ import {
 import {
   IllegalTransitionError,
   transitionResourceStatus,
-} from '@/knowledge/resource-transition';
+} from '@/knowledge/workflow';
 
 /**
  * POST /author/graph/transition — move a knowledge resource through its workflow

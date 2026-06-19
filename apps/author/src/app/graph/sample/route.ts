@@ -10,7 +10,7 @@ import {
 import {
   SampleAlreadySeededError,
   seedSampleKnowledgeGraph,
-} from '@/knowledge/sample-knowledge-graph.builder';
+} from '@/knowledge/fanout';
 
 /**
  * POST /author/graph/sample — seed an illustrative knowledge graph (slice-11 Ф2).

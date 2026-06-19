@@ -22,8 +22,8 @@ import { cookies } from 'next/headers';
 import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
-} from '@/knowledge/projection-resolve.transport';
-import { loadResourceUserStateMap } from '@/knowledge/resource-user-state';
+} from '@/knowledge/resolve';
+import { loadResourceUserStateMap } from '@/knowledge/workflow';
 import { kbSchema } from '@/lib/supabase/kb-schema';
 import { createRlsClientFromServerCookies } from '@/lib/supabase/rls-from-cookies';
 
