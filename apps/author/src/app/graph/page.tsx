@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 
 import {
   computeNodeHealth,
+  loadAllSpaceTags,
   loadContainmentForest,
   loadGraphCatalogMessages,
   loadGraphTranslator,
@@ -73,6 +74,7 @@ async function EditorPanel({ spaceId }: { spaceId: string }) {
     metaByItem,
     containment,
     shortcuts,
+    allTags,
     currentUserId,
   ] = await Promise.all([
     loadResourceTagsForItems(spaceId, itemIds),
@@ -80,6 +82,7 @@ async function EditorPanel({ spaceId }: { spaceId: string }) {
     loadNodeMetaForItems(spaceId, itemIds),
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
+    loadAllSpaceTags(spaceId),
     resolveCurrentUserId(),
   ]);
   const healthByItem = await computeNodeHealth(
@@ -95,6 +98,7 @@ async function EditorPanel({ spaceId }: { spaceId: string }) {
     healthByItem,
     containment,
     shortcuts,
+    allTags,
     currentUserId,
   };
 

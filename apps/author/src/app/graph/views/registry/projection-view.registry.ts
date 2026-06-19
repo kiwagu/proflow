@@ -58,6 +58,8 @@ export type KbViewData = {
   healthByItem: Record<string, NodeHealth>;
   containment: ContainmentEdge[];
   shortcuts: ShortcutEdge[];
+  /** All tag nodes of the space (the panel's "pick from existing tags" tray). */
+  allTags: ResourceTag[];
   currentUserId: string | null;
 };
 

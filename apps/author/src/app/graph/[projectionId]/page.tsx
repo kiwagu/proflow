@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 
 import {
   computeNodeHealth,
+  loadAllSpaceTags,
   loadContainmentForest,
   loadGraphCatalogMessages,
   loadGraphTranslator,
@@ -78,6 +79,7 @@ async function ProjectionPanel({
     metaByItem,
     containment,
     shortcuts,
+    allTags,
     currentUserId,
   ] = await Promise.all([
     loadResourceTagsForItems(spaceId, itemIds),
@@ -85,6 +87,7 @@ async function ProjectionPanel({
     loadNodeMetaForItems(spaceId, itemIds),
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
+    loadAllSpaceTags(spaceId),
     resolveCurrentUserId(),
   ]);
   const healthByItem = await computeNodeHealth(
@@ -99,6 +102,7 @@ async function ProjectionPanel({
     healthByItem,
     containment,
     shortcuts,
+    allTags,
     currentUserId,
   };
 

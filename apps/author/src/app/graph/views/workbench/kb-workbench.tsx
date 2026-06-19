@@ -4,7 +4,16 @@ import type { ProjectionResult } from '@workspace/knowledge-contracts';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar';
 import { Button } from '@workspace/ui/components/button';
-import { Bell, ChevronsUpDown, Info, Search } from 'lucide-react';
+import {
+  Bell,
+  ChevronsUpDown,
+  Info,
+  Moon,
+  Rows3,
+  Rows4,
+  Search,
+  Sun,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
@@ -90,6 +99,49 @@ export function KbWorkbench({
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [refreshKey, setRefreshKey] = React.useState(0);
 
+  // Appearance settings (prototype Tweaks panel — Dark mode + Density). The dark
+  // toggle is REAL: it toggles the `.dark` class on the document root (the design
+  // tokens already define `.dark`), persisted to localStorage. Density is threaded
+  // to the workbench root as `data-density` — a real, persisted setting the views
+  // can size off (comfortable | compact).
+  const [dark, setDark] = React.useState(false);
+  const [density, setDensity] = React.useState<'comfortable' | 'compact'>(
+    'comfortable'
+  );
+
+  React.useEffect(() => {
+    const storedDark = window.localStorage.getItem('pf.graph.dark');
+    if (storedDark != null) {
+      setDark(storedDark === '1');
+    }
+    const storedDensity = window.localStorage.getItem('pf.graph.density');
+    if (storedDensity === 'compact' || storedDensity === 'comfortable') {
+      setDensity(storedDensity);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const had = root.classList.contains('dark');
+    if (dark) {
+      root.classList.add('dark');
+    } else if (had) {
+      // only remove if we manage it (avoid clobbering an app-level theme).
+      root.classList.remove('dark');
+    }
+    window.localStorage.setItem('pf.graph.dark', dark ? '1' : '0');
+    return () => {
+      // restore on unmount so leaving the workbench doesn't leave it dark.
+      if (dark) {
+        root.classList.remove('dark');
+      }
+    };
+  }, [dark]);
+
+  React.useEffect(() => {
+    window.localStorage.setItem('pf.graph.density', density);
+  }, [density]);
+
   const containment = React.useMemo(
     () => buildContainment(result.items, kbData.containment),
     [result.items, kbData.containment]
@@ -163,7 +215,10 @@ export function KbWorkbench({
   }, [result.items, selectedId]);
 
   return (
-    <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
+    <div
+      data-density={density}
+      className="bg-background text-foreground flex h-dvh flex-col overflow-hidden"
+    >
       {/* top bar (prototype `app.jsx` header, 56px, pixel-1:1) */}
       <header className="flex h-14 shrink-0 items-center gap-[14px] border-b px-4">
         {/* brand mark (MOCK: static logo mark — no brand asset pipeline yet) */}
@@ -201,9 +256,39 @@ export function KbWorkbench({
           <KbViewSwitcher t={t} active={variant} onChange={onVariant} />
         </div>
 
-        {/* actions (MOCK: search/bell inert; avatar a static fallback — no
-            search index, notifications feed, or account menu landed here yet) */}
+        {/* actions — dark/density are REAL appearance toggles (prototype Tweaks);
+            search/bell are inert (no index/feed landed); avatar a static fallback. */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              setDensity((value) =>
+                value === 'compact' ? 'comfortable' : 'compact'
+              )
+            }
+            aria-label={t('graph.topbar.density')}
+            aria-pressed={density === 'compact'}
+          >
+            {density === 'compact' ? (
+              <Rows4 className="size-[17px]" aria-hidden />
+            ) : (
+              <Rows3 className="size-[17px]" aria-hidden />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setDark((value) => !value)}
+            aria-label={t('graph.topbar.theme')}
+            aria-pressed={dark}
+          >
+            {dark ? (
+              <Sun className="size-[17px]" aria-hidden />
+            ) : (
+              <Moon className="size-[17px]" aria-hidden />
+            )}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -260,6 +345,7 @@ export function KbWorkbench({
           onSelect={select}
           onMutated={onMutated}
           tagsByItem={kbData.tagsByItem}
+          allTags={kbData.allTags}
           onShowInGraph={
             variant !== 'graph' ? () => onVariant('graph') : undefined
           }
