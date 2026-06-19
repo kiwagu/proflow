@@ -119,7 +119,7 @@ grant execute on function public.rpc_enqueue_body_bridge_job(text, jsonb, text) 
 /*
  * reconcile read helper — surface a node's bridge state under the caller's RLS.
  *
- * The reconciler (apps/author … text-resource.fanout.ts §2.4) reads a node's
+ * The reconciler (apps/author, the node↔body bridge §2.4) reads a node's
  * current body_ref + space under the user's RLS client via a plain PostgREST
  * select on knowledge_resources, so it needs NO new function for the read path.
  * The compensating writes it performs (set body_ref, delete orphan body) also go

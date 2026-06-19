@@ -57,14 +57,6 @@ export default buildConfig({
       logout: {
         Button: '/admin/logout-button',
       },
-      views: {
-        knowledgeNewText: {
-          // Thin custom admin-view: the single authoring flow (slice-03 §4).
-          // Reachable at /admin/knowledge/new-text.
-          path: '/knowledge/new-text',
-          Component: '/admin/knowledge/new-text-resource.view.client',
-        },
-      },
     },
   },
   collections: [Organizations, Spaces, Users, Media, Bodies],

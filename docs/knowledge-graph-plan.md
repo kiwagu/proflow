@@ -61,7 +61,7 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       course step (nodes stay in the projection result); the lock is decided by a pure, UI-agnostic
       gating function (ordered steps + the user's state map → per-step locked/unlocked) in
       `@workspace/knowledge-engine`. The resolver stays projection-PURE; the per-user overlay is a
-      SEPARATE fetch merged at render time. A thin `POST /author/graph/progress` (under the user's
+      SEPARATE fetch merged at render time. A thin progress endpoint (under the user's
       RLS client, never service-role; `user_id` from the session) upserts the coarse status; a
       "mark complete" action advances a step to `done` and the next step unlocks
 - [ ] Child-satellite pattern (FK to the anchor; a child's growth never alters core) — design
@@ -154,7 +154,7 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       as the field is additive/compatible); both unit-covered, resolver untouched (projection-PURE)
 - [x] Workflow as data: states + allowed transitions + guards held as data (`resource_workflows`
       definition jsonb over `knowledge_resources.status`), validated by one generic transition
-      validator; a thin `POST /author/graph/transition` under `space.knowledge.transition` (+ optional
+      validator; a thin transition endpoint under `space.knowledge.transition` (+ optional
       per-transition guard verb, e.g. `space.knowledge.approve`) rejects illegal transitions. This is
       the state source for the `requires_state` rule. Landed: the `resource_workflows` vocab table
       (natural-key PK, XState-compatible `definition` jsonb, select-only RLS), an additive nullable
@@ -169,10 +169,10 @@ plan facts; the deliberation behind them is kept out of this document on purpose
   a `projections` row filtering/segmenting by status with a `requires_state` gate (only `approved`
   docs are "available"). Adding it = vocabulary rows + a projection row + (optional) a workflow
   row, ZERO engine fork — the third vertical as pure configuration. Landed: the status-segmented
-  `board-projection.view.tsx` + its `board` registry entry, a separate optional `nodeGates`
+  board projection view + its `board` registry entry, a separate optional `nodeGates`
   view-prop, server wiring (`resolveProjectionGating` builds the resource-state map from the
   already-resolved items and applies the declared rule under the user's RLS client), and the
-  `knowledge-workflow-gating` e2e (board renders all docs; non-approved gated as display)
+  a workflow-gating e2e (board renders all docs; non-approved gated as display)
 - [x] Enforce the authorization ≠ gating boundary (RLS for access; gating layer for pacing/process) —
       the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
       authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
@@ -210,8 +210,8 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       gating deferred to §2), and a projection switcher that toggles the SAME graph between apps (the
       visible Invariant #1). Server-side resolution runs the engine under the user's RLS (never
       service-role); blocking resolve + Suspense. Render is an END-USER surface → shadcn (`@workspace/ui`).
-      Pages live at `apps/author/src/app/graph/*`; proven by
-      `tests/e2e/src/knowledge-projection-render.e2e.spec.ts` (grid ⇆ course over one graph; ungranted →
+      Pages live at `apps/author/src/app/graph/*`; proven by a projection-render e2e
+      (grid ⇆ course over one graph; ungranted →
       empty by RLS; guest GET → sign-in redirect, guest POST → 401 JSON)
 - [x] Confirm a second app type (a course) is pure configuration (vocabulary rows +
       ProjectionSpec) with zero core migration — proven by the slice 01 acceptance test

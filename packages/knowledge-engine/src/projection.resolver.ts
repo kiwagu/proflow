@@ -37,9 +37,8 @@ import { compileTraversal } from './traversal.compiler.js';
  * client→server boundary (the client sends only `projectionId`). Compilation
  * stays entirely in TS (ADR-0003 §1.1): the engine is transport-agnostic and
  * receives the execution transport by injection (`args.transport`) — it never
- * imports `pg`. The implementing transport lives in `apps/author`
- * (`projection-resolve.transport.ts`); `security definer` is forbidden (bypasses
- * RLS).
+ * imports `pg`. The implementing transport lives in the consuming app;
+ * `security definer` is forbidden (bypasses RLS).
  */
 
 const RESOURCE_ALIAS = 'kr';

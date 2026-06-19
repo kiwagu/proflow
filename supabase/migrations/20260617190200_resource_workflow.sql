@@ -11,7 +11,7 @@
  *   { target, guard? } }), so the thin in-house transition validator reads it today
  *   and an XState createMachine(config) adopts it later with zero data migration.
  * - powers the `requires_state` gating rule (a node is available iff its status is in
- *   an allowed set) and the generic transition validator behind POST /author/graph/transition.
+ *   an allowed set) and the generic transition validator behind the transition endpoint.
  *
  * natural-key pk exception (documented, parity with knowledge_vocabularies)
  * - workflow keys are stable, human-readable reference strings ('default',
