@@ -2,6 +2,14 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@workspace/ui/components/dialog';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 import {
@@ -11,29 +19,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@workspace/ui/components/sheet';
 import { Textarea } from '@workspace/ui/components/textarea';
+import { cn } from '@workspace/ui/lib/utils';
+import { Check } from 'lucide-react';
 import * as React from 'react';
 
 import { allFolders, type Containment } from './lens-containment';
+import { iconForKind } from './lens-presentation';
 
 /**
- * LensCreateResource — the prototype CreateModal (slice-11 Ф2 §6). Creates a node
- * of any kind (document/file/video/link/folder/tag) inside an optional parent
- * folder, with an optional description. Each kind routes to its landed RLS write
- * route:
+ * LensCreateResource — the prototype CreateModal (slice-11 Ф2 §6), a CENTERED
+ * modal (shared `Dialog`, not a side sheet). Creates a node of any kind
+ * (document/file/video/link/folder/tag) inside an optional parent folder, with an
+ * optional description. Each kind routes to its landed RLS write route:
  *   text  → text-resources (node + Lexical body, ADR-0002)
  *   link/tag/folder → resources (body-less; folder is a pure container, ADR-0015)
- *   file/video → resources fan-out is link/tag/folder-only, so these go through a
- *               body-less node + media-meta via the attributes route — metadata
- *               only (real binary upload is a deferred slice, poc-no-fallbacks).
+ *   file/video → body-less node + media-meta (real binary upload is a deferred
+ *               slice, poc-no-fallbacks — metadata only)
  * Containment placement (`parentFolder`) creates a FORWARD `contains` edge; the
  * description is posted to the attributes route AFTER the node is created.
  *
@@ -80,6 +82,9 @@ function createKindLabel(t: GraphTranslator, kind: CreateKind): string {
       return t('graph.create.kindTag');
   }
 }
+
+const FIELD_LABEL =
+  'text-foreground text-xs font-semibold tracking-wide uppercase';
 
 export function LensCreateResource({
   spaceId,
@@ -143,44 +148,60 @@ export function LensCreateResource({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-0 overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{t('graph.create.title')}</SheetTitle>
-        </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 py-4">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{t('graph.create.title')}</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          {/* TYPE — segmented icon buttons (prototype CreateModal) */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="create-kind">{t('graph.create.kind')}</Label>
-            <Select
-              value={kind}
-              onValueChange={(value) => setKind(value as CreateKind)}
-            >
-              <SelectTrigger id="create-kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {KINDS.map((option) => (
-                  <SelectItem key={option} value={option}>
+            <Label className={FIELD_LABEL}>{t('graph.create.kind')}</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {KINDS.map((option) => {
+                const Icon = iconForKind(option);
+                const selected = kind === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setKind(option)}
+                    aria-pressed={selected}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                      selected
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'border-border hover:bg-accent'
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
                     {createKindLabel(t, option)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
+          {/* TITLE */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="create-title">{t('graph.create.name')}</Label>
+            <Label htmlFor="create-title" className={FIELD_LABEL}>
+              {t('graph.create.name')}
+            </Label>
             <Input
               id="create-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              placeholder={t('graph.create.namePlaceholder')}
               disabled={busy}
+              autoFocus
             />
           </div>
 
+          {/* FOLDER */}
           {kind !== 'tag' ? (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="create-parent">
+              <Label htmlFor="create-parent" className={FIELD_LABEL}>
                 {kind === 'folder'
                   ? t('graph.create.parentFolder')
                   : t('graph.create.folder')}
@@ -208,10 +229,14 @@ export function LensCreateResource({
             </div>
           ) : null}
 
+          {/* DESCRIPTION */}
           {kind !== 'tag' ? (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="create-description">
-                {t('graph.create.description')}
+              <Label htmlFor="create-description" className={FIELD_LABEL}>
+                {t('graph.create.description')}{' '}
+                <span className="text-muted-foreground font-normal normal-case">
+                  · {t('graph.create.descriptionHint')}
+                </span>
               </Label>
               <Textarea
                 id="create-description"
@@ -230,21 +255,23 @@ export function LensCreateResource({
             </p>
           ) : null}
         </div>
-        <SheetFooter>
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={busy}>
+              {t('graph.create.cancel')}
+            </Button>
+          </DialogClose>
           <Button
             onClick={onSubmit}
             disabled={busy || title.trim().length === 0}
           >
+            <Check className="size-4" aria-hidden />
             {busy ? t('graph.create.saving') : t('graph.create.submit')}
           </Button>
-          <SheetClose asChild>
-            <Button variant="outline" disabled={busy}>
-              {t('graph.create.cancel')}
-            </Button>
-          </SheetClose>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
