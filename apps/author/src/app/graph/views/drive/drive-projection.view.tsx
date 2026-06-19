@@ -26,18 +26,22 @@ import * as React from 'react';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 
+import type { KbAttributes, NodeMeta } from '@/app/graph/graph-page.data';
 import type { ProjectionViewProps } from '@/app/graph/views/registry';
 import {
   buildContainment,
   childContent,
   childFolders,
+  formatNodeMeta,
   iconForKind,
   kindLabel,
   LensCreateResource,
+  ownerLabel,
   rootFolders,
   type CreateRequest,
   type LensNode,
 } from '@/app/graph/views/lens';
+import { mockByteSize, mockDurationMs } from './kb-media-mock';
 
 /**
  * DriveProjectionView — the prototype `DriveView`, pixel-1:1 (slice-11 Ф3 §2,
@@ -86,6 +90,9 @@ export function DriveProjectionView({
 
   const containmentEdges = kbData?.containment ?? [];
   const shortcutEdges = kbData?.shortcuts ?? [];
+  const attributesByItem = kbData?.attributesByItem ?? {};
+  const metaByItem = kbData?.metaByItem ?? {};
+  const currentUserId = kbData?.currentUserId ?? null;
 
   const containment = React.useMemo(
     () => buildContainment(result.items, containmentEdges),
@@ -161,8 +168,8 @@ export function DriveProjectionView({
             data-active={item.active}
             className={cn(
               'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm',
-              'hover:bg-accent',
-              item.active ? 'text-foreground font-medium' : 'text-foreground'
+              'hover:bg-accent text-foreground',
+              item.active ? 'bg-accent font-medium' : 'font-normal'
             )}
           >
             <Icon
@@ -330,6 +337,9 @@ export function DriveProjectionView({
                 key={item.id}
                 t={t}
                 node={item}
+                attributes={attributesByItem[item.id]}
+                meta={metaByItem[item.id]}
+                currentUserId={currentUserId}
                 layout={layout}
                 selected={item.id === selectedId}
                 onOpen={() => onSelect(item.id)}
@@ -434,18 +444,47 @@ function FolderCard({
 function ItemCard({
   t,
   node,
+  attributes,
+  meta,
+  currentUserId,
   layout,
   selected,
   onOpen,
 }: {
   t: GraphTranslator;
   node: LensNode;
+  attributes?: KbAttributes;
+  meta?: NodeMeta;
+  currentUserId: string | null;
   layout: DriveLayout;
   selected: boolean;
   onOpen: () => void;
 }) {
   const list = layout === 'list';
   const Icon = iconForKind(node.kind);
+
+  // Meta line (prototype `n.meta || meta.label · owner`): link host / file size /
+  // video duration when present, else "{kind} · {owner}". Size/duration fall back
+  // to a labelled MOCK when the real `resource_media_meta` row is empty (binary
+  // upload deferred) — the link host is always REAL (stored).
+  const media = {
+    byteSize:
+      attributes?.media?.byteSize ??
+      (node.kind === 'file' ? mockByteSize(node.id) : null),
+    durationMs:
+      attributes?.media?.durationMs ??
+      (node.kind === 'video' ? mockDurationMs(node.id) : null),
+    mimeType: attributes?.media?.mimeType ?? null,
+    linkHost: attributes?.link?.host ?? null,
+  };
+  const mediaMeta = formatNodeMeta(t, node.kind, media);
+  const metaLine =
+    mediaMeta ??
+    t('graph.drive.metaOwner', {
+      kind: kindLabel(t, node.kind),
+      owner: ownerLabel(t, meta?.ownerUserId, currentUserId),
+    });
+
   return (
     <CardTile
       onClick={onOpen}
@@ -465,9 +504,7 @@ function ItemCard({
       />
       <div className="min-w-0 flex-1 text-left">
         <div className="truncate text-sm font-medium">{node.title}</div>
-        <div className="text-muted-foreground text-xs">
-          {kindLabel(t, node.kind)}
-        </div>
+        <div className="text-muted-foreground truncate text-xs">{metaLine}</div>
       </div>
     </CardTile>
   );
