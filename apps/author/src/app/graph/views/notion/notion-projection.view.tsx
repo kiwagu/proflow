@@ -9,11 +9,11 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
+import { Tree, type TreeNode } from '@workspace/ui/components/tree';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   AtSign,
-  ChevronDown,
   ChevronRight,
   CornerDownLeft,
   Download,
@@ -43,6 +43,22 @@ import {
   type MockBodyParagraph,
   type MockMentionTarget,
 } from './kb-notion-body-mock';
+
+/**
+ * Recursive containment -> TreeNode for the shared <Tree>: Notion pages nest by
+ * `contains` (tags excluded). Children are fully loaded from the containment forest
+ * (no lazy fetch), so depth indentation comes from the shared primitive — no
+ * per-level hand-rolled padding (which previously read linear).
+ */
+function pageToTreeNode(c: Containment, node: LensNode): TreeNode {
+  const kids = childrenNodes(c, node.id).filter((n) => n.kind !== 'tag');
+  return {
+    id: node.id,
+    hasChildren: kids.length > 0,
+    children: kids.map((kid) => pageToTreeNode(c, kid)),
+    data: node,
+  };
+}
 
 /**
  * NotionProjectionView — the prototype `NotionView`, pixel-1:1 (slice-11 Ф4 §1,
@@ -128,7 +144,10 @@ export function NotionProjectionView({
   const [createRequest, setCreateRequest] =
     React.useState<CreateRequest | null>(null);
 
-  const roots = rootFolders(containment);
+  const treeNodes = React.useMemo<TreeNode[]>(
+    () => rootFolders(containment).map((f) => pageToTreeNode(containment, f)),
+    [containment]
+  );
 
   if (!spaceId) {
     return null;
@@ -140,70 +159,33 @@ export function NotionProjectionView({
         <Search className="size-[15px]" aria-hidden />
         <span className="text-sm">{t('graph.notion.searchPages')}</span>
       </div>
-      {roots.map((folder) => {
-        const open = expanded.has(folder.id);
-        const kids = childrenNodes(containment, folder.id).filter(
-          (n) => n.kind !== 'tag'
-        );
-        return (
-          <div key={folder.id}>
-            <div className="text-foreground flex w-full items-center gap-1.5 rounded-md px-2 py-[5px]">
-              <button
-                type="button"
-                onClick={() => toggle(folder.id)}
-                aria-label={t('graph.notion.toggleSection')}
-                aria-expanded={open}
-                className="grid size-[18px] shrink-0 place-items-center"
-              >
-                {open ? (
-                  <ChevronDown
-                    className="text-muted-foreground size-3.5"
-                    aria-hidden
-                  />
-                ) : (
-                  <ChevronRight
-                    className="text-muted-foreground size-3.5"
-                    aria-hidden
-                  />
-                )}
-              </button>
-              <FileText
-                className="text-muted-foreground size-[15px]"
+      <Tree
+        nodes={treeNodes}
+        expandedIds={expanded}
+        onToggle={(node) => toggle(node.id)}
+        onActivate={(node) => onSelect(node.id)}
+        renderLabel={({ node }) => {
+          const page = node.data as LensNode;
+          const Icon = iconForKind(page.kind);
+          const active = openId === page.id;
+          return (
+            <>
+              <Icon
+                className="text-muted-foreground size-[15px] shrink-0"
                 aria-hidden
               />
-              <span className="flex-1 truncate text-sm font-medium">
-                {folder.title}
+              <span
+                className={cn(
+                  'flex-1 truncate text-sm',
+                  active ? 'text-foreground font-medium' : 'text-foreground'
+                )}
+              >
+                {page.title}
               </span>
-            </div>
-            {open
-              ? kids.map((kid) => {
-                  const KidIcon = iconForKind(kid.kind);
-                  const active = openId === kid.id;
-                  return (
-                    <button
-                      key={kid.id}
-                      type="button"
-                      onClick={() => onSelect(kid.id)}
-                      data-active={active}
-                      className={cn(
-                        'hover:bg-accent flex w-full items-center gap-1.5 rounded-md py-[5px] pr-2 pl-[30px] text-left',
-                        active ? 'bg-accent' : 'bg-transparent'
-                      )}
-                    >
-                      <KidIcon
-                        className="text-muted-foreground size-[15px]"
-                        aria-hidden
-                      />
-                      <span className="flex-1 truncate text-sm">
-                        {kid.title}
-                      </span>
-                    </button>
-                  );
-                })
-              : null}
-          </div>
-        );
-      })}
+            </>
+          );
+        }}
+      />
       <button
         type="button"
         onClick={() =>
