@@ -40,6 +40,7 @@
         "@workspace/eslint-config": "workspace:^",
         "@workspace/gateway-auth": "workspace:*",
         "@workspace/i18n-catalogs": "workspace:*",
+        "@workspace/kb-contracts": "workspace:*",
         "@workspace/knowledge-contracts": "workspace:*",
         "@workspace/knowledge-engine": "workspace:*",
         "@workspace/payload-plugins": "workspace:*",
@@ -232,6 +233,21 @@
       "version": "0.1.0",
       "dependencies": {
         "@workspace/settings-runtime": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/kb-contracts": {
+      "name": "@workspace/kb-contracts",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@types/node": "catalog:",
@@ -1593,6 +1609,8 @@
     "@workspace/gateway-auth": ["@workspace/gateway-auth@workspace:packages/gateway-auth"],
 
     "@workspace/i18n-catalogs": ["@workspace/i18n-catalogs@workspace:packages/i18n-catalogs"],
+
+    "@workspace/kb-contracts": ["@workspace/kb-contracts@workspace:packages/kb-contracts"],
 
     "@workspace/knowledge-contracts": ["@workspace/knowledge-contracts@workspace:packages/knowledge-contracts"],
 

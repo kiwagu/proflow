@@ -31,6 +31,11 @@ insert into public.permissions (key, description) values
   ('space.knowledge.delete', 'Delete knowledge resources and edges in one space.')
 on conflict (key) do nothing;
 
+-- `member` is the base space system role EVERY space member receives; granting it
+-- the full knowledge verb-set makes "all members can author the KB" true by data,
+-- never by weakening RLS (RLS stays the single hard authority on every row). This
+-- is the all-roles floor (ADR-0011 §6). `transition` is granted in the workflow
+-- migration; `access`/`approve`/`progress` are admin/dormant and NOT granted here.
 with mapping(role_key, permission_key) as (
   values
     ('admin', 'space.knowledge.read'),
@@ -39,7 +44,11 @@ with mapping(role_key, permission_key) as (
     ('admin', 'space.knowledge.delete'),
     ('author', 'space.knowledge.read'),
     ('author', 'space.knowledge.create'),
-    ('author', 'space.knowledge.update')
+    ('author', 'space.knowledge.update'),
+    ('member', 'space.knowledge.read'),
+    ('member', 'space.knowledge.create'),
+    ('member', 'space.knowledge.update'),
+    ('member', 'space.knowledge.delete')
 )
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

@@ -1,0 +1,96 @@
+---
+description: "Use when: building or restyling any end-user UI surface — the project's visual + content design language (neutral shadcn aesthetic, semantic tokens, Lucide icons, sentence-case voice)."
+alwaysApply: false
+---
+
+# UI design language
+
+## Pyramid Layer
+
+- Layer: L0 design-language rule (the *look & voice*; code-composition lives elsewhere).
+
+## Use This When
+
+- Building, restyling, or reviewing any **end-user UI surface** (`apps/platform`, `apps/web`, and any consumer-facing pages).
+- Deciding color, type, spacing, iconography, motion, or product copy.
+
+## Stop Here If
+
+- Stop once the foundations below answer the design question.
+
+## Descend To
+
+- Component composition / CLI / registries: `/.cursor/rules/shadcn-patterns-required.mdc`
+- React composition specifics: `/.cursor/rules/shadcn-patterns-react-ui.mdc`
+- Copy that ships as UI strings: `/.cursor/rules/ui-i18n-json-required.mdc` (all visible text is i18n, EN+ES)
+
+## Surface scope (ADR-0005 carve-out)
+
+This language governs **consumer/end-user surfaces** built on shadcn (`@workspace/ui`). The
+`apps/author` Payload admin uses `@payloadcms/ui` and is out of scope — do not restyle admin
+views to this language.
+
+## The aesthetic in one line
+
+Quiet, neutral, trustworthy. Invisible craft — nothing shouts; everything is balanced,
+legible, and calm. Generous whitespace does the work, not color or ornament.
+
+## Tokens are the public API
+
+- Style **only** through the semantic tokens exposed by `@workspace/ui` (`--background`,
+  `--foreground`, `--card`, `--muted`, `--accent`, `--border`, `--ring`, `--primary`, …).
+- **Never** hardcode hex/oklch/px color or raw shadow values in components. Raw ramps are
+  documentation, not the API. Dark theme is the same tokens under `.dark` — get it for free
+  by using tokens, never theme-specific literals.
+
+## Visual foundations
+
+- **Color:** strictly **neutral grayscale** (OKLCH neutrals, `baseColor: neutral`). A single
+  near-black **primary**. **No brand hue.** The only chromatic colors are `destructive`
+  (red) and a blue ramp **reserved for charts**. Don't introduce accent hues for decoration.
+- **Type:** the project sans via `--font-sans` for both body and headings; mono for code.
+  Headings **semibold (600)** with **tight tracking** (≈ −0.025em); body normal weight at a
+  relaxed line-height. Use the Tailwind scale (xs→6xl).
+- **Spacing:** Tailwind 0.25rem base. Cards pad **24px**; controls **36px** tall (sm 32,
+  lg 40); gaps cluster at 8 / 12 / 16 / 24. Use `gap-*`, never inline ad-hoc margins.
+- **Radius:** one knob (`--radius`); everything derives — inputs/buttons `md`, cards `xl`,
+  badges/avatars/switches fully round. Soft, never sharp; never pill except badges.
+- **Backgrounds:** **flat solid color.** No gradients, textures, patterns, or baked-in hero
+  imagery. Calm negative space instead.
+- **Borders:** hairline **1px** in `--border` on nearly every surface (cards, inputs,
+  separators). This is the system's defining texture.
+- **Shadows:** restrained — `shadow-xs` on inputs/outline buttons, `shadow-sm` on cards,
+  `shadow-2xl` only on overlays/dialogs. No colored or glowing shadows.
+- **Focus rings:** a **3px `--ring` ring** (≈50% opacity) plus a border-color shift — the
+  signature interaction cue. Invalid fields ring in `destructive`.
+- **Hover/press:** subtle. Solid buttons → ~90% fill opacity; ghost/outline → fill with
+  `--accent`; links underline. Slight opacity dip on press. No scale-up, no bounce.
+- **Motion:** minimal and fast — ~150ms ease on color/box-shadow/transform; accordion/dialog
+  tweens only. **No decorative or looping motion.**
+- **Cards:** `--card` surface, 1px border, `radius-xl`, `shadow-sm`, 24px padding,
+  header/content/footer stacked with a 24px gap. The quiet, uniform workhorse container.
+
+## Iconography
+
+- **Lucide only** (`iconLibrary: lucide`). 24×24 grid, **1.5px stroke**, round caps/joins,
+  no fill, `stroke="currentColor"` so icons inherit text color. Render ~16px in controls,
+  18–20px in nav. Never mix icon sets; never use emoji or unicode glyphs as icons.
+
+## Content & copy
+
+- **Sentence case everywhere** — headings, buttons, labels, menu items ("Create project,"
+  not "Create Project"). Proper nouns excepted.
+- Address the reader as **"you"**; imperative mood for actions.
+- **Buttons:** short verbs ("Save changes," "Cancel," "Continue"). Destructive is blunt
+  ("Delete").
+- **Descriptions:** one calm supporting sentence in `--muted-foreground` under a title.
+- **Placeholders/demo data:** realistic but generic. **No emoji** in product UI. Numbers
+  shown plainly with a small delta line when relevant.
+- Voice: understated, precise, a little dry — trustworthy over playful. (All visible strings
+  still go through i18n, EN+ES — see the i18n rule.)
+
+## Avoid
+
+Bluish-purple gradients · emoji · colored left-border "callout" cards · glowing shadows ·
+pill-shaped everything · decorative/looping motion · hardcoded color/shadow literals in
+components · accent hues used for decoration.

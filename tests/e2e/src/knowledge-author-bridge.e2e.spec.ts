@@ -312,8 +312,11 @@ test.describe('knowledge author bridge (node↔body fan-out) @full', () => {
         data: { nodeId: out.node_id },
       });
       expect(heal.status(), await heal.text()).toBe(200);
-      const healResult = (await heal.json()) as { relinked: boolean };
-      expect(healResult.relinked).toBe(true);
+      // body_ref is healed by node_id. The slice-08 async body-bridge worker can
+      // claim the same node's durable outbox row concurrently; if it wins the race
+      // it heals first and THIS reconcile is a no-op (relinked=false). Either healer
+      // is correct, so assert the OUTCOME (body_ref restored, below) + idempotency,
+      // not which healer won — keeping the test robust to the async consumer.
 
       const { data: healed } = await tenant.granted.client
         .from('knowledge_resources')
@@ -341,8 +344,10 @@ test.describe('knowledge author bridge (node↔body fan-out) @full', () => {
         data: { nodeId: out.node_id },
       });
       expect(orphan.status(), await orphan.text()).toBe(200);
-      const orphanResult = (await orphan.json()) as { orphanRemoved: boolean };
-      expect(orphanResult.orphanRemoved).toBe(true);
+      // Same async-consumer tolerance as the heal above: the slice-08 worker may
+      // remove the orphan body first if its (delayed) reconcile lands after the node
+      // delete, making THIS reconcile a no-op (orphanRemoved=false). Assert the
+      // OUTCOME — the orphan body is gone — not which reconcile removed it.
 
       const goneBody = await bodies.findOne({ node_id: out.node_id });
       expect(goneBody).toBeNull();

@@ -201,6 +201,29 @@ export function buildBoardSpec(docsTagNodeId: string) {
   } as const;
 }
 
+/**
+ * Lens ProjectionSpec — the saved canvas slice the lens navigator renders. It is
+ * the SAME mechanism as the KB grid (Variant B: incoming `tagged` traversal from
+ * a tag node, `kind in (text,link)` filter); only `view='lens'` differs. The lens
+ * navigator layers the hub rail + bounded neighborhood expansion (resolveNeighborhood)
+ * + resource panel ON TOP of this resolved set — the slice itself is just a
+ * projection (Invariant #1: a new view is data, never a new query path).
+ */
+export function buildLensSpec(tagNodeId: string) {
+  return {
+    schema_version: 1,
+    filter: { field: 'kind', op: 'in', value: ['text', 'link'] },
+    traversal: {
+      start: { ids: [tagNodeId] },
+      relation_types: ['tagged'],
+      direction: 'incoming',
+      max_depth: 1,
+      order_by: 'title',
+    },
+    view: 'lens',
+  } as const;
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 function serviceSupabase(): SupabaseClient {
@@ -265,6 +288,29 @@ async function resolveRoleIds(
     );
   }
   return { adminRoleId, spaceAdminRoleId };
+}
+
+/**
+ * Resolve the base `member` space system role id. Every space member receives
+ * this role by default; the knowledge member-grant migration maps the full
+ * knowledge verb-set (read/create/update/delete/transition) onto it, so a
+ * `member` actor can author the graph with ZERO special grants — the all-roles
+ * RLS floor (ADR-0011 §6).
+ */
+async function resolveMemberRoleId(service: SupabaseClient): Promise<string> {
+  const { data, error } = await service
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', 'member')
+    .is('owner_organization_id', null)
+    .single();
+  if (error || !data?.id) {
+    throw new Error(
+      `resolveMemberRoleId: system role 'member' not found — knowledge member grant unmapped`
+    );
+  }
+  return data.id;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -1371,6 +1417,653 @@ export async function seedAccessLayerDemo(
     composedTitle,
     tagNodeId,
     projectionId: prj.id,
+  };
+}
+
+// ── slice-09: lens-view demo (hub rail + neighborhood expansion + panel) ─────
+//
+// The lens navigator lands as PURE CONFIGURATION over the SAME graph primitives:
+// a `lens` view_types row + a saved lens projection (the canvas slice) + a
+// node/edge graph rich enough to exercise the two read ports — hub-seeding
+// (loadHubNodes, degree ≥ 2) and bounded neighborhood expansion
+// (resolveNeighborhood over relates_to/tagged/part_of). ZERO new tables, ZERO
+// engine/resolver fork — added entirely as harness data (the identity-sync
+// lesson: demo nodes/projections/edges are never migration-seeded).
+//
+// Graph shape (all kind text/link/tag, all edges over the same tables):
+//   • content nodes A,B,C,D (text) + one link node E,
+//   • tag nodes 'Lens KB' and 'Topic',
+//   • `tagged` edges: A,B,C,D,E → 'Lens KB'; A,B → 'Topic',
+//   • `relates_to` edges: A↔B (A→B and B→A to exercise the cycle-guard), B→C, A→C,
+//   • `part_of` chain: C part_of B part_of A (parent panel),
+//   • HUBS (degree ≥ 2 over relates_to ⊕ tagged): A (tagged×2 + relates_to×3),
+//     B (tagged×2 + relates_to×3), C (tagged×1 + relates_to×3) — content nodes,
+//     so the rail root surfaces content hubs, not tags (§3.0 recommendation).
+
+export type LensViewGraph = {
+  /** Content node A — top hub (highest degree), root candidate of the rail. */
+  hubAId: string;
+  hubATitle: string;
+  /** Content node B — hub; relates_to A both ways (cycle-guard exercise). */
+  hubBId: string;
+  hubBTitle: string;
+  /** Content node C — hub; child of B (part_of). */
+  hubCId: string;
+  hubCTitle: string;
+  /** Content node D — low-degree leaf (tagged into 'Lens KB' only). */
+  leafDId: string;
+  leafDTitle: string;
+  /** Link node E — tagged into 'Lens KB' (kind=link in the canvas slice). */
+  linkEId: string;
+  linkETitle: string;
+  /** 'Lens KB' tag node — start of the saved lens projection slice. */
+  kbTagNodeId: string;
+  /** 'Topic' tag node — second tag for the tag-facet (A,B carry it). */
+  topicTagNodeId: string;
+  lensProjectionId: string;
+};
+
+/**
+ * Ensure the `lens` view_types row exists (service-role; global reference data).
+ * The slice-09 migration seeds it, but the harness mirrors the `board` pattern so
+ * the demo is self-sufficient even before that migration is applied. `projections.view`
+ * is FK-checked against `view_types(key)`, so the row must exist before a lens
+ * projection can be inserted. Idempotent.
+ */
+async function ensureLensViewType(service: SupabaseClient): Promise<void> {
+  const { error } = await service.from('view_types').upsert(
+    {
+      key: 'lens',
+      label: 'Lens',
+      description:
+        'Node+edge navigator: hub rail, kind/tag slice and resource panel.',
+    },
+    { onConflict: 'key' }
+  );
+  if (error) {
+    throw new Error(`ensureLensViewType: ${error.message}`);
+  }
+}
+
+/**
+ * Seed the slice-09 lens demo over the existing tenant, AS the granted actor
+ * (every write passes RLS `with check`). Builds the node/edge graph described
+ * above + a saved lens projection. The hub-seeding (loadHubNodes) and bounded
+ * neighborhood expansion (resolveNeighborhood) read ports navigate THIS graph;
+ * the resource panel reads one node's depth-1 neighborhood over the same edges.
+ */
+export async function seedLensViewDemo(
+  tenant: KnowledgeGraphTenant
+): Promise<LensViewGraph> {
+  const { granted, spaceId, service } = tenant;
+  const db = granted.client;
+
+  await ensureLensViewType(service);
+
+  const hubATitle = 'Lens Node A — Hub';
+  const hubBTitle = 'Lens Node B — Hub';
+  const hubCTitle = 'Lens Node C — Child';
+  const leafDTitle = 'Lens Node D — Leaf';
+  const linkETitle = 'Lens Node E — Link';
+
+  const { data: contentNodes, error: nodesErr } = await db
+    .from('knowledge_resources')
+    .insert([
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: hubATitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: hubBTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: hubCTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: leafDTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'link',
+        title: linkETitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+    ])
+    .select('id,title');
+  if (nodesErr || !contentNodes || contentNodes.length !== 5) {
+    throw new Error(`seedLensViewDemo nodes: ${nodesErr?.message ?? 'count'}`);
+  }
+  const byTitle = new Map(contentNodes.map((n) => [n.title, n.id]));
+  const hubAId = byTitle.get(hubATitle);
+  const hubBId = byTitle.get(hubBTitle);
+  const hubCId = byTitle.get(hubCTitle);
+  const leafDId = byTitle.get(leafDTitle);
+  const linkEId = byTitle.get(linkETitle);
+  if (!hubAId || !hubBId || !hubCId || !leafDId || !linkEId) {
+    throw new Error('seedLensViewDemo nodes: title ids missing');
+  }
+
+  // tag nodes (graph nodes, not column values — Variant B).
+  const { data: tags, error: tagErr } = await db
+    .from('knowledge_resources')
+    .insert([
+      {
+        space_id: spaceId,
+        kind: 'tag',
+        title: 'Lens KB',
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'tag',
+        title: 'Topic',
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+    ])
+    .select('id,title');
+  if (tagErr || !tags || tags.length !== 2) {
+    throw new Error(`seedLensViewDemo tags: ${tagErr?.message ?? 'count'}`);
+  }
+  const tagByTitle = new Map(tags.map((t) => [t.title, t.id]));
+  const kbTagNodeId = tagByTitle.get('Lens KB');
+  const topicTagNodeId = tagByTitle.get('Topic');
+  if (!kbTagNodeId || !topicTagNodeId) {
+    throw new Error('seedLensViewDemo tags: title ids missing');
+  }
+
+  // `tagged` edges (resource → tag): all five content nodes into 'Lens KB';
+  // A,B also into 'Topic' (second tag-facet). Canonical direction from=resource.
+  const taggedEdges = [
+    { from: hubAId, to: kbTagNodeId, position: 0 },
+    { from: hubBId, to: kbTagNodeId, position: 1 },
+    { from: hubCId, to: kbTagNodeId, position: 2 },
+    { from: leafDId, to: kbTagNodeId, position: 3 },
+    { from: linkEId, to: kbTagNodeId, position: 4 },
+    { from: hubAId, to: topicTagNodeId, position: 0 },
+    { from: hubBId, to: topicTagNodeId, position: 1 },
+  ];
+  // `relates_to` edges (associative): A→B and B→A (cycle), B→C, A→C.
+  const relatesEdges = [
+    { from: hubAId, to: hubBId, position: 0 },
+    { from: hubBId, to: hubAId, position: 0 },
+    { from: hubBId, to: hubCId, position: 1 },
+    { from: hubAId, to: hubCId, position: 1 },
+  ];
+  // `part_of` chain (child → parent): C part_of B, B part_of A.
+  const partOfEdges = [
+    { from: hubCId, to: hubBId, position: 0 },
+    { from: hubBId, to: hubAId, position: 0 },
+  ];
+
+  const { error: edgeErr } = await db.from('knowledge_edges').insert([
+    ...taggedEdges.map((e) => ({
+      space_id: spaceId,
+      from_id: e.from,
+      to_id: e.to,
+      relation_type: 'tagged',
+      position: e.position,
+      created_by: granted.userId,
+    })),
+    ...relatesEdges.map((e) => ({
+      space_id: spaceId,
+      from_id: e.from,
+      to_id: e.to,
+      relation_type: 'relates_to',
+      position: e.position,
+      created_by: granted.userId,
+    })),
+    ...partOfEdges.map((e) => ({
+      space_id: spaceId,
+      from_id: e.from,
+      to_id: e.to,
+      relation_type: 'part_of',
+      position: e.position,
+      created_by: granted.userId,
+    })),
+  ]);
+  if (edgeErr) {
+    throw new Error(`seedLensViewDemo edges: ${edgeErr.message}`);
+  }
+
+  const { data: prj, error: prjErr } = await db
+    .from('projections')
+    .insert({
+      space_id: spaceId,
+      app_type: 'knowledge_base',
+      name: 'Lens KB',
+      view: 'lens',
+      spec: buildLensSpec(kbTagNodeId),
+      created_by: granted.userId,
+      owner_user_id: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (prjErr || !prj?.id) {
+    throw new Error(
+      `seedLensViewDemo projection: ${prjErr?.message ?? 'no id'}`
+    );
+  }
+
+  return {
+    hubAId,
+    hubATitle,
+    hubBId,
+    hubBTitle,
+    hubCId,
+    hubCTitle,
+    leafDId,
+    leafDTitle,
+    linkEId,
+    linkETitle,
+    kbTagNodeId,
+    topicTagNodeId,
+    lensProjectionId: prj.id,
+  };
+}
+
+// ── slice-09 rev. 3: all-roles member actors (member1 / member2) ──────────────
+//
+// The product is now a SINGLE knowledge-base editor and every space member can
+// author the graph by default (ADR-0011 §6 / ADR-0012): the base `member` role
+// carries the full knowledge verb-set (read/create/update/delete/transition) via
+// the member-grant migration. The rev. 3 acceptance test therefore no longer
+// models a read/write role split (the deleted `reader`); instead it asserts that
+// ANY ordinary member authors. These helpers mint plain `member`-role actors in
+// the tenant's space.
+//
+// The negative case stays valid: `ungranted` (the base tenant's second actor —
+// NOT carrying any knowledge verb) gets an empty rail/canvas and a clean RLS
+// failure on write, proving the authority is RLS and the grant is membership.
+
+export type KnowledgeMemberActor = {
+  /** An ordinary space member (base `member` role → full knowledge verbs). */
+  member: KnowledgeActor;
+  /**
+   * Back-compat alias of `member` for the not-yet-rewritten lens-view e2e (it
+   * still reads `.reader`). Semantics changed: this actor now has the FULL verb
+   * set, not read-only. Drop when the render-implementer rewrites that spec.
+   */
+  reader: KnowledgeActor;
+  /** Extra user ids to cascade-clean on teardown. */
+  extraUserIds: string[];
+};
+
+export type KnowledgeMemberActors = {
+  /** First ordinary member — authors the graph (member role → full verbs). */
+  member1: KnowledgeActor;
+  /** Second ordinary member — ALSO authors (proves all-roles, not role split). */
+  member2: KnowledgeActor;
+  /** Extra user ids to cascade-clean on teardown. */
+  extraUserIds: string[];
+};
+
+/**
+ * Mint a single ordinary `member`-role actor in the tenant's space. The actor
+ * receives the base `member` system role, so the all-roles grant gives it the
+ * full knowledge verb-set with no special permission wiring.
+ */
+async function mintMemberActor(
+  tenant: KnowledgeGraphTenant,
+  label: string
+): Promise<KnowledgeActor> {
+  const { service, organizationId, spaceId } = tenant;
+  const memberRoleId = await resolveMemberRoleId(service);
+
+  const user = await createActor(service, label);
+
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: user.id });
+  if (omErr) throw new Error(`${label} org_membership: ${omErr.message}`);
+
+  const { error: smErr } = await service
+    .from('space_memberships')
+    .insert({ space_id: spaceId, user_id: user.id, status: 'active' });
+  if (smErr) throw new Error(`${label} space_membership: ${smErr.message}`);
+
+  const { error: urErr } = await service
+    .from('user_role')
+    .insert({ user_id: user.id, space_id: spaceId, role_id: memberRoleId });
+  if (urErr) throw new Error(`${label} user_role: ${urErr.message}`);
+
+  const client = await authenticatedClient(user.email, user.password);
+
+  return {
+    userId: user.id,
+    email: user.email,
+    password: user.password,
+    client,
+  };
+}
+
+/**
+ * Add two ordinary `member`-role actors (member1, member2) to an existing tenant.
+ * Both author the graph through the all-roles grant — the rev. 3 replacement for
+ * the deleted reader/granted role split.
+ */
+export async function bootstrapKnowledgeMemberActors(
+  tenant: KnowledgeGraphTenant
+): Promise<KnowledgeMemberActors> {
+  const member1 = await mintMemberActor(tenant, 'member1');
+  const member2 = await mintMemberActor(tenant, 'member2');
+  return {
+    member1,
+    member2,
+    extraUserIds: [member1.userId, member2.userId],
+  };
+}
+
+/**
+ * Reoriented from the deleted read-only `reader` helper to member semantics
+ * (ADR-0011 §6 / ADR-0012, slice-09 rev. 3): the returned actor is now a plain
+ * `member` carrying the FULL knowledge verb-set, not a read-only custom role —
+ * role-distinction of writes is no longer modeled. Kept (not deleted) so the
+ * not-yet-rewritten lens-view e2e keeps compiling; the render-implementer
+ * rewrites that spec to use `bootstrapKnowledgeMemberActors` directly.
+ */
+export async function bootstrapLensReaderActor(
+  tenant: KnowledgeGraphTenant
+): Promise<KnowledgeMemberActor> {
+  const member = await mintMemberActor(tenant, 'lens-member');
+  return {
+    member,
+    reader: member,
+    extraUserIds: [member.userId],
+  };
+}
+
+// ── slice-11 Ф1: KB application-data satellites + folders/shortcut demo ───────
+//
+// The KB layer adds per-node ATTRIBUTES (satellites in the `kb` schema) and the
+// folder/shortcut topology (folder nodes + `contains`/`shortcut` edges) over the
+// SAME single graph. ZERO parallel topology: folders are nodes, containment and
+// shortcuts are edges; descriptions/provenance/links/media-meta/embed-status are
+// satellites keyed by node_id. Everything is seeded AS the granted actor (every
+// write passes the RLS mirror — a satellite is writable IFF the node is), never
+// migration-seeded (the identity-sync lesson). The kb table writes go through the
+// user's RLS client over PostgREST against the exposed `kb` schema, proving the
+// schema is reachable end-to-end under the access mirror.
+
+export type KbApplicationGraph = {
+  /** Root folder node (no incoming `contains`). */
+  rootFolderId: string;
+  rootFolderTitle: string;
+  /** Child folder contained by the root (folder→folder containment). */
+  childFolderId: string;
+  childFolderTitle: string;
+  /** A text doc contained by the child folder, carrying a description. */
+  docId: string;
+  docTitle: string;
+  /** A file node contained by the child folder, carrying media-meta. */
+  fileId: string;
+  fileTitle: string;
+  /** A link node contained by the root folder, carrying a resource_link. */
+  linkId: string;
+  linkTitle: string;
+  /** A video node contained by the child folder, carrying media-meta. */
+  videoId: string;
+  videoTitle: string;
+  /** `contains` edge ids (root→child, child→doc, child→file, root→link, child→video). */
+  containsEdgeIds: string[];
+  /** `shortcut` edge id (root folder → child folder cross-link, Drive symlink). */
+  shortcutEdgeId: string;
+};
+
+/**
+ * Seed the KB application-data demo over the existing tenant, AS the granted
+ * actor. Builds:
+ *  - a folder tree: root folder `contains` (child folder, link); child folder
+ *    `contains` (doc, file, video) — forward `contains` edges only;
+ *  - a `shortcut` edge root→child (cross-folder symlink, Drive-only render);
+ *  - KB satellites under the RLS mirror: a description on the doc + root folder,
+ *    provenance on the doc, a resource_link on the link node, media-meta on the
+ *    file and video, an embed-status on the doc, and an activity counter on the doc.
+ *
+ * Every `kb.*` write uses the granted actor's RLS client (NOT service-role),
+ * exercising the satellite RLS mirror over the PostgREST-exposed `kb` schema.
+ */
+export async function seedKbApplicationDemo(
+  tenant: KnowledgeGraphTenant
+): Promise<KbApplicationGraph> {
+  const { granted, spaceId } = tenant;
+  const db = granted.client;
+  const kb = db.schema('kb');
+
+  const rootFolderTitle = 'Getting Started';
+  const childFolderTitle = 'Product Guides';
+  const docTitle = 'Welcome Doc';
+  const fileTitle = 'Onboarding.pdf';
+  const linkTitle = 'Status Page';
+  const videoTitle = 'Intro Video';
+
+  const { data: nodes, error: nodesErr } = await db
+    .from('knowledge_resources')
+    .insert([
+      {
+        space_id: spaceId,
+        kind: 'folder',
+        title: rootFolderTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'folder',
+        title: childFolderTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'text',
+        title: docTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'file',
+        title: fileTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'link',
+        title: linkTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+      {
+        space_id: spaceId,
+        kind: 'video',
+        title: videoTitle,
+        status: 'active',
+        created_by: granted.userId,
+        owner_user_id: granted.userId,
+      },
+    ])
+    .select('id,title');
+  if (nodesErr || !nodes || nodes.length !== 6) {
+    throw new Error(
+      `seedKbApplicationDemo nodes: ${nodesErr?.message ?? 'count'}`
+    );
+  }
+  const byTitle = new Map(nodes.map((n) => [n.title, n.id]));
+  const rootFolderId = byTitle.get(rootFolderTitle);
+  const childFolderId = byTitle.get(childFolderTitle);
+  const docId = byTitle.get(docTitle);
+  const fileId = byTitle.get(fileTitle);
+  const linkId = byTitle.get(linkTitle);
+  const videoId = byTitle.get(videoTitle);
+  if (
+    !rootFolderId ||
+    !childFolderId ||
+    !docId ||
+    !fileId ||
+    !linkId ||
+    !videoId
+  ) {
+    throw new Error('seedKbApplicationDemo nodes: title ids missing');
+  }
+
+  // forward `contains` edges (folder → child) — breadcrumb/descendants walk these.
+  const containsEdges = [
+    { from: rootFolderId, to: childFolderId, position: 0 },
+    { from: rootFolderId, to: linkId, position: 1 },
+    { from: childFolderId, to: docId, position: 0 },
+    { from: childFolderId, to: fileId, position: 1 },
+    { from: childFolderId, to: videoId, position: 2 },
+  ];
+  const { data: contains, error: containsErr } = await db
+    .from('knowledge_edges')
+    .insert(
+      containsEdges.map((e) => ({
+        space_id: spaceId,
+        from_id: e.from,
+        to_id: e.to,
+        relation_type: 'contains',
+        position: e.position,
+        created_by: granted.userId,
+      }))
+    )
+    .select('id');
+  if (containsErr || !contains || contains.length !== containsEdges.length) {
+    throw new Error(
+      `seedKbApplicationDemo contains: ${containsErr?.message ?? 'count'}`
+    );
+  }
+  const containsEdgeIds = contains.map((e) => e.id);
+
+  // `shortcut` edge (cross-folder symlink) — Drive-only, excluded from containment.
+  const { data: shortcut, error: shortcutErr } = await db
+    .from('knowledge_edges')
+    .insert({
+      space_id: spaceId,
+      from_id: rootFolderId,
+      to_id: childFolderId,
+      relation_type: 'shortcut',
+      position: 0,
+      created_by: granted.userId,
+    })
+    .select('id')
+    .single();
+  if (shortcutErr || !shortcut?.id) {
+    throw new Error(
+      `seedKbApplicationDemo shortcut: ${shortcutErr?.message ?? 'no id'}`
+    );
+  }
+
+  // ── KB satellites (every write passes the RLS mirror as the granted actor) ──
+  const { error: descErr } = await kb.from('resource_description').insert([
+    {
+      node_id: docId,
+      space_id: spaceId,
+      body: 'Start here: the welcome doc indexed for retrieval.',
+      created_by: granted.userId,
+    },
+    {
+      node_id: rootFolderId,
+      space_id: spaceId,
+      body: 'Top-level folder for onboarding material.',
+      created_by: granted.userId,
+    },
+  ]);
+  if (descErr)
+    throw new Error(`seedKbApplicationDemo description: ${descErr.message}`);
+
+  const { error: provErr } = await kb
+    .from('resource_provenance')
+    .insert({ node_id: docId, space_id: spaceId, source: 'human' });
+  if (provErr)
+    throw new Error(`seedKbApplicationDemo provenance: ${provErr.message}`);
+
+  const { error: actErr } = await kb
+    .from('resource_activity')
+    .insert({ node_id: docId, space_id: spaceId, view_count: 0 });
+  if (actErr)
+    throw new Error(`seedKbApplicationDemo activity: ${actErr.message}`);
+
+  const { error: linkErr } = await kb.from('resource_link').insert({
+    node_id: linkId,
+    space_id: spaceId,
+    url: 'https://status.acme.com',
+    host: 'status.acme.com',
+    created_by: granted.userId,
+  });
+  if (linkErr)
+    throw new Error(`seedKbApplicationDemo link: ${linkErr.message}`);
+
+  const { error: mediaErr } = await kb.from('resource_media_meta').insert([
+    {
+      node_id: fileId,
+      space_id: spaceId,
+      byte_size: 2_400_000,
+      mime_type: 'application/pdf',
+      created_by: granted.userId,
+    },
+    {
+      node_id: videoId,
+      space_id: spaceId,
+      duration_ms: 760_000,
+      mime_type: 'video/mp4',
+      created_by: granted.userId,
+    },
+  ]);
+  if (mediaErr)
+    throw new Error(`seedKbApplicationDemo media_meta: ${mediaErr.message}`);
+
+  const { error: embedErr } = await kb
+    .from('resource_embedding')
+    .insert({ node_id: docId, space_id: spaceId, status: 'stale' });
+  if (embedErr)
+    throw new Error(`seedKbApplicationDemo embedding: ${embedErr.message}`);
+
+  return {
+    rootFolderId,
+    rootFolderTitle,
+    childFolderId,
+    childFolderTitle,
+    docId,
+    docTitle,
+    fileId,
+    fileTitle,
+    linkId,
+    linkTitle,
+    videoId,
+    videoTitle,
+    containsEdgeIds,
+    shortcutEdgeId: shortcut.id,
   };
 }
 

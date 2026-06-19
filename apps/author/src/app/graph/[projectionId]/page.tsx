@@ -1,37 +1,53 @@
 import { Skeleton } from '@workspace/ui/components/skeleton';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 
 import {
-  listSpaceProjections,
+  computeNodeHealth,
+  loadContainmentForest,
+  loadGraphCatalogMessages,
   loadGraphTranslator,
+  loadKbAttributesForItems,
+  loadNodeMetaForItems,
+  loadResourceTagsForItems,
+  loadShortcutForest,
   resolveActiveSpaceId,
-  resolveCourseGating,
-  resolveProjectionGating,
+  resolveCurrentUserId,
   resolveSpaceProjection,
 } from '../graph-page.data';
-import { ProjectionSwitcher } from '../views/projection-switcher';
-import { resolveProjectionView } from '../views/view-registry';
+import { KbWorkbench } from '../views/kb-workbench';
 
 /**
  * `/author/graph/[projectionId]` — resolves ONE saved projection over the graph
  * under the user's RLS client and dispatches to its view via the registry
- * (`resolveProjectionView(result.view)`). The switcher lets the user toggle to
- * another saved projection over the SAME graph (visible Invariant #1, §3.3).
+ * (`resolveProjectionView(result.view)`). This is the special case of a NAMED
+ * lens projection (e.g. a tag-rooted slice); the default editor lives at the
+ * index `/author/graph` (rev. 3, ADR-0012 §5 — no switcher, one product view).
  *
  * Resolution is blocking on the server, wrapped in `Suspense` with a skeleton so
- * navigating between projections never flashes empty
- * (`nextjs-blocking-routes-suspense`). RLS is the access authority — an ungranted
- * user resolves to `items=[]` and the view renders its empty-state (§7).
+ * navigation never flashes empty (`nextjs-blocking-routes-suspense`). RLS is the
+ * access authority — an ungranted user resolves to a hidden row (`null`) and is
+ * redirected to the default editor (§7).
  */
 export const dynamic = 'force-dynamic';
 
 function ProjectionSkeleton() {
+  // Full-bleed skeleton — same shell as the index: top bar + explainer strip +
+  // full-height body, so navigation never flashes a centered frame
+  // (`nextjs-blocking-routes-suspense`).
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {[0, 1, 2].map((i) => (
-        <Skeleton key={i} className="h-32 w-full rounded-xl" />
-      ))}
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+        <Skeleton className="size-[26px] rounded-md" />
+        <Skeleton className="h-7 w-40 rounded-md" />
+        <Skeleton className="mx-auto h-9 w-80 rounded-lg" />
+        <Skeleton className="size-8 rounded-full" />
+      </div>
+      <Skeleton className="h-9 w-full shrink-0 rounded-none" />
+      <div className="flex min-h-0 flex-1 gap-4 p-4">
+        <Skeleton className="hidden w-64 rounded-xl md:block" />
+        <Skeleton className="flex-1 rounded-xl" />
+      </div>
     </div>
   );
 }
@@ -43,38 +59,59 @@ async function ProjectionPanel({
   spaceId: string;
   projectionId: string;
 }) {
-  const t = await loadGraphTranslator();
+  const messages = await loadGraphCatalogMessages();
   const result = await resolveSpaceProjection({ spaceId, projectionId });
 
   if (!result) {
     notFound();
   }
 
-  // Per-user gating is computed ONLY for the course view (gating is course
-  // pedagogy); grid/KB resolves PURE as before. The overlay fetch + gateSequence
-  // live in a thin helper, keeping resolveSpaceProjection projection-PURE.
-  const gating =
-    result.view === 'course'
-      ? await resolveCourseGating({ spaceId, result })
-      : undefined;
+  // KB seed (slice-11 Ф2/Ф3 §7): containment + shortcut forests + tags + KB
+  // attributes + node meta + DERIVED health + current user id, all RLS-scoped. A
+  // saved projection is still the SAME multi-view KB shell over a NARROWED graph —
+  // it renders through the workbench (switcher + shared panel), the four views as
+  // projections over the saved result. The views stay presentational.
+  const itemIds = result.items.map((item) => item.id);
+  const [
+    tagsByItem,
+    attributesByItem,
+    metaByItem,
+    containment,
+    shortcuts,
+    currentUserId,
+  ] = await Promise.all([
+    loadResourceTagsForItems(spaceId, itemIds),
+    loadKbAttributesForItems(spaceId, itemIds),
+    loadNodeMetaForItems(spaceId, itemIds),
+    loadContainmentForest(spaceId),
+    loadShortcutForest(spaceId),
+    resolveCurrentUserId(),
+  ]);
+  const healthByItem = await computeNodeHealth(
+    spaceId,
+    result.items.map((item) => ({ id: item.id, kind: item.kind })),
+    metaByItem
+  );
+  const kbData = {
+    tagsByItem,
+    attributesByItem,
+    metaByItem,
+    healthByItem,
+    containment,
+    shortcuts,
+    currentUserId,
+  };
 
-  // Per-NODE display gating (slice-06): when the projection declares a gating
-  // rule (e.g. the `board` view's `requires_state`), resolve the rule's verdicts
-  // server-side from the already-resolved item statuses and pass them as a
-  // SEPARATE `nodeGates` prop — the course path above is untouched. A gated node
-  // stays in `result.items`; only `available` changes (display, not access).
-  const nodeGates =
-    result.view === 'board'
-      ? ((await resolveProjectionGating({ spaceId, projectionId, result })) ??
-        undefined)
-      : undefined;
-
-  // Registry dispatch: pick the renderer by `result.view` and invoke it directly
-  // (it is a presentational function returning ReactNode, not a stateful
-  // component instantiated per render). A new view = a new registry entry, zero
-  // changes here — Invariant #1 in the presentation layer.
-  const renderProjectionView = resolveProjectionView(result.view);
-  return <>{renderProjectionView({ result, t, gating, nodeGates, spaceId })}</>;
+  // The workbench renders the variant switcher + active projection + shared panel
+  // over the saved result. Invariant #1: four views, one (narrowed) graph.
+  return (
+    <KbWorkbench
+      result={result}
+      messages={messages}
+      spaceId={spaceId}
+      kbData={kbData}
+    />
+  );
 }
 
 export default async function GraphProjectionPage({
@@ -88,39 +125,18 @@ export default async function GraphProjectionPage({
 
   if (!spaceId) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="grid h-dvh place-items-center px-6">
         <p className="text-muted-foreground text-sm">{t('graph.noSpace')}</p>
       </div>
     );
   }
 
-  const projections = await listSpaceProjections(spaceId);
-
-  // No readable projection in this space (RLS) → nothing to render; fall back to
-  // the index, which shows the empty-state.
-  if (projections.length === 0) {
-    redirect('/graph');
-  }
-
+  // Full-bleed: the workbench carries its own top bar + explainer strip, so a
+  // saved projection also renders into the whole viewport — no centered frame,
+  // no separate header (ADR-0014, slice-11 layout fix).
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-12">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-heading text-2xl">{t('graph.page.title')}</h1>
-          <p className="text-muted-foreground text-sm">
-            {t('graph.page.description')}
-          </p>
-        </div>
-        <ProjectionSwitcher
-          projections={projections}
-          currentProjectionId={projectionId}
-          label={t('graph.switcher.label')}
-          placeholder={t('graph.switcher.placeholder')}
-        />
-      </header>
-      <Suspense fallback={<ProjectionSkeleton />}>
-        <ProjectionPanel spaceId={spaceId} projectionId={projectionId} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<ProjectionSkeleton />}>
+      <ProjectionPanel spaceId={spaceId} projectionId={projectionId} />
+    </Suspense>
   );
 }

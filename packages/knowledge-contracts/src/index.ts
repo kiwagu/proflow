@@ -46,6 +46,19 @@ export {
 } from './projection-result.schema.js';
 
 export {
+  NEIGHBORHOOD_SPEC_SCHEMA_VERSION,
+  neighborhoodDirectionSchema,
+  neighborhoodResultSchema,
+  neighborhoodSpecSchema,
+  neighborSchema,
+  parseNeighborhoodSpec,
+  type Neighbor,
+  type NeighborhoodDirection,
+  type NeighborhoodResult,
+  type NeighborhoodSpec,
+} from './neighborhood.schema.js';
+
+export {
   coarseStatusSchema,
   parseResourceUserStateMap,
   resourceUserStateMapSchema,

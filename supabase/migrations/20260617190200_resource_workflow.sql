@@ -46,11 +46,14 @@ insert into public.permissions (key, description) values
   ('space.knowledge.approve', 'Authorize an approval-guarded workflow transition in one space.')
 on conflict (key) do nothing;
 
+-- `member` (the all-roles floor, ADR-0011 §6) gets `transition` so any space
+-- member can move a workflow; `approve` stays admin-only (approval guard).
 with mapping(role_key, permission_key) as (
   values
     ('admin', 'space.knowledge.transition'),
     ('admin', 'space.knowledge.approve'),
-    ('author', 'space.knowledge.transition')
+    ('author', 'space.knowledge.transition'),
+    ('member', 'space.knowledge.transition')
 )
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id

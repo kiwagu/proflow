@@ -35,6 +35,10 @@
       "types": "./dist/projection-result.schema.d.ts",
       "import": "./dist/projection-result.schema.js"
     },
+    "./neighborhood": {
+      "types": "./dist/neighborhood.schema.d.ts",
+      "import": "./dist/neighborhood.schema.js"
+    },
     "./body-bridge": {
       "types": "./dist/body-bridge.schema.d.ts",
       "import": "./dist/body-bridge.schema.js"

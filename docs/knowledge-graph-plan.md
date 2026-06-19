@@ -177,6 +177,40 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
       authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
       while a reader without `space.knowledge.read` sees no documents at all (access = RLS)
+- [x] Second read port — bounded neighborhood (the read side, landed): `resolveNeighborhood`, a
+      bounded-BFS-from-a-single-center walk (depth ≤ 2, path-array cycle-guard, per relation_type ×
+      depth × direction window cap), ORTHOGONAL to `resolveProjection` — same recursive-CTE class and
+      the SAME per-user-RLS resolve transport (never service-role), but the recursion ANCHOR is one
+      given center node, not a filter-derived start set. Returns a flat, RLS-narrowed `neighbors[]`
+      carrying `relation_type` + `direction` + `depth`; grouping (related/tags) and depth-into-tree
+      folding stay in the presentation layer (the engine is mechanism-neutral and taxonomy-agnostic).
+      Landed in `@workspace/knowledge-contracts` (`neighborhood.schema.ts`: `NeighborhoodSpec` /
+      `Neighbor` / `NeighborhoodResult`, pinned `schema_version=1`, plus `parseNeighborhoodSpec`) and
+      `@workspace/knowledge-engine` (`neighborhood.resolver.ts`: `compileNeighborhoodQuery` +
+      `resolveNeighborhood`, defence-in-depth select-only), both unit-covered (depth-1, depth-2,
+      cycle-guard, both-direction, per-level cap). `ProjectionSpec` / `ProjectionResult` UNCHANGED
+      (schema version stays 1). The render surface consumes this port through a thin `/author/graph/
+      neighborhood` GET route (`both` composed in the route as two single-direction walks, merged) for
+      lazy rail expansion + the resource panel
+- [x] Lens view as data — a `lens` `view_types` row (additive INSERT migration, ZERO core DDL) lets a
+      saved `projections` row render under the node+edge navigator; a new view stays one vocabulary row
+      + one registry entry + one component (Invariant #1 in presentation). The vocab row + the lens
+      demo graph (content/link/tag nodes, `tagged` / `relates_to` / `part_of` edges, hubs with degree
+      ≥ 2, a saved `view='lens'` projection) + a read-only `reader` role (read verb, no write verbs)
+      landed in the e2e harness, never a migration (demo rows poison the identity-sync worker). The
+      consumer write-path landed: node+edge authoring from the consumer surface as thin RLS routes over
+      one UI-agnostic application module — body-less node create (`link`/`tag`, ZERO Payload doc per
+      ADR-0002 §3), `relates_to`/`tagged` edge create+delete (idempotent on the unique key), the
+      tag-on-tagging two-step (ensure `kind='tag'` node, then `tagged` edge), and title rename — all
+      under the user's RLS (verb gate enforced on the row, `created_by`/`owner` from the session never
+      the body, ZERO service-role on the user write-path). Render surface landed (shadcn consumer):
+      the `lens` registry entry + `LensProjectionView` (hub rail over `<Tree>`, kind/tag facets as
+      client-side narrowing, card canvas, full-authoring `ResourcePanel` Sheet + create dialog, SVG
+      mini-graph), new generic primitives (`tree`, `resizable-rail`/`use-resizable-width`, `facet-chip`)
+      in `@workspace/ui`, the RLS-scoped data-layer loaders (`loadHubNodes` degree≥2 hub-seeding,
+      `loadResourceTagsForItems` batch tag enrichment), the `neighborhood` read route, EN/ES i18n, and
+      the lens-view e2e (hub rail, bounded-BFS expand + cycle-guard, kind/tag slice, node-selection
+      panel, granted authoring loop, reader clean-failure, ungranted empty, switcher Invariant #1)
 - [x] Access-layer extensions (the COMPLEMENTARY mechanism): the hard/access layer (L1/RLS) is now a
       set of COMPOSABLE predicate dimensions over a node's visibility — symmetric to the gating-rule
       registry, but hard (RLS, auditable, non-bypassable). A failed dimension HIDES the node (absent
@@ -219,6 +253,51 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       identical resource/edge set, the course is one removable `projections` row, and the
       empty-schema-diff is asserted at the data level (demo data lives in the e2e harness, not a
       migration — production carries zero hardcoded demo rows)
+- [x] KB lens rendered 1:1 with the design prototype (over the SAME graph, zero new topology):
+      the rail is the FORWARD-`contains` containment tree (root folders → graph-children expansion:
+      folders into contained nodes, content nodes into `relates_to`/`tagged` neighbors via the
+      bounded neighborhood port, tags into tagged-by), type/tag/HEALTH facets (orphan = zero
+      connectivity, stale = old `updated_at` — DERIVED, never stored), a folder-browser-OR-flat-filter
+      canvas with `contains` breadcrumb + folder/resource cards, the full ResourcePanel (editable
+      RAG-bound description, tags, provenance/views/stale/orphan health, owner, connections mini-graph,
+      related add/remove, "Lives in" parent + folder Contents, real view-count increment on open), the
+      CreateModal (document/file/video/link/folder/tag + parent folder + description), and a prominent
+      "Create sample knowledge base" button that seeds an example exercising every capability (409 when
+      already seeded). KB application data rides alongside the frozen `ProjectionResult` as RLS-scoped
+      satellite/containment fan-outs (description/provenance/link/media-meta/activity in the `kb` schema
+      + the `contains` forest), never an engine/contract change. The single deliberate gap from the
+      prototype is RAG-3 (embed-status reindex, suggested links, semantic `similar`): no vector pipeline,
+      so those are hidden rather than faked (poc-no-fallbacks); the description text is stored, seam ready.
+      Proven by `tests/e2e/src/knowledge-lens-view.e2e.spec.ts` (sample seed + 409 idempotency, folder
+      create + place-inside + `contains` read, KB attribute write/read + view-count increment, ungranted
+      clean-failure under RLS)
+- [x] Multi-view knowledge base — a four-tab view switcher (Drive / Notion / KB lens / Graph) over the
+      SAME graph + a shared ResourcePanel, the visible Invariant #1 (four projections, one graph; zero
+      new topology, engine/contracts frozen). A workbench shell (`kb-workbench.tsx`) owns the active
+      variant + the shared `selectedId` (the open node survives a view switch) + the one detail drawer;
+      the view-registry is keyed by `view_types.key`. ALL FOUR views are LIVE — Drive (the default) +
+      Notion + KB lens + Graph — the switcher is complete (no disabled tab remains). The Drive view
+      (`drive-projection.view.tsx`) is the familiar folder tree: a sidebar (root folders + counts),
+      breadcrumb, grid/list toggle, folder/shortcut/file cards — folders walked from the FORWARD
+      `contains` forest, cross-folder symlinks from a `shortcut` forest (Drive-only, excluded from
+      containment traversal), both RLS-scoped fan-outs alongside the resolved canvas (never
+      service-role). The Notion view (`notion-projection.view.tsx`) is nested pages + a reading canvas
+      with REAL inline mentions (out-`relates_to`) and backlinks (in-`relates_to`) via the neighborhood
+      port (the page body + inline mention placement are deterministic, explicitly-labelled MOCKS —
+      `kb-notion-body-mock.ts`, the Lexical read-path is a separate seam). The Graph view
+      (`graph-projection.view.tsx`) is the spatial focus+neighborhood ego map: a radial sunburst around
+      a centre node (depth 1–5), click-a-neighbour RE-CENTER (deep walk = iterative bounded neighborhood
+      re-fetch, never one deep query — engine-gap 1), a path-trail, a facet filter, search-to-focus, a
+      global clustered Overview (client aggregation over the resolved set — engine-gap 2), and zoom/pan;
+      the layout math is client-side (`graph-layout.ts`) while EVERY edge is RLS-backed (relates_to/tagged
+      from the frozen neighborhood port, contains/shortcut from the server-loaded forests). The shared
+      panel renders RAG-3 (embed status / suggested links / reindex) against deterministic,
+      explicitly-labelled MOCKS (`kb-rag-mock.ts`) — no vector backend exists, so these reach pixel-1:1
+      NOW and surface the gap for owner discussion (the suggested-links CONFIRM is a real `relates_to`
+      write; everything else in the panel is real). Proven by
+      `tests/e2e/src/knowledge-lens-view.e2e.spec.ts` (4-tab switcher all-live + Drive default render,
+      sample folder tree + shortcut forest, Notion REAL backlinks/mentions, Graph centre+ring +
+      re-center over the neighborhood port, ungranted empty under RLS for every view)
 
 ## Open items
 

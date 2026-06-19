@@ -18,6 +18,11 @@ export {
 } from './projection.resolver.js';
 
 export {
+  compileNeighborhoodQuery,
+  resolveNeighborhood,
+} from './neighborhood.resolver.js';
+
+export {
   gateSequence,
   type GatedSequence,
   type GatedStep,

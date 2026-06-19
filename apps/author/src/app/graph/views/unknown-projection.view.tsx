@@ -1,3 +1,4 @@
+import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import {
   Card,
   CardContent,
@@ -13,7 +14,8 @@ import type { ProjectionViewProps } from './view-registry';
  * renderer has not landed). Renders an explicit "not supported" panel instead of
  * crashing — proving a new view is purely additive and an unknown one is safe.
  */
-export function UnknownProjectionView({ t }: ProjectionViewProps) {
+export function UnknownProjectionView({ messages }: ProjectionViewProps) {
+  const t = createGraphTranslator(messages);
   return (
     <Card>
       <CardHeader>

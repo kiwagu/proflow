@@ -48,6 +48,7 @@
     "@workspace/eslint-config": "workspace:^",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/kb-contracts": "workspace:*",
     "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/knowledge-engine": "workspace:*",
     "@workspace/payload-plugins": "workspace:*",

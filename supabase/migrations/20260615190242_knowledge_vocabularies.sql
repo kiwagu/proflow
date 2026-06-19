@@ -63,19 +63,31 @@ comment on table public.view_types is
 
 insert into public.resource_kinds (key, label, description) values
   ('text', 'Text', 'Rich-text body authored in Payload (kind=text).'),
-  ('link', 'Link', 'Reference to another resource or external URL.')
+  ('link', 'Link', 'Reference to another resource or external URL.'),
+  ('tag', 'Tag', 'A tag node; resources point at it with a tagged edge (tags are data, not a column).'),
+  ('folder', 'Folder', 'Container node; holds children via a contains edge. Body-less, like a tag.'),
+  ('file', 'File', 'Uploaded binary asset (PDF/zip/etc.); attributes live on kb.resource_media_meta.'),
+  ('video', 'Video', 'Video resource; attributes live on kb.resource_media_meta.')
 on conflict (key) do nothing;
 
 insert into public.relation_types (key, label, description, is_directed) values
   ('relates_to', 'Relates to', 'Associative, non-hierarchical link.', true),
-  ('part_of', 'Part of', 'Hierarchical containment (child part_of parent).', true),
-  ('prerequisite', 'Prerequisite', 'Source must precede target (pacing/ordering).', true)
+  ('part_of', 'Part of', 'Hierarchical containment (child part_of parent); reserved for part-of-whole (e.g. course sub-DAG).', true),
+  ('prerequisite', 'Prerequisite', 'Source must precede target (pacing/ordering).', true),
+  ('tagged', 'Tagged', 'Resource tagged into a tag node (from_id=resource, to_id=tag).', true),
+  ('contains', 'Contains', 'Folder holds child, forward containment (from_id=folder, to_id=child); breadcrumb/descendants walk this only.', true),
+  ('shortcut', 'Shortcut to', 'Cross-folder symlink (from_id=folder, to_id=target); rendered in Drive, excluded from containment traversal.', true)
 on conflict (key) do nothing;
 
 insert into public.view_types (key, label, description) values
   ('grid', 'Grid', 'Card/grid layout.'),
   ('list', 'List', 'Flat list layout.'),
-  ('course', 'Course', 'Ordered curriculum view following prerequisite edges.')
+  ('course', 'Course', 'Ordered curriculum view following prerequisite edges.'),
+  ('lens', 'Lens', 'Node+edge navigator: hub rail, kind/tag slice and resource panel over the live graph.'),
+  ('board', 'Board', 'Status-segmented board view.'),
+  ('drive', 'Drive', 'Folder tree + grid; the graph hidden behind a familiar tree.'),
+  ('notion', 'Notion', 'Nested pages + inline mentions + backlinks.'),
+  ('graph', 'Graph', 'Spatial focus+neighborhood ego map; re-center to walk the connections.')
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------------
