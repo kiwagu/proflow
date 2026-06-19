@@ -8,6 +8,7 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
+import { CardTile } from '@workspace/ui/components/card-tile';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   AtSign,
@@ -465,11 +466,12 @@ function NotionReader({
           </div>
           <div className="flex flex-col gap-1.5">
             {backlinks.map((b) => (
-              <button
+              <CardTile
                 key={b.edge_id}
-                type="button"
+                radius="md"
+                shadow={false}
                 onClick={() => onSelect(b.node.id)}
-                className="bg-card hover:border-ring flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors"
+                className="gap-2.5 px-3 py-2.5 text-left"
               >
                 <FileText
                   className="text-muted-foreground size-[15px] shrink-0"
@@ -481,7 +483,7 @@ function NotionReader({
                     {t('graph.notion.references', { title: node.title })}
                   </div>
                 </div>
-              </button>
+              </CardTile>
             ))}
           </div>
         </div>

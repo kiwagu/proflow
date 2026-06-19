@@ -2,12 +2,15 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import {
+  SegmentedControl,
+  SegmentedControlButton,
+} from '@workspace/ui/components/segmented-control';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@workspace/ui/components/tooltip';
-import { cn } from '@workspace/ui/lib/utils';
 
 import {
   KB_VARIANTS,
@@ -37,29 +40,19 @@ export type KbViewSwitcherProps = {
 export function KbViewSwitcher({ t, active, onChange }: KbViewSwitcherProps) {
   return (
     <TooltipProvider>
-      <div className="bg-muted flex items-center gap-[3px] rounded-lg p-[3px]">
+      <SegmentedControl>
         {KB_VARIANTS.map((variant) => {
           const on = variant.id === active;
           const Icon = variant.icon;
           const button = (
-            <button
-              type="button"
+            <SegmentedControlButton
+              active={on}
               disabled={!variant.live}
               onClick={() => variant.live && onChange(variant.id)}
-              aria-pressed={on}
-              className={cn(
-                'flex items-center gap-[7px] rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors',
-                on
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground',
-                variant.live
-                  ? 'hover:text-foreground cursor-pointer'
-                  : 'cursor-not-allowed opacity-50'
-              )}
             >
               <Icon className="size-[15px]" aria-hidden />
               {kbVariantLabel(t, variant.id)}
-            </button>
+            </SegmentedControlButton>
           );
 
           if (variant.live) {
@@ -75,7 +68,7 @@ export function KbViewSwitcher({ t, active, onChange }: KbViewSwitcherProps) {
             </Tooltip>
           );
         })}
-      </div>
+      </SegmentedControl>
     </TooltipProvider>
   );
 }

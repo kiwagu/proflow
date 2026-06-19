@@ -2,6 +2,8 @@
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import { CardTile } from '@workspace/ui/components/card-tile';
+import { EmptyState } from '@workspace/ui/components/empty-state';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
@@ -339,14 +341,10 @@ export function DriveProjectionView({
 
           {/* empty states */}
           {isRoot && roots.length === 0 ? (
-            <p className="text-muted-foreground py-12 text-center text-sm">
-              {t('graph.lens.emptyEditor')}
-            </p>
+            <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
           ) : null}
           {!isRoot && folders.length === 0 && items.length === 0 ? (
-            <p className="text-muted-foreground py-12 text-center text-sm">
-              {t('graph.drive.folderEmpty')}
-            </p>
+            <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
           ) : null}
         </div>
       </div>
@@ -388,10 +386,9 @@ function FolderCard({
 }) {
   const list = layout === 'list';
   return (
-    <button
-      type="button"
+    <CardTile
       onClick={onOpen}
-      className={cn(CARD_BASE, list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4')}
+      className={cn('w-full', list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4')}
     >
       {shortcut ? (
         <FolderSymlink
@@ -417,7 +414,7 @@ function FolderCard({
       {shortcut ? (
         <ArrowUpRight className="text-muted-foreground size-3.5" aria-hidden />
       ) : null}
-    </button>
+    </CardTile>
   );
 }
 
@@ -437,12 +434,11 @@ function ItemCard({
   const list = layout === 'list';
   const Icon = iconForKind(node.kind);
   return (
-    <button
-      type="button"
+    <CardTile
       onClick={onOpen}
       data-selected={selected}
       className={cn(
-        CARD_BASE,
+        'w-full',
         list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4',
         selected ? 'border-ring ring-ring/35 ring-[3px]' : ''
       )}
@@ -460,12 +456,9 @@ function ItemCard({
           {kindLabel(t, node.kind)}
         </div>
       </div>
-    </button>
+    </CardTile>
   );
 }
-
-const CARD_BASE =
-  'bg-card hover:border-ring flex w-full items-center rounded-lg border shadow-xs transition-colors';
 
 function SectionLabel({
   children,

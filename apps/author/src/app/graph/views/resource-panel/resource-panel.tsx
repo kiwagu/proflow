@@ -8,6 +8,7 @@ import { FacetChip } from '@workspace/ui/components/facet-chip';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
+import { SectionHeadingRow } from '@workspace/ui/components/section-heading-row';
 import { Separator } from '@workspace/ui/components/separator';
 import {
   Sheet,
@@ -603,10 +604,12 @@ function EditableDescription({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
-          <Sparkles className="size-3" aria-hidden />
+        <SectionHeadingRow
+          uppercase
+          icon={<Sparkles className="size-3" aria-hidden />}
+        >
           {t('graph.panel.description')}
-        </h3>
+        </SectionHeadingRow>
         <EmbedStatusBadge t={t} status={mockEmbedStatus()} />
       </div>
       {editing ? (
@@ -875,10 +878,9 @@ function SuggestedLinksSection({
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-        <Sparkles className="size-3" aria-hidden />
+      <SectionHeadingRow icon={<Sparkles className="size-3" aria-hidden />}>
         {t('graph.panel.suggestedLinks')}
-      </h3>
+      </SectionHeadingRow>
       <ul className="flex flex-col gap-1.5">
         {suggestions.map((suggestion) => {
           const Icon = iconForKind(suggestion.kind);

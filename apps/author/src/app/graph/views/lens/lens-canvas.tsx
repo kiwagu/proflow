@@ -10,7 +10,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { CardTile } from '@workspace/ui/components/card-tile';
+import { EmptyState } from '@workspace/ui/components/empty-state';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
+import { IconTile } from '@workspace/ui/components/icon-tile';
 import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
 import {
   ChevronRight,
@@ -122,13 +125,13 @@ export function LensCanvas({
       {/* header — breadcrumb + title + counts + actions */}
       <div className="flex flex-col gap-3 border-b pb-4">
         <div className="flex items-start gap-3">
-          <div className="bg-primary text-primary-foreground grid size-10 shrink-0 place-items-center rounded-lg">
+          <IconTile tone="primary" size={10}>
             {folder ? (
               <FolderOpen className="size-5" aria-hidden />
             ) : (
               <Database className="size-5" aria-hidden />
             )}
-          </div>
+          </IconTile>
           <div className="min-w-0 flex-1">
             {folder ? (
               <nav className="text-muted-foreground mb-1 flex flex-wrap items-center gap-1 text-xs">
@@ -238,15 +241,14 @@ export function LensCanvas({
           ) : null}
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {subfolders.map((sub) => (
-              <button
+              <CardTile
                 key={sub.id}
-                type="button"
                 onClick={() => onNavigate(sub.id)}
-                className="hover:border-ring bg-card flex items-center gap-3 rounded-lg border p-4 text-left shadow-xs transition-colors"
+                className="gap-3 p-4 text-left"
               >
-                <div className="bg-muted grid size-9 shrink-0 place-items-center rounded-md">
+                <IconTile size={9}>
                   <Folder className="size-4.5" aria-hidden />
-                </div>
+                </IconTile>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">
                     {sub.title}
@@ -261,7 +263,7 @@ export function LensCanvas({
                   className="text-muted-foreground size-4 shrink-0"
                   aria-hidden
                 />
-              </button>
+              </CardTile>
             ))}
           </div>
         </section>
@@ -340,9 +342,7 @@ export function LensCanvas({
 
       {/* empty states */}
       {!hasActiveFilter && !folder && subfolders.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">
-          {t('graph.lens.emptyEditor')}
-        </p>
+        <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
       ) : null}
       {!hasActiveFilter && !folder && subfolders.length > 0 ? (
         <p className="text-muted-foreground text-sm">
@@ -350,17 +350,13 @@ export function LensCanvas({
         </p>
       ) : null}
       {hasActiveFilter && contentItems.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">
-          {t('graph.lens.empty')}
-        </p>
+        <EmptyState>{t('graph.lens.empty')}</EmptyState>
       ) : null}
       {!hasActiveFilter &&
       folder &&
       subfolders.length === 0 &&
       contentItems.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">
-          {t('graph.lens.empty')}
-        </p>
+        <EmptyState>{t('graph.lens.empty')}</EmptyState>
       ) : null}
     </div>
   );

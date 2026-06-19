@@ -1,6 +1,7 @@
 'use client';
 
 import type { NeighborhoodResult } from '@workspace/knowledge-contracts';
+import { EmptyState } from '@workspace/ui/components/empty-state';
 
 /**
  * ResourceMiniGraph — a thin SVG over a depth-1 `NeighborhoodResult`: the center
@@ -30,11 +31,7 @@ export function ResourceMiniGraph({
   const neighbors = neighborhood.neighbors;
 
   if (neighbors.length === 0) {
-    return (
-      <p className="text-muted-foreground py-4 text-center text-xs">
-        {emptyLabel}
-      </p>
-    );
+    return <EmptyState compact>{emptyLabel}</EmptyState>;
   }
 
   const points = neighbors.map((neighbor, index) => {
