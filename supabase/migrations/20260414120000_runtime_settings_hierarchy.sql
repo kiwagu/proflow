@@ -769,6 +769,12 @@ declare
   v_space_id text;
   v_org_admin_role_id text;
   v_space_admin_role_id text;
+  -- Greenfield owner also gets the broad operational `admin` role, not just the
+  -- administrative space_admin/org_admin. The role's concrete capabilities are
+  -- attached as RBAC data (here and in later migrations); this RPC only assigns
+  -- the role, so the first/only user can act in their own space, not just
+  -- administer it.
+  v_admin_role_id text;
   v_organization_settings_template boolean := false;
 begin
   v_uid := auth.uid();
@@ -800,7 +806,16 @@ begin
     and archived_at is null
   limit 1;
 
-  if v_org_admin_role_id is null or v_space_admin_role_id is null then
+  select id into v_admin_role_id
+  from public.roles
+  where key = 'admin'
+    and role_kind = 'system'
+    and owner_organization_id is null
+    and archived_at is null
+  limit 1;
+
+  if v_org_admin_role_id is null or v_space_admin_role_id is null
+     or v_admin_role_id is null then
     raise exception 'Required RBAC roles are missing';
   end if;
 
@@ -857,6 +872,12 @@ begin
 
   insert into public.user_role (user_id, role_id, space_id)
   values (v_uid, v_space_admin_role_id, v_space_id);
+
+  -- The greenfield owner also gets the space-scoped broad operational `admin` role
+  -- so the first/only user can act in their own space, not just administer it.
+  -- Subsequent admins follow the normal invite flow (assigned manually).
+  insert into public.user_role (user_id, role_id, space_id)
+  values (v_uid, v_admin_role_id, v_space_id);
 
   insert into public.space_admin_audit_log (
     actor_user_id,
