@@ -84,14 +84,8 @@ export function LensProjectionView({
     new Set()
   );
 
-  // Facets derive from the resolved set, client-side (§3.5).
-  const kinds = React.useMemo(
-    () =>
-      [...new Set(result.items.map((item) => item.kind))]
-        .filter((kind) => kind !== 'folder')
-        .sort(),
-    [result.items]
-  );
+  // Facets derive from the resolved set, client-side (§3.5). The type facet list is
+  // FIXED in LensFacets (prototype-parity), so only the tag union is derived here.
   const tags = React.useMemo(() => {
     const byId = new Map<string, { id: string; title: string }>();
     for (const list of Object.values(tagsByItem)) {
@@ -198,7 +192,6 @@ export function LensProjectionView({
       <div className="mt-3 border-t pt-3">
         <LensFacets
           t={t}
-          kinds={kinds}
           activeKinds={activeKinds}
           onToggleKind={toggleKind}
           tags={tags}
