@@ -266,6 +266,33 @@ export async function loadResourceTagsForItems(
   return map;
 }
 
+/**
+ * All tag nodes of a space the user MAY read (slice-11 panel TagEditor tray /
+ * ResourcePanel §). The TagEditor's "pick from existing tags" tray toggles the
+ * whole space's tag set, so this is ONE RLS-scoped select over
+ * `knowledge_resources` (`kind='tag'`) — the SAME pattern as
+ * `loadResourceTagsForItems`, never service-role. An ungranted user gets `[]`. The
+ * set is small (a space's tag vocabulary), ordered by title for a stable tray.
+ */
+export async function loadAllSpaceTags(
+  spaceId: string
+): Promise<ResourceTag[]> {
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('knowledge_resources')
+    .select('id,title')
+    .eq('space_id', spaceId)
+    .eq('kind', 'tag')
+    .order('title', { ascending: true });
+  if (error) {
+    throw new Error(`loadAllSpaceTags: ${error.message}`);
+  }
+  return (data ?? []).map((row) => ({
+    id: (row as { id: string }).id,
+    title: (row as { title: string }).title,
+  }));
+}
+
 /** A high-connectivity content node proposed as a root of the lens rail. */
 export type HubNode = {
   id: string;

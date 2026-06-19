@@ -10,17 +10,19 @@ import { cn } from '@workspace/ui/lib/utils';
  * the shape stays identical everywhere. Mechanism only — the icon is children.
  *
  * `tone` picks the surface (muted chip vs. primary header tile); `size` picks the
- * pixel-exact box (`9`/`size-9 rounded-md` for cards, `10`/`size-10 rounded-lg`
- * for headers). Semantic tokens only, so dark mode is automatic; extra classes
- * compose via `className`.
+ * pixel-exact box (`8`/`size-8 rounded-md` for the compact panel header glyph,
+ * `9`/`size-9 rounded-md` for cards, `10`/`size-10 rounded-lg` for headers).
+ * Semantic tokens only, so dark mode is automatic; extra classes compose via
+ * `className`.
  */
 
 export type IconTileProps = React.ComponentPropsWithoutRef<'div'> & {
   tone?: 'muted' | 'primary';
-  size?: 9 | 10;
+  size?: 8 | 9 | 10;
 };
 
 const SIZE_CLASS: Record<NonNullable<IconTileProps['size']>, string> = {
+  8: 'size-8 rounded-md',
   9: 'size-9 rounded-md',
   10: 'size-10 rounded-lg',
 };

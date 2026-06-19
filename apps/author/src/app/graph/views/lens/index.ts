@@ -14,6 +14,7 @@ export {
   childContent,
   childFolders,
   childrenNodes,
+  contentNodeCount,
   descendantContentCount,
   parentFolder,
   pathTo,
@@ -22,9 +23,16 @@ export {
   type LensNode,
 } from './lens-containment';
 export {
+  formatNodeMeta,
   groupForNeighbor,
   iconForKind,
   kindLabel,
+  ownerInitials,
+  ownerLabel,
   relationLabel,
+  statusMeta,
+  TRANSITIONABLE_STATUSES,
+  type NodeMediaMeta,
   type RelationGroup,
+  type StatusMeta,
 } from './lens-presentation';

@@ -3,7 +3,7 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import {
   FileText,
   Folder,
-  Link2,
+  Link,
   Paperclip,
   PlayCircle,
   Tag,
@@ -27,7 +27,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   text: FileText,
   file: Paperclip,
   video: PlayCircle,
-  link: Link2,
+  link: Link,
   tag: Tag,
 };
 
@@ -90,4 +90,159 @@ export function relationLabel(
   relationType: string
 ): string {
   return t(`graph.relation.${RELATION_KEY[relationType] ?? relationType}`);
+}
+
+/** Badge variant for a status (prototype STATUS_META — approved is the strong
+ * solid `default`, everything else is a hairline `outline`/`secondary`). */
+type StatusBadgeVariant = 'default' | 'secondary' | 'outline';
+
+/** A status mapped to its human label + Badge variant (prototype STATUS_META,
+ * §cross-cutting). One source of truth used by the lens cards + the panel + the
+ * status transition buttons, so a raw `in_review` never leaks into the UI. */
+export type StatusMeta = {
+  label: string;
+  variant: StatusBadgeVariant;
+};
+
+/** Known workflow statuses → Badge variant (prototype STATUS_META keys 1:1). */
+const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
+  active: 'secondary',
+  approved: 'default',
+  in_review: 'outline',
+  draft: 'outline',
+  archived: 'outline',
+};
+
+/** status → i18n label via LITERAL keys (no dynamic-key indirection in views). */
+function statusLabel(t: GraphTranslator, status: string): string {
+  switch (status) {
+    case 'active':
+      return t('graph.status.active');
+    case 'approved':
+      return t('graph.status.approved');
+    case 'in_review':
+      return t('graph.status.inReview');
+    case 'draft':
+      return t('graph.status.draft');
+    case 'archived':
+      return t('graph.status.archived');
+    default:
+      return status;
+  }
+}
+
+/**
+ * Map a raw status to its display label + Badge variant (prototype STATUS_META).
+ * Returns `null` for an unknown/empty status so callers render NO badge rather
+ * than an empty pill (prototype: `STATUS_META[status]` may be undefined).
+ */
+export function statusMeta(
+  t: GraphTranslator,
+  status: string | null | undefined
+): StatusMeta | null {
+  if (!status || !(status in STATUS_VARIANT)) {
+    return null;
+  }
+  return { label: statusLabel(t, status), variant: STATUS_VARIANT[status] };
+}
+
+/** The ordered status set offered as transition targets (prototype panel). */
+export const TRANSITIONABLE_STATUSES = [
+  'draft',
+  'in_review',
+  'approved',
+  'active',
+] as const;
+
+/**
+ * The display label for a node's owner (prototype `n.owner`, panel/Drive meta).
+ * "You" when the current user owns it, "Member" for another known owner, and
+ * "System" when there is no owner (prototype `owner !== "—" ? owner : "System"`).
+ * RLS-safe: this is a display label only, never an access decision; the real
+ * owner display NAME is not RLS-readable in this slice, so we label the relation
+ * rather than invent a name (MOCK-name path, owner directive).
+ */
+export function ownerLabel(
+  t: GraphTranslator,
+  ownerUserId: string | null | undefined,
+  currentUserId: string | null | undefined
+): string {
+  if (!ownerUserId) {
+    return t('graph.panel.ownerSystem');
+  }
+  if (currentUserId && ownerUserId === currentUserId) {
+    return t('graph.panel.ownerYou');
+  }
+  return t('graph.panel.ownerMember');
+}
+
+/** Two-letter initials for an owner avatar (prototype `initials`). */
+export function ownerInitials(label: string): string {
+  return (
+    label
+      .split(/\s+/)
+      .map((part) => part[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '?'
+  );
+}
+
+/** Media meta the cards/panel display (size / duration / link host). */
+export type NodeMediaMeta = {
+  byteSize?: number | null;
+  durationMs?: number | null;
+  mimeType?: string | null;
+  linkHost?: string | null;
+};
+
+/** Format a byte size as a human label (prototype meta line). i18n-driven. */
+function formatBytes(t: GraphTranslator, bytes: number): string {
+  if (bytes < 1024) {
+    return t('graph.media.bytes', { count: bytes });
+  }
+  if (bytes < 1024 * 1024) {
+    return t('graph.media.kilobytes', { count: Math.round(bytes / 1024) });
+  }
+  return t('graph.media.megabytes', {
+    count: Math.round((bytes / (1024 * 1024)) * 10) / 10,
+  });
+}
+
+/** Format a duration (ms) as m:ss (prototype meta line). */
+function formatDuration(t: GraphTranslator, ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return t('graph.media.duration', {
+    minutes,
+    seconds: String(seconds).padStart(2, '0'),
+  });
+}
+
+/**
+ * The single-line "meta" string a Drive card / panel header shows for a node:
+ * a link's HOST, a file's SIZE, or a video's DURATION (prototype `n.meta`). Pure
+ * formatting over already-loaded values; returns `null` when the kind carries no
+ * meta. The caller supplies the (possibly MOCK-filled) byte/duration values.
+ */
+export function formatNodeMeta(
+  t: GraphTranslator,
+  kind: string,
+  media: NodeMediaMeta | undefined
+): string | null {
+  if (!media) {
+    return null;
+  }
+  if (kind === 'link' && media.linkHost) {
+    return media.linkHost;
+  }
+  if (kind === 'file' && media.byteSize != null) {
+    return formatBytes(t, media.byteSize);
+  }
+  if (kind === 'video' && media.durationMs != null) {
+    return formatDuration(t, media.durationMs);
+  }
+  return null;
 }

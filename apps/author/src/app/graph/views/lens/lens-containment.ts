@@ -130,6 +130,18 @@ export function pathTo(c: Containment, folderId: string): LensNode[] {
   return path;
 }
 
+/** Total count of content nodes (non-folder, non-tag) in the whole index
+ * (prototype `contentNodes().length` for the KB rail-group counter). */
+export function contentNodeCount(c: Containment): number {
+  let count = 0;
+  for (const node of c.byId.values()) {
+    if (node.kind !== 'folder' && node.kind !== 'tag') {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /** Recursive count of content (non-folder, non-tag) under a folder. */
 export function descendantContentCount(
   c: Containment,
