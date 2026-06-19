@@ -19,7 +19,6 @@ import {
   ChevronRight,
   Database,
   Filter,
-  FileText,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -37,7 +36,7 @@ import {
   type LensNode,
 } from './lens-containment';
 import type { HealthFacet } from './lens-facets';
-import { iconForKind, kindLabel } from './lens-presentation';
+import { iconForKind, kindLabel, statusMeta } from './lens-presentation';
 
 /**
  * LensCanvas — the prototype KBCanvas (slice-11 Ф2 §4): a folder BROWSER when no
@@ -283,6 +282,10 @@ export function LensCanvas({
               const tags = tagsByItem[item.id] ?? [];
               const attrs = attributesByItem[item.id];
               const selected = item.id === selectedId;
+              const status = statusMeta(
+                t,
+                (item as ProjectionResultItem).status
+              );
               return (
                 <Card
                   key={item.id}
@@ -291,13 +294,20 @@ export function LensCanvas({
                   className="hover:border-ring data-[selected=true]:border-ring cursor-pointer transition-colors"
                 >
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Icon
-                        className="text-muted-foreground size-4 shrink-0"
-                        aria-hidden
-                      />
-                      <span className="truncate">{item.title}</span>
-                    </CardTitle>
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                        <Icon
+                          className="text-muted-foreground size-4 shrink-0"
+                          aria-hidden
+                        />
+                        <span className="truncate">{item.title}</span>
+                      </CardTitle>
+                      {status ? (
+                        <Badge variant={status.variant} className="shrink-0">
+                          {status.label}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-2">
                     {attrs?.description ? (
@@ -305,20 +315,6 @@ export function LensCanvas({
                         {attrs.description}
                       </p>
                     ) : null}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">
-                        {kindLabel(t, item.kind)}
-                      </Badge>
-                      <Badge variant="outline">
-                        {(item as ProjectionResultItem).status ?? ''}
-                      </Badge>
-                      {(item as ProjectionResultItem).body_ref != null ? (
-                        <Badge variant="outline" className="gap-1">
-                          <FileText className="size-3" aria-hidden />
-                          {t('graph.body.present')}
-                        </Badge>
-                      ) : null}
-                    </div>
                     {tags.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {tags.map((tag) => (

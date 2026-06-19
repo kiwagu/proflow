@@ -60,7 +60,9 @@ export type LensCreateResourceProps = {
   /** Open request from the container (header New / New folder), or null when shut. */
   request: CreateRequest | null;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  /** Called after a successful create with the new node id + kind, so the caller
+   * can navigate into a new folder / select a new resource (prototype CreateModal). */
+  onCreated: (created?: { nodeId: string; kind: CreateKind }) => void;
 };
 
 const KINDS: CreateKind[] = ['text', 'file', 'video', 'link', 'folder', 'tag'];
@@ -139,7 +141,7 @@ export function LensCreateResource({
         });
       }
       onOpenChange(false);
-      onCreated();
+      onCreated({ nodeId, kind });
     } catch {
       setError(true);
     } finally {
@@ -192,6 +194,12 @@ export function LensCreateResource({
               id="create-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && title.trim().length > 0 && !busy) {
+                  event.preventDefault();
+                  void onSubmit();
+                }
+              }}
               placeholder={t('graph.create.namePlaceholder')}
               disabled={busy}
               autoFocus

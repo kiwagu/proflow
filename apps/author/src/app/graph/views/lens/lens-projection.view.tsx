@@ -2,6 +2,7 @@
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
+import { IterationCw, Spline, Tag } from 'lucide-react';
 import * as React from 'react';
 
 import { buildContainment } from './lens-containment';
@@ -183,11 +184,24 @@ export function LensProjectionView({
         onSelect={onSelect}
         selectedId={selectedId}
         refreshKey={refreshKey}
+        onNavigateFolder={onNavigate}
+        onToggleTag={toggleTag}
+        scopeFolderId={folderId}
+        activeTagIds={activeTagIds}
       />
-      <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-3 px-1 text-xs">
-        <span>{t('graph.lens.legendRelated')}</span>
-        <span>{t('graph.lens.legendTag')}</span>
-        <span>{t('graph.lens.legendInPath')}</span>
+      <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-3 px-2 text-xs">
+        <span className="inline-flex items-center gap-1">
+          <Spline className="size-3" aria-hidden />
+          {t('graph.lens.legendRelated')}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Tag className="size-3" aria-hidden />
+          {t('graph.lens.legendTag')}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <IterationCw className="size-3" aria-hidden />
+          {t('graph.lens.legendInPath')}
+        </span>
       </div>
       <div className="mt-3 border-t pt-3">
         <LensFacets
@@ -277,7 +291,17 @@ export function LensProjectionView({
             setCreateRequest(null);
           }
         }}
-        onCreated={onMutated}
+        onCreated={(created) => {
+          // After creating a folder, navigate into it; after a resource, select it
+          // (prototype CreateModal: `setSel(folder)` / `onSelect(node)`).
+          if (created?.kind === 'folder') {
+            setFolderId(created.nodeId);
+            clearFilters();
+          } else if (created) {
+            onSelect(created.nodeId);
+          }
+          onMutated();
+        }}
       />
     </>
   );

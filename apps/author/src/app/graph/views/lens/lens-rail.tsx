@@ -12,10 +12,12 @@ import * as React from 'react';
 import {
   childrenNodes,
   descendantContentCount,
+  contentNodeCount,
   rootFolders,
   type Containment,
 } from './lens-containment';
 import { iconForKind } from './lens-presentation';
+import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
  * LensRail — the prototype GraphTree (slice-11 Ф2 §2). The rail is the graph's
@@ -52,6 +54,14 @@ export type LensRailProps = {
   selectedId?: string;
   /** Bumped by the container after a mutation to drop stale lazy children. */
   refreshKey?: number;
+  /** Click a folder row → browse it in the canvas (prototype `setSel`). */
+  onNavigateFolder: (folderId: string | null) => void;
+  /** Click a tag row → toggle its tag facet (prototype `toggleSet(setTags)`). */
+  onToggleTag: (tagId: string) => void;
+  /** The current browse-scope folder id (null = root) — soft-highlighted. */
+  scopeFolderId: string | null;
+  /** The active tag-facet ids — soft-highlighted + checked in the rail. */
+  activeTagIds: ReadonlySet<string>;
 };
 
 /** Map a containment child node to a tree node (synchronous, from the seed). */
@@ -103,7 +113,12 @@ export function LensRail({
   onSelect,
   selectedId,
   refreshKey = 0,
+  onNavigateFolder,
+  onToggleTag,
+  scopeFolderId,
+  activeTagIds,
 }: LensRailProps) {
+  const [kbOpen, setKbOpen] = React.useState(true);
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set());
   const [loadingIds, setLoadingIds] = React.useState<Set<string>>(new Set());
   // lazily-loaded relates_to/tagged children keyed by node id.
@@ -201,71 +216,121 @@ export function LensRail({
     [expandedIds, lazyChildrenById, loadNeighbors]
   );
 
+  // A rail row activation dispatches by kind (prototype `onLabel`): a FOLDER
+  // browses it in the canvas (and clears tag facets), a TAG toggles its facet, a
+  // CONTENT node selects (opens the panel). The shared selection still updates so
+  // the open node tracks across views.
+  const onActivate = React.useCallback(
+    (node: TreeNode) => {
+      const payload = node.data as RailPayload;
+      if (payload.kind === 'folder') {
+        onNavigateFolder(node.id);
+      } else if (payload.kind === 'tag') {
+        onToggleTag(node.id);
+      } else {
+        onSelect(node.id);
+      }
+    },
+    [onNavigateFolder, onToggleTag, onSelect]
+  );
+
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2 px-1 py-1 text-sm font-medium">
-        <Database
-          className="text-muted-foreground size-4 shrink-0"
-          aria-hidden
-        />
-        <span className="flex-1">{t('graph.lens.knowledgeBase')}</span>
+      {/* Knowledge Base group header — clickable (→ root), content count,
+          collapsible (prototype RailGroup). */}
+      <div
+        data-active={kbOpen && scopeFolderId === null}
+        className="hover:bg-accent data-[active=true]:bg-accent flex items-center gap-1 rounded-md"
+      >
+        <button
+          type="button"
+          onClick={() => setKbOpen((open) => !open)}
+          aria-label={t('graph.notion.toggleSection')}
+          className="text-muted-foreground grid size-[22px] shrink-0 place-items-center"
+        >
+          {kbOpen ? (
+            <ChevronDown className="size-3.5" aria-hidden />
+          ) : (
+            <ChevronRight className="size-3.5" aria-hidden />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigateFolder(null)}
+          className="flex flex-1 items-center gap-2 py-1 text-left text-sm font-medium"
+        >
+          <Database
+            className="text-muted-foreground size-4 shrink-0"
+            aria-hidden
+          />
+          <span className="flex-1">{t('graph.lens.knowledgeBase')}</span>
+          <span className="text-muted-foreground pr-1 text-xs opacity-70">
+            {contentNodeCount(containment)}
+          </span>
+        </button>
       </div>
-      {roots.length > 0 ? (
+      {kbOpen && roots.length > 0 ? (
         <Tree
           nodes={nodes}
           expandedIds={expandedIds}
           loadingIds={loadingIds}
           onToggle={onToggle}
-          onActivate={(node) => onSelect(node.id)}
+          onActivate={onActivate}
           renderLabel={({ node, isBackReference }) => {
             const payload = node.data as RailPayload;
             const Icon = iconForKind(payload.kind);
-            const selected = node.id === selectedId;
+            const isFolder = payload.kind === 'folder';
+            const isTag = payload.kind === 'tag';
+            // selected → the open resource (strong). soft → the current scope
+            // folder OR an active tag facet (light) — related but not "open".
+            const selected = !isFolder && !isTag && node.id === selectedId;
+            const soft =
+              (isFolder && scopeFolderId === node.id) ||
+              (isTag && activeTagIds.has(node.id));
             return (
-              <>
+              <span
+                data-selected={selected}
+                data-soft={soft}
+                className="data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground data-[soft=true]:bg-accent -mx-1 flex flex-1 items-center gap-2 rounded-md px-1"
+              >
                 {payload.rel === 'related' ? (
-                  <Spline
-                    className="text-muted-foreground/80 size-3 shrink-0"
-                    aria-hidden
-                  />
+                  <Spline className="size-3 shrink-0 opacity-80" aria-hidden />
                 ) : payload.rel === 'tag' ? (
-                  <TagIcon
-                    className="text-muted-foreground/80 size-3 shrink-0"
-                    aria-hidden
-                  />
+                  <TagIcon className="size-3 shrink-0 opacity-80" aria-hidden />
                 ) : null}
-                <Icon
-                  className="text-muted-foreground size-4 shrink-0"
-                  aria-hidden
-                />
+                <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
                 <span
                   className={
-                    selected
-                      ? 'text-foreground truncate font-medium'
-                      : 'truncate'
+                    selected || soft ? 'truncate font-medium' : 'truncate'
                   }
                 >
                   {payload.title}
                 </span>
-                {payload.kind === 'folder' && payload.count != null ? (
-                  <span className="text-muted-foreground ml-auto text-xs">
+                {isTag && soft ? (
+                  <Check
+                    className="ml-auto size-3 shrink-0 opacity-80"
+                    aria-label={t('graph.lens.inFilter')}
+                  />
+                ) : null}
+                {isFolder && payload.count != null ? (
+                  <span className="ml-auto text-xs opacity-70">
                     {payload.count}
                   </span>
                 ) : null}
                 {isBackReference ? (
-                  <span className="text-muted-foreground ml-1 text-xs">
+                  <span className="ml-1 text-xs opacity-70">
                     {t('graph.lens.backReference')}
                   </span>
                 ) : null}
-              </>
+              </span>
             );
           }}
         />
-      ) : (
+      ) : kbOpen ? (
         <p className="text-muted-foreground px-1 py-4 text-xs">
           {t('graph.lens.emptyHubs')}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
