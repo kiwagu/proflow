@@ -86,15 +86,47 @@ export function GraphProjectionView({
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
-  const containment = React.useMemo(
-    () => buildContainment(result.items, kbData?.containment ?? []),
-    [result.items, kbData?.containment]
-  );
   const shortcutPairs = React.useMemo(
     () => (kbData?.shortcuts ?? []).map((s) => ({ from: s.from, to: s.to })),
     [kbData?.shortcuts]
   );
   const tagsByItem = kbData?.tagsByItem ?? {};
+
+  // RLS-backed neighbourhood cache keyed by node id. Populated by the engine port
+  // (relates_to ⊕ tagged, dir=both, depth 1). The ego layout reads it for assoc/tag
+  // edges; containment/shortcut come from the forests (synchronous).
+  const [nbrs, setNbrs] = React.useState<NeighborhoodCache>({});
+
+  // TAG NODES are NOT in the resolved canvas (the default lens-spec filters them to
+  // the tag FACET, never to a card — see buildDefaultLensSpec). The graph view DOES
+  // need them in its node index: a `tagged` edge whose target tag is absent renders a
+  // ghost edge into empty space, the "Tags" overview cluster is empty, and search
+  // misses tags (slice-11 Graph bug 1). So the graph view augments the containment
+  // index with every tag node it can see — the tags attached to items (`tagsByItem`,
+  // id + title) and any tag node returned in a fetched neighbourhood — WITHOUT
+  // touching the frozen spec or the lens canvas (tags stay out of the lens cards).
+  const containment = React.useMemo(() => {
+    const base = buildContainment(result.items, kbData?.containment ?? []);
+    const addTag = (id: string, title: string) => {
+      if (!base.byId.has(id)) {
+        base.byId.set(id, { id, kind: 'tag', title });
+      }
+    };
+    for (const list of Object.values(tagsByItem)) {
+      for (const tag of list) {
+        addTag(tag.id, tag.title);
+      }
+    }
+    for (const list of Object.values(nbrs)) {
+      for (const neighbor of list) {
+        if (neighbor.node.kind === 'tag') {
+          addTag(neighbor.node.id, neighbor.node.title);
+        }
+      }
+    }
+    return base;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.items, kbData?.containment, tagsByItem, nbrs]);
 
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState({ w: 900, h: 560 });
@@ -108,11 +140,6 @@ export function GraphProjectionView({
   const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(
     new Set()
   );
-
-  // RLS-backed neighbourhood cache keyed by node id. Populated by the engine port
-  // (relates_to ⊕ tagged, dir=both, depth 1). The ego layout reads it for assoc/tag
-  // edges; containment/shortcut come from the forests (synchronous).
-  const [nbrs, setNbrs] = React.useState<NeighborhoodCache>({});
 
   // Default focus: the shared selection if it is a real node, else the first
   // resolved item (prototype default `d-welcome`; seed ids differ, so we pick the
@@ -294,10 +321,12 @@ export function GraphProjectionView({
     if (mode !== 'global') {
       return null;
     }
-    const nodes: GraphNode[] = result.items.map((item) => ({
-      id: item.id,
-      kind: item.kind,
-      title: item.title,
+    // The overview clusters the FULL augmented index (content + folders + TAGS) so
+    // the "Tags" cluster is populated (bug 1) — `result.items` omits tag nodes.
+    const nodes: GraphNode[] = [...containment.byId.values()].map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      title: node.title,
     }));
     return clusterLayout(
       nodes,
@@ -308,7 +337,7 @@ export function GraphProjectionView({
       t('graph.spatial.tagsCluster'),
       t('graph.spatial.otherCluster')
     );
-  }, [mode, result.items, containment, overviewEdgePairs, area, passes, t]);
+  }, [mode, containment, overviewEdgePairs, area, passes, t]);
 
   // edges to draw
   const lines = React.useMemo(() => {
@@ -364,9 +393,11 @@ export function GraphProjectionView({
     return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title));
   }, [tagsByItem]);
 
+  // Search over the FULL augmented node index (content + folders + tags) so tags
+  // are jump-to-able too (slice-11 Graph bug 1) — `result.items` alone omits tags.
   const results =
     q.trim().length > 0
-      ? result.items
+      ? [...containment.byId.values()]
           .filter((n) => n.title.toLowerCase().includes(q.toLowerCase()))
           .slice(0, 8)
       : [];
@@ -415,18 +446,28 @@ export function GraphProjectionView({
       const k = ns / v.scale;
       return { scale: ns, tx: mx - (mx - v.tx) * k, ty: my - (my - v.ty) * k };
     });
-  const onWheel = (e: React.WheelEvent) => {
+  // Wheel-zoom over the map. Attached as a NON-PASSIVE native listener (below) so
+  // `preventDefault` actually stops the page scrolling under the canvas — a React
+  // `onWheel` registers passive and the call is a no-op (slice-11 Graph bug 2).
+  const zoomAtRef = React.useRef(zoomAt);
+  zoomAtRef.current = zoomAt;
+  React.useEffect(() => {
     const el = wrapRef.current;
     if (!el) {
       return;
     }
-    const r = el.getBoundingClientRect();
-    zoomAt(
-      e.deltaY < 0 ? 1.12 : 1 / 1.12,
-      e.clientX - r.left,
-      e.clientY - r.top
-    );
-  };
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAtRef.current(
+        e.deltaY < 0 ? 1.12 : 1 / 1.12,
+        e.clientX - r.left,
+        e.clientY - r.top
+      );
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
   const zoomBtn = (factor: number) => {
     const el = wrapRef.current;
     if (!el) {
@@ -617,7 +658,6 @@ export function GraphProjectionView({
   const main = (
     <div
       ref={wrapRef}
-      onWheel={onWheel}
       className="relative size-full overflow-hidden"
       style={{
         backgroundImage: 'radial-gradient(var(--border) 1px, transparent 1px)',
