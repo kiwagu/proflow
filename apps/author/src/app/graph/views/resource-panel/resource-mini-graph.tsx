@@ -4,18 +4,28 @@ import type { NeighborhoodResult } from '@workspace/knowledge-contracts';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 
 /**
- * ResourceMiniGraph — a thin SVG over a depth-1 `NeighborhoodResult`: the center
- * node in the middle, its neighbors arranged on a circle, an edge to each. A
- * `tagged` edge is dashed to distinguish it from associative `relates_to`. Purely
- * presentational — the data is one `resolveNeighborhood` call; this draws it.
+ * ResourceMiniGraph — a thin SVG over a depth-1 `NeighborhoodResult` (prototype
+ * MiniGraph): the center node in the middle with a bold label, its neighbors on a
+ * circle each with a truncated label + an edge. A `tagged` edge is dashed and tag
+ * nodes are smaller/muted; `relates_to` edges read stronger. Purely presentational
+ * — the data is one `resolveNeighborhood` call; this draws it.
  *
- * Strictly semantic-token styling: every stroke/fill is `currentColor` or a
- * token-driven class via the parent's text color (no hardcoded hex/oklch).
+ * Strictly semantic-token styling: every stroke/fill is a token utility
+ * (`stroke-border`, `fill-primary`, `fill-foreground`, …) — no hardcoded hex/oklch,
+ * dark mode automatic.
  */
 
-const SIZE = 220;
-const CENTER = SIZE / 2;
-const RADIUS = 78;
+const WIDTH = 300;
+const HEIGHT = 190;
+const CX = WIDTH / 2;
+const CY = 82;
+const RADIUS = 64;
+/** The mini-graph is a preview; the full set is one click away via "View in graph". */
+const MAX_NEIGHBORS = 6;
+
+function truncate(title: string, max = 16): string {
+  return title.length > max ? `${title.slice(0, max - 1)}…` : title;
+}
 
 export type ResourceMiniGraphProps = {
   centerTitle: string;
@@ -28,7 +38,7 @@ export function ResourceMiniGraph({
   neighborhood,
   emptyLabel,
 }: ResourceMiniGraphProps) {
-  const neighbors = neighborhood.neighbors;
+  const neighbors = neighborhood.neighbors.slice(0, MAX_NEIGHBORS);
 
   if (neighbors.length === 0) {
     return <EmptyState compact>{emptyLabel}</EmptyState>;
@@ -38,44 +48,80 @@ export function ResourceMiniGraph({
     const angle = (index / neighbors.length) * Math.PI * 2 - Math.PI / 2;
     return {
       neighbor,
-      x: CENTER + Math.cos(angle) * RADIUS,
-      y: CENTER + Math.sin(angle) * RADIUS,
+      x: CX + Math.cos(angle) * RADIUS,
+      y: CY + Math.sin(angle) * RADIUS,
     };
   });
 
   return (
     <svg
-      viewBox={`0 0 ${SIZE} ${SIZE}`}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       role="img"
       aria-label={centerTitle}
-      className="text-muted-foreground h-auto w-full"
+      className="h-auto w-full"
     >
-      <g stroke="currentColor" fill="none" strokeWidth={1.5}>
-        {points.map(({ neighbor, x, y }) => (
-          <line
-            key={neighbor.edge_id}
-            x1={CENTER}
-            y1={CENTER}
-            x2={x}
-            y2={y}
-            strokeDasharray={
-              neighbor.relation_type === 'tagged' ? '4 3' : undefined
-            }
-            opacity={0.5}
-          />
-        ))}
-      </g>
+      {/* edges */}
       {points.map(({ neighbor, x, y }) => (
-        <circle
-          key={`node-${neighbor.node.id}`}
-          cx={x}
-          cy={y}
-          r={6}
-          fill="currentColor"
-          opacity={0.65}
+        <line
+          key={neighbor.edge_id}
+          x1={CX}
+          y1={CY}
+          x2={x}
+          y2={y}
+          strokeWidth={1.5}
+          className={
+            neighbor.relation_type === 'relates_to'
+              ? 'stroke-foreground'
+              : 'stroke-border'
+          }
+          strokeDasharray={
+            neighbor.relation_type === 'tagged' ? '3 3' : undefined
+          }
+          opacity={neighbor.relation_type === 'relates_to' ? 0.6 : 0.85}
         />
       ))}
-      <circle cx={CENTER} cy={CENTER} r={9} className="fill-primary" />
+
+      {/* neighbor nodes + labels */}
+      {points.map(({ neighbor, x, y }) => {
+        const isTag = neighbor.node.kind === 'tag';
+        const below = y > CY;
+        return (
+          <g key={`node-${neighbor.node.id}`}>
+            <circle
+              cx={x}
+              cy={y}
+              r={isTag ? 5 : 7}
+              strokeWidth={1.5}
+              className={
+                isTag
+                  ? 'fill-muted stroke-border'
+                  : 'fill-background stroke-border'
+              }
+            />
+            <text
+              x={x}
+              y={below ? y + 17 : y - 11}
+              textAnchor="middle"
+              fontSize={9}
+              className="fill-muted-foreground"
+            >
+              {truncate(neighbor.node.title)}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* center node + bold label */}
+      <circle cx={CX} cy={CY} r={10} className="fill-primary" />
+      <text
+        x={CX}
+        y={CY + 24}
+        textAnchor="middle"
+        fontSize={10}
+        className="fill-foreground font-semibold"
+      >
+        {truncate(centerTitle, 18)}
+      </text>
     </svg>
   );
 }

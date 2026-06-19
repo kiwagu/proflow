@@ -27,10 +27,12 @@ import {
   ExternalLink,
   Eye,
   Folder,
+  GitFork,
   Loader,
   Pencil,
   Plus,
   RefreshCw,
+  Share2,
   Sparkles,
   Unlink,
   UserRound,
@@ -107,6 +109,8 @@ export type ResourcePanelProps = {
   onMutated: () => void;
   /** Per-item tags (for the MOCKED shared-tag suggested-links heuristic). */
   tagsByItem?: Record<string, ResourceTag[]>;
+  /** Switch to the graph view centered on this node (hidden when already there). */
+  onShowInGraph?: () => void;
 };
 
 async function postJson(url: string, body: unknown, method = 'POST') {
@@ -132,6 +136,7 @@ export function ResourcePanel({
   onSelect,
   onMutated,
   tagsByItem,
+  onShowInGraph,
 }: ResourcePanelProps) {
   const [neighborhood, setNeighborhood] =
     React.useState<NeighborhoodResult | null>(null);
@@ -447,19 +452,71 @@ export function ResourcePanel({
             ) : null}
           </div>
 
+          {/* "View in graph" row — re-center this node in the spatial map
+              (prototype ResourcePanel.onShowInGraph; hidden when already in graph). */}
+          {onShowInGraph ? (
+            <button
+              type="button"
+              onClick={onShowInGraph}
+              className="hover:bg-accent flex w-full items-center gap-2 rounded-md border px-3 py-2.5 text-left transition-colors"
+            >
+              <GitFork
+                className="text-muted-foreground size-[15px] shrink-0"
+                aria-hidden
+              />
+              <span className="flex-1 text-sm font-medium">
+                {t('graph.panel.viewInGraph')}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {t('graph.panel.walkConnections')}
+              </span>
+            </button>
+          ) : null}
+
           <Separator />
 
-          {/* connections mini-graph */}
+          {/* connections mini-graph (prototype CONNECTIONS) */}
           <section className="flex flex-col gap-2">
-            <RailSectionHeading>
+            <SectionHeadingRow
+              icon={<Share2 className="size-3.5" aria-hidden />}
+              trailing={
+                onShowInGraph ? (
+                  <button
+                    type="button"
+                    onClick={onShowInGraph}
+                    className="text-foreground ml-auto inline-flex items-center gap-1 text-xs"
+                  >
+                    <GitFork className="size-3" aria-hidden />
+                    {t('graph.panel.viewInGraph')}
+                  </button>
+                ) : undefined
+              }
+            >
               {t('graph.panel.connections')}
-            </RailSectionHeading>
+            </SectionHeadingRow>
             {neighborhood ? (
-              <ResourceMiniGraph
-                centerTitle={node.title}
-                neighborhood={neighborhood}
-                emptyLabel={t('graph.panel.noConnections')}
-              />
+              onShowInGraph ? (
+                <button
+                  type="button"
+                  onClick={onShowInGraph}
+                  aria-label={t('graph.panel.viewInGraph')}
+                  className="bg-background hover:border-ring block w-full rounded-lg border p-2 transition-colors"
+                >
+                  <ResourceMiniGraph
+                    centerTitle={node.title}
+                    neighborhood={neighborhood}
+                    emptyLabel={t('graph.panel.noConnections')}
+                  />
+                </button>
+              ) : (
+                <div className="bg-background rounded-lg border p-2">
+                  <ResourceMiniGraph
+                    centerTitle={node.title}
+                    neighborhood={neighborhood}
+                    emptyLabel={t('graph.panel.noConnections')}
+                  />
+                </div>
+              )
             ) : null}
           </section>
 

@@ -4,7 +4,7 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { FacetCheckbox } from '@workspace/ui/components/facet-checkbox';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
 import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
-import { Clock, Unlink } from 'lucide-react';
+import { ClockAlert, Unlink } from 'lucide-react';
 
 import type { ResourceTag } from '@/app/graph/graph-page.data';
 import { iconForKind } from './lens-presentation';
@@ -132,7 +132,7 @@ export function LensFacets({
               facet === 'orphan' ? (
                 <Unlink className="size-[15px]" aria-hidden />
               ) : (
-                <Clock className="size-[15px]" aria-hidden />
+                <ClockAlert className="size-[15px]" aria-hidden />
               )
             }
           >

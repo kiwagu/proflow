@@ -260,6 +260,9 @@ export function KbWorkbench({
           onSelect={select}
           onMutated={onMutated}
           tagsByItem={kbData.tagsByItem}
+          onShowInGraph={
+            variant !== 'graph' ? () => onVariant('graph') : undefined
+          }
         />
       )}
     </div>

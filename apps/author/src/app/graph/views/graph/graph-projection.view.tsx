@@ -728,6 +728,7 @@ export function GraphProjectionView({
                 y2={l.y2}
                 stroke={s.stroke}
                 strokeWidth={l.w ? Math.min(1 + l.w * 0.7, 5) : 1.5}
+                vectorEffect="non-scaling-stroke"
                 strokeDasharray={s.dash}
                 opacity={s.opacity}
                 style={{ transition: 'all .42s cubic-bezier(.4,0,.2,1)' }}
@@ -758,6 +759,7 @@ export function GraphProjectionView({
                   focus={isFocus}
                   level={p.level}
                   badge={badge}
+                  zoom={view.scale}
                   onClick={() => !isFocus && go(id)}
                 />
               );
@@ -781,6 +783,7 @@ export function GraphProjectionView({
                             y={p.y + Math.sin(a) * r}
                             node={m}
                             level={1}
+                            zoom={view.scale}
                             onClick={() => {
                               go(m.id);
                               setMode('local');
@@ -792,8 +795,12 @@ export function GraphProjectionView({
                         type="button"
                         onClick={() => toggleExp(c.id)}
                         title={c.label}
-                        className="border-primary bg-primary text-primary-foreground absolute z-[6] inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-xs font-semibold whitespace-nowrap shadow-md"
-                        style={{ left: p.x, top: p.y }}
+                        className="border-primary bg-primary text-primary-foreground absolute z-[6] inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-xs font-semibold whitespace-nowrap shadow-md"
+                        style={{
+                          left: p.x,
+                          top: p.y,
+                          transform: `translate(-50%, -50%) scale(${1 / view.scale})`,
+                        }}
                       >
                         <ClusterIcon
                           isTags={c.isTags}
@@ -814,6 +821,7 @@ export function GraphProjectionView({
                     x={p.x}
                     y={p.y}
                     cluster={c}
+                    zoom={view.scale}
                     onClick={() => toggleExp(c.id)}
                   />
                 );
@@ -822,7 +830,7 @@ export function GraphProjectionView({
       </div>
 
       {/* zoom controls */}
-      <div className="bg-card absolute right-4 bottom-14 z-[7] flex flex-col overflow-hidden rounded-md border shadow-sm">
+      <div className="bg-card absolute top-1/2 right-4 z-[7] flex -translate-y-1/2 flex-col overflow-hidden rounded-md border shadow-sm">
         <button
           type="button"
           onClick={() => zoomBtn(1.2)}
@@ -835,7 +843,7 @@ export function GraphProjectionView({
           type="button"
           onClick={resetView}
           title={t('graph.spatial.resetZoom')}
-          className="text-foreground grid h-8 w-[34px] place-items-center border-y text-[11px] font-semibold"
+          className="text-foreground grid h-8 w-[34px] place-items-center border-y text-[9px] font-semibold"
         >
           {Math.round(view.scale * 100)}%
         </button>
@@ -916,6 +924,7 @@ function GraphNodeButton({
   focus = false,
   level = 0,
   badge = 0,
+  zoom,
   onClick,
 }: {
   x: number;
@@ -924,13 +933,13 @@ function GraphNodeButton({
   focus?: boolean;
   level?: number;
   badge?: number;
+  zoom: number;
   onClick: () => void;
 }) {
   const isTag = node.kind === 'tag';
   const NodeIcon = iconForKind(node.kind);
   const sz = focus ? 56 : isTag ? 28 : level >= 2 ? 36 : 44;
   const iconSize = focus ? 22 : isTag ? 13 : level >= 2 ? 15 : 18;
-  const op = focus ? 1 : level >= 3 ? 0.62 : level === 2 ? 0.8 : 1;
   return (
     <button
       type="button"
@@ -943,10 +952,13 @@ function GraphNodeButton({
       style={{
         left: x,
         top: y,
-        opacity: op,
-        transform: 'translate(-50%, -50%)',
+        // Counter-scale by 1/zoom so the node GLYPH keeps a constant on-screen size
+        // while zoom only spreads POSITIONS — a bad initial scale no longer persists
+        // when zooming the focus. Nodes are fully opaque (the opaque disc hides the
+        // edge endpoint that previously showed through dimmed/translucent leaves).
+        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
         transition:
-          'left .42s cubic-bezier(.4,0,.2,1), top .42s cubic-bezier(.4,0,.2,1), opacity .3s',
+          'left .42s cubic-bezier(.4,0,.2,1), top .42s cubic-bezier(.4,0,.2,1)',
       }}
     >
       <span
@@ -997,11 +1009,13 @@ function ClusterNodeButton({
   x,
   y,
   cluster,
+  zoom,
   onClick,
 }: {
   x: number;
   y: number;
   cluster: GraphCluster;
+  zoom: number;
   onClick: () => void;
 }) {
   const sz = Math.min(98, 54 + cluster.count * 4);
@@ -1014,7 +1028,7 @@ function ClusterNodeButton({
       style={{
         left: x,
         top: y,
-        transform: 'translate(-50%, -50%)',
+        transform: `translate(-50%, -50%) scale(${1 / zoom})`,
         transition:
           'left .42s cubic-bezier(.4,0,.2,1), top .42s cubic-bezier(.4,0,.2,1)',
       }}
