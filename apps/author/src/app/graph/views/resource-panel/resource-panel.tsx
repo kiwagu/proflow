@@ -2,9 +2,11 @@
 
 import type { NeighborhoodResult } from '@workspace/knowledge-contracts';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
+import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { FacetChip } from '@workspace/ui/components/facet-chip';
+import { IconTile } from '@workspace/ui/components/icon-tile';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
 import { RailSectionHeading } from '@workspace/ui/components/rail-section-heading';
@@ -29,11 +31,13 @@ import {
   Folder,
   GitFork,
   Loader,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   Share2,
   Sparkles,
+  Tag as TagIcon,
   Unlink,
   UserRound,
   X,
@@ -58,7 +62,11 @@ import {
   groupForNeighbor,
   iconForKind,
   kindLabel,
+  ownerInitials,
+  ownerLabel,
   parentFolder,
+  statusMeta,
+  TRANSITIONABLE_STATUSES,
   type Containment,
 } from '@/app/graph/views/lens';
 import { NodePicker, type PickableNode } from './node-picker';
@@ -107,8 +115,10 @@ export type ResourcePanelProps = {
   onOpenChange: (open: boolean) => void;
   onSelect: (nodeId: string) => void;
   onMutated: () => void;
-  /** Per-item tags (for the MOCKED shared-tag suggested-links heuristic). */
+  /** Per-item tags (for the MOCKED suggested-links heuristic). */
   tagsByItem?: Record<string, ResourceTag[]>;
+  /** All tag nodes of the space (the "pick from existing tags" tray). */
+  allTags?: ResourceTag[];
   /** Switch to the graph view centered on this node (hidden when already there). */
   onShowInGraph?: () => void;
 };
@@ -136,6 +146,7 @@ export function ResourcePanel({
   onSelect,
   onMutated,
   tagsByItem,
+  allTags,
   onShowInGraph,
 }: ResourcePanelProps) {
   const [neighborhood, setNeighborhood] =
@@ -207,6 +218,7 @@ export function ResourcePanel({
   const tags =
     neighborhood?.neighbors.filter((n) => groupForNeighbor(n) === 'tags') ?? [];
   const KindIcon = iconForKind(node.kind);
+  const headerStatus = statusMeta(t, node.status);
   const editable = node.kind !== 'folder' && node.kind !== 'tag';
   const containmentParent = parentFolder(containment, node.id);
   const folderChildren =
@@ -259,6 +271,25 @@ export function ResourcePanel({
     await afterMutation(ok);
   }
 
+  // Tray toggle of an EXISTING space tag (prototype TagEditor tray) — add by tag id
+  // (resolve-or-link, no new node), remove via the natural-key DELETE.
+  async function onToggleExistingTag(tagId: string, isOn: boolean) {
+    setBusy(true);
+    const ok = isOn
+      ? await postJson(
+          '/author/graph/edges',
+          { spaceId, fromId: node!.id, toId: tagId, relationType: 'tagged' },
+          'DELETE'
+        )
+      : await postJson('/author/graph/edges', {
+          action: 'tag',
+          spaceId,
+          resourceId: node!.id,
+          tagId,
+        });
+    await afterMutation(ok);
+  }
+
   async function onAddLink(target: PickableNode) {
     setBusy(true);
     setPicker(false);
@@ -292,19 +323,29 @@ export function ResourcePanel({
     await afterMutation(ok);
   }
 
-  const ownerLabel =
-    meta?.ownerUserId && currentUserId && meta.ownerUserId === currentUserId
-      ? t('graph.panel.ownerYou')
-      : t('graph.panel.ownerMember');
+  const ownerName = ownerLabel(t, meta?.ownerUserId, currentUserId);
+  const updatedAgo = meta?.updatedAt ? relativeUpdated(meta.updatedAt) : '';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetDescription className="text-muted-foreground flex items-center gap-2 text-xs tracking-wide uppercase">
-            <KindIcon className="size-4" aria-hidden />
-            {kindLabel(t, node.kind)}
-          </SheetDescription>
+          <div className="flex items-center gap-2.5">
+            <IconTile size={8}>
+              <KindIcon className="size-[17px]" aria-hidden />
+            </IconTile>
+            <SheetDescription className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
+              {kindLabel(t, node.kind)}
+            </SheetDescription>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              aria-label={t('graph.panel.close')}
+            >
+              <X className="size-4" aria-hidden />
+            </Button>
+          </div>
           {renaming ? (
             <div className="flex items-center gap-2">
               <Label htmlFor="rename-input" className="sr-only">
@@ -351,7 +392,9 @@ export function ResourcePanel({
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{node.status}</Badge>
+            {headerStatus ? (
+              <Badge variant={headerStatus.variant}>{headerStatus.label}</Badge>
+            ) : null}
             {attributes?.link?.host ? (
               <span className="text-muted-foreground text-xs">
                 {attributes.link.host}
@@ -386,45 +429,81 @@ export function ResourcePanel({
           <section className="flex flex-col gap-2">
             <RailSectionHeading>{t('graph.panel.status')}</RailSectionHeading>
             <div className="flex flex-wrap gap-1.5">
-              {['draft', 'in_review', 'approved', 'active'].map((status) => (
-                <Button
-                  key={status}
-                  size="xs"
-                  variant={status === node.status ? 'secondary' : 'outline'}
-                  disabled={busy || status === node.status}
-                  onClick={() => onTransition(status)}
-                >
-                  {status}
-                </Button>
-              ))}
+              {TRANSITIONABLE_STATUSES.map((status) => {
+                const meta = statusMeta(t, status);
+                return (
+                  <Button
+                    key={status}
+                    size="xs"
+                    variant={status === node.status ? 'secondary' : 'outline'}
+                    disabled={busy || status === node.status}
+                    onClick={() => onTransition(status)}
+                  >
+                    {meta?.label ?? status}
+                  </Button>
+                );
+              })}
             </div>
           </section>
 
-          {/* tags */}
-          <section className="flex flex-col gap-2">
-            <RailSectionHeading>{t('graph.panel.tags')}</RailSectionHeading>
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <FacetChip
-                  key={tag.edge_id}
-                  label={tag.node.title}
-                  onRemove={() => onUntag(tag.node.id)}
-                  removeLabel={t('graph.panel.removeTag')}
-                />
-              ))}
-              {tags.length === 0 ? (
-                <span className="text-muted-foreground text-xs">
-                  {t('graph.panel.noTags')}
-                </span>
-              ) : null}
-            </div>
-            <TagAdder t={t} disabled={busy} onAdd={onAddTag} />
-          </section>
+          {/* tags — editable nodes get remove-chips + add-by-title + a tray of all
+              space tags; folder/tag nodes show READ-ONLY tag badges (no add UI). */}
+          {editable ? (
+            <section className="flex flex-col gap-2">
+              <RailSectionHeading>{t('graph.panel.tags')}</RailSectionHeading>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <FacetChip
+                    key={tag.edge_id}
+                    label={tag.node.title}
+                    onRemove={() => onUntag(tag.node.id)}
+                    removeLabel={t('graph.panel.removeTag')}
+                  />
+                ))}
+                {tags.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">
+                    {t('graph.panel.noTags')}
+                  </span>
+                ) : null}
+              </div>
+              <TagAdder t={t} disabled={busy} onAdd={onAddTag} />
+              <TagTray
+                t={t}
+                allTags={allTags ?? []}
+                currentTagIds={new Set(tags.map((tag) => tag.node.id))}
+                disabled={busy}
+                onToggle={onToggleExistingTag}
+              />
+            </section>
+          ) : tags.length > 0 ? (
+            <section className="flex flex-col gap-2">
+              <RailSectionHeading>{t('graph.panel.tags')}</RailSectionHeading>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <Badge key={tag.edge_id} variant="outline" className="gap-1">
+                    <TagIcon className="size-3" aria-hidden />
+                    {tag.node.title}
+                  </Badge>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-          {/* owner + updated */}
+          {/* owner avatar + label + "updated N ago" (prototype owner row). The
+              owner display NAME is not RLS-readable here, so we label the relation
+              (You/Member/System) and key the avatar initials off it (MOCK-name). */}
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            <UserRound className="size-3.5" aria-hidden />
-            <span>{ownerLabel}</span>
+            <Avatar className="size-6">
+              <AvatarFallback className="text-[10px]">
+                {ownerInitials(ownerName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-foreground">{ownerName}</span>
+            {updatedAgo ? (
+              <span>
+                · {t('graph.panel.updatedAgo', { updated: updatedAgo })}
+              </span>
+            ) : null}
           </div>
 
           {/* node health: provenance + stale/orphan + views (NO embed — RAG seam) */}
@@ -450,6 +529,16 @@ export function ResourcePanel({
                 {t('graph.panel.addLink')}
               </Button>
             ) : null}
+            {/* overflow menu (prototype "⋯") — disabled placeholder: no extra
+                node actions landed yet (poc-no-fallbacks, inert chrome only). */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled
+              aria-label={t('graph.panel.more')}
+            >
+              <MoreHorizontal className="size-4" aria-hidden />
+            </Button>
           </div>
 
           {/* "View in graph" row — re-center this node in the spatial map
@@ -495,28 +584,39 @@ export function ResourcePanel({
               {t('graph.panel.connections')}
             </SectionHeadingRow>
             {neighborhood ? (
-              onShowInGraph ? (
-                <button
-                  type="button"
-                  onClick={onShowInGraph}
-                  aria-label={t('graph.panel.viewInGraph')}
-                  className="bg-background hover:border-ring block w-full rounded-lg border p-2 transition-colors"
-                >
-                  <ResourceMiniGraph
-                    centerTitle={node.title}
-                    neighborhood={neighborhood}
-                    emptyLabel={t('graph.panel.noConnections')}
-                  />
-                </button>
-              ) : (
-                <div className="bg-background rounded-lg border p-2">
-                  <ResourceMiniGraph
-                    centerTitle={node.title}
-                    neighborhood={neighborhood}
-                    emptyLabel={t('graph.panel.noConnections')}
-                  />
-                </div>
-              )
+              // The container opens the full graph (when available); individual
+              // neighbor nodes open that neighbor (clicks stop propagation). Plain
+              // div + role so the clickable SVG node groups are not nested in a button.
+              <div
+                role={onShowInGraph ? 'button' : undefined}
+                tabIndex={onShowInGraph ? 0 : undefined}
+                aria-label={
+                  onShowInGraph ? t('graph.panel.viewInGraph') : undefined
+                }
+                onClick={onShowInGraph}
+                onKeyDown={
+                  onShowInGraph
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onShowInGraph();
+                        }
+                      }
+                    : undefined
+                }
+                className={
+                  onShowInGraph
+                    ? 'bg-background hover:border-ring block w-full cursor-pointer rounded-lg border p-2 transition-colors outline-none'
+                    : 'bg-background rounded-lg border p-2'
+                }
+              >
+                <ResourceMiniGraph
+                  centerTitle={node.title}
+                  neighborhood={neighborhood}
+                  emptyLabel={t('graph.panel.noConnections')}
+                  onNeighborClick={onSelect}
+                />
+              </div>
             ) : null}
           </section>
 
@@ -536,34 +636,69 @@ export function ResourcePanel({
                 />
               ) : null}
               <ul className="flex flex-col gap-1">
-                {related.map((rel) => (
-                  <li
-                    key={rel.edge_id}
-                    className="flex items-center justify-between gap-2 text-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onSelect(rel.node.id)}
-                      className="hover:text-foreground truncate text-left"
+                {related.map((rel) => {
+                  const RelIcon = iconForKind(rel.node.kind);
+                  return (
+                    <li
+                      key={rel.edge_id}
+                      className="flex items-center justify-between gap-2 text-sm"
                     >
-                      {rel.node.title}
-                    </button>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      onClick={() => onUnlink(rel.node.id)}
-                      disabled={busy}
-                      aria-label={t('graph.panel.removeLink')}
-                    >
-                      <X className="size-3" aria-hidden />
-                    </Button>
-                  </li>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => onSelect(rel.node.id)}
+                        className="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <RelIcon
+                          className="text-muted-foreground size-4 shrink-0"
+                          aria-hidden
+                        />
+                        <span className="truncate">{rel.node.title}</span>
+                      </button>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        onClick={() => onUnlink(rel.node.id)}
+                        disabled={busy}
+                        aria-label={t('graph.panel.removeLink')}
+                      >
+                        <X className="size-3" aria-hidden />
+                      </Button>
+                    </li>
+                  );
+                })}
                 {related.length === 0 && !picker ? (
                   <li className="text-muted-foreground text-xs">
                     {t('graph.panel.noRelated')}
                   </li>
                 ) : null}
+              </ul>
+            </section>
+          ) : related.length > 0 ? (
+            // READ-ONLY related list for folder/tag nodes (prototype: non-editable
+            // nodes show "Related documents" without the add/remove affordances).
+            <section className="flex flex-col gap-2">
+              <RailSectionHeading>
+                {t('graph.panel.relatedReadonly')}
+              </RailSectionHeading>
+              <ul className="flex flex-col gap-1">
+                {related.map((rel) => {
+                  const RelIcon = iconForKind(rel.node.kind);
+                  return (
+                    <li key={rel.edge_id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(rel.node.id)}
+                        className="hover:text-foreground flex w-full items-center gap-2 truncate text-left text-sm"
+                      >
+                        <RelIcon
+                          className="text-muted-foreground size-4 shrink-0"
+                          aria-hidden
+                        />
+                        <span className="truncate">{rel.node.title}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ) : null}
@@ -574,6 +709,8 @@ export function ResourcePanel({
             <SuggestedLinksSection
               t={t}
               nodeId={node.id}
+              nodeTitle={node.title}
+              nodeDescription={attributes?.description ?? ''}
               tagsByItem={tagsByItem}
               containment={containment}
               excludeIds={[node.id, ...related.map((r) => r.node.id)]}
@@ -667,7 +804,7 @@ function EditableDescription({
         >
           {t('graph.panel.description')}
         </SectionHeadingRow>
-        <EmbedStatusBadge t={t} status={mockEmbedStatus()} />
+        <EmbedStatusBadge t={t} status={mockEmbedStatus(nodeId)} />
       </div>
       {editing ? (
         <div className="flex flex-col gap-2">
@@ -798,6 +935,94 @@ function NodeHealthBadges({
   );
 }
 
+/** Relative "2d"/"4h" style updated label (prototype `updated`). Presentation-only. */
+function relativeUpdated(updatedAt: string): string {
+  const then = Date.parse(updatedAt);
+  if (!Number.isFinite(then)) {
+    return '';
+  }
+  const diffMs = Date.now() - then;
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) {
+    return `${Math.max(minutes, 1)}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return `${days}d`;
+  }
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) {
+    return `${weeks}w`;
+  }
+  return `${Math.floor(days / 30)}mo`;
+}
+
+/**
+ * TagTray — the prototype TagEditor "pick from existing tags" tray. Toggles the
+ * whole space's tag set on/off the open node (an active tag shows the strong chip
+ * with a check). Real: toggling links/unlinks a `tagged` edge via the edges route.
+ * Hidden when the space has no tags.
+ */
+function TagTray({
+  t,
+  allTags,
+  currentTagIds,
+  disabled,
+  onToggle,
+}: {
+  t: GraphTranslator;
+  allTags: ResourceTag[];
+  currentTagIds: ReadonlySet<string>;
+  disabled: boolean;
+  onToggle: (tagId: string, isOn: boolean) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  if (allTags.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-pressed={open}
+        className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 rounded-full border border-dashed px-2.5 py-0.5 text-xs"
+      >
+        <Plus className="size-3" aria-hidden />
+        {t('graph.panel.pickTags')}
+      </button>
+      {open ? (
+        <div className="bg-background flex flex-wrap gap-1.5 rounded-lg border p-2">
+          {allTags.map((tag) => {
+            const on = currentTagIds.has(tag.id);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                aria-pressed={on}
+                disabled={disabled}
+                onClick={() => onToggle(tag.id, on)}
+                className={
+                  on
+                    ? 'border-primary bg-primary text-primary-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs'
+                    : 'border-border text-foreground hover:bg-accent inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs'
+                }
+              >
+                {on ? <Check className="size-3" aria-hidden /> : null}
+                {tag.title}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** A tiny inline tag adder (title → two-step tag create+edge). */
 function TagAdder({
   t,
@@ -888,6 +1113,8 @@ function EmbedStatusBadge({
 function SuggestedLinksSection({
   t,
   nodeId,
+  nodeTitle,
+  nodeDescription,
   tagsByItem,
   containment,
   excludeIds,
@@ -897,6 +1124,8 @@ function SuggestedLinksSection({
 }: {
   t: GraphTranslator;
   nodeId: string;
+  nodeTitle: string;
+  nodeDescription: string;
   tagsByItem?: Record<string, ResourceTag[]>;
   containment: Containment;
   excludeIds: string[];
@@ -909,7 +1138,8 @@ function SuggestedLinksSection({
   );
   React.useEffect(() => setDismissed(new Set()), [nodeId]);
 
-  // MOCK — pending vector backend (slice-11): shared-tag heuristic, not vectors.
+  // MOCK — pending vector backend (slice-11): the prototype's 3-signal heuristic
+  // (shared tag / same folder / wording overlap), NOT a vector similarity search.
   const titleById = React.useMemo(() => {
     const map = new Map<string, { title: string; kind: string }>();
     for (const node of containment.byId.values()) {
@@ -922,12 +1152,32 @@ function SuggestedLinksSection({
     () =>
       mockSuggestedLinks({
         nodeId,
+        nodeTitle,
+        nodeDescription,
+        nodeFolderId: containment.parentOf.get(nodeId) ?? null,
         tagsByItem: tagsByItem ?? {},
         titleById,
+        folderById: containment.parentOf,
         excludeIds: new Set([...excludeIds, ...dismissed]),
       }),
-    [nodeId, tagsByItem, titleById, excludeIds, dismissed]
+    [
+      nodeId,
+      nodeTitle,
+      nodeDescription,
+      tagsByItem,
+      titleById,
+      containment,
+      excludeIds,
+      dismissed,
+    ]
   );
+
+  const reasonLabel = (s: MockSuggestedLink): string =>
+    s.reason === 'tag'
+      ? t('graph.panel.suggestedReasonTag', { tag: s.reasonTagTitle ?? '' })
+      : s.reason === 'folder'
+        ? t('graph.panel.suggestedReasonFolder')
+        : t('graph.panel.suggestedReasonWording');
 
   if (suggestions.length === 0) {
     return null;
@@ -959,9 +1209,7 @@ function SuggestedLinksSection({
                   {suggestion.title}
                 </div>
                 <div className="text-muted-foreground truncate text-[11px]">
-                  {t('graph.panel.suggestedReasonTag', {
-                    tag: suggestion.reasonTagTitle,
-                  })}
+                  {reasonLabel(suggestion)}
                 </div>
               </button>
               <Button

@@ -31,12 +31,15 @@ export type ResourceMiniGraphProps = {
   centerTitle: string;
   neighborhood: NeighborhoodResult;
   emptyLabel: string;
+  /** Click a NON-tag neighbor node → open it (prototype MiniGraph `onOpen`). */
+  onNeighborClick?: (nodeId: string) => void;
 };
 
 export function ResourceMiniGraph({
   centerTitle,
   neighborhood,
   emptyLabel,
+  onNeighborClick,
 }: ResourceMiniGraphProps) {
   const neighbors = neighborhood.neighbors.slice(0, MAX_NEIGHBORS);
 
@@ -81,12 +84,38 @@ export function ResourceMiniGraph({
         />
       ))}
 
-      {/* neighbor nodes + labels */}
+      {/* neighbor nodes + labels — a non-tag node is clickable (opens it). */}
       {points.map(({ neighbor, x, y }) => {
         const isTag = neighbor.node.kind === 'tag';
         const below = y > CY;
+        const clickable = !isTag && onNeighborClick;
         return (
-          <g key={`node-${neighbor.node.id}`}>
+          <g
+            key={`node-${neighbor.node.id}`}
+            role={clickable ? 'button' : undefined}
+            aria-label={clickable ? neighbor.node.title : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            onClick={
+              clickable
+                ? (event) => {
+                    event.stopPropagation();
+                    onNeighborClick(neighbor.node.id);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              clickable
+                ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onNeighborClick(neighbor.node.id);
+                    }
+                  }
+                : undefined
+            }
+            className={clickable ? 'cursor-pointer outline-none' : undefined}
+          >
             <circle
               cx={x}
               cy={y}

@@ -24,75 +24,165 @@ import type { ResourceTag } from '@/app/graph/graph-page.data';
 /** The mocked embed-index status of a node's description. */
 export type MockEmbedStatus = 'indexed' | 'stale' | 'indexing';
 
-/** Deterministic mock embed status — always `indexed` (no real vector index). */
-export function mockEmbedStatus(): MockEmbedStatus {
+/**
+ * Deterministic mock embed status keyed off the node id (no real vector index).
+ * Most nodes read `indexed`; a deterministic minority read `stale`/`indexing` so
+ * the prototype's reindex CYCLE is reachable for fidelity (owner directive Ф3 §3).
+ * Pure function of the id — same node, same status, every render (no randomness).
+ * When a real pipeline lands, replace this single call with the real read.
+ */
+export function mockEmbedStatus(nodeId?: string): MockEmbedStatus {
+  if (!nodeId) {
+    return 'indexed';
+  }
+  let hash = 0;
+  for (let index = 0; index < nodeId.length; index += 1) {
+    hash = (hash * 31 + nodeId.charCodeAt(index)) >>> 0;
+  }
+  const bucket = hash % 10;
+  if (bucket === 0) {
+    return 'indexing';
+  }
+  if (bucket === 1 || bucket === 2) {
+    return 'stale';
+  }
   return 'indexed';
 }
+
+/** Why a link was suggested — the prototype's three heuristic signals. */
+export type MockSuggestedReason = 'tag' | 'folder' | 'wording';
 
 /** One mocked suggested link (a node to confirm/dismiss as a `relates_to` edge). */
 export type MockSuggestedLink = {
   id: string;
   title: string;
   kind: string;
-  /** Why it was suggested — the shared-tag heuristic reason (i18n key + arg). */
-  reasonTagTitle: string;
+  /** Which signal surfaced it (drives the reason label). */
+  reason: MockSuggestedReason;
+  /** The shared-tag title when `reason === 'tag'` (for the reason label arg). */
+  reasonTagTitle?: string;
 };
 
+const STOPWORD_MIN_LEN = 4;
+
+/** Significant words of a title/description (prototype `similar` wording set). */
+function significantWords(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((word) => word.length > STOPWORD_MIN_LEN)
+  );
+}
+
 /**
- * Mocked suggested links for a node — a CLIENT-SIDE shared-tag heuristic over the
- * already-loaded tag map (NOT a vector search). Returns content nodes that share at
- * least one tag with the open node, excluding the node itself and nodes already
- * linked to it. Deterministic (sorted by shared-tag count then title), capped.
+ * Mocked suggested links — the prototype `similar()` heuristic, NOT a vector search
+ * (no pgvector). Scores every candidate content node by THREE signals (owner
+ * directive: broaden to the prototype's 3): shared TAG (×3, strongest), same
+ * FOLDER (+2), and WORDING overlap (+1 per shared significant word). Returns the
+ * top matches with the reason of the highest-weight signal. Deterministic (sorted
+ * by score then title), capped. The CONFIRM stays a REAL `relates_to` write.
  */
 export function mockSuggestedLinks(args: {
   nodeId: string;
+  nodeTitle?: string;
+  nodeDescription?: string;
+  nodeFolderId?: string | null;
   tagsByItem: Record<string, ResourceTag[]>;
-  titleById: Map<string, { title: string; kind: string }>;
+  titleById: ReadonlyMap<string, { title: string; kind: string }>;
+  folderById?: ReadonlyMap<string, string | null>;
+  descriptionById?: ReadonlyMap<string, string>;
   excludeIds: ReadonlySet<string>;
   max?: number;
 }): MockSuggestedLink[] {
-  const { nodeId, tagsByItem, titleById, excludeIds, max = 4 } = args;
+  const {
+    nodeId,
+    nodeTitle = '',
+    nodeDescription = '',
+    nodeFolderId = null,
+    tagsByItem,
+    titleById,
+    folderById,
+    descriptionById,
+    excludeIds,
+    max = 4,
+  } = args;
+
   const myTags = new Set((tagsByItem[nodeId] ?? []).map((tag) => tag.id));
-  if (myTags.size === 0) {
-    return [];
-  }
+  const myWords = significantWords(`${nodeTitle} ${nodeDescription}`);
 
-  const scored: {
-    id: string;
-    title: string;
-    kind: string;
-    reasonTagTitle: string;
-    shared: number;
-  }[] = [];
+  const scored: (MockSuggestedLink & { score: number })[] = [];
 
-  for (const [candidateId, candidateTags] of Object.entries(tagsByItem)) {
+  for (const [candidateId, candidate] of titleById.entries()) {
     if (candidateId === nodeId || excludeIds.has(candidateId)) {
       continue;
     }
-    const node = titleById.get(candidateId);
-    if (!node || node.kind === 'folder' || node.kind === 'tag') {
+    if (candidate.kind === 'folder' || candidate.kind === 'tag') {
       continue;
     }
-    const sharedTags = candidateTags.filter((tag) => myTags.has(tag.id));
-    if (sharedTags.length === 0) {
-      continue;
+
+    let score = 0;
+    let reason: MockSuggestedReason | null = null;
+    let reasonTagTitle: string | undefined;
+
+    // shared tag — strongest signal (prototype ×3).
+    const sharedTags = (tagsByItem[candidateId] ?? []).filter((tag) =>
+      myTags.has(tag.id)
+    );
+    if (sharedTags.length > 0) {
+      score += sharedTags.length * 3;
+      reason = 'tag';
+      reasonTagTitle = sharedTags[0].title;
     }
-    scored.push({
-      id: candidateId,
-      title: node.title,
-      kind: node.kind,
-      reasonTagTitle: sharedTags[0].title,
-      shared: sharedTags.length,
-    });
+
+    // same folder (+2).
+    const candidateFolder = folderById?.get(candidateId) ?? null;
+    if (nodeFolderId && candidateFolder && candidateFolder === nodeFolderId) {
+      score += 2;
+      if (!reason) {
+        reason = 'folder';
+      }
+    }
+
+    // wording overlap (+1 per shared significant word).
+    if (myWords.size > 0) {
+      const candidateWords = significantWords(
+        `${candidate.title} ${descriptionById?.get(candidateId) ?? ''}`
+      );
+      let overlap = 0;
+      for (const word of candidateWords) {
+        if (myWords.has(word)) {
+          overlap += 1;
+        }
+      }
+      if (overlap > 0) {
+        score += overlap;
+        if (!reason) {
+          reason = 'wording';
+        }
+      }
+    }
+
+    if (score > 0 && reason) {
+      scored.push({
+        id: candidateId,
+        title: candidate.title,
+        kind: candidate.kind,
+        reason,
+        reasonTagTitle,
+        score,
+      });
+    }
   }
 
   return scored
-    .sort((a, b) => b.shared - a.shared || a.title.localeCompare(b.title))
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
     .slice(0, max)
-    .map(({ id, title, kind, reasonTagTitle }) => ({
+    .map(({ id, title, kind, reason, reasonTagTitle }) => ({
       id,
       title,
       kind,
+      reason,
       reasonTagTitle,
     }));
 }
