@@ -4,6 +4,7 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
@@ -141,213 +142,225 @@ export function DriveProjectionView({
     return null;
   }
 
-  return (
-    <div className="bg-background flex min-h-[60vh] min-w-0 flex-1">
-      {/* sidebar (230px, prototype-parity) */}
-      <nav className="bg-sidebar flex w-[230px] shrink-0 flex-col gap-1 border-r p-3">
-        <Button
-          onClick={() => setCreateRequest({ parentFolderId: folderId })}
-          className="mb-2 w-full justify-start"
-        >
-          <Plus className="size-4" aria-hidden />
-          {t('graph.create.new')}
-        </Button>
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.labelKey}
-              type="button"
-              onClick={() => setFolderId(null)}
-              data-active={item.active}
-              className={cn(
-                'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm',
-                'hover:bg-accent',
-                item.active ? 'text-foreground font-medium' : 'text-foreground'
-              )}
-            >
-              <Icon
-                className={cn(
-                  'size-4',
-                  item.active ? 'text-foreground' : 'text-muted-foreground'
-                )}
-                aria-hidden
-              />
-              {t(item.labelKey)}
-            </button>
-          );
-        })}
-        <div className="bg-border my-2 h-px" />
-        <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold tracking-[0.04em] uppercase">
-          {t('graph.drive.sections')}
-        </div>
-        {roots.map((root) => (
+  const sidebar = (
+    <div className="flex flex-col gap-1">
+      <Button
+        onClick={() => setCreateRequest({ parentFolderId: folderId })}
+        className="mb-2 w-full justify-start"
+      >
+        <Plus className="size-4" aria-hidden />
+        {t('graph.create.new')}
+      </Button>
+      {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        return (
           <button
-            key={root.id}
+            key={item.labelKey}
             type="button"
-            onClick={() => setFolderId(root.id)}
-            data-active={folderId === root.id}
+            onClick={() => setFolderId(null)}
+            data-active={item.active}
             className={cn(
               'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm',
               'hover:bg-accent',
-              folderId === root.id ? 'bg-accent font-medium' : 'font-normal'
+              item.active ? 'text-foreground font-medium' : 'text-foreground'
             )}
           >
-            <Folder className="text-muted-foreground size-4" aria-hidden />
-            <span className="flex-1 truncate">{root.title}</span>
-            <span className="text-muted-foreground text-[11px]">
-              {childFolders(containment, root.id).length +
-                childContent(containment, root.id).length}
-            </span>
-          </button>
-        ))}
-      </nav>
-
-      {/* main */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* breadcrumb + toolbar */}
-        <div className="flex items-center gap-2.5 border-b px-5 py-3">
-          <div className="flex min-w-0 items-center gap-1 text-sm">
-            <button
-              type="button"
-              onClick={() => setFolderId(null)}
+            <Icon
               className={cn(
-                isRoot
-                  ? 'text-foreground font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
+                'size-4',
+                item.active ? 'text-foreground' : 'text-muted-foreground'
               )}
-            >
-              {t('graph.lens.knowledgeBase')}
-            </button>
-            {folder ? (
-              <>
-                <ChevronRight
-                  className="text-muted-foreground size-3.5"
-                  aria-hidden
-                />
-                <span className="truncate font-semibold">{folder.title}</span>
-              </>
-            ) : null}
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setCreateRequest({ kind: 'file', parentFolderId: folderId })
-              }
-            >
-              <Upload className="size-[15px]" aria-hidden />
-              {t('graph.drive.upload')}
-            </Button>
-            <div className="flex overflow-hidden rounded-md border">
-              <button
-                type="button"
-                onClick={() => setLayout('grid')}
-                aria-label={t('graph.drive.layoutGrid')}
-                aria-pressed={layout === 'grid'}
-                className={cn(
-                  'grid h-7 w-[30px] place-items-center',
-                  layout === 'grid'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground'
-                )}
-              >
-                <LayoutGrid className="size-[15px]" aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={() => setLayout('list')}
-                aria-label={t('graph.drive.layoutList')}
-                aria-pressed={layout === 'list'}
-                className={cn(
-                  'grid h-7 w-[30px] place-items-center',
-                  layout === 'list'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground'
-                )}
-              >
-                <List className="size-[15px]" aria-hidden />
-              </button>
-            </div>
-          </div>
-        </div>
+              aria-hidden
+            />
+            {t(item.labelKey)}
+          </button>
+        );
+      })}
+      <div className="bg-border my-2 h-px" />
+      <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold tracking-[0.04em] uppercase">
+        {t('graph.drive.sections')}
+      </div>
+      {roots.map((root) => (
+        <button
+          key={root.id}
+          type="button"
+          onClick={() => setFolderId(root.id)}
+          data-active={folderId === root.id}
+          className={cn(
+            'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm',
+            'hover:bg-accent',
+            folderId === root.id ? 'bg-accent font-medium' : 'font-normal'
+          )}
+        >
+          <Folder className="text-muted-foreground size-4" aria-hidden />
+          <span className="flex-1 truncate">{root.title}</span>
+          <span className="text-muted-foreground text-[11px]">
+            {childFolders(containment, root.id).length +
+              childContent(containment, root.id).length}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 
-        <div className="flex-1 overflow-y-auto p-5">
-          {isRoot ? (
-            <div className="text-muted-foreground mb-2 text-[13px]">
-              {t('graph.drive.allSections', { count: roots.length })}
-            </div>
-          ) : null}
-
-          {/* folders + shortcuts */}
-          {folders.length > 0 || shortcuts.length > 0 ? (
-            <>
-              {!isRoot ? (
-                <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
-              ) : null}
-              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                {folders.map((sub) => (
-                  <FolderCard
-                    key={sub.id}
-                    title={sub.title}
-                    subtitle={t('graph.drive.itemsCount', {
-                      count:
-                        childFolders(containment, sub.id).length +
-                        childContent(containment, sub.id).length,
-                    })}
-                    layout={layout}
-                    onOpen={() => setFolderId(sub.id)}
-                  />
-                ))}
-                {shortcuts.map((target) => (
-                  <FolderCard
-                    key={`sc-${target.id}`}
-                    title={target.title}
-                    subtitle={t('graph.drive.shortcutFolder')}
-                    layout={layout}
-                    shortcut
-                    onOpen={() =>
-                      target.kind === 'folder'
-                        ? setFolderId(target.id)
-                        : onSelect(target.id)
-                    }
-                  />
-                ))}
-              </div>
-            </>
-          ) : null}
-
-          {/* files / docs */}
-          {items.length > 0 ? (
-            <>
-              <SectionLabel className="mt-[18px]">
-                {t('graph.canvas.files')}
-              </SectionLabel>
-              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                {items.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    t={t}
-                    node={item}
-                    layout={layout}
-                    selected={item.id === selectedId}
-                    onOpen={() => onSelect(item.id)}
-                  />
-                ))}
-              </div>
-            </>
-          ) : null}
-
-          {/* empty states */}
-          {isRoot && roots.length === 0 ? (
-            <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
-          ) : null}
-          {!isRoot && folders.length === 0 && items.length === 0 ? (
-            <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
-          ) : null}
+  const toolbar = (
+    <div className="flex items-center gap-2.5 border-b px-5 py-3">
+      <div className="flex min-w-0 items-center gap-1 text-sm">
+        <button
+          type="button"
+          onClick={() => setFolderId(null)}
+          className={cn(
+            isRoot
+              ? 'text-foreground font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {t('graph.lens.knowledgeBase')}
+        </button>
+        {folder ? (
+          <>
+            <ChevronRight
+              className="text-muted-foreground size-3.5"
+              aria-hidden
+            />
+            <span className="truncate font-semibold">{folder.title}</span>
+          </>
+        ) : null}
+      </div>
+      <div className="ml-auto flex items-center gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setCreateRequest({ kind: 'file', parentFolderId: folderId })
+          }
+        >
+          <Upload className="size-[15px]" aria-hidden />
+          {t('graph.drive.upload')}
+        </Button>
+        <div className="flex overflow-hidden rounded-md border">
+          <button
+            type="button"
+            onClick={() => setLayout('grid')}
+            aria-label={t('graph.drive.layoutGrid')}
+            aria-pressed={layout === 'grid'}
+            className={cn(
+              'grid h-7 w-[30px] place-items-center',
+              layout === 'grid'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground'
+            )}
+          >
+            <LayoutGrid className="size-[15px]" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => setLayout('list')}
+            aria-label={t('graph.drive.layoutList')}
+            aria-pressed={layout === 'list'}
+            className={cn(
+              'grid h-7 w-[30px] place-items-center',
+              layout === 'list'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground'
+            )}
+          >
+            <List className="size-[15px]" aria-hidden />
+          </button>
         </div>
       </div>
+    </div>
+  );
+
+  const main = (
+    <>
+      {isRoot ? (
+        <div className="text-muted-foreground mb-2 text-[13px]">
+          {t('graph.drive.allSections', { count: roots.length })}
+        </div>
+      ) : null}
+
+      {/* folders + shortcuts */}
+      {folders.length > 0 || shortcuts.length > 0 ? (
+        <>
+          {!isRoot ? (
+            <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
+          ) : null}
+          <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+            {folders.map((sub) => (
+              <FolderCard
+                key={sub.id}
+                title={sub.title}
+                subtitle={t('graph.drive.itemsCount', {
+                  count:
+                    childFolders(containment, sub.id).length +
+                    childContent(containment, sub.id).length,
+                })}
+                layout={layout}
+                onOpen={() => setFolderId(sub.id)}
+              />
+            ))}
+            {shortcuts.map((target) => (
+              <FolderCard
+                key={`sc-${target.id}`}
+                title={target.title}
+                subtitle={t('graph.drive.shortcutFolder')}
+                layout={layout}
+                shortcut
+                onOpen={() =>
+                  target.kind === 'folder'
+                    ? setFolderId(target.id)
+                    : onSelect(target.id)
+                }
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {/* files / docs */}
+      {items.length > 0 ? (
+        <>
+          <SectionLabel className="mt-[18px]">
+            {t('graph.canvas.files')}
+          </SectionLabel>
+          <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+            {items.map((item) => (
+              <ItemCard
+                key={item.id}
+                t={t}
+                node={item}
+                layout={layout}
+                selected={item.id === selectedId}
+                onOpen={() => onSelect(item.id)}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {/* empty states */}
+      {isRoot && roots.length === 0 ? (
+        <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
+      ) : null}
+      {!isRoot && folders.length === 0 && items.length === 0 ? (
+        <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
+      ) : null}
+    </>
+  );
+
+  return (
+    <>
+      <WorkbenchShell
+        panel={{
+          kind: 'fixed',
+          width: 230,
+          'aria-label': t('graph.drive.navKnowledgeBase'),
+          children: sidebar,
+        }}
+        toolbar={toolbar}
+        main={main}
+      />
 
       <LensCreateResource
         spaceId={spaceId}
@@ -361,7 +374,7 @@ export function DriveProjectionView({
         }}
         onCreated={onMutated}
       />
-    </div>
+    </>
   );
 }
 

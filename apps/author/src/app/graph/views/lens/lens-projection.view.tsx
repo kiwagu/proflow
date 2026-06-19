@@ -1,7 +1,7 @@
 'use client';
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
-import { ResizableRail } from '@workspace/ui/components/resizable-rail';
+import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import * as React from 'react';
 
 import { buildContainment } from './lens-containment';
@@ -180,90 +180,99 @@ export function LensProjectionView({
 
   const isEmptyEditor = result.items.length === 0;
 
-  return (
-    <div className="flex min-h-[60vh] min-w-0 flex-1 gap-4">
-      <ResizableRail
-        options={RAIL_OPTIONS}
-        aria-label={t('graph.lens.railLabel')}
-        className="hidden md:block"
-      >
-        <LensRail
-          spaceId={spaceId}
-          containment={containment}
+  const rail = (
+    <>
+      <LensRail
+        spaceId={spaceId}
+        containment={containment}
+        t={t}
+        onSelect={onSelect}
+        selectedId={selectedId}
+        refreshKey={refreshKey}
+      />
+      <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-3 px-1 text-xs">
+        <span>{t('graph.lens.legendRelated')}</span>
+        <span>{t('graph.lens.legendTag')}</span>
+        <span>{t('graph.lens.legendInPath')}</span>
+      </div>
+      <div className="mt-3 border-t pt-3">
+        <LensFacets
           t={t}
-          onSelect={onSelect}
-          selectedId={selectedId}
-          refreshKey={refreshKey}
-        />
-        <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-3 px-1 text-xs">
-          <span>{t('graph.lens.legendRelated')}</span>
-          <span>{t('graph.lens.legendTag')}</span>
-          <span>{t('graph.lens.legendInPath')}</span>
-        </div>
-        <div className="mt-3 border-t pt-3">
-          <LensFacets
-            t={t}
-            kinds={kinds}
-            activeKinds={activeKinds}
-            onToggleKind={toggleKind}
-            tags={tags}
-            activeTagIds={activeTagIds}
-            onToggleTag={toggleTag}
-            activeHealth={activeHealth}
-            onToggleHealth={toggleHealth}
-            onClear={clearFilters}
-            hasActiveFilter={hasActiveFilter}
-          />
-        </div>
-      </ResizableRail>
-
-      {isEmptyEditor ? (
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-4 py-12">
-          <p className="text-muted-foreground text-sm">
-            {t('graph.lens.emptyEditor')}
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <LensSampleButton
-              spaceId={spaceId}
-              t={t}
-              onSeeded={onMutated}
-              prominent
-            />
-            <button
-              type="button"
-              onClick={() => setCreateRequest({ parentFolderId: null })}
-              className="text-foreground text-sm hover:underline"
-            >
-              {t('graph.create.new')}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <LensCanvas
-          t={t}
-          filteredItems={filteredItems}
-          containment={containment}
-          tagsByItem={tagsByItem}
-          attributesByItem={attributesByItem}
-          folderId={folderId}
-          onNavigate={onNavigate}
-          onSelect={onSelect}
-          selectedId={selectedId}
-          hasActiveFilter={hasActiveFilter}
+          kinds={kinds}
           activeKinds={activeKinds}
-          activeTagIds={activeTagIds}
-          activeHealth={activeHealth}
-          tagTitleById={tagTitleById}
           onToggleKind={toggleKind}
+          tags={tags}
+          activeTagIds={activeTagIds}
           onToggleTag={toggleTag}
+          activeHealth={activeHealth}
           onToggleHealth={toggleHealth}
           onClear={clearFilters}
-          onNewFolder={() =>
-            setCreateRequest({ kind: 'folder', parentFolderId: folderId })
-          }
-          onNew={() => setCreateRequest({ parentFolderId: folderId })}
+          hasActiveFilter={hasActiveFilter}
         />
-      )}
+      </div>
+    </>
+  );
+
+  const main = isEmptyEditor ? (
+    <div className="flex min-w-0 flex-1 flex-col items-start gap-4 py-12">
+      <p className="text-muted-foreground text-sm">
+        {t('graph.lens.emptyEditor')}
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <LensSampleButton
+          spaceId={spaceId}
+          t={t}
+          onSeeded={onMutated}
+          prominent
+        />
+        <button
+          type="button"
+          onClick={() => setCreateRequest({ parentFolderId: null })}
+          className="text-foreground text-sm hover:underline"
+        >
+          {t('graph.create.new')}
+        </button>
+      </div>
+    </div>
+  ) : (
+    <LensCanvas
+      t={t}
+      filteredItems={filteredItems}
+      containment={containment}
+      tagsByItem={tagsByItem}
+      attributesByItem={attributesByItem}
+      folderId={folderId}
+      onNavigate={onNavigate}
+      onSelect={onSelect}
+      selectedId={selectedId}
+      hasActiveFilter={hasActiveFilter}
+      activeKinds={activeKinds}
+      activeTagIds={activeTagIds}
+      activeHealth={activeHealth}
+      tagTitleById={tagTitleById}
+      onToggleKind={toggleKind}
+      onToggleTag={toggleTag}
+      onToggleHealth={toggleHealth}
+      onClear={clearFilters}
+      onNewFolder={() =>
+        setCreateRequest({ kind: 'folder', parentFolderId: folderId })
+      }
+      onNew={() => setCreateRequest({ parentFolderId: folderId })}
+    />
+  );
+
+  return (
+    <>
+      <WorkbenchShell
+        panel={{
+          kind: 'resizable',
+          options: RAIL_OPTIONS,
+          'aria-label': t('graph.lens.railLabel'),
+          className: 'hidden md:flex',
+          children: rail,
+        }}
+        main={main}
+      />
 
       <LensCreateResource
         spaceId={spaceId}
@@ -277,6 +286,6 @@ export function LensProjectionView({
         }}
         onCreated={onMutated}
       />
-    </div>
+    </>
   );
 }

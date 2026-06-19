@@ -22,6 +22,8 @@ export type ResizableRailProps = {
   children: React.ReactNode;
   options: UseResizableWidthOptions;
   className?: string;
+  /** Padding/classes for the inner scroll body (defaults to `pr-3` for the divider). */
+  bodyClassName?: string;
   'aria-label'?: string;
 };
 
@@ -29,6 +31,7 @@ export function ResizableRail({
   children,
   options,
   className,
+  bodyClassName = 'pr-3',
   'aria-label': ariaLabel,
 }: ResizableRailProps) {
   const { width, resizing, startResize } = useResizableWidth(options);
@@ -39,7 +42,9 @@ export function ResizableRail({
       className={cn('relative shrink-0', className)}
       style={{ width: `${width}px` }}
     >
-      <div className="h-full overflow-y-auto pr-3">{children}</div>
+      <div className={cn('h-full overflow-y-auto', bodyClassName)}>
+        {children}
+      </div>
       <div
         role="separator"
         aria-orientation="vertical"

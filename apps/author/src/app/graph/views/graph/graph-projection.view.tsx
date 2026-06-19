@@ -7,6 +7,7 @@ import type {
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Input } from '@workspace/ui/components/input';
+import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ChevronRight,
@@ -468,8 +469,10 @@ export function GraphProjectionView({
     return null;
   }
 
-  return (
-    <div className="bg-background flex min-h-[60vh] min-w-0 flex-1 flex-col">
+  // Graph has no side panel; its trail + facet controls live across the top, so
+  // they fill the shell's toolbar slot — same outer spacing as the other tabs.
+  const toolbar = (
+    <>
       {/* path-trail */}
       <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b px-[18px] py-2.5">
         <Route
@@ -606,276 +609,280 @@ export function GraphProjectionView({
           </button>
         ) : null}
       </div>
+    </>
+  );
 
-      {/* canvas */}
-      <div
-        ref={wrapRef}
-        onWheel={onWheel}
-        className="relative flex-1 overflow-hidden"
-        style={{
-          backgroundImage:
-            'radial-gradient(var(--border) 1px, transparent 1px)',
-          backgroundSize: '22px 22px',
-          backgroundPosition: '-1px -1px',
-        }}
-      >
-        {/* top-left controls: mode + depth */}
-        <div className="absolute top-3.5 left-3.5 z-[7] flex flex-wrap items-center gap-2">
-          <div className="bg-card flex overflow-hidden rounded-md border shadow-xs">
-            <ModeButton
-              active={mode === 'local'}
-              onClick={() => setMode('local')}
-            >
-              <LocateFixed className="size-3.5" aria-hidden />
-              {t('graph.spatial.focusMode')}
-            </ModeButton>
-            <ModeButton
-              active={mode === 'global'}
-              onClick={() => setMode('global')}
-            >
-              <Globe className="size-3.5" aria-hidden />
-              {t('graph.spatial.overviewMode')}
-            </ModeButton>
-          </div>
-          {mode === 'local' ? (
-            <div className="bg-card flex items-center gap-1.5 rounded-md border px-2.5 py-[5px] shadow-xs">
-              <span className="text-muted-foreground text-xs">
-                {t('graph.spatial.depth')}
-              </span>
-              {[1, 2, 3, 4, 5].map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDepth(d)}
-                  className={cn(
-                    'size-[22px] rounded-sm text-xs font-semibold',
-                    depth === d
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        {/* search-to-focus */}
-        <div className="absolute top-3.5 right-4 z-[8] w-[230px]">
-          <div className="relative">
-            <span className="text-muted-foreground absolute top-1/2 left-2.5 inline-flex -translate-y-1/2">
-              <Search className="size-3.5" aria-hidden />
-            </span>
-            <Input
-              placeholder={t('graph.spatial.searchPlaceholder')}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              className="bg-card h-[34px] pl-[30px]"
-            />
-          </div>
-          {results.length > 0 ? (
-            <div className="bg-card mt-1 max-h-[280px] overflow-hidden overflow-y-auto rounded-md border shadow-lg">
-              {results.map((n) => {
-                const RIcon = iconForKind(n.kind);
-                return (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={() => go(n.id)}
-                    className="hover:bg-accent flex w-full items-center gap-2 px-2.5 py-2 text-left"
-                  >
-                    <RIcon
-                      className="text-muted-foreground size-3.5 shrink-0"
-                      aria-hidden
-                    />
-                    <span className="flex-1 truncate text-sm">{n.title}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-
-        {/* zoom/pan transform layer (edges + nodes) */}
-        <div
-          onMouseDown={panStart}
-          className="absolute inset-0 cursor-grab"
-          style={{
-            transformOrigin: '0 0',
-            transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
-          }}
-        >
-          {/* edges */}
-          <svg
-            className="pointer-events-none absolute inset-0 z-[1] size-full"
-            aria-hidden
+  // The map paints to its own edges (dot grid + floating controls), so the shared
+  // main region runs full-bleed; the canvas fills it.
+  const main = (
+    <div
+      ref={wrapRef}
+      onWheel={onWheel}
+      className="relative size-full overflow-hidden"
+      style={{
+        backgroundImage: 'radial-gradient(var(--border) 1px, transparent 1px)',
+        backgroundSize: '22px 22px',
+        backgroundPosition: '-1px -1px',
+      }}
+    >
+      {/* top-left controls: mode + depth */}
+      <div className="absolute top-3.5 left-3.5 z-[7] flex flex-wrap items-center gap-2">
+        <div className="bg-card flex overflow-hidden rounded-md border shadow-xs">
+          <ModeButton
+            active={mode === 'local'}
+            onClick={() => setMode('local')}
           >
-            {lines.map((l) => {
-              const s = EDGE_STYLE[l.rel] ?? EDGE_STYLE.associative;
+            <LocateFixed className="size-3.5" aria-hidden />
+            {t('graph.spatial.focusMode')}
+          </ModeButton>
+          <ModeButton
+            active={mode === 'global'}
+            onClick={() => setMode('global')}
+          >
+            <Globe className="size-3.5" aria-hidden />
+            {t('graph.spatial.overviewMode')}
+          </ModeButton>
+        </div>
+        {mode === 'local' ? (
+          <div className="bg-card flex items-center gap-1.5 rounded-md border px-2.5 py-[5px] shadow-xs">
+            <span className="text-muted-foreground text-xs">
+              {t('graph.spatial.depth')}
+            </span>
+            {[1, 2, 3, 4, 5].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDepth(d)}
+                className={cn(
+                  'size-[22px] rounded-sm text-xs font-semibold',
+                  depth === d
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground'
+                )}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* search-to-focus */}
+      <div className="absolute top-3.5 right-4 z-[8] w-[230px]">
+        <div className="relative">
+          <span className="text-muted-foreground absolute top-1/2 left-2.5 inline-flex -translate-y-1/2">
+            <Search className="size-3.5" aria-hidden />
+          </span>
+          <Input
+            placeholder={t('graph.spatial.searchPlaceholder')}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="bg-card h-[34px] pl-[30px]"
+          />
+        </div>
+        {results.length > 0 ? (
+          <div className="bg-card mt-1 max-h-[280px] overflow-hidden overflow-y-auto rounded-md border shadow-lg">
+            {results.map((n) => {
+              const RIcon = iconForKind(n.kind);
               return (
-                <line
-                  key={l.key}
-                  x1={l.x1}
-                  y1={l.y1}
-                  x2={l.x2}
-                  y2={l.y2}
-                  stroke={s.stroke}
-                  strokeWidth={l.w ? Math.min(1 + l.w * 0.7, 5) : 1.5}
-                  strokeDasharray={s.dash}
-                  opacity={s.opacity}
-                  style={{ transition: 'all .42s cubic-bezier(.4,0,.2,1)' }}
-                />
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => go(n.id)}
+                  className="hover:bg-accent flex w-full items-center gap-2 px-2.5 py-2 text-left"
+                >
+                  <RIcon
+                    className="text-muted-foreground size-3.5 shrink-0"
+                    aria-hidden
+                  />
+                  <span className="flex-1 truncate text-sm">{n.title}</span>
+                </button>
               );
             })}
-          </svg>
+          </div>
+        ) : null}
+      </div>
 
-          {/* nodes */}
-          {mode === 'local' && ego
-            ? localNodeIds.map((id) => {
-                const p = ego.pos[id];
-                const n = containment.byId.get(id);
-                if (!n) {
+      {/* zoom/pan transform layer (edges + nodes) */}
+      <div
+        onMouseDown={panStart}
+        className="absolute inset-0 cursor-grab"
+        style={{
+          transformOrigin: '0 0',
+          transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
+        }}
+      >
+        {/* edges */}
+        <svg
+          className="pointer-events-none absolute inset-0 z-[1] size-full"
+          aria-hidden
+        >
+          {lines.map((l) => {
+            const s = EDGE_STYLE[l.rel] ?? EDGE_STYLE.associative;
+            return (
+              <line
+                key={l.key}
+                x1={l.x1}
+                y1={l.y1}
+                x2={l.x2}
+                y2={l.y2}
+                stroke={s.stroke}
+                strokeWidth={l.w ? Math.min(1 + l.w * 0.7, 5) : 1.5}
+                strokeDasharray={s.dash}
+                opacity={s.opacity}
+                style={{ transition: 'all .42s cubic-bezier(.4,0,.2,1)' }}
+              />
+            );
+          })}
+        </svg>
+
+        {/* nodes */}
+        {mode === 'local' && ego
+          ? localNodeIds.map((id) => {
+              const p = ego.pos[id];
+              const n = containment.byId.get(id);
+              if (!n) {
+                return null;
+              }
+              const isFocus = id === focusId;
+              const badge =
+                !isFocus && p.level === ego.maxLevel
+                  ? Math.max(0, adjacency(id).length - 1)
+                  : 0;
+              return (
+                <GraphNodeButton
+                  key={id}
+                  x={p.x}
+                  y={p.y}
+                  node={n}
+                  focus={isFocus}
+                  level={p.level}
+                  badge={badge}
+                  onClick={() => !isFocus && go(id)}
+                />
+              );
+            })
+          : clusters
+            ? clusters.list.map((c) => {
+                const p = clusters.pos[c.id];
+                if (!p) {
                   return null;
                 }
-                const isFocus = id === focusId;
-                const badge =
-                  !isFocus && p.level === ego.maxLevel
-                    ? Math.max(0, adjacency(id).length - 1)
-                    : 0;
+                if (expanded.has(c.id)) {
+                  const r = Math.min(132, 48 + c.count * 9);
+                  return (
+                    <React.Fragment key={c.id}>
+                      {c.members.map((m, i) => {
+                        const a = -Math.PI / 2 + (i / c.count) * Math.PI * 2;
+                        return (
+                          <GraphNodeButton
+                            key={m.id}
+                            x={p.x + Math.cos(a) * r}
+                            y={p.y + Math.sin(a) * r}
+                            node={m}
+                            level={1}
+                            onClick={() => {
+                              go(m.id);
+                              setMode('local');
+                            }}
+                          />
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => toggleExp(c.id)}
+                        title={c.label}
+                        className="border-primary bg-primary text-primary-foreground absolute z-[6] inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-xs font-semibold whitespace-nowrap shadow-md"
+                        style={{ left: p.x, top: p.y }}
+                      >
+                        <ClusterIcon
+                          isTags={c.isTags}
+                          className="text-primary-foreground size-3"
+                        />
+                        {c.label}
+                        <Minimize2
+                          className="text-primary-foreground size-3"
+                          aria-hidden
+                        />
+                      </button>
+                    </React.Fragment>
+                  );
+                }
                 return (
-                  <GraphNodeButton
-                    key={id}
+                  <ClusterNodeButton
+                    key={c.id}
                     x={p.x}
                     y={p.y}
-                    node={n}
-                    focus={isFocus}
-                    level={p.level}
-                    badge={badge}
-                    onClick={() => !isFocus && go(id)}
+                    cluster={c}
+                    onClick={() => toggleExp(c.id)}
                   />
                 );
               })
-            : clusters
-              ? clusters.list.map((c) => {
-                  const p = clusters.pos[c.id];
-                  if (!p) {
-                    return null;
-                  }
-                  if (expanded.has(c.id)) {
-                    const r = Math.min(132, 48 + c.count * 9);
-                    return (
-                      <React.Fragment key={c.id}>
-                        {c.members.map((m, i) => {
-                          const a = -Math.PI / 2 + (i / c.count) * Math.PI * 2;
-                          return (
-                            <GraphNodeButton
-                              key={m.id}
-                              x={p.x + Math.cos(a) * r}
-                              y={p.y + Math.sin(a) * r}
-                              node={m}
-                              level={1}
-                              onClick={() => {
-                                go(m.id);
-                                setMode('local');
-                              }}
-                            />
-                          );
-                        })}
-                        <button
-                          type="button"
-                          onClick={() => toggleExp(c.id)}
-                          title={c.label}
-                          className="border-primary bg-primary text-primary-foreground absolute z-[6] inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-xs font-semibold whitespace-nowrap shadow-md"
-                          style={{ left: p.x, top: p.y }}
-                        >
-                          <ClusterIcon
-                            isTags={c.isTags}
-                            className="text-primary-foreground size-3"
-                          />
-                          {c.label}
-                          <Minimize2
-                            className="text-primary-foreground size-3"
-                            aria-hidden
-                          />
-                        </button>
-                      </React.Fragment>
-                    );
-                  }
-                  return (
-                    <ClusterNodeButton
-                      key={c.id}
-                      x={p.x}
-                      y={p.y}
-                      cluster={c}
-                      onClick={() => toggleExp(c.id)}
-                    />
-                  );
-                })
-              : null}
-        </div>
+            : null}
+      </div>
 
-        {/* zoom controls */}
-        <div className="bg-card absolute right-4 bottom-14 z-[7] flex flex-col overflow-hidden rounded-md border shadow-sm">
-          <button
-            type="button"
-            onClick={() => zoomBtn(1.2)}
-            title={t('graph.spatial.zoomIn')}
-            className="text-foreground grid h-8 w-[34px] place-items-center"
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={resetView}
-            title={t('graph.spatial.resetZoom')}
-            className="text-foreground grid h-8 w-[34px] place-items-center border-y text-[11px] font-semibold"
-          >
-            {Math.round(view.scale * 100)}%
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomBtn(1 / 1.2)}
-            title={t('graph.spatial.zoomOut')}
-            className="text-foreground grid h-8 w-[34px] place-items-center"
-          >
-            <Minus className="size-4" aria-hidden />
-          </button>
-        </div>
+      {/* zoom controls */}
+      <div className="bg-card absolute right-4 bottom-14 z-[7] flex flex-col overflow-hidden rounded-md border shadow-sm">
+        <button
+          type="button"
+          onClick={() => zoomBtn(1.2)}
+          title={t('graph.spatial.zoomIn')}
+          className="text-foreground grid h-8 w-[34px] place-items-center"
+        >
+          <Plus className="size-4" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={resetView}
+          title={t('graph.spatial.resetZoom')}
+          className="text-foreground grid h-8 w-[34px] place-items-center border-y text-[11px] font-semibold"
+        >
+          {Math.round(view.scale * 100)}%
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBtn(1 / 1.2)}
+          title={t('graph.spatial.zoomOut')}
+          className="text-foreground grid h-8 w-[34px] place-items-center"
+        >
+          <Minus className="size-4" aria-hidden />
+        </button>
+      </div>
 
-        {/* legend */}
-        <div className="bg-card text-muted-foreground absolute bottom-3.5 left-3.5 z-[6] flex gap-3.5 rounded-md border px-3 py-2 text-[11px] shadow-xs">
-          {(['associative', 'contains', 'tagged'] as const).map((r) => (
-            <span key={r} className="inline-flex items-center gap-1.5">
-              <svg width="22" height="6" aria-hidden>
-                <line
-                  x1="0"
-                  y1="3"
-                  x2="22"
-                  y2="3"
-                  stroke={EDGE_STYLE[r].stroke}
-                  strokeWidth="1.5"
-                  strokeDasharray={EDGE_STYLE[r].dash}
-                  opacity={EDGE_STYLE[r].opacity}
-                />
-              </svg>
-              {legendLabel(t, r)}
-            </span>
-          ))}
-        </div>
+      {/* legend */}
+      <div className="bg-card text-muted-foreground absolute bottom-3.5 left-3.5 z-[6] flex gap-3.5 rounded-md border px-3 py-2 text-[11px] shadow-xs">
+        {(['associative', 'contains', 'tagged'] as const).map((r) => (
+          <span key={r} className="inline-flex items-center gap-1.5">
+            <svg width="22" height="6" aria-hidden>
+              <line
+                x1="0"
+                y1="3"
+                x2="22"
+                y2="3"
+                stroke={EDGE_STYLE[r].stroke}
+                strokeWidth="1.5"
+                strokeDasharray={EDGE_STYLE[r].dash}
+                opacity={EDGE_STYLE[r].opacity}
+              />
+            </svg>
+            {legendLabel(t, r)}
+          </span>
+        ))}
+      </div>
 
-        {/* depth / overview hint */}
-        <div className="text-muted-foreground absolute right-4 bottom-3.5 z-[6] max-w-[250px] text-right text-[11px] leading-normal">
-          {mode === 'local'
-            ? t('graph.spatial.hintLocal', {
-                depth,
-                count: localNodeIds.length,
-              })
-            : t('graph.spatial.hintGlobal')}
-        </div>
+      {/* depth / overview hint */}
+      <div className="text-muted-foreground absolute right-4 bottom-3.5 z-[6] max-w-[250px] text-right text-[11px] leading-normal">
+        {mode === 'local'
+          ? t('graph.spatial.hintLocal', {
+              depth,
+              count: localNodeIds.length,
+            })
+          : t('graph.spatial.hintGlobal')}
       </div>
     </div>
   );
+
+  return <WorkbenchShell toolbar={toolbar} main={main} bleed />;
 }
 
 function ModeButton({

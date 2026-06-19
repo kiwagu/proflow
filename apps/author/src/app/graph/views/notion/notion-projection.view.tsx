@@ -9,6 +9,7 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
+import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   AtSign,
@@ -133,112 +134,128 @@ export function NotionProjectionView({
     return null;
   }
 
-  return (
-    <div className="bg-background flex min-h-[60vh] min-w-0 flex-1">
-      {/* page tree (250px, prototype-parity) */}
-      <nav className="bg-sidebar flex w-[250px] shrink-0 flex-col gap-px overflow-y-auto border-r px-2 py-3">
-        <div className="text-muted-foreground flex items-center gap-2 px-2 pt-1 pb-2.5">
-          <Search className="size-[15px]" aria-hidden />
-          <span className="text-sm">{t('graph.notion.searchPages')}</span>
-        </div>
-        {roots.map((folder) => {
-          const open = expanded.has(folder.id);
-          const kids = childrenNodes(containment, folder.id).filter(
-            (n) => n.kind !== 'tag'
-          );
-          return (
-            <div key={folder.id}>
-              <div className="text-foreground flex w-full items-center gap-1.5 rounded-md px-2 py-[5px]">
-                <button
-                  type="button"
-                  onClick={() => toggle(folder.id)}
-                  aria-label={t('graph.notion.toggleSection')}
-                  aria-expanded={open}
-                  className="grid size-[18px] shrink-0 place-items-center"
-                >
-                  {open ? (
-                    <ChevronDown
-                      className="text-muted-foreground size-3.5"
-                      aria-hidden
-                    />
-                  ) : (
-                    <ChevronRight
-                      className="text-muted-foreground size-3.5"
-                      aria-hidden
-                    />
-                  )}
-                </button>
-                <FileText
-                  className="text-muted-foreground size-[15px]"
-                  aria-hidden
-                />
-                <span className="flex-1 truncate text-sm font-medium">
-                  {folder.title}
-                </span>
-              </div>
-              {open
-                ? kids.map((kid) => {
-                    const KidIcon = iconForKind(kid.kind);
-                    const active = openId === kid.id;
-                    return (
-                      <button
-                        key={kid.id}
-                        type="button"
-                        onClick={() => onSelect(kid.id)}
-                        data-active={active}
-                        className={cn(
-                          'hover:bg-accent flex w-full items-center gap-1.5 rounded-md py-[5px] pr-2 pl-[30px] text-left',
-                          active ? 'bg-accent' : 'bg-transparent'
-                        )}
-                      >
-                        <KidIcon
-                          className="text-muted-foreground size-[15px]"
-                          aria-hidden
-                        />
-                        <span className="flex-1 truncate text-sm">
-                          {kid.title}
-                        </span>
-                      </button>
-                    );
-                  })
-                : null}
-            </div>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() =>
-            setCreateRequest({
-              kind: 'text',
-              parentFolderId: parent?.id ?? null,
-            })
-          }
-          className="hover:bg-accent text-muted-foreground mt-1.5 flex w-full items-center gap-1.5 rounded-md px-2 py-[5px] text-left"
-        >
-          <Plus className="size-[15px]" aria-hidden />
-          <span className="text-sm">{t('graph.notion.newPage')}</span>
-        </button>
-      </nav>
-
-      {/* reading canvas */}
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        {openNode ? (
-          <NotionReader
-            t={t}
-            spaceId={spaceId}
-            node={openNode}
-            containment={containment}
-            tags={kbData?.tagsByItem[openNode.id] ?? []}
-            description={kbData?.attributesByItem[openNode.id]?.description}
-            meta={kbData?.metaByItem[openNode.id]}
-            onSelect={onSelect}
-          />
-        ) : (
-          <p className="text-muted-foreground p-12 text-center text-sm">
-            {t('graph.lens.emptyEditor')}
-          </p>
-        )}
+  const tree = (
+    <div className="flex flex-col gap-px">
+      <div className="text-muted-foreground flex items-center gap-2 px-2 pt-1 pb-2.5">
+        <Search className="size-[15px]" aria-hidden />
+        <span className="text-sm">{t('graph.notion.searchPages')}</span>
       </div>
+      {roots.map((folder) => {
+        const open = expanded.has(folder.id);
+        const kids = childrenNodes(containment, folder.id).filter(
+          (n) => n.kind !== 'tag'
+        );
+        return (
+          <div key={folder.id}>
+            <div className="text-foreground flex w-full items-center gap-1.5 rounded-md px-2 py-[5px]">
+              <button
+                type="button"
+                onClick={() => toggle(folder.id)}
+                aria-label={t('graph.notion.toggleSection')}
+                aria-expanded={open}
+                className="grid size-[18px] shrink-0 place-items-center"
+              >
+                {open ? (
+                  <ChevronDown
+                    className="text-muted-foreground size-3.5"
+                    aria-hidden
+                  />
+                ) : (
+                  <ChevronRight
+                    className="text-muted-foreground size-3.5"
+                    aria-hidden
+                  />
+                )}
+              </button>
+              <FileText
+                className="text-muted-foreground size-[15px]"
+                aria-hidden
+              />
+              <span className="flex-1 truncate text-sm font-medium">
+                {folder.title}
+              </span>
+            </div>
+            {open
+              ? kids.map((kid) => {
+                  const KidIcon = iconForKind(kid.kind);
+                  const active = openId === kid.id;
+                  return (
+                    <button
+                      key={kid.id}
+                      type="button"
+                      onClick={() => onSelect(kid.id)}
+                      data-active={active}
+                      className={cn(
+                        'hover:bg-accent flex w-full items-center gap-1.5 rounded-md py-[5px] pr-2 pl-[30px] text-left',
+                        active ? 'bg-accent' : 'bg-transparent'
+                      )}
+                    >
+                      <KidIcon
+                        className="text-muted-foreground size-[15px]"
+                        aria-hidden
+                      />
+                      <span className="flex-1 truncate text-sm">
+                        {kid.title}
+                      </span>
+                    </button>
+                  );
+                })
+              : null}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() =>
+          setCreateRequest({
+            kind: 'text',
+            parentFolderId: parent?.id ?? null,
+          })
+        }
+        className="hover:bg-accent text-muted-foreground mt-1.5 flex w-full items-center gap-1.5 rounded-md px-2 py-[5px] text-left"
+      >
+        <Plus className="size-[15px]" aria-hidden />
+        <span className="text-sm">{t('graph.notion.newPage')}</span>
+      </button>
+    </div>
+  );
+
+  // The reader centers itself with its own generous padding, so the shared main
+  // region runs full-bleed (the article owns its inset) and scrolls internally.
+  const main = (
+    <div className="size-full overflow-y-auto">
+      {openNode ? (
+        <NotionReader
+          t={t}
+          spaceId={spaceId}
+          node={openNode}
+          containment={containment}
+          tags={kbData?.tagsByItem[openNode.id] ?? []}
+          description={kbData?.attributesByItem[openNode.id]?.description}
+          meta={kbData?.metaByItem[openNode.id]}
+          onSelect={onSelect}
+        />
+      ) : (
+        <p className="text-muted-foreground p-12 text-center text-sm">
+          {t('graph.lens.emptyEditor')}
+        </p>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <WorkbenchShell
+        panel={{
+          kind: 'fixed',
+          width: 250,
+          'aria-label': t('graph.notion.searchPages'),
+          className: 'gap-px',
+          children: tree,
+        }}
+        main={main}
+        bleed
+      />
 
       <LensCreateResource
         spaceId={spaceId}
@@ -252,7 +269,7 @@ export function NotionProjectionView({
         }}
         onCreated={onMutated}
       />
-    </div>
+    </>
   );
 }
 
