@@ -9,26 +9,35 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
+import { Textarea } from '@workspace/ui/components/textarea';
 import { Tree, type TreeNode } from '@workspace/ui/components/tree';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   AtSign,
+  Check,
   ChevronRight,
+  CircleCheck,
+  ClockAlert,
   CornerDownLeft,
   Download,
   ExternalLink,
   FileText,
   Info,
+  Pencil,
   Plus,
   Search,
+  Sparkles,
+  Unlink,
 } from 'lucide-react';
 import * as React from 'react';
 
+import type { KbAttributes } from '@/app/graph/graph-page.data';
 import type { ProjectionViewProps } from '@/app/graph/views/registry';
 import {
   buildContainment,
   childrenNodes,
+  formatNodeMeta,
   iconForKind,
   LensCreateResource,
   parentFolder,
@@ -39,10 +48,18 @@ import {
   type LensNode,
 } from '@/app/graph/views/lens';
 import {
+  mockByteSize,
+  mockDurationMs,
+} from '@/app/graph/views/drive/kb-media-mock';
+import {
   mockNotionBody,
   type MockBodyParagraph,
   type MockMentionTarget,
 } from './kb-notion-body-mock';
+import {
+  mockSuggestedLinks,
+  type MockSuggestedLink,
+} from '@/app/graph/views/resource-panel/kb-rag-mock';
 
 /**
  * Recursive containment -> TreeNode for the shared <Tree>: Notion pages nest by
@@ -168,21 +185,25 @@ export function NotionProjectionView({
           const page = node.data as LensNode;
           const Icon = iconForKind(page.kind);
           const active = openId === page.id;
+          const isFolder = page.kind === 'folder';
           return (
-            <>
+            <span
+              data-active={active}
+              className="data-[active=true]:bg-accent -mx-1 flex flex-1 items-center gap-1.5 rounded-md px-1"
+            >
               <Icon
                 className="text-muted-foreground size-[15px] shrink-0"
                 aria-hidden
               />
               <span
                 className={cn(
-                  'flex-1 truncate text-sm',
-                  active ? 'text-foreground font-medium' : 'text-foreground'
+                  'text-foreground flex-1 truncate text-sm',
+                  active || isFolder ? 'font-medium' : 'font-normal'
                 )}
               >
                 {page.title}
               </span>
-            </>
+            </span>
           );
         }}
       />
@@ -214,8 +235,12 @@ export function NotionProjectionView({
           containment={containment}
           tags={kbData?.tagsByItem[openNode.id] ?? []}
           description={kbData?.attributesByItem[openNode.id]?.description}
+          attributes={kbData?.attributesByItem[openNode.id]}
           meta={kbData?.metaByItem[openNode.id]}
+          health={kbData?.healthByItem[openNode.id]}
+          tagsByItem={kbData?.tagsByItem ?? {}}
           onSelect={onSelect}
+          onMutated={onMutated}
         />
       ) : (
         <p className="text-muted-foreground p-12 text-center text-sm">
@@ -264,8 +289,12 @@ function NotionReader({
   containment,
   tags,
   description,
+  attributes,
   meta,
+  health,
+  tagsByItem,
   onSelect,
+  onMutated,
 }: {
   t: GraphTranslator;
   spaceId: string;
@@ -273,8 +302,12 @@ function NotionReader({
   containment: Containment;
   tags: { id: string; title: string }[];
   description?: string;
+  attributes?: KbAttributes;
   meta?: { ownerUserId: string | null; updatedAt: string };
+  health?: { orphan: boolean; stale: boolean };
+  tagsByItem: Record<string, { id: string; title: string }[]>;
   onSelect: (nodeId: string) => void;
+  onMutated: () => void;
 }) {
   // REAL mentions (out-relates_to) + REAL backlinks (in-relates_to) from the landed
   // neighborhood port (dir=both, ONE call) — the same edges, two directions.
@@ -313,6 +346,19 @@ function NotionReader({
 
   const path = pathTo(containment, node.id);
   const isDoc = node.kind === 'text' || node.kind === 'folder';
+
+  // Asset-callout meta line (link host / file size / video duration) — size/duration
+  // fall back to a labelled MOCK when the real row is empty; host is always REAL.
+  const assetMeta = formatNodeMeta(t, node.kind, {
+    byteSize:
+      attributes?.media?.byteSize ??
+      (node.kind === 'file' ? mockByteSize(node.id) : null),
+    durationMs:
+      attributes?.media?.durationMs ??
+      (node.kind === 'video' ? mockDurationMs(node.id) : null),
+    mimeType: attributes?.media?.mimeType ?? null,
+    linkHost: attributes?.link?.host ?? null,
+  });
 
   // MOCK — pending backend (slice-11): the page body + the inline anchoring of its
   // (real) mentions. Deterministic, labelled (see kb-notion-body-mock). The mention
@@ -378,10 +424,39 @@ function NotionReader({
         ) : null}
       </div>
 
-      {/* description (canvas-embedded; the panel is hidden in Notion, 1:1) */}
-      {description ? (
-        <p className="text-muted-foreground mb-6 text-sm">{description}</p>
+      {/* node health badges (canvas-embedded; the panel is hidden in Notion, 1:1) */}
+      {health ? (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <Badge variant="outline" className="gap-1">
+            {health.stale ? (
+              <ClockAlert className="size-3" aria-hidden />
+            ) : (
+              <CircleCheck className="size-3" aria-hidden />
+            )}
+            {health.stale
+              ? t('graph.notion.healthNeedsReview')
+              : t('graph.notion.healthFresh')}
+          </Badge>
+          {health.orphan ? (
+            <Badge variant="outline" className="gap-1">
+              <Unlink className="size-3" aria-hidden />
+              {t('graph.panel.healthNotLinked')}
+            </Badge>
+          ) : null}
+        </div>
       ) : null}
+
+      {/* editable, RAG-bound description (canvas-embedded; the panel is hidden in
+          Notion, 1:1). REAL — saved to the attributes route under the user's RLS. */}
+      <div className="mb-6">
+        <NotionEditableDescription
+          t={t}
+          spaceId={spaceId}
+          nodeId={node.id}
+          value={description ?? ''}
+          onMutated={onMutated}
+        />
+      </div>
 
       {/* non-doc asset callout (file/video/link) */}
       {!isDoc ? (
@@ -389,7 +464,11 @@ function NotionReader({
           <AssetIcon kind={node.kind} />
           <div className="flex-1">
             <div className="text-sm font-medium">{node.title}</div>
-            {description ? (
+            {assetMeta ? (
+              <div className="text-muted-foreground text-[13px]">
+                {assetMeta}
+              </div>
+            ) : description ? (
               <div className="text-muted-foreground text-[13px]">
                 {description}
               </div>
@@ -487,6 +566,27 @@ function NotionReader({
           </div>
         </div>
       ) : null}
+
+      {/* MOCKED suggested links — the prototype's heuristic, NOT a vector search
+          (kb-rag-mock; labelled). For text pages only. Confirm is a REAL relates_to
+          write; dismiss is local. */}
+      {node.kind === 'text' ? (
+        <NotionSuggestedLinks
+          t={t}
+          spaceId={spaceId}
+          node={node}
+          description={description ?? ''}
+          containment={containment}
+          tagsByItem={tagsByItem}
+          excludeIds={[
+            node.id,
+            ...mentions.map((m) => m.node.id),
+            ...backlinks.map((b) => b.node.id),
+          ]}
+          onSelect={onSelect}
+          onMutated={onMutated}
+        />
+      ) : null}
     </article>
   );
 }
@@ -509,6 +609,269 @@ function Mention({ title, onSelect }: { title: string; onSelect: () => void }) {
 function AssetIcon({ kind }: { kind: string }) {
   const Icon = iconForKind(kind);
   return <Icon className="text-foreground size-[22px]" aria-hidden />;
+}
+
+async function postJson(url: string, body: unknown): Promise<boolean> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.ok;
+}
+
+/**
+ * NotionEditableDescription — the prototype EditableDescription embedded in the
+ * reading canvas (the panel is hidden in Notion). REAL: saves the RAG-bound
+ * description to the attributes route under the user's RLS. Save on ⌘↵ / Save.
+ */
+function NotionEditableDescription({
+  t,
+  spaceId,
+  nodeId,
+  value,
+  onMutated,
+}: {
+  t: GraphTranslator;
+  spaceId: string;
+  nodeId: string;
+  value: string;
+  onMutated: () => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(value);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    setDraft(value);
+    setEditing(false);
+  }, [value, nodeId]);
+
+  const save = async () => {
+    setBusy(true);
+    const ok = await postJson('/author/graph/attributes', {
+      attribute: 'description',
+      spaceId,
+      nodeId,
+      body: draft.trim(),
+    });
+    setBusy(false);
+    setEditing(false);
+    if (ok) {
+      onMutated();
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Textarea
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setDraft(value);
+              setEditing(false);
+            }
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              void save();
+            }
+          }}
+          rows={3}
+          placeholder={t('graph.panel.descriptionPlaceholder')}
+          disabled={busy}
+        />
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => void save()} disabled={busy}>
+            <Check className="size-4" aria-hidden />
+            {t('graph.panel.save')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDraft(value);
+              setEditing(false);
+            }}
+            disabled={busy}
+          >
+            {t('graph.panel.cancel')}
+          </Button>
+          <span className="text-muted-foreground ml-auto text-xs">
+            {t('graph.panel.descriptionHint')}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="hover:border-ring hover:bg-accent flex w-full items-start gap-2 rounded-md border border-dashed p-3 text-left"
+    >
+      <span
+        className={
+          value
+            ? 'text-muted-foreground flex-1'
+            : 'text-muted-foreground/70 flex-1'
+        }
+      >
+        {value || t('graph.panel.descriptionEmpty')}
+      </span>
+      <Pencil
+        className="text-muted-foreground mt-0.5 size-3.5 shrink-0"
+        aria-hidden
+      />
+    </button>
+  );
+}
+
+/**
+ * NotionSuggestedLinks — the prototype SuggestedLinks block embedded in the reading
+ * canvas. MOCKED suggestions (the 3-signal heuristic from `kb-rag-mock`, NOT a
+ * vector search); the confirm is a REAL `relates_to` write, dismiss is local.
+ */
+function NotionSuggestedLinks({
+  t,
+  spaceId,
+  node,
+  description,
+  containment,
+  tagsByItem,
+  excludeIds,
+  onSelect,
+  onMutated,
+}: {
+  t: GraphTranslator;
+  spaceId: string;
+  node: LensNode;
+  description: string;
+  containment: Containment;
+  tagsByItem: Record<string, { id: string; title: string }[]>;
+  excludeIds: string[];
+  onSelect: (nodeId: string) => void;
+  onMutated: () => void;
+}) {
+  const [dismissed, setDismissed] = React.useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => setDismissed(new Set()), [node.id]);
+
+  const titleById = React.useMemo(() => {
+    const map = new Map<string, { title: string; kind: string }>();
+    for (const n of containment.byId.values()) {
+      map.set(n.id, { title: n.title, kind: n.kind });
+    }
+    return map;
+  }, [containment]);
+
+  const suggestions: MockSuggestedLink[] = React.useMemo(
+    () =>
+      mockSuggestedLinks({
+        nodeId: node.id,
+        nodeTitle: node.title,
+        nodeDescription: description,
+        nodeFolderId: containment.parentOf.get(node.id) ?? null,
+        tagsByItem,
+        titleById,
+        folderById: containment.parentOf,
+        excludeIds: new Set([...excludeIds, ...dismissed]),
+      }),
+    [
+      node,
+      description,
+      containment,
+      tagsByItem,
+      titleById,
+      excludeIds,
+      dismissed,
+    ]
+  );
+
+  if (suggestions.length === 0) {
+    return null;
+  }
+
+  const confirm = async (targetId: string) => {
+    setBusy(true);
+    const ok = await postJson('/author/graph/edges', {
+      action: 'link',
+      spaceId,
+      fromId: node.id,
+      toId: targetId,
+    });
+    setBusy(false);
+    if (ok) {
+      onMutated();
+    }
+  };
+
+  const reasonLabel = (s: MockSuggestedLink): string =>
+    s.reason === 'tag'
+      ? t('graph.panel.suggestedReasonTag', { tag: s.reasonTagTitle ?? '' })
+      : s.reason === 'folder'
+        ? t('graph.panel.suggestedReasonFolder')
+        : t('graph.panel.suggestedReasonWording');
+
+  return (
+    <div className="mt-7 border-t pt-[18px]">
+      <div className="text-muted-foreground mb-2.5 flex items-center gap-1.5 text-xs font-semibold">
+        <Sparkles className="size-3.5" aria-hidden />
+        {t('graph.notion.suggestedLinks')}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {suggestions.map((suggestion) => {
+          const Icon = iconForKind(suggestion.kind);
+          return (
+            <div
+              key={suggestion.id}
+              className="flex items-center gap-2 rounded-md border border-dashed p-2"
+            >
+              <Icon
+                className="text-muted-foreground size-4 shrink-0"
+                aria-hidden
+              />
+              <button
+                type="button"
+                onClick={() => onSelect(suggestion.id)}
+                className="min-w-0 flex-1 text-left"
+              >
+                <div className="truncate text-sm font-medium">
+                  {suggestion.title}
+                </div>
+                <div className="text-muted-foreground truncate text-[11px]">
+                  {reasonLabel(suggestion)}
+                </div>
+              </button>
+              <Button
+                size="icon-xs"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void confirm(suggestion.id)}
+                aria-label={t('graph.panel.suggestedConfirm')}
+              >
+                <Check className="size-3.5" aria-hidden />
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                onClick={() =>
+                  setDismissed((prev) => new Set([...prev, suggestion.id]))
+                }
+                aria-label={t('graph.panel.suggestedDismiss')}
+              >
+                <Plus className="size-3.5 rotate-45" aria-hidden />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /** First openable page: first root folder's first child, else the first root. */
