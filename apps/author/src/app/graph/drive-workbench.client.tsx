@@ -7,7 +7,7 @@ import {
   SegmentedControlButton,
 } from '@workspace/ui/components/segmented-control';
 import { FolderTree, Info } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
@@ -47,12 +47,17 @@ export function DriveWorkbench({
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Navigation state lives in the URL so it survives refresh and browser history:
+  //  - `?folder=` the current folder (null → root),
+  //  - `?doc=` the open document (a kind=text node, read in the overlay).
+  // The Details selection stays local (a transient drawer, not a location).
+  const folderId = searchParams.get('folder');
+  const docId = searchParams.get('doc');
+
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
-    undefined
-  );
-  // The document open in the read-view (a kind=text node), independent of the
-  // Details selection — clicking a document reads it, ⋯→Details opens the panel.
-  const [openDocId, setOpenDocId] = React.useState<string | undefined>(
     undefined
   );
   const [refreshKey, setRefreshKey] = React.useState(0);
@@ -61,6 +66,26 @@ export function DriveWorkbench({
     setRefreshKey((key) => key + 1);
     router.refresh();
   }, [router]);
+
+  // Patch the navigation query string and push it (a history entry). Opening a
+  // document from a folder pushes `?folder=X&doc=Y`, so the reader's Back (and
+  // the browser's) returns to `?folder=X`.
+  const navigate = React.useCallback(
+    (next: { folder?: string | null; doc?: string | null }) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if ('folder' in next) {
+        if (next.folder) params.set('folder', next.folder);
+        else params.delete('folder');
+      }
+      if ('doc' in next) {
+        if (next.doc) params.set('doc', next.doc);
+        else params.delete('doc');
+      }
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [router, pathname, searchParams]
+  );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker).
   const containment = React.useMemo(
@@ -86,12 +111,12 @@ export function DriveWorkbench({
   // The open document's title (the reader header). A mutation that removed it
   // collapses the reader back to the Drive grid.
   const openDoc = React.useMemo(() => {
-    if (!openDocId) {
+    if (!docId) {
       return null;
     }
-    const item = result.items.find((entry) => entry.id === openDocId);
+    const item = result.items.find((entry) => entry.id === docId);
     return item ? { id: item.id, title: item.title } : null;
-  }, [openDocId, result.items]);
+  }, [docId, result.items]);
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
@@ -141,7 +166,9 @@ export function DriveWorkbench({
           kbData={kbData}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          onOpenDocument={setOpenDocId}
+          onOpenDocument={(id) => navigate({ doc: id })}
+          folderId={folderId}
+          onNavigate={(id) => navigate({ folder: id, doc: null })}
           onMutated={refresh}
           refreshKey={refreshKey}
         />
@@ -153,7 +180,7 @@ export function DriveWorkbench({
             nodeId={openDoc.id}
             title={openDoc.title}
             messages={messages}
-            onClose={() => setOpenDocId(undefined)}
+            onClose={() => router.back()}
           />
         ) : null}
       </div>

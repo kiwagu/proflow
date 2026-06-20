@@ -53,6 +53,15 @@ export type ProjectionViewProps = {
    * has no document-open affordance simply omits it and falls back to `onSelect`.
    */
   onOpenDocument?: (nodeId: string) => void;
+  /**
+   * The current folder location (a `kind=folder` node id, or null for the root),
+   * owned by the workbench in the URL so it survives refresh / browser history.
+   * Drive-navigation props — views without a folder tree simply omit them and
+   * keep their own local location.
+   */
+  folderId?: string | null;
+  /** Navigate to a folder (null → root). The workbench writes it to the URL. */
+  onNavigate?: (folderId: string | null) => void;
   /** Bumped by the workbench after a mutation so views drop stale lazy children. */
   refreshKey: number;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */

@@ -91,6 +91,8 @@ export function DriveProjectionView({
   selectedId,
   onSelect,
   onOpenDocument,
+  folderId = null,
+  onNavigate,
   onMutated,
   refreshKey,
   spaceId,
@@ -128,7 +130,12 @@ export function DriveProjectionView({
     return map;
   }, [shortcutEdges, containment]);
 
-  const [folderId, setFolderId] = React.useState<string | null>(null);
+  // Folder location is CONTROLLED by the workbench via the URL (`?folder=`), so
+  // it survives refresh and browser history. `navigate(null)` returns to root.
+  const navigate = React.useCallback(
+    (id: string | null) => onNavigate?.(id),
+    [onNavigate]
+  );
   const [layout, setLayout] = React.useState<DriveLayout>('grid');
   const [createRequest, setCreateRequest] =
     React.useState<CreateRequest | null>(null);
@@ -136,9 +143,9 @@ export function DriveProjectionView({
   // A mutation may have removed the current folder — fall back to root.
   React.useEffect(() => {
     if (folderId && !containment.byId.has(folderId)) {
-      setFolderId(null);
+      navigate(null);
     }
-  }, [folderId, containment, refreshKey]);
+  }, [folderId, containment, refreshKey, navigate]);
 
   const roots = rootFolders(containment);
   const isRoot = folderId == null;
@@ -174,7 +181,7 @@ export function DriveProjectionView({
           <Button
             key={item.labelKey}
             variant="ghost"
-            onClick={() => setFolderId(null)}
+            onClick={() => navigate(null)}
             data-active={item.active}
             className={cn(
               'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
@@ -201,7 +208,7 @@ export function DriveProjectionView({
         <Button
           key={root.id}
           variant="ghost"
-          onClick={() => setFolderId(root.id)}
+          onClick={() => navigate(root.id)}
           data-active={folderId === root.id}
           className={cn(
             'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
@@ -225,7 +232,7 @@ export function DriveProjectionView({
       <div className="flex min-w-0 items-center gap-1 text-sm">
         <button
           type="button"
-          onClick={() => setFolderId(null)}
+          onClick={() => navigate(null)}
           className={cn(
             'shrink-0',
             isRoot
@@ -254,7 +261,7 @@ export function DriveProjectionView({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setFolderId(crumb.id)}
+                      onClick={() => navigate(crumb.id)}
                       className="text-muted-foreground hover:text-foreground truncate"
                     >
                       {crumb.title}
@@ -350,7 +357,7 @@ export function DriveProjectionView({
                     childContent(containment, sub.id).length,
                 })}
                 layout={layout}
-                onOpen={() => setFolderId(sub.id)}
+                onOpen={() => navigate(sub.id)}
                 actions={
                   <NodeActionsMenu
                     spaceId={spaceId}
@@ -373,7 +380,7 @@ export function DriveProjectionView({
                 shortcut
                 onOpen={() =>
                   target.kind === 'folder'
-                    ? setFolderId(target.id)
+                    ? navigate(target.id)
                     : onSelect(target.id)
                 }
               />
