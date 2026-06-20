@@ -4,8 +4,10 @@ import { RichText } from '@payloadcms/richtext-lexical/react';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { EmptyState } from '@workspace/ui/components/empty-state';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Pencil } from 'lucide-react';
 import * as React from 'react';
+
+import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 
 /**
  * DocumentReader — the minimal, empty-but-live read-view for a `kind=text` node
@@ -62,30 +64,48 @@ export function DocumentReader({
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const [state, setState] = React.useState<ReaderState>({ status: 'loading' });
+  const mounted = React.useRef(false);
 
-  React.useEffect(() => {
-    // The reader is remounted per node (keyed by id), so the initial 'loading'
-    // state is fresh on every open — no synchronous reset needed here.
-    let cancelled = false;
+  // Fetch the latest body. Does NOT flip back to 'loading', so a focus-refetch
+  // updates content silently (no flicker). Guarded against setState-after-unmount.
+  const loadBody = React.useCallback(async () => {
     const url = `/author/graph/text-resources?node_id=${encodeURIComponent(
       nodeId
     )}&space_id=${encodeURIComponent(spaceId)}`;
-    fetch(url, { headers: { Accept: 'application/json' } })
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('read'))))
-      .then((data: { body?: SerializedLexical | null }) => {
-        if (!cancelled) {
-          setState({ status: 'ready', body: data.body ?? null });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setState({ status: 'error' });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        throw new Error('read');
+      }
+      const data = (await res.json()) as { body?: SerializedLexical | null };
+      if (mounted.current) {
+        setState({ status: 'ready', body: data.body ?? null });
+      }
+    } catch {
+      if (mounted.current) {
+        setState({ status: 'error' });
+      }
+    }
   }, [nodeId, spaceId]);
+
+  React.useEffect(() => {
+    mounted.current = true;
+    void loadBody();
+    // Returning from the Payload admin editor (a full navigation away) refocuses
+    // the window — refetch so the reader reflects a just-saved edit.
+    const onFocus = () => void loadBody();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [loadBody]);
+
+  // Edit opens the node-centric resolver, which 302s to the native Payload admin
+  // document (Lexical editor + versions/drafts) — the editor is Payload's own.
+  const editHref = `${AUTHOR_BASE_PATH}/graph/doc/${encodeURIComponent(
+    nodeId
+  )}/edit`;
 
   return (
     <div className="bg-background absolute inset-0 z-10 flex flex-col">
@@ -94,6 +114,15 @@ export function DocumentReader({
         <Button variant="ghost" size="sm" onClick={onClose} className="gap-1.5">
           <ArrowLeft className="size-4" aria-hidden />
           {t('graph.reader.back')}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto gap-1.5"
+          onClick={() => window.location.assign(editHref)}
+        >
+          <Pencil className="size-4" aria-hidden />
+          {t('graph.reader.edit')}
         </Button>
       </div>
 

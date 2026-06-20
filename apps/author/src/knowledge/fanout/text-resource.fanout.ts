@@ -173,6 +173,67 @@ export async function createTextResource(
   return { node_id: nodeId, body_ref: bodyRef };
 }
 
+export type EnsureNodeBodyInput = {
+  nodeId: string;
+  spaceId: string;
+};
+
+export type EnsureNodeBodyDeps = {
+  /** User's RLS-scoped supabase-js client — NEVER service-role. */
+  db: SupabaseClient<Database>;
+  /** Payload Local API instance. */
+  payload: Payload;
+};
+
+/**
+ * Resolve a text node's body doc id, SELF-HEALING if absent: a node created
+ * before the body fan-out existed (or any bodyless `kind=text` node) gets a real
+ * empty body minted on demand, bridged via `body_ref`, so every document is
+ * editable. The caller MUST have already gated node access under RLS. Returns the
+ * Payload `bodies` doc id.
+ */
+export async function ensureNodeBody(
+  input: EnsureNodeBodyInput,
+  deps: EnsureNodeBodyDeps
+): Promise<string> {
+  const { db, payload } = deps;
+
+  const existing = await payload.find({
+    collection: 'bodies',
+    where: { node_id: { equals: input.nodeId } },
+    overrideAccess: true,
+    draft: true,
+    depth: 0,
+    limit: 1,
+    pagination: false,
+  });
+  const found = existing.docs[0] as { id?: string } | undefined;
+  if (found?.id) {
+    return String(found.id);
+  }
+
+  const doc = await payload.create({
+    collection: 'bodies',
+    overrideAccess: true,
+    data: {
+      id: createEntityId('bod'),
+      node_id: input.nodeId,
+      space_id: input.spaceId,
+      body: EMPTY_LEXICAL as never,
+    },
+  });
+  const docId = String(doc.id);
+
+  const bodyRef: BodyRef = { collection: 'bodies', doc_id: docId };
+  await db
+    .from('knowledge_resources')
+    .update({ body_ref: bodyRef })
+    .eq('id', input.nodeId)
+    .eq('space_id', input.spaceId);
+
+  return docId;
+}
+
 /** Best-effort compensation: drop the node (FK cascades its edges). */
 async function deleteNode(
   db: SupabaseClient<Database>,

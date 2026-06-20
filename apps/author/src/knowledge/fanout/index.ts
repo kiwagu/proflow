@@ -36,8 +36,11 @@ export {
 } from './kb-attribute.fanout';
 export {
   createTextResource,
+  ensureNodeBody,
   type CreateTextResourceDeps,
   type CreateTextResourceInput,
   type CreateTextResourceResult,
+  type EnsureNodeBodyDeps,
+  type EnsureNodeBodyInput,
   type TextParentFolderPlacement,
 } from './text-resource.fanout';

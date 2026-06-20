@@ -7,7 +7,7 @@ import {
   SegmentedControlButton,
 } from '@workspace/ui/components/segmented-control';
 import { FolderTree, Info } from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
@@ -47,7 +47,6 @@ export function DriveWorkbench({
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   // Navigation state lives in the URL so it survives refresh and browser history:
@@ -74,6 +73,10 @@ export function DriveWorkbench({
   // still records a history entry, so opening a document from a folder
   // (`?folder=X&doc=Y`) lets the reader's Back (and the browser's) return to
   // `?folder=X`. A full refresh re-runs the server once, as expected.
+  //
+  // The new URL is a RELATIVE `?query` (or the current pathname to clear it) so it
+  // resolves against the current path and KEEPS the app `basePath` — `usePathname()`
+  // strips the basePath, which would drop `/author` from the URL.
   const navigate = React.useCallback(
     (next: { folder?: string | null; doc?: string | null }) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -86,9 +89,13 @@ export function DriveWorkbench({
         else params.delete('doc');
       }
       const qs = params.toString();
-      window.history.pushState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      window.history.pushState(
+        null,
+        '',
+        qs ? `?${qs}` : window.location.pathname
+      );
     },
-    [pathname, searchParams]
+    [searchParams]
   );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker).

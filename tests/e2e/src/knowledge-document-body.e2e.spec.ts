@@ -197,4 +197,79 @@ test.describe('@full knowledge document body', () => {
     await granted.dispose();
     await ungranted.dispose();
   });
+
+  test('edit deep-link: resolver redirects to the Payload admin body doc (basePath included); ungranted is bounced to the workbench', async () => {
+    const granted = await apiFor(tenant.granted);
+    const ungranted = await apiFor(tenant.ungranted);
+
+    const doc = await createTextDoc(granted, tenant.spaceId, 'Editable Doc');
+
+    // Granted → redirect to the native Payload admin document for this body.
+    // Assert the EXACT path incl. the `/author` basePath (a dropped basePath is
+    // the bug this guards — `.toContain` would miss it).
+    const res = await granted.get(`/author/graph/doc/${doc.node_id}/edit`, {
+      maxRedirects: 0,
+    });
+    expect([302, 303, 307, 308]).toContain(res.status());
+    expect(res.headers()['location']).toBe(
+      `/author/admin/collections/bodies/${doc.body_ref.doc_id}`
+    );
+
+    // Ungranted (no node access) → bounced to the workbench, never to the body.
+    const denied = await ungranted.get(
+      `/author/graph/doc/${doc.node_id}/edit`,
+      {
+        maxRedirects: 0,
+      }
+    );
+    expect([302, 303, 307, 308]).toContain(denied.status());
+    expect(denied.headers()['location']).toBe('/author/graph');
+
+    await granted.dispose();
+    await ungranted.dispose();
+  });
+
+  test('edit self-heals a bodyless text node: mints a body, bridges it, redirects to it', async () => {
+    const api = await apiFor(tenant.granted);
+
+    // A text node created directly with NO body (e.g. pre-dating the body
+    // fan-out, or sample data) — still under the granted actor's RLS.
+    const { data: bare, error } = await tenant.granted.client
+      .from('knowledge_resources')
+      .insert({
+        space_id: tenant.spaceId,
+        kind: 'text',
+        title: 'Bodyless Doc',
+        status: 'active',
+        created_by: tenant.granted.userId,
+        owner_user_id: tenant.granted.userId,
+      })
+      .select('id')
+      .single();
+    expect(error).toBeNull();
+    const nodeId = (bare as { id: string }).id;
+
+    // Edit resolves → self-heals a body → redirects to it.
+    const res = await api.get(`/author/graph/doc/${nodeId}/edit`, {
+      maxRedirects: 0,
+    });
+    expect([302, 303, 307, 308]).toContain(res.status());
+    expect(res.headers()['location']).toMatch(
+      /^\/author\/admin\/collections\/bodies\/.+/
+    );
+
+    // The node is now bridged to a freshly-minted body (service reads the truth).
+    const { data: row } = await tenant.service
+      .from('knowledge_resources')
+      .select('body_ref')
+      .eq('id', nodeId)
+      .single();
+    const ref = (
+      row as { body_ref: { collection: string; doc_id: string } | null }
+    ).body_ref;
+    expect(ref?.collection).toBe('bodies');
+    expect((ref?.doc_id ?? '').length).toBeGreaterThan(0);
+
+    await api.dispose();
+  });
 });

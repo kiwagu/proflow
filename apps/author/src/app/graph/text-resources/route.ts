@@ -19,6 +19,9 @@ import {
  *        `bodies` doc by `node_id` via the Payload Local API with
  *        `overrideAccess` (the gate already passed). Body access is subordinate
  *        to node access — never a second authority.
+ *        This is the AUTHOR/moderator surface, so it reads the LATEST version
+ *        (`draft: true`) — the editor sees their own in-progress edit
+ *        immediately. A future CONSUMER surface reads the published version.
  * POST — create a `kind=text` node + its Payload `bodies` doc, bridged by
  *        `body_ref`, optionally placed inside a folder (FORWARD `contains`
  *        edge, ADR-0015). A SYNCHRONOUS cross-store fan-out: the node INSERT is
@@ -72,12 +75,14 @@ export async function GET(request: Request) {
 
   // Read the body by node_id (the bridge key; unique in `bodies`). The gate
   // passed, so overrideAccess is safe here — Bodies access stays the defence for
-  // direct admin/REST reads. Published version (drafts are editor-internal).
+  // direct admin/REST reads. `draft: true` returns the LATEST version (draft or
+  // published) — the author/moderator surface shows the in-progress edit.
   const payload = await getPayload({ config });
   const { docs } = await payload.find({
     collection: 'bodies',
     where: { node_id: { equals: nodeId } },
     overrideAccess: true,
+    draft: true,
     depth: 0,
     limit: 1,
     pagination: false,

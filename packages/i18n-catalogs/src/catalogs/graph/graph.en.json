@@ -57,6 +57,7 @@
   "graph.media.duration": "{minutes}:{seconds}",
   "graph.body.present": "Body",
   "graph.reader.back": "Back",
+  "graph.reader.edit": "Edit",
   "graph.reader.loading": "Loading document…",
   "graph.reader.empty": "This document is empty.",
   "graph.reader.error": "Could not load this document. Please try again.",
