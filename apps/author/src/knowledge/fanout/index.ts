@@ -1,0 +1,36 @@
+export {
+  createBodylessResource,
+  renameResource,
+  type BodylessKind,
+  type CreateBodylessResourceDeps,
+  type CreateBodylessResourceInput,
+  type CreateBodylessResourceResult,
+  type FanoutEdgeInput,
+  type ParentFolderPlacement,
+  type RenameResourceInput,
+} from './bodyless-resource.fanout';
+export {
+  AUTHORABLE_RELATION_TYPES,
+  createEdge,
+  deleteEdge,
+  tagResource,
+  type AuthorableRelationType,
+  type CreateEdgeInput,
+  type DeleteEdgeInput,
+  type TagResourceInput,
+} from './resource-edge.fanout';
+export {
+  linkResourceScope,
+  listScopeChoices,
+  unlinkResourceScope,
+  type LinkResourceScopeInput,
+} from './resource-scope.fanout';
+export {
+  deleteResourceCascade,
+  type DeleteResourceInput,
+} from './delete-resource.fanout';
+export {
+  setResourceDescription,
+  type KbAttributeDeps,
+  type SetResourceDescriptionInput,
+} from './kb-attribute.fanout';

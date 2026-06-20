@@ -63,13 +63,18 @@ comment on table public.view_types is
 
 insert into public.resource_kinds (key, label, description) values
   ('text', 'Text', 'Rich-text body authored in Payload (kind=text).'),
-  ('link', 'Link', 'Reference to another resource or external URL.')
+  ('link', 'Link', 'Reference to another resource or external URL.'),
+  ('folder', 'Folder', 'Container node; holds children via a contains edge. Body-less, like a tag.'),
+  ('file', 'File', 'Uploaded binary asset (PDF/zip/etc.); attributes live on the kb media-meta satellite.'),
+  ('video', 'Video', 'Video resource; attributes live on the kb media-meta satellite.')
 on conflict (key) do nothing;
 
 insert into public.relation_types (key, label, description, is_directed) values
   ('relates_to', 'Relates to', 'Associative, non-hierarchical link.', true),
   ('part_of', 'Part of', 'Hierarchical containment (child part_of parent).', true),
-  ('prerequisite', 'Prerequisite', 'Source must precede target (pacing/ordering).', true)
+  ('prerequisite', 'Prerequisite', 'Source must precede target (pacing/ordering).', true),
+  ('contains', 'Contains', 'Folder holds child, forward containment (from_id=folder, to_id=child); breadcrumb/descendants walk this only.', true),
+  ('shortcut', 'Shortcut to', 'Cross-folder symlink (from_id=folder, to_id=target); rendered in Drive, excluded from containment traversal.', true)
 on conflict (key) do nothing;
 
 insert into public.view_types (key, label, description) values

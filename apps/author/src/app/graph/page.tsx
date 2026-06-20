@@ -1,44 +1,82 @@
-import { redirect } from 'next/navigation';
+import { loadGraphMessages } from '@workspace/i18n-catalogs/graph';
+import type { ProjectionResult } from '@workspace/knowledge-contracts';
 
+import { DriveWorkbench } from './drive-workbench.client';
 import {
-  listSpaceProjections,
-  loadGraphTranslator,
+  DEFAULT_LENS_PROJECTION_ID,
+  loadContainmentForest,
+  loadKbAttributesForItems,
+  loadNodeMetaForItems,
+  loadShortcutForest,
   resolveActiveSpaceId,
+  resolveCurrentUserId,
+  resolveDefaultLensProjection,
 } from './graph-page.data';
+import type { KbViewData } from './views/registry/projection-view.types';
 
 /**
- * `/author/graph` index. Loads the active space's saved projections under the
- * user's RLS client and redirects to the first one (the default rendered app).
- * Auth is handled upstream: a guest is redirected to platform sign-in by the
- * proxy before this renders (§5). RLS is the access authority — an ungranted
- * user gets an empty projection list and lands on the empty-state below.
+ * `/author/graph` — the knowledge workbench entry. Resolves the default lens
+ * projection over the active space under the user's RLS (ADR-0009 transport, never
+ * service-role) and threads it + the KB seed (containment / shortcut forests + node
+ * meta + current user id) into the Drive shell. An ungranted user — or no active
+ * space — resolves to an empty editor, never an error. RLS/auth is handled upstream
+ * by the proxy. (KB satellite attributes — media/link — land in a later pass; until
+ * then `attributesByItem` is empty and the meta line falls to "{kind} · {owner}".)
  */
 export const dynamic = 'force-dynamic';
 
-export default async function GraphIndexPage() {
-  const t = await loadGraphTranslator();
+export default async function GraphPage() {
+  const messages = await loadGraphMessages('en');
   const spaceId = await resolveActiveSpaceId();
 
+  const emptyResult: ProjectionResult = {
+    projection_id: DEFAULT_LENS_PROJECTION_ID,
+    view: 'lens',
+    items: [],
+  };
+
   if (!spaceId) {
+    const emptyKb: KbViewData = {
+      attributesByItem: {},
+      metaByItem: {},
+      containment: [],
+      shortcuts: [],
+      currentUserId: null,
+    };
     return (
-      <div className="mx-auto max-w-5xl px-6 py-12">
-        <p className="text-muted-foreground text-sm">{t('graph.noSpace')}</p>
-      </div>
+      <DriveWorkbench
+        messages={messages}
+        result={emptyResult}
+        kbData={emptyKb}
+      />
     );
   }
 
-  const projections = await listSpaceProjections(spaceId);
+  const result = await resolveDefaultLensProjection(spaceId);
+  const itemIds = result.items.map((item) => item.id);
+  const [containment, shortcuts, attributesByItem, metaByItem, currentUserId] =
+    await Promise.all([
+      loadContainmentForest(spaceId),
+      loadShortcutForest(spaceId),
+      loadKbAttributesForItems(spaceId, itemIds),
+      loadNodeMetaForItems(spaceId, itemIds),
+      resolveCurrentUserId(),
+    ]);
 
-  if (projections.length > 0) {
-    redirect(`/graph/${projections[0]!.id}`);
-  }
+  const kbData: KbViewData = {
+    attributesByItem,
+    metaByItem,
+    containment,
+    shortcuts,
+    currentUserId,
+  };
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
-      <h1 className="font-heading text-2xl">{t('graph.page.title')}</h1>
-      <p className="text-muted-foreground mt-2 text-sm">
-        {t('graph.switcher.empty')}
-      </p>
-    </div>
+    <DriveWorkbench
+      messages={messages}
+      spaceId={spaceId}
+      result={result}
+      kbData={kbData}
+    />
   );
 }
