@@ -34,3 +34,10 @@ export {
   type KbAttributeDeps,
   type SetResourceDescriptionInput,
 } from './kb-attribute.fanout';
+export {
+  createTextResource,
+  type CreateTextResourceDeps,
+  type CreateTextResourceInput,
+  type CreateTextResourceResult,
+  type TextParentFolderPlacement,
+} from './text-resource.fanout';

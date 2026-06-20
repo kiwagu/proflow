@@ -90,6 +90,7 @@ export function DriveProjectionView({
   messages,
   selectedId,
   onSelect,
+  onOpenDocument,
   onMutated,
   refreshKey,
   spaceId,
@@ -398,7 +399,13 @@ export function DriveProjectionView({
                 currentUserId={currentUserId}
                 layout={layout}
                 selected={item.id === selectedId}
-                onOpen={() => onSelect(item.id)}
+                onOpen={() =>
+                  // A document opens its read-view; every other kind opens the
+                  // shared Details panel (the click→read, ⋯→Details split).
+                  item.kind === 'text' && onOpenDocument
+                    ? onOpenDocument(item.id)
+                    : onSelect(item.id)
+                }
                 actions={
                   <NodeActionsMenu
                     spaceId={spaceId}

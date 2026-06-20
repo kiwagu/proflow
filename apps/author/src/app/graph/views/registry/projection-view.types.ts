@@ -46,6 +46,13 @@ export type ProjectionViewProps = {
   selectedId?: string;
   /** Select a node → opens the SHARED ResourcePanel (owned by the workbench). */
   onSelect: (nodeId: string) => void;
+  /**
+   * Open a `kind=text` node as a document → the SHARED read-view (owned by the
+   * workbench). Distinct from `onSelect` (the Details panel): clicking a document
+   * reads it, the ⋯ menu's Details still opens the panel. Optional — a view that
+   * has no document-open affordance simply omits it and falls back to `onSelect`.
+   */
+  onOpenDocument?: (nodeId: string) => void;
   /** Bumped by the workbench after a mutation so views drop stale lazy children. */
   refreshKey: number;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */

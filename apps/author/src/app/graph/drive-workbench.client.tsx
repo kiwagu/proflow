@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
+import { DocumentReader } from './views/document-reader/document-reader.view';
 import { buildContainment } from './containment';
 import {
   ResourcePanel,
@@ -49,6 +50,11 @@ export function DriveWorkbench({
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
     undefined
   );
+  // The document open in the read-view (a kind=text node), independent of the
+  // Details selection — clicking a document reads it, ⋯→Details opens the panel.
+  const [openDocId, setOpenDocId] = React.useState<string | undefined>(
+    undefined
+  );
   const [refreshKey, setRefreshKey] = React.useState(0);
 
   const refresh = React.useCallback(() => {
@@ -76,6 +82,16 @@ export function DriveWorkbench({
         }
       : null;
   }, [selectedId, result.items]);
+
+  // The open document's title (the reader header). A mutation that removed it
+  // collapses the reader back to the Drive grid.
+  const openDoc = React.useMemo(() => {
+    if (!openDocId) {
+      return null;
+    }
+    const item = result.items.find((entry) => entry.id === openDocId);
+    return item ? { id: item.id, title: item.title } : null;
+  }, [openDocId, result.items]);
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
@@ -115,8 +131,9 @@ export function DriveWorkbench({
         </span>
       </div>
 
-      {/* body: the Drive projection fills the remaining area */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* body: the Drive projection fills the remaining area; the document
+          read-view overlays it when a document is open */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <DriveProjectionView
           result={result}
           messages={messages}
@@ -124,9 +141,21 @@ export function DriveWorkbench({
           kbData={kbData}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onOpenDocument={setOpenDocId}
           onMutated={refresh}
           refreshKey={refreshKey}
         />
+
+        {spaceId && openDoc ? (
+          <DocumentReader
+            key={openDoc.id}
+            spaceId={spaceId}
+            nodeId={openDoc.id}
+            title={openDoc.title}
+            messages={messages}
+            onClose={() => setOpenDocId(undefined)}
+          />
+        ) : null}
       </div>
 
       {/* shared node-action drawer — opens on select (the authoritative surface) */}
