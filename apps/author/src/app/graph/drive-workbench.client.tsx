@@ -67,9 +67,13 @@ export function DriveWorkbench({
     router.refresh();
   }, [router]);
 
-  // Patch the navigation query string and push it (a history entry). Opening a
-  // document from a folder pushes `?folder=X&doc=Y`, so the reader's Back (and
-  // the browser's) returns to `?folder=X`.
+  // Patch the navigation query string via the native History API (SHALLOW): it
+  // updates the URL + `useSearchParams` WITHOUT re-running the server component,
+  // so folder/document navigation never refetches the (identical) canvas — the
+  // page ignores searchParams and folder filtering is client-side. `pushState`
+  // still records a history entry, so opening a document from a folder
+  // (`?folder=X&doc=Y`) lets the reader's Back (and the browser's) return to
+  // `?folder=X`. A full refresh re-runs the server once, as expected.
   const navigate = React.useCallback(
     (next: { folder?: string | null; doc?: string | null }) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -82,9 +86,9 @@ export function DriveWorkbench({
         else params.delete('doc');
       }
       const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+      window.history.pushState(null, '', qs ? `${pathname}?${qs}` : pathname);
     },
-    [router, pathname, searchParams]
+    [pathname, searchParams]
   );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker).
