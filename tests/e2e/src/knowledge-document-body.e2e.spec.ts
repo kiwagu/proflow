@@ -311,4 +311,128 @@ test.describe('@full knowledge document body', () => {
     await api.dispose();
     await ungranted.dispose();
   });
+
+  test('versions: lists the body draft/publish history, RLS-gated', async () => {
+    const api = await apiFor(tenant.granted);
+    const doc = await createTextDoc(api, tenant.spaceId, 'Versioned Doc');
+    const versionsUrl = `/author/graph/text-resources/versions?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+
+    // Each save records a version (draft, then published).
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('draft revision'),
+        status: 'draft',
+      },
+    });
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('published revision'),
+        status: 'published',
+      },
+    });
+
+    const res = await api.get(versionsUrl);
+    expect(res.status()).toBe(200);
+    const { versions } = (await res.json()) as {
+      versions: { id: string; status: string | null; updatedAt: string }[];
+    };
+    expect(Array.isArray(versions)).toBe(true);
+    expect(versions.length).toBeGreaterThan(0);
+    expect(versions[0]).toHaveProperty('id');
+    expect(versions[0]).toHaveProperty('updatedAt');
+    // the workflow status is surfaced (a publish happened).
+    expect(versions.map((v) => v.status)).toContain('published');
+
+    // RLS: an ungranted actor cannot list versions (node not visible → 404).
+    const ungranted = await apiFor(tenant.ungranted);
+    const denied = await ungranted.get(versionsUrl);
+    expect(denied.status()).toBe(404);
+
+    await api.dispose();
+    await ungranted.dispose();
+  });
+
+  test('versions: view a revision, restore it (becomes current), RLS-gated', async () => {
+    const api = await apiFor(tenant.granted);
+    const doc = await createTextDoc(api, tenant.spaceId, 'Restorable Doc');
+    const versionsUrl = `/author/graph/text-resources/versions?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+    const readUrl = `/author/graph/text-resources?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+
+    const alpha = `Alpha ${Date.now()}`;
+    const beta = `Beta ${Date.now()}`;
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText(alpha),
+        status: 'published',
+      },
+    });
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText(beta),
+        status: 'published',
+      },
+    });
+
+    // Current body is beta; find the version that holds alpha (view-one).
+    const { versions } = (await (await api.get(versionsUrl)).json()) as {
+      versions: { id: string }[];
+    };
+    let alphaVersionId: string | null = null;
+    for (const v of versions) {
+      const viewed = (await (
+        await api.get(`${versionsUrl}&version_id=${v.id}`)
+      ).json()) as { body: unknown };
+      if (JSON.stringify(viewed.body).includes(alpha)) {
+        alphaVersionId = v.id;
+        break;
+      }
+    }
+    expect(alphaVersionId).not.toBeNull();
+
+    // Restore the alpha revision → it becomes the current body.
+    const restoreRes = await api.post('/author/graph/text-resources/versions', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        versionId: alphaVersionId,
+        action: 'restore',
+      },
+    });
+    expect(restoreRes.status()).toBe(200);
+
+    const restored = (await (await api.get(readUrl)).json()) as {
+      body: unknown;
+    };
+    expect(JSON.stringify(restored.body)).toContain(alpha);
+
+    // RLS: an ungranted actor cannot view or restore (node not visible → 404).
+    const ungranted = await apiFor(tenant.ungranted);
+    const deniedView = await ungranted.get(
+      `${versionsUrl}&version_id=${alphaVersionId}`
+    );
+    expect(deniedView.status()).toBe(404);
+    const deniedRestore = await ungranted.post(
+      '/author/graph/text-resources/versions',
+      {
+        data: {
+          spaceId: tenant.spaceId,
+          nodeId: doc.node_id,
+          versionId: alphaVersionId,
+          action: 'restore',
+        },
+      }
+    );
+    expect(deniedRestore.status()).toBe(404);
+
+    await api.dispose();
+    await ungranted.dispose();
+  });
 });

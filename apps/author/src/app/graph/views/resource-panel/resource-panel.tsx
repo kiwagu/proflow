@@ -3,6 +3,8 @@
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
+import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
+import { DocumentViewerDialog } from '@workspace/ui/components/platform/document-viewer-dialog';
 import {
   Select,
   SelectContent,
@@ -18,11 +20,24 @@ import {
   SheetTitle,
 } from '@workspace/ui/components/sheet';
 import { Textarea } from '@workspace/ui/components/textarea';
-import { Check, Pencil, Sparkles, Users, X } from 'lucide-react';
+import {
+  Check,
+  Eye,
+  History,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react';
 import * as React from 'react';
 
 import { type Containment } from '@/app/graph/containment';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
+import {
+  DocumentBodyView,
+  type SerializedLexical,
+} from '@/app/graph/views/document-reader/document-body-view';
 import type { KbAttributes, ScopeChoice } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
@@ -169,6 +184,9 @@ export function ResourcePanel({
             disabled={busy}
             onMutated={onMutated}
           />
+          {node.kind === 'text' ? (
+            <VersionsSection t={t} spaceId={spaceId} nodeId={node.id} />
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>
@@ -380,6 +398,161 @@ function VisibilitySection({
           ) : null}
         </div>
       )}
+    </section>
+  );
+}
+
+type VersionEntry = { id: string; status: string | null; updatedAt: string };
+
+/**
+ * Versions — the tangible draft/publish history for a `kind=text` node's body
+ * (Payload records a version on every save). Read-only list, fetched on demand
+ * when the panel opens. Shows each version's draft/published status + time so the
+ * moderator sees the workflow concretely. Reads are RLS-gated server-side.
+ */
+function VersionsSection({
+  t,
+  spaceId,
+  nodeId,
+}: {
+  t: ReturnType<typeof createGraphTranslator>;
+  spaceId: string;
+  nodeId: string;
+}) {
+  const [versions, setVersions] = React.useState<VersionEntry[] | null>(null);
+  const [restoring, setRestoring] = React.useState(false);
+  const [confirmId, setConfirmId] = React.useState<string | null>(null);
+  const [viewBody, setViewBody] = React.useState<SerializedLexical | null>(
+    null
+  );
+  const [viewOpen, setViewOpen] = React.useState(false);
+
+  const base = `node_id=${encodeURIComponent(nodeId)}&space_id=${encodeURIComponent(spaceId)}`;
+
+  const load = React.useCallback(async () => {
+    const res = await fetch(`/author/graph/text-resources/versions?${base}`);
+    setVersions(
+      res.ok
+        ? ((await res.json()) as { versions: VersionEntry[] }).versions
+        : []
+    );
+  }, [base]);
+
+  React.useEffect(() => {
+    setVersions(null);
+    void load();
+  }, [load]);
+
+  async function viewVersion(id: string) {
+    const res = await fetch(
+      `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(id)}`
+    );
+    if (res.ok) {
+      setViewBody(
+        ((await res.json()) as { body: SerializedLexical | null }).body ?? null
+      );
+      setViewOpen(true);
+    }
+  }
+
+  async function restore() {
+    if (!confirmId) {
+      return;
+    }
+    setRestoring(true);
+    try {
+      const res = await fetch('/author/graph/text-resources/versions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          nodeId,
+          versionId: confirmId,
+          action: 'restore',
+        }),
+      });
+      if (res.ok) {
+        setConfirmId(null);
+        await load();
+      }
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+        <History className="size-3" aria-hidden />
+        {t('graph.panel.versions')}
+      </div>
+      {versions === null ? null : versions.length === 0 ? (
+        <p className="text-muted-foreground text-xs">
+          {t('graph.panel.versionsEmpty')}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {versions.map((v) => (
+            <li key={v.id} className="flex items-center gap-2 text-xs">
+              <Badge
+                variant={v.status === 'published' ? 'secondary' : 'outline'}
+              >
+                {v.status === 'published'
+                  ? t('graph.reader.statusPublished')
+                  : t('graph.reader.statusDraft')}
+              </Badge>
+              <span className="text-muted-foreground flex-1 truncate">
+                {new Date(v.updatedAt).toLocaleString()}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => void viewVersion(v.id)}
+                aria-label={t('graph.panel.versionView')}
+              >
+                <Eye className="size-3.5" aria-hidden />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setConfirmId(v.id)}
+                aria-label={t('graph.panel.versionRestore')}
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmId(null);
+          }
+        }}
+        title={t('graph.panel.versionRestoreConfirm')}
+        confirmLabel={t('graph.panel.versionRestore')}
+        cancelLabel={t('graph.panel.cancel')}
+        onConfirm={() => void restore()}
+        busy={restoring}
+        confirmIcon={<RotateCcw className="size-4" aria-hidden />}
+      />
+
+      {/* Version preview — a CONTAINED modal (clearly a preview), at the SAME
+          reading width as the reader (the viewer dialog widens + un-pads so the
+          shared `DocumentBodyView` column renders identically). */}
+      <DocumentViewerDialog
+        open={viewOpen}
+        onOpenChange={setViewOpen}
+        title={t('graph.panel.versionViewTitle')}
+      >
+        <DocumentBodyView
+          body={viewBody}
+          emptyLabel={t('graph.reader.empty')}
+        />
+      </DocumentViewerDialog>
     </section>
   );
 }

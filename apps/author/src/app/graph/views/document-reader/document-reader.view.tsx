@@ -1,14 +1,14 @@
 'use client';
 
-import { RichText } from '@payloadcms/richtext-lexical/react';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
-import { EmptyState } from '@workspace/ui/components/empty-state';
 import { cn } from '@workspace/ui/lib/utils';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
+
+import { DocumentBodyView, type SerializedLexical } from './document-body-view';
 
 /**
  * DocumentReader — the node-centric read-view for a `kind=text` node, opened from
@@ -31,24 +31,6 @@ type ReaderState =
       body: SerializedLexical | null;
       docStatus: string | null;
     };
-
-/** The Lexical editor-state shape the `bodies` richText field stores. */
-type SerializedLexical = {
-  root?: { children?: Array<{ type?: string; children?: unknown[] }> };
-};
-
-/** True when the body has no real content (null, or only empty paragraphs). */
-function isEmptyLexical(body: SerializedLexical | null): boolean {
-  const children = body?.root?.children;
-  if (!Array.isArray(children) || children.length === 0) {
-    return true;
-  }
-  return children.every(
-    (child) =>
-      child?.type === 'paragraph' &&
-      (!Array.isArray(child.children) || child.children.length === 0)
-  );
-}
 
 export function DocumentReader({
   spaceId,
@@ -149,33 +131,26 @@ export function DocumentReader({
         </Button>
       </div>
 
-      {/* reading column */}
+      {/* reading column — the shared read-mode container */}
       <div className="min-h-0 flex-1 overflow-auto">
-        <article className="mx-auto w-full max-w-[720px] px-6 py-10">
-          <h1 className="mb-6 text-3xl font-bold tracking-tight">{title}</h1>
-
-          {state.status === 'loading' ? (
-            <p className="text-muted-foreground text-sm">
-              {t('graph.reader.loading')}
-            </p>
-          ) : null}
-
-          {state.status === 'error' ? (
-            <p role="alert" className="text-destructive text-sm">
-              {t('graph.reader.error')}
-            </p>
-          ) : null}
-
-          {state.status === 'ready' && isEmptyLexical(state.body) ? (
-            <EmptyState>{t('graph.reader.empty')}</EmptyState>
-          ) : null}
-
-          {state.status === 'ready' && !isEmptyLexical(state.body) ? (
-            <div className="prose dark:prose-invert max-w-none">
-              <RichText data={state.body as never} />
-            </div>
-          ) : null}
-        </article>
+        {state.status === 'loading' ? (
+          <p className="text-muted-foreground mx-auto max-w-[720px] px-6 py-10 text-sm">
+            {t('graph.reader.loading')}
+          </p>
+        ) : state.status === 'error' ? (
+          <p
+            role="alert"
+            className="text-destructive mx-auto max-w-[720px] px-6 py-10 text-sm"
+          >
+            {t('graph.reader.error')}
+          </p>
+        ) : (
+          <DocumentBodyView
+            title={title}
+            body={state.body}
+            emptyLabel={t('graph.reader.empty')}
+          />
+        )}
       </div>
     </div>
   );
