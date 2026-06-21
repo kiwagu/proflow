@@ -1,17 +1,12 @@
 'use client';
 
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
-import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
-import {
-  SegmentedControl,
-  SegmentedControlButton,
-} from '@workspace/ui/components/segmented-control';
-import { FolderTree, Info } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
+import { WorkbenchChrome } from './workbench-chrome';
 import { buildContainment } from './containment';
 import {
   ResourcePanel,
@@ -45,7 +40,6 @@ export function DriveWorkbench({
   result: ProjectionResult;
   kbData?: KbViewData;
 }) {
-  const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -131,41 +125,7 @@ export function DriveWorkbench({
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
-      {/* top bar (prototype `app.jsx` header, 56px) — brand + single Drive tab */}
-      <header className="flex h-14 shrink-0 items-center gap-[14px] border-b px-4">
-        <div className="flex items-center gap-[9px]">
-          <span
-            aria-hidden
-            className="bg-primary text-primary-foreground grid size-[26px] place-items-center rounded-md text-xs font-bold"
-          >
-            P
-          </span>
-          <span className="text-base font-bold tracking-tight">
-            {t('graph.topbar.brand')}
-          </span>
-        </div>
-
-        {/* single live variant — `Drive` (no other tabs, no space switcher) */}
-        <div className="mx-auto">
-          <SegmentedControl>
-            <SegmentedControlButton active>
-              <FolderTree className="size-[15px]" aria-hidden />
-              {t('graph.variant.drive')}
-            </SegmentedControlButton>
-          </SegmentedControl>
-        </div>
-      </header>
-
-      {/* variant explainer strip (prototype VARIANT_NOTE) */}
-      <div className="bg-muted/40 text-muted-foreground flex shrink-0 items-center gap-2 border-b px-[18px] py-2 text-[13px]">
-        <Info className="size-3.5 shrink-0" aria-hidden />
-        <span>
-          <strong className="text-foreground font-semibold">
-            {t('graph.variant.drive')}:
-          </strong>{' '}
-          {t('graph.variant.driveNote')}
-        </span>
-      </div>
+      <WorkbenchChrome messages={messages} />
 
       {/* body: the Drive projection fills the remaining area; the document
           read-view overlays it when a document is open */}

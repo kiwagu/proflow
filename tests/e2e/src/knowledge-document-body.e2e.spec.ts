@@ -198,38 +198,7 @@ test.describe('@full knowledge document body', () => {
     await ungranted.dispose();
   });
 
-  test('edit deep-link: resolver redirects to the Payload admin body doc (basePath included); ungranted is bounced to the workbench', async () => {
-    const granted = await apiFor(tenant.granted);
-    const ungranted = await apiFor(tenant.ungranted);
-
-    const doc = await createTextDoc(granted, tenant.spaceId, 'Editable Doc');
-
-    // Granted → redirect to the native Payload admin document for this body.
-    // Assert the EXACT path incl. the `/author` basePath (a dropped basePath is
-    // the bug this guards — `.toContain` would miss it).
-    const res = await granted.get(`/author/graph/doc/${doc.node_id}/edit`, {
-      maxRedirects: 0,
-    });
-    expect([302, 303, 307, 308]).toContain(res.status());
-    expect(res.headers()['location']).toBe(
-      `/author/admin/collections/bodies/${doc.body_ref.doc_id}`
-    );
-
-    // Ungranted (no node access) → bounced to the workbench, never to the body.
-    const denied = await ungranted.get(
-      `/author/graph/doc/${doc.node_id}/edit`,
-      {
-        maxRedirects: 0,
-      }
-    );
-    expect([302, 303, 307, 308]).toContain(denied.status());
-    expect(denied.headers()['location']).toBe('/author/graph');
-
-    await granted.dispose();
-    await ungranted.dispose();
-  });
-
-  test('edit self-heals a bodyless text node: mints a body, bridges it, redirects to it', async () => {
+  test('PATCH self-heals a bodyless text node: mints + bridges a body, then saves content', async () => {
     const api = await apiFor(tenant.granted);
 
     // A text node created directly with NO body (e.g. pre-dating the body
@@ -249,14 +218,17 @@ test.describe('@full knowledge document body', () => {
     expect(error).toBeNull();
     const nodeId = (bare as { id: string }).id;
 
-    // Edit resolves → self-heals a body → redirects to it.
-    const res = await api.get(`/author/graph/doc/${nodeId}/edit`, {
-      maxRedirects: 0,
+    // Saving self-heals (`ensureNodeBody` mints + bridges a body) then writes it.
+    const marker = `Healed content ${Date.now()}`;
+    const patch = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId,
+        body: lexicalWithText(marker),
+        status: 'draft',
+      },
     });
-    expect([302, 303, 307, 308]).toContain(res.status());
-    expect(res.headers()['location']).toMatch(
-      /^\/author\/admin\/collections\/bodies\/.+/
-    );
+    expect(patch.status()).toBe(200);
 
     // The node is now bridged to a freshly-minted body (service reads the truth).
     const { data: row } = await tenant.service
@@ -270,6 +242,73 @@ test.describe('@full knowledge document body', () => {
     expect(ref?.collection).toBe('bodies');
     expect((ref?.doc_id ?? '').length).toBeGreaterThan(0);
 
+    // …and the read reflects the saved content.
+    const read = (await (
+      await api.get(
+        `/author/graph/text-resources?node_id=${nodeId}&space_id=${tenant.spaceId}`
+      )
+    ).json()) as { body: unknown };
+    expect(JSON.stringify(read.body)).toContain(marker);
+
     await api.dispose();
+  });
+
+  test('PATCH saves a draft then publishes; read reflects content + _status; ungranted cannot save', async () => {
+    const api = await apiFor(tenant.granted);
+    const doc = await createTextDoc(api, tenant.spaceId, 'Editable Body Doc');
+    const url = `/author/graph/text-resources?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+    const marker = `Edited content ${Date.now()}`;
+
+    // Save as DRAFT — Payload `update` writes a draft version.
+    const draftRes = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText(marker),
+        status: 'draft',
+      },
+    });
+    expect(draftRes.status()).toBe(200);
+
+    // The author surface reads the LATEST → sees the draft content + status.
+    const draftRead = (await (await api.get(url)).json()) as {
+      body: unknown;
+      status: string | null;
+    };
+    expect(draftRead.status).toBe('draft');
+    expect(JSON.stringify(draftRead.body)).toContain(marker);
+
+    // PUBLISH — promotes to `_status: published`.
+    const pubRes = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText(marker),
+        status: 'published',
+      },
+    });
+    expect(pubRes.status()).toBe(200);
+
+    const pubRead = (await (await api.get(url)).json()) as {
+      body: unknown;
+      status: string | null;
+    };
+    expect(pubRead.status).toBe('published');
+    expect(JSON.stringify(pubRead.body)).toContain(marker);
+
+    // RLS: an ungranted actor cannot save (node not visible → gate 404).
+    const ungranted = await apiFor(tenant.ungranted);
+    const denied = await ungranted.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('should not persist'),
+        status: 'published',
+      },
+    });
+    expect(denied.status()).toBe(404);
+
+    await api.dispose();
+    await ungranted.dispose();
   });
 });

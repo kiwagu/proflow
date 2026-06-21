@@ -4,32 +4,33 @@ import { RichText } from '@payloadcms/richtext-lexical/react';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { cn } from '@workspace/ui/lib/utils';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 
 /**
- * DocumentReader — the minimal, empty-but-live read-view for a `kind=text` node
- * (increment A3). It is the embryonic Workbench reading surface: a node-centric
- * document canvas opened from Drive (a content card click), NOT the ResourcePanel
- * (which stays the Details drawer).
+ * DocumentReader — the node-centric read-view for a `kind=text` node, opened from
+ * Drive. Reads the REAL Lexical body through the RLS-gated body endpoint
+ * (`GET /author/graph/text-resources`, ADR-0002 §2) and renders it read-only with
+ * Payload's own `RichText` serializer (zero bespoke renderer). Shows the
+ * draft/published status badge.
  *
- * It reads the REAL Lexical body through the RLS-gated body endpoint
- * (`GET /author/graph/text-resources` — node access resolved under the user's own
- * RLS, then the body fetched by `node_id`, ADR-0002 §2) and renders it read-only
- * with Payload's own Lexical→React serializer (`RichText`), so the rendered output
- * matches exactly what the future editor produces — zero bespoke renderer, zero
- * duplication.
- *
- * No mock: a freshly created document has a real but empty body, so the reader
- * shows an honest empty state until the editor (a later increment) adds content.
+ * Editing happens on a dedicated route (`/author/doc/[nodeId]`) that mounts
+ * Payload's FULL editor under its own provider environment (`RootLayout` +
+ * `RenderLexical`) — no admin nav. "Edit" navigates there; on return the reader
+ * refetches (window focus) so the just-saved body shows.
  */
 
 type ReaderState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; body: SerializedLexical | null };
+  | {
+      status: 'ready';
+      body: SerializedLexical | null;
+      docStatus: string | null;
+    };
 
 /** The Lexical editor-state shape the `bodies` richText field stores. */
 type SerializedLexical = {
@@ -77,9 +78,16 @@ export function DocumentReader({
       if (!res.ok) {
         throw new Error('read');
       }
-      const data = (await res.json()) as { body?: SerializedLexical | null };
+      const data = (await res.json()) as {
+        body?: SerializedLexical | null;
+        status?: string | null;
+      };
       if (mounted.current) {
-        setState({ status: 'ready', body: data.body ?? null });
+        setState({
+          status: 'ready',
+          body: data.body ?? null,
+          docStatus: data.status ?? null,
+        });
       }
     } catch {
       if (mounted.current) {
@@ -91,8 +99,8 @@ export function DocumentReader({
   React.useEffect(() => {
     mounted.current = true;
     void loadBody();
-    // Returning from the Payload admin editor (a full navigation away) refocuses
-    // the window — refetch so the reader reflects a just-saved edit.
+    // Returning from the editor route (a full navigation away) refocuses the
+    // window — refetch so the reader reflects a just-saved edit.
     const onFocus = () => void loadBody();
     window.addEventListener('focus', onFocus);
     return () => {
@@ -101,25 +109,40 @@ export function DocumentReader({
     };
   }, [loadBody]);
 
-  // Edit opens the node-centric resolver, which 302s to the native Payload admin
-  // document (Lexical editor + versions/drafts) — the editor is Payload's own.
-  const editHref = `${AUTHOR_BASE_PATH}/graph/doc/${encodeURIComponent(
-    nodeId
-  )}/edit`;
+  // "Edit" opens the dedicated editor route (Payload's full editor under its own
+  // RootLayout environment, no admin nav).
+  const editHref = `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}`;
 
   return (
     <div className="bg-background absolute inset-0 z-10 flex flex-col">
-      {/* reader toolbar — back + title */}
+      {/* reader toolbar — back + status + edit */}
       <div className="flex items-center gap-2 border-b px-5 py-3">
         <Button variant="ghost" size="sm" onClick={onClose} className="gap-1.5">
           <ArrowLeft className="size-4" aria-hidden />
           {t('graph.reader.back')}
         </Button>
+
+        {state.status === 'ready' && state.docStatus ? (
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[11px] font-medium',
+              state.docStatus === 'published'
+                ? 'bg-primary/10 text-primary'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            {state.docStatus === 'published'
+              ? t('graph.reader.statusPublished')
+              : t('graph.reader.statusDraft')}
+          </span>
+        ) : null}
+
         <Button
           variant="outline"
           size="sm"
           className="ml-auto gap-1.5"
           onClick={() => window.location.assign(editHref)}
+          disabled={state.status !== 'ready'}
         >
           <Pencil className="size-4" aria-hidden />
           {t('graph.reader.edit')}

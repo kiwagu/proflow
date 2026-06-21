@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getPayload } from 'payload';
 import { z } from 'zod';
 
-import { createTextResource } from '@/knowledge/fanout';
+import { createTextResource, ensureNodeBody } from '@/knowledge/fanout';
 import {
   isAuthFailure,
   requireRlsSession,
@@ -28,6 +28,11 @@ import {
  *        gated by Postgres RLS (`space.knowledge.create`) under the user's
  *        session; the body is born via the Payload Local API. All-or-nothing —
  *        a post-INSERT failure is compensated by deletion (see the fan-out).
+ * PATCH — save the Lexical body from the in-workbench editor. Gate node access
+ *        under RLS, resolve (self-healing) the body doc, then `payload.update`
+ *        the `body` field — which records a VERSION (Payload versions fire on any
+ *        update, not only the admin form). The editor is the workbench's own
+ *        embeddable Lexical; the storage + versioning stay Payload's.
  *
  * Body-less kinds (`link`/`tag`/`folder`/`file`/`video`) stay on `resources`.
  * Postgres RLS is the SOLE write authority; zero service-role.
@@ -87,10 +92,14 @@ export async function GET(request: Request) {
     limit: 1,
     pagination: false,
   });
-  const doc = docs[0] as { body?: unknown } | undefined;
+  const doc = docs[0] as { body?: unknown; _status?: string } | undefined;
 
   return NextResponse.json(
-    { node_id: nodeId, body: doc?.body ?? null },
+    {
+      node_id: nodeId,
+      body: doc?.body ?? null,
+      status: doc?._status ?? null,
+    },
     { headers: { 'Cache-Control': 'no-store' } }
   );
 }
@@ -141,6 +150,80 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : 'Text resource create failed.';
     // RLS rejection (no space.knowledge.create) → clean failure, no row.
+    return NextResponse.json({ message }, { status: 422 });
+  }
+}
+
+const updateSchema = z.object({
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1), // knr_…
+  body: z.unknown(), // a Lexical SerializedEditorState ({ root })
+  // 'draft' saves a draft version; 'published' promotes it (Payload drafts).
+  status: z.enum(['draft', 'published']).default('draft'),
+});
+
+export async function PATCH(request: Request) {
+  const raw = await request.json().catch(() => null);
+  const parsed = updateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: 'Invalid request', issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
+  }
+  const { db } = session;
+
+  // Gate: a text node the caller may access under RLS (no row ⇒ no access).
+  const { data: node, error: nodeErr } = await db
+    .from('knowledge_resources')
+    .select('id')
+    .eq('id', parsed.data.nodeId)
+    .eq('space_id', parsed.data.spaceId)
+    .eq('kind', 'text')
+    .maybeSingle();
+  if (nodeErr) {
+    return NextResponse.json({ message: nodeErr.message }, { status: 500 });
+  }
+  if (!node) {
+    return NextResponse.json(
+      { message: 'Text resource not found.' },
+      { status: 404 }
+    );
+  }
+
+  try {
+    const payload = await getPayload({ config });
+    // Self-heal a missing body, then write — `update` records a version.
+    const docId = await ensureNodeBody(
+      { nodeId: parsed.data.nodeId, spaceId: parsed.data.spaceId },
+      { db, payload }
+    );
+    // draft → save a draft version; published → promote (`_status: published`).
+    const isDraft = parsed.data.status === 'draft';
+    const data = (
+      isDraft
+        ? { body: parsed.data.body }
+        : { body: parsed.data.body, _status: 'published' }
+    ) as never;
+    await payload.update({
+      collection: 'bodies',
+      id: docId,
+      data,
+      draft: isDraft,
+      overrideAccess: true,
+    });
+    return NextResponse.json(
+      { ok: true, status: parsed.data.status },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Body save failed.';
     return NextResponse.json({ message }, { status: 422 });
   }
 }
