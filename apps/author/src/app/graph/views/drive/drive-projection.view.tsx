@@ -52,6 +52,49 @@ import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
 const CARD_ACTION_TRIGGER =
   'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100';
 
+// Single vs double click on a card (the Google-Drive split): single click opens
+// the shared Details panel, double click OPENS the node (folder → navigate in,
+// document → read-view). A lone click defers to Details on a short timer so a
+// double-click can cancel it — opening never flashes the Details panel first.
+// Keyboard Enter on the card button fires a `detail === 0` click, so it lands on
+// Details (the safe, reversible action); opening by keyboard is one Enter further,
+// from the panel.
+//
+// Discrimination is on the click's running count (`event.detail`), NOT the separate
+// `dblclick` event: the 2nd click of a pair arrives as `detail === 2` and Opens
+// directly. Relying on `dblclick` was fragile — the browser drops it whenever a
+// re-render swaps the card element between the two clicks (e.g. the reader's
+// focus-refetch firing after the editor round-trip), which silently degraded the
+// split. There is also no long-lived "armed" flag to wedge: each click cancels and
+// reschedules its own pending Details, so the split can never fall back to
+// open-on-single-click.
+const CARD_DOUBLE_CLICK_MS = 250;
+
+function useCardOpen(onDetails: () => void, onOpen: () => void) {
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = React.useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
+  React.useEffect(() => cancel, [cancel]);
+  return {
+    onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (event.detail > 1) {
+        cancel(); // 2nd click of a pair → Open, drop the pending Details.
+        onOpen();
+        return;
+      }
+      cancel();
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        onDetails();
+      }, CARD_DOUBLE_CLICK_MS);
+    },
+  };
+}
+
 /**
  * DriveProjectionView — the prototype `DriveView`, pixel-1:1 (slice-11 Ф3 §2,
  * ADR-0014 `view='drive'`). The "Google Drive" projection over the SAME graph:
@@ -358,6 +401,7 @@ export function DriveProjectionView({
                 })}
                 layout={layout}
                 onOpen={() => navigate(sub.id)}
+                onDetails={() => onSelect(sub.id)}
                 actions={
                   <NodeActionsMenu
                     spaceId={spaceId}
@@ -383,6 +427,7 @@ export function DriveProjectionView({
                     ? navigate(target.id)
                     : onSelect(target.id)
                 }
+                onDetails={() => onSelect(target.id)}
               />
             ))}
           </div>
@@ -407,12 +452,13 @@ export function DriveProjectionView({
                 layout={layout}
                 selected={item.id === selectedId}
                 onOpen={() =>
-                  // A document opens its read-view; every other kind opens the
-                  // shared Details panel (the click→read, ⋯→Details split).
+                  // Double-click OPENS: a document opens its read-view; every
+                  // other kind has no distinct open, so it falls back to Details.
                   item.kind === 'text' && onOpenDocument
                     ? onOpenDocument(item.id)
                     : onSelect(item.id)
                 }
+                onDetails={() => onSelect(item.id)}
                 actions={
                   <NodeActionsMenu
                     spaceId={spaceId}
@@ -471,8 +517,16 @@ export function DriveProjectionView({
 
 // ── cards (prototype FolderCard / ItemCard) ───────────────────────────────
 
-const GRID_WRAP =
-  'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5';
+// Grid = flex-wrap of FIXED-width cards (NOT a `1fr` grid): card width must stay
+// constant whether the Details panel is open or closed — `1fr`/`minmax` would
+// restretch every card when the available width changes, so the icons/tiles
+// visibly jump. With a fixed basis (`shrink-0` so two-up rows never squeeze), a
+// width change only reflows the column COUNT (pure flex), never the card size —
+// and EVERY kind (folder, document, file) shares this one width, so they line up.
+// Cards left-align; trailing space is fine. Width is generous so longer titles
+// stay readable before they truncate.
+const GRID_CARD = 'w-[264px] shrink-0';
+const GRID_WRAP = 'flex flex-wrap gap-2.5';
 const LIST_WRAP = 'flex flex-col gap-1.5';
 
 function FolderCard({
@@ -481,23 +535,30 @@ function FolderCard({
   layout,
   shortcut,
   onOpen,
+  onDetails,
   actions,
 }: {
   title: string;
   subtitle: string;
   layout: DriveLayout;
   shortcut?: boolean;
+  /** Double-click / Open: navigate into the folder (or follow the shortcut). */
   onOpen: () => void;
+  /** Single-click: open the shared Details panel for this node. */
+  onDetails: () => void;
   /** Hover `⋯` action menu for THIS folder. Folders navigate on click, so actions
    * need a separate affordance — a deliberate delta from the prototype (which
    * navigated folders with no action surface). Omitted for shortcut cards. */
   actions?: React.ReactNode;
 }) {
   const list = layout === 'list';
+  const open = useCardOpen(onDetails, onOpen);
   return (
-    <div className="group relative">
+    <div
+      className={cn('group relative select-none', list ? 'w-full' : GRID_CARD)}
+    >
       <CardTile
-        onClick={onOpen}
+        {...open}
         className={cn('w-full', list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4')}
       >
         {shortcut ? (
@@ -542,6 +603,7 @@ function ItemCard({
   layout,
   selected,
   onOpen,
+  onDetails,
   actions,
 }: {
   t: GraphTranslator;
@@ -551,12 +613,16 @@ function ItemCard({
   currentUserId: string | null;
   layout: DriveLayout;
   selected: boolean;
+  /** Double-click / Open: a document opens its read-view (other kinds: Details). */
   onOpen: () => void;
+  /** Single-click: open the shared Details panel for this node. */
+  onDetails: () => void;
   /** Hover `⋯` action menu for this node (Details opens the panel). */
   actions?: React.ReactNode;
 }) {
   const list = layout === 'list';
   const Icon = iconForKind(node.kind);
+  const open = useCardOpen(onDetails, onOpen);
 
   // Meta line (prototype `n.meta || meta.label · owner`): link host / file size /
   // video duration from the REAL `kb` satellites (`resource_media_meta` /
@@ -577,9 +643,11 @@ function ItemCard({
     });
 
   return (
-    <div className="group relative">
+    <div
+      className={cn('group relative select-none', list ? 'w-full' : GRID_CARD)}
+    >
       <CardTile
-        onClick={onOpen}
+        {...open}
         data-selected={selected}
         className={cn(
           'w-full',

@@ -127,54 +127,71 @@ export function DriveWorkbench({
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       <WorkbenchChrome messages={messages} />
 
-      {/* body: the Drive projection fills the remaining area; the document
-          read-view overlays it when a document is open */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <DriveProjectionView
-          result={result}
-          messages={messages}
-          spaceId={spaceId}
-          kbData={kbData}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onOpenDocument={(id) => navigate({ doc: id })}
-          folderId={folderId}
-          onNavigate={(id) => navigate({ folder: id, doc: null })}
-          onMutated={refresh}
-          refreshKey={refreshKey}
-        />
-
-        {spaceId && openDoc ? (
-          <DocumentReader
-            key={openDoc.id}
-            spaceId={spaceId}
-            nodeId={openDoc.id}
-            title={openDoc.title}
+      {/* body: a flex row — the content area (Drive projection, with the document
+          read-view overlaying it) grows; the shared Details panel is an INLINE
+          right column that shrinks the content beside it when a node is selected */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 overflow-hidden">
+          <DriveProjectionView
+            result={result}
             messages={messages}
-            onClose={() => router.back()}
+            spaceId={spaceId}
+            kbData={kbData}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onOpenDocument={(id) => {
+              // Opening a document in the reader dismisses the transient Details
+              // panel — otherwise it keeps showing the previously-selected node
+              // (right) while a different document reads (left): a false pairing.
+              setSelectedId(undefined);
+              navigate({ doc: id });
+            }}
+            folderId={folderId}
+            onNavigate={(id) => {
+              // Navigating to another folder likewise clears a now-stale Details
+              // selection (the node may not even live in the new folder).
+              setSelectedId(undefined);
+              navigate({ folder: id, doc: null });
+            }}
+            onMutated={refresh}
+            refreshKey={refreshKey}
+          />
+
+          {spaceId && openDoc ? (
+            <DocumentReader
+              key={openDoc.id}
+              spaceId={spaceId}
+              nodeId={openDoc.id}
+              title={openDoc.title}
+              messages={messages}
+              onClose={() => router.back()}
+            />
+          ) : null}
+        </div>
+
+        {/* shared Details panel — single-click a node opens it (the authoritative
+            surface); it renders nothing (no width) while no node is selected */}
+        {spaceId ? (
+          <ResourcePanel
+            spaceId={spaceId}
+            messages={messages}
+            node={selectedNode}
+            attributes={
+              selectedNode
+                ? kbData?.attributesByItem[selectedNode.id]
+                : undefined
+            }
+            containment={containment}
+            open={selectedNode != null}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) {
+                setSelectedId(undefined);
+              }
+            }}
+            onMutated={refresh}
           />
         ) : null}
       </div>
-
-      {/* shared node-action drawer — opens on select (the authoritative surface) */}
-      {spaceId ? (
-        <ResourcePanel
-          spaceId={spaceId}
-          messages={messages}
-          node={selectedNode}
-          attributes={
-            selectedNode ? kbData?.attributesByItem[selectedNode.id] : undefined
-          }
-          containment={containment}
-          open={selectedNode != null}
-          onOpenChange={(isOpen) => {
-            if (!isOpen) {
-              setSelectedId(undefined);
-            }
-          }}
-          onMutated={refresh}
-        />
-      ) : null}
     </div>
   );
 }

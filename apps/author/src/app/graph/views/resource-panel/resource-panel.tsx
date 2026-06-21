@@ -12,13 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@workspace/ui/components/sheet';
 import { Textarea } from '@workspace/ui/components/textarea';
 import {
   Check,
@@ -42,8 +35,11 @@ import type { KbAttributes, ScopeChoice } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
 /**
- * ResourcePanel — the node DETAIL drawer ("Details"): select a node (or pick
- * Details from its `⋯` menu) → side Sheet with the rich, edit-heavy surface.
+ * ResourcePanel — the node DETAIL panel ("Details"): single-click a node (or pick
+ * Details from its `⋯` menu) → an INLINE right-side panel (the prototype's `aside`,
+ * not a modal): a fixed-width column that lives in the workbench flex row and
+ * shrinks the content beside it (no overlay, the grid stays interactive), closed by
+ * the header `✕`. It carries the rich, edit-heavy surface.
  * Quick manipulations (new subfolder / rename / move / delete) do NOT live here —
  * they are one click from the card / toolbar via the shared {@link NodeActionsMenu},
  * which the header re-uses (sans its Details item) so the same actions are reachable
@@ -106,7 +102,7 @@ export function ResourcePanel({
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const [busy, setBusy] = React.useState(false);
 
-  if (!node) {
+  if (!node || !open) {
     return null;
   }
   const KindIcon = iconForKind(node.kind);
@@ -128,68 +124,71 @@ export function ResourcePanel({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden
-              className="bg-muted grid size-8 shrink-0 place-items-center rounded-md"
-            >
-              <KindIcon className="text-muted-foreground size-[17px]" />
-            </span>
-            <SheetDescription className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
-              {kindLabel(t, node.kind)}
-            </SheetDescription>
-            {/* Same action menu as the cards — drawer = "Details", so no Details item. */}
-            <NodeActionsMenu
-              spaceId={spaceId}
-              t={t}
-              node={node}
-              containment={containment}
-              onMutated={onMutated}
-              onActed={() => onOpenChange(false)}
-            />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              aria-label={t('graph.panel.close')}
-            >
-              <X className="size-4" aria-hidden />
-            </Button>
-          </div>
+    <aside
+      aria-label={node.title}
+      className="bg-card motion-safe:animate-in motion-safe:slide-in-from-right-4 flex h-full w-[360px] shrink-0 flex-col overflow-y-auto border-l motion-safe:duration-200"
+    >
+      {/* header — icon + kind + actions + close. Same vertical rhythm as the main
+          toolbar (`py-3` over 32px-tall controls) so the panel's bottom border
+          lines up with the content toolbar's across the split. */}
+      <div className="flex items-center gap-2.5 border-b px-4 py-3">
+        <span
+          aria-hidden
+          className="bg-muted grid size-8 shrink-0 place-items-center rounded-md"
+        >
+          <KindIcon className="text-muted-foreground size-[17px]" />
+        </span>
+        <span className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
+          {kindLabel(t, node.kind)}
+        </span>
+        {/* Same action menu as the cards — panel = "Details", so no Details item. */}
+        <NodeActionsMenu
+          spaceId={spaceId}
+          t={t}
+          node={node}
+          containment={containment}
+          onMutated={onMutated}
+          onActed={() => onOpenChange(false)}
+        />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={() => onOpenChange(false)}
+          aria-label={t('graph.panel.close')}
+        >
+          <X className="size-4" aria-hidden />
+        </Button>
+      </div>
 
-          <SheetTitle className="text-left">{node.title}</SheetTitle>
-
+      <div className="flex flex-col gap-5 px-4 py-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-xl font-bold tracking-tight">{node.title}</h2>
           {node.status ? (
             <div>
               <Badge variant="outline">{node.status}</Badge>
             </div>
           ) : null}
-        </SheetHeader>
-
-        <div className="flex flex-col gap-5 px-4 pb-4">
-          <EditableDescription
-            t={t}
-            value={attributes?.description ?? ''}
-            nodeId={node.id}
-            disabled={busy}
-            onSave={onSaveDescription}
-          />
-          <VisibilitySection
-            t={t}
-            spaceId={spaceId}
-            nodeId={node.id}
-            disabled={busy}
-            onMutated={onMutated}
-          />
-          {node.kind === 'text' ? (
-            <VersionsSection t={t} spaceId={spaceId} nodeId={node.id} />
-          ) : null}
         </div>
-      </SheetContent>
-    </Sheet>
+
+        <EditableDescription
+          t={t}
+          value={attributes?.description ?? ''}
+          nodeId={node.id}
+          disabled={busy}
+          onSave={onSaveDescription}
+        />
+        <VisibilitySection
+          t={t}
+          spaceId={spaceId}
+          nodeId={node.id}
+          disabled={busy}
+          onMutated={onMutated}
+        />
+        {node.kind === 'text' ? (
+          <VersionsSection t={t} spaceId={spaceId} nodeId={node.id} />
+        ) : null}
+      </div>
+    </aside>
   );
 }
 
