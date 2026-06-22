@@ -198,11 +198,14 @@ export async function ensureNodeBody(
 ): Promise<string> {
   const { db, payload } = deps;
 
+  // Resolve the body doc from the MAIN collection (NOT `draft: true`, which queries
+  // the versions view keyed on the `latest` flag). A pruned latest version leaves
+  // the draft view empty even though the body doc still exists — using the main
+  // collection avoids a spurious re-create that would hit the `node_id` unique key.
   const existing = await payload.find({
     collection: 'bodies',
     where: { node_id: { equals: input.nodeId } },
     overrideAccess: true,
-    draft: true,
     depth: 0,
     limit: 1,
     pagination: false,
