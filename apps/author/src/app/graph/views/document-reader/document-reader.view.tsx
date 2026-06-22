@@ -3,7 +3,7 @@
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { cn } from '@workspace/ui/lib/utils';
-import { ArrowLeft, Pencil } from 'lucide-react';
+import { ArrowLeft, EyeOff, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { type Containment } from '@/app/graph/containment';
@@ -35,8 +35,10 @@ type ReaderState =
       status: 'ready';
       body: SerializedLexical | null;
       docStatus: string | null;
-      /** Whether a published version exists — read mode shows ONLY that. */
+      /** Currently published — read mode shows the body ONLY then. */
       published: boolean;
+      /** Ever published (history) — to tell "never published" from "retracted". */
+      everPublished: boolean;
     };
 
 export function DocumentReader({
@@ -83,6 +85,7 @@ export function DocumentReader({
         body?: SerializedLexical | null;
         status?: string | null;
         published?: boolean;
+        everPublished?: boolean;
       };
       if (mounted.current) {
         setState({
@@ -90,6 +93,7 @@ export function DocumentReader({
           body: data.body ?? null,
           docStatus: data.status ?? null,
           published: data.published ?? false,
+          everPublished: data.everPublished ?? false,
         });
       }
     } catch {
@@ -111,6 +115,29 @@ export function DocumentReader({
       window.removeEventListener('focus', onFocus);
     };
   }, [loadBody]);
+
+  // "Unpublish" — retract the document to a draft (status-only PATCH, no body),
+  // the inverse of Publish. Read mode is published-only, so once it's a draft there
+  // is nothing to READ here — LEAVE the reader (refresh the canvas + close) rather
+  // than strand the user on the "not published" notice. The draft stays editable
+  // from Drive (⋯ → Edit / open).
+  const [unpublishing, setUnpublishing] = React.useState(false);
+  const onUnpublish = React.useCallback(async () => {
+    setUnpublishing(true);
+    try {
+      const res = await fetch('/author/graph/text-resources', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId, nodeId, status: 'draft' }),
+      });
+      if (res.ok) {
+        onMutated();
+        onClose();
+      }
+    } finally {
+      setUnpublishing(false);
+    }
+  }, [spaceId, nodeId, onMutated, onClose]);
 
   return (
     <div className="bg-background absolute inset-0 z-10 flex flex-col">
@@ -136,26 +163,42 @@ export function DocumentReader({
           </span>
         ) : null}
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto gap-1.5"
-          onClick={onEdit}
-          disabled={state.status !== 'ready' || preparingEdit}
-        >
-          <Pencil className="size-4" aria-hidden />
-          {t('graph.reader.edit')}
-        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          {/* Unpublish — shown only while currently published (inverse of Publish). */}
+          {state.status === 'ready' && state.published ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => void onUnpublish()}
+              disabled={unpublishing}
+            >
+              <EyeOff className="size-4" aria-hidden />
+              {t('graph.reader.unpublish')}
+            </Button>
+          ) : null}
 
-        {/* Document actions (rename / move / delete). A delete closes the reader. */}
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={{ id: nodeId, kind: 'text', title }}
-          containment={containment}
-          onMutated={onMutated}
-          onActed={onClose}
-        />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onEdit}
+            disabled={state.status !== 'ready' || preparingEdit}
+          >
+            <Pencil className="size-4" aria-hidden />
+            {t('graph.reader.edit')}
+          </Button>
+
+          {/* Document actions (rename / move / delete). A delete closes the reader. */}
+          <NodeActionsMenu
+            spaceId={spaceId}
+            t={t}
+            node={{ id: nodeId, kind: 'text', title }}
+            containment={containment}
+            onMutated={onMutated}
+            onActed={onClose}
+          />
+        </div>
       </div>
 
       {/* reading column — the shared read-mode container */}
@@ -172,10 +215,15 @@ export function DocumentReader({
             {t('graph.reader.error')}
           </p>
         ) : !state.published ? (
-          // No published version yet — read mode never shows the draft. The
-          // content stays reachable for editing via Details → Edit.
+          // Not currently published — read mode never shows a draft. The content
+          // stays reachable for editing via Details → Edit. Distinguish a doc that
+          // was retracted (Unpublish) from one never published, for honest copy.
           <p className="text-muted-foreground mx-auto max-w-[720px] px-6 py-10 text-sm">
-            {t('graph.reader.unpublished')}
+            {t(
+              state.everPublished
+                ? 'graph.reader.retracted'
+                : 'graph.reader.unpublished'
+            )}
           </p>
         ) : (
           <DocumentBodyView

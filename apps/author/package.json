@@ -53,6 +53,7 @@
     "@workspace/typescript-config": "workspace:*",
     "@workspace/ui": "workspace:*",
     "cross-env": "catalog:",
+    "diff": "^9.0.0",
     "dotenv": "catalog:",
     "graphql": "^16.14.2",
     "jose": "^6.2.3",
