@@ -223,3 +223,24 @@ export async function loadNodeMetaForItems(
   }
   return map;
 }
+
+/**
+ * The current user's starred resource ids in a space. A thin RLS-scoped select
+ * over `resource_user_state` (`starred = true`) — the own-rows select policy
+ * already isolates the user, so no `user_id` filter is needed here. Uses the
+ * partial `(user_id, space_id) where starred` index. An ungranted user gets `[]`.
+ */
+export async function loadStarredIds(spaceId: string): Promise<string[]> {
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('resource_user_state')
+    .select('resource_id')
+    .eq('space_id', spaceId)
+    .eq('starred', true);
+  if (error) {
+    throw new Error(`loadStarredIds: ${error.message}`);
+  }
+  return (data ?? []).map(
+    (row) => (row as { resource_id: string }).resource_id
+  );
+}

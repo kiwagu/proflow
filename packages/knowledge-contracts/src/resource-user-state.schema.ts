@@ -28,8 +28,27 @@ export const resourceUserStateSchema = z.object({
   resource_id: z.string(), // knr_…
   coarse_status: coarseStatusSchema,
   progress: z.number().int().min(0).max(100).nullable().optional(),
+  // Per-(user, resource) pin flag. Mirrors the NOT NULL DEFAULT false column:
+  // the row always carries it; absent input defaults to unstarred.
+  starred: z.boolean().default(false),
 });
 export type ResourceUserState = z.infer<typeof resourceUserStateSchema>;
+
+/**
+ * Request to toggle a resource's `starred` flag for the current user. `nodeId` is
+ * the resource id (knr_…); `spaceId` scopes the per-user-state row. The write rides
+ * the existing per-user-state path (own rows, verb space.knowledge.progress).
+ */
+export const starredToggleSchema = z.object({
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1),
+  starred: z.boolean(),
+});
+export type StarredToggle = z.infer<typeof starredToggleSchema>;
+
+export function parseStarredToggle(raw: unknown) {
+  return starredToggleSchema.safeParse(raw);
+}
 
 /**
  * Overlay = a map node_id → coarse_status. The minimum the gating function needs

@@ -33,6 +33,12 @@ export type KbViewData = {
   containment: ContainmentEdge[];
   shortcuts: ShortcutEdge[];
   currentUserId: string | null;
+  /**
+   * The ids of nodes the CURRENT user has starred in this space (per-user state,
+   * own rows under RLS). Drives the Drive sidebar's "Starred" filter and the
+   * filled/empty star toggle on each card. Empty when nothing is starred.
+   */
+  starredIds: string[];
 };
 
 export type ProjectionViewProps = {

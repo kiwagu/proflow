@@ -48,11 +48,14 @@ export {
 export {
   coarseStatusSchema,
   parseResourceUserStateMap,
+  parseStarredToggle,
   resourceUserStateMapSchema,
   resourceUserStateSchema,
+  starredToggleSchema,
   type CoarseStatus,
   type ResourceUserState,
   type ResourceUserStateMap,
+  type StarredToggle,
 } from './resource-user-state.schema.js';
 
 export {

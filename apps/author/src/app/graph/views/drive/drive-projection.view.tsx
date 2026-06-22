@@ -118,14 +118,38 @@ function useCardOpen(onDetails: () => void, onOpen: () => void) {
  * 220px grid min, etc.); color is always a token so dark mode works.
  */
 
-type NavItem = { icon: LucideIcon; labelKey: string; active?: boolean };
+/**
+ * A sidebar filter. `scope` present = the item is WIRED to a canvas filter
+ * (the active one highlights); absent = a not-yet-implemented stub that, for now,
+ * just returns to the tree root (Shared / Recent / Trash land in later passes).
+ */
+type DriveScope = 'kb' | 'starred';
+type NavItem = {
+  icon: LucideIcon;
+  /** Stable React key / id for the row. */
+  key: string;
+  /** Resolves the label with a LITERAL i18n key (keeps keys statically extractable
+   * even though the nav is data-driven). */
+  label: (t: GraphTranslator) => string;
+  scope?: DriveScope;
+};
 
 const NAV_ITEMS: readonly NavItem[] = [
-  { icon: Database, labelKey: 'graph.drive.navKnowledgeBase', active: true },
-  { icon: Users, labelKey: 'graph.drive.navShared' },
-  { icon: Clock, labelKey: 'graph.drive.navRecent' },
-  { icon: Star, labelKey: 'graph.drive.navStarred' },
-  { icon: Trash2, labelKey: 'graph.drive.navTrash' },
+  {
+    icon: Database,
+    key: 'navKnowledgeBase',
+    label: (t) => t('graph.drive.navKnowledgeBase'),
+    scope: 'kb',
+  },
+  { icon: Users, key: 'navShared', label: (t) => t('graph.drive.navShared') },
+  { icon: Clock, key: 'navRecent', label: (t) => t('graph.drive.navRecent') },
+  {
+    icon: Star,
+    key: 'navStarred',
+    label: (t) => t('graph.drive.navStarred'),
+    scope: 'starred',
+  },
+  { icon: Trash2, key: 'navTrash', label: (t) => t('graph.drive.navTrash') },
 ];
 
 type DriveLayout = 'grid' | 'list';
@@ -146,11 +170,27 @@ export function DriveProjectionView({
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
-  const containmentEdges = kbData?.containment ?? [];
-  const shortcutEdges = kbData?.shortcuts ?? [];
+  // Stable references for the empty fallbacks so the `containment`/`shortcuts`
+  // memos below don't recompute every render (a fresh `[]` would invalidate them).
+  const containmentEdges = React.useMemo(
+    () => kbData?.containment ?? [],
+    [kbData]
+  );
+  const shortcutEdges = React.useMemo(() => kbData?.shortcuts ?? [], [kbData]);
   const attributesByItem = kbData?.attributesByItem ?? {};
   const metaByItem = kbData?.metaByItem ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
+
+  // Which sidebar filter is active. 'kb' browses the containment tree (the default
+  // Drive); 'starred' shows the flat set of THIS user's starred nodes — a
+  // cross-cutting filter, not a folder. Opening any folder returns to 'kb'. Local
+  // (like `layout`): a transient lens over the same RLS-resolved canvas.
+  const [scope, setScope] = React.useState<DriveScope>('kb');
+  const isStarred = scope === 'starred';
+  const starredSet = React.useMemo(
+    () => new Set(kbData?.starredIds ?? []),
+    [kbData]
+  );
 
   const containment = React.useMemo(
     () => buildContainment(result.items, containmentEdges),
@@ -178,20 +218,50 @@ export function DriveProjectionView({
 
   // Folder location is CONTROLLED by the workbench via the URL (`?folder=`), so
   // it survives refresh and browser history. `navigate(null)` returns to root.
+  // Navigating into the tree always drops back to the 'kb' (browse) scope — the
+  // 'starred' filter is a flat lens, never a folder you can sit inside.
   const navigate = React.useCallback(
-    (id: string | null) => onNavigate?.(id),
+    (id: string | null) => {
+      setScope('kb');
+      onNavigate?.(id);
+    },
     [onNavigate]
   );
   const [layout, setLayout] = React.useState<DriveLayout>('grid');
   const [createRequest, setCreateRequest] =
     React.useState<CreateRequest | null>(null);
 
-  // A mutation may have removed the current folder — fall back to root.
+  // Toggle this node's per-user starred flag — an UPSERT of the user's own
+  // `resource_user_state` row under RLS (sole write authority), then re-resolve so
+  // the star + the "Starred" filter reflect the new state. No optimistic flip: the
+  // server round-trip is the source of truth (poc-no-fallbacks).
+  const toggleStar = React.useCallback(
+    (nodeId: string, next: boolean) => {
+      if (!spaceId) {
+        return;
+      }
+      void fetch('/author/graph/starred', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId, nodeId, starred: next }),
+      }).then((res) => {
+        if (res.ok) {
+          onMutated();
+        }
+      });
+    },
+    [spaceId, onMutated]
+  );
+
+  // A mutation may have removed the current folder — fall back to root. Clear the
+  // stale folder DIRECTLY (not via `navigate`, which also resets `scope`): a setState
+  // inside this effect would be a needless cascading render, and the scope is
+  // unaffected by a vanished folder.
   React.useEffect(() => {
     if (folderId && !containment.byId.has(folderId)) {
-      navigate(null);
+      onNavigate?.(null);
     }
-  }, [folderId, containment, refreshKey, navigate]);
+  }, [folderId, containment, refreshKey, onNavigate]);
 
   // Default ordering is by NAME (human-friendly: case-insensitive, natural) — for
   // BOTH grid and list — instead of the raw containment `position`. `.slice()`
@@ -200,18 +270,40 @@ export function DriveProjectionView({
   const roots = rootFolders(containment);
   const isRoot = folderId == null;
   const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
+
+  // The starred set as resolved nodes — `starredIds` mapped through the canvas,
+  // dropping ids RLS hid or that no longer resolve. Folders and content split the
+  // same way the tree view does, so the Starred canvas reuses every card/row path.
+  const starredNodes = isStarred
+    ? (kbData?.starredIds ?? [])
+        .map((id) => containment.byId.get(id))
+        .filter((node): node is LensNode => node != null)
+    : [];
+
   const folders = (
-    isRoot ? roots : folder ? childFolders(containment, folder.id) : []
+    isStarred
+      ? starredNodes.filter((node) => node.kind === 'folder')
+      : isRoot
+        ? roots
+        : folder
+          ? childFolders(containment, folder.id)
+          : []
   )
     .slice()
     .sort(byTitle);
   const shortcuts = (
-    isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
+    isStarred || isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
   )
     .slice()
     .sort(byTitle);
   const items = (
-    isRoot ? [] : folder ? childContent(containment, folder.id) : []
+    isStarred
+      ? starredNodes.filter((node) => node.kind !== 'folder')
+      : isRoot
+        ? []
+        : folder
+          ? childContent(containment, folder.id)
+          : []
   )
     .slice()
     .sort(byTitle);
@@ -288,26 +380,36 @@ export function DriveProjectionView({
       </Button>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
+        // 'kb' is active whenever the Starred filter is off (even inside a folder);
+        // 'starred' when it is on; the not-yet-wired stubs never highlight.
+        const active =
+          item.scope === 'starred'
+            ? isStarred
+            : item.scope === 'kb'
+              ? !isStarred
+              : false;
         return (
           <Button
-            key={item.labelKey}
+            key={item.key}
             variant="ghost"
-            onClick={() => navigate(null)}
-            data-active={item.active}
+            onClick={() =>
+              item.scope === 'starred' ? setScope('starred') : navigate(null)
+            }
+            data-active={active}
             className={cn(
               'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
               'hover:bg-accent text-foreground',
-              item.active && 'bg-accent font-medium'
+              active && 'bg-accent font-medium'
             )}
           >
             <Icon
               className={cn(
                 'size-4',
-                item.active ? 'text-foreground' : 'text-muted-foreground'
+                active ? 'text-foreground' : 'text-muted-foreground'
               )}
               aria-hidden
             />
-            {t(item.labelKey)}
+            {item.label(t)}
           </Button>
         );
       })}
@@ -341,22 +443,31 @@ export function DriveProjectionView({
   const toolbar = (
     <div className="flex items-center gap-2.5 border-b px-5 py-3">
       <div className="flex min-w-0 items-center gap-1 text-sm">
-        <button
-          type="button"
-          onClick={() => navigate(null)}
-          className={cn(
-            'shrink-0',
-            isRoot
-              ? 'text-foreground font-semibold'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          {t('graph.lens.knowledgeBase')}
-        </button>
+        {isStarred ? (
+          // The Starred filter is a flat lens, not a tree location — a single inert
+          // crumb stands in for the folder path.
+          <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
+            <Star className="size-3.5" aria-hidden />
+            {t('graph.drive.navStarred')}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate(null)}
+            className={cn(
+              'shrink-0',
+              isRoot
+                ? 'text-foreground font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {t('graph.lens.knowledgeBase')}
+          </button>
+        )}
         {/* Full ancestry path (deliberate delta: the prototype showed only the
             immediate folder). Each ancestor is a clickable crumb; the current one
             is bold and inert. */}
-        {!isRoot && folder
+        {!isStarred && !isRoot && folder
           ? pathTo(containment, folder.id).map((crumb, index, crumbs) => {
               const isCurrent = index === crumbs.length - 1;
               return (
@@ -385,7 +496,7 @@ export function DriveProjectionView({
         {/* current-folder actions (deliberate delta: the card ⋯ acts on a CHILD
             folder; this acts on the folder you are IN) → the shared action menu,
             with Details opening the panel. */}
-        {!isRoot && folder ? (
+        {!isStarred && !isRoot && folder ? (
           <span className="ml-0.5 shrink-0">
             <NodeActionsMenu
               spaceId={spaceId}
@@ -445,7 +556,7 @@ export function DriveProjectionView({
 
   const main = (
     <>
-      {isRoot ? (
+      {!isStarred && isRoot ? (
         <div className="text-muted-foreground mb-2 text-[13px]">
           {t('graph.drive.allSections', { count: roots.length })}
         </div>
@@ -460,6 +571,8 @@ export function DriveProjectionView({
             metaByItem={metaByItem}
             currentUserId={currentUserId}
             selectedId={selectedId}
+            starredSet={starredSet}
+            onToggleStar={toggleStar}
           />
         ) : null
       ) : (
@@ -467,7 +580,7 @@ export function DriveProjectionView({
           {/* folders + shortcuts */}
           {folders.length > 0 || shortcuts.length > 0 ? (
             <>
-              {!isRoot ? (
+              {!isRoot || isStarred ? (
                 <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
               ) : null}
               <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
@@ -483,6 +596,19 @@ export function DriveProjectionView({
                     layout={layout}
                     onOpen={() => navigate(sub.id)}
                     onDetails={() => onSelect(sub.id)}
+                    star={
+                      <StarButton
+                        starred={starredSet.has(sub.id)}
+                        onToggle={() =>
+                          toggleStar(sub.id, !starredSet.has(sub.id))
+                        }
+                        label={t(
+                          starredSet.has(sub.id)
+                            ? 'graph.drive.unstar'
+                            : 'graph.drive.star'
+                        )}
+                      />
+                    }
                     actions={
                       <NodeActionsMenu
                         spaceId={spaceId}
@@ -540,6 +666,19 @@ export function DriveProjectionView({
                         : onSelect(item.id)
                     }
                     onDetails={() => onSelect(item.id)}
+                    star={
+                      <StarButton
+                        starred={starredSet.has(item.id)}
+                        onToggle={() =>
+                          toggleStar(item.id, !starredSet.has(item.id))
+                        }
+                        label={t(
+                          starredSet.has(item.id)
+                            ? 'graph.drive.unstar'
+                            : 'graph.drive.star'
+                        )}
+                      />
+                    }
                     actions={
                       <NodeActionsMenu
                         spaceId={spaceId}
@@ -565,10 +704,13 @@ export function DriveProjectionView({
       )}
 
       {/* empty states */}
-      {isRoot && roots.length === 0 ? (
+      {isStarred && folders.length === 0 && items.length === 0 ? (
+        <EmptyState>{t('graph.drive.starredEmpty')}</EmptyState>
+      ) : null}
+      {!isStarred && isRoot && roots.length === 0 ? (
         <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
       ) : null}
-      {!isRoot && folders.length === 0 && items.length === 0 ? (
+      {!isStarred && !isRoot && folders.length === 0 && items.length === 0 ? (
         <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
       ) : null}
     </>
@@ -617,6 +759,48 @@ const GRID_CARD = 'w-[264px] shrink-0';
 const GRID_WRAP = 'flex flex-wrap gap-2.5';
 const LIST_WRAP = 'flex flex-col gap-1.5';
 
+/**
+ * The per-node star toggle (the only per-user write the Drive surface owns today).
+ * On a card it reveals on hover when unstarred — like the ⋯ menu — and stays solid
+ * amber once starred so the Starred set reads at a glance; `alwaysShow` keeps it
+ * visible inside the table rows, which carry no hover-reveal group.
+ */
+function StarButton({
+  starred,
+  onToggle,
+  label,
+  alwaysShow,
+}: {
+  starred: boolean;
+  onToggle: () => void;
+  label: string;
+  alwaysShow?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={starred}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md',
+        starred || alwaysShow ? 'opacity-100' : CARD_ACTION_TRIGGER
+      )}
+    >
+      <Star
+        className={cn(
+          'size-4',
+          starred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'
+        )}
+        aria-hidden
+      />
+    </button>
+  );
+}
+
 function FolderCard({
   title,
   subtitle,
@@ -624,6 +808,7 @@ function FolderCard({
   shortcut,
   onOpen,
   onDetails,
+  star,
   actions,
 }: {
   title: string;
@@ -634,6 +819,8 @@ function FolderCard({
   onOpen: () => void;
   /** Single-click: open the shared Details panel for this node. */
   onDetails: () => void;
+  /** Per-folder star toggle. Omitted for shortcut cards (a symlink, not a node). */
+  star?: React.ReactNode;
   /** Hover `⋯` action menu for THIS folder. Folders navigate on click, so actions
    * need a separate affordance — a deliberate delta from the prototype (which
    * navigated folders with no action surface). Omitted for shortcut cards. */
@@ -677,7 +864,12 @@ function FolderCard({
           />
         ) : null}
       </CardTile>
-      {actions ? <div className="absolute top-2 right-2">{actions}</div> : null}
+      {star || actions ? (
+        <div className="absolute top-2 right-2 flex items-center gap-0.5">
+          {star}
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -692,6 +884,7 @@ function ItemCard({
   selected,
   onOpen,
   onDetails,
+  star,
   actions,
 }: {
   t: GraphTranslator;
@@ -705,11 +898,12 @@ function ItemCard({
   onOpen: () => void;
   /** Single-click: open the shared Details panel for this node. */
   onDetails: () => void;
+  /** Per-node star toggle (reveals on hover; solid amber once starred). */
+  star?: React.ReactNode;
   /** Hover `⋯` action menu for this node (Details opens the panel). */
   actions?: React.ReactNode;
 }) {
   const list = layout === 'list';
-  const Icon = iconForKind(node.kind);
   const open = useCardOpen(onDetails, onOpen);
 
   // Meta line (prototype `n.meta || meta.label · owner`): link host / file size /
@@ -743,13 +937,13 @@ function ItemCard({
           selected ? 'border-ring ring-ring/35 ring-[3px]' : ''
         )}
       >
-        <Icon
-          className={cn(
+        {React.createElement(iconForKind(node.kind), {
+          className: cn(
             'text-muted-foreground',
             list ? 'size-[18px]' : 'size-[22px]'
-          )}
-          aria-hidden
-        />
+          ),
+          'aria-hidden': true,
+        })}
         <div className="min-w-0 flex-1 text-left">
           <div className="truncate text-sm font-medium">{node.title}</div>
           <div className="text-muted-foreground truncate text-xs">
@@ -757,7 +951,12 @@ function ItemCard({
           </div>
         </div>
       </CardTile>
-      {actions ? <div className="absolute top-2 right-2">{actions}</div> : null}
+      {star || actions ? (
+        <div className="absolute top-2 right-2 flex items-center gap-0.5">
+          {star}
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -809,15 +1008,44 @@ function DriveListTable({
   metaByItem,
   currentUserId,
   selectedId,
+  starredSet,
+  onToggleStar,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
   metaByItem: Record<string, NodeMeta>;
   currentUserId: string | null;
   selectedId?: string;
+  starredSet: Set<string>;
+  onToggleStar: (nodeId: string, next: boolean) => void;
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
+      {
+        id: 'star',
+        header: '',
+        enableSorting: false,
+        // Shortcuts are symlinks, not nodes — nothing to star.
+        cell: ({ row }) =>
+          row.original.rowKind === 'shortcut' ? null : (
+            <StarButton
+              alwaysShow
+              starred={starredSet.has(row.original.node.id)}
+              onToggle={() =>
+                onToggleStar(
+                  row.original.node.id,
+                  !starredSet.has(row.original.node.id)
+                )
+              }
+              label={t(
+                starredSet.has(row.original.node.id)
+                  ? 'graph.drive.unstar'
+                  : 'graph.drive.star'
+              )}
+            />
+          ),
+        meta: { cellClassName: 'w-10' },
+      },
       {
         id: 'name',
         accessorFn: (r) => r.node.title,
@@ -899,7 +1127,7 @@ function DriveListTable({
         meta: { cellClassName: 'w-10' },
       },
     ],
-    [t, metaByItem, currentUserId]
+    [t, metaByItem, currentUserId, starredSet, onToggleStar]
   );
 
   return (

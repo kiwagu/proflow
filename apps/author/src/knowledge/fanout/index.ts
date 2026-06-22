@@ -35,6 +35,12 @@ export {
   type SetResourceDescriptionInput,
 } from './kb-attribute.fanout';
 export {
+  setResourceStarred,
+  type ResourceStarredDeps,
+  type ResourceStarredState,
+  type SetResourceStarredInput,
+} from './resource-starred.fanout';
+export {
   createTextResource,
   ensureNodeBody,
   type CreateTextResourceDeps,

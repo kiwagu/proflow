@@ -8,6 +8,7 @@ import {
   loadKbAttributesForItems,
   loadNodeMetaForItems,
   loadShortcutForest,
+  loadStarredIds,
   resolveActiveSpaceId,
   resolveCurrentUserId,
   resolveDefaultLensProjection,
@@ -42,6 +43,7 @@ export default async function GraphPage() {
       containment: [],
       shortcuts: [],
       currentUserId: null,
+      starredIds: [],
     };
     return (
       <DriveWorkbench
@@ -54,14 +56,21 @@ export default async function GraphPage() {
 
   const result = await resolveDefaultLensProjection(spaceId);
   const itemIds = result.items.map((item) => item.id);
-  const [containment, shortcuts, attributesByItem, metaByItem, currentUserId] =
-    await Promise.all([
-      loadContainmentForest(spaceId),
-      loadShortcutForest(spaceId),
-      loadKbAttributesForItems(spaceId, itemIds),
-      loadNodeMetaForItems(spaceId, itemIds),
-      resolveCurrentUserId(),
-    ]);
+  const [
+    containment,
+    shortcuts,
+    attributesByItem,
+    metaByItem,
+    currentUserId,
+    starredIds,
+  ] = await Promise.all([
+    loadContainmentForest(spaceId),
+    loadShortcutForest(spaceId),
+    loadKbAttributesForItems(spaceId, itemIds),
+    loadNodeMetaForItems(spaceId, itemIds),
+    resolveCurrentUserId(),
+    loadStarredIds(spaceId),
+  ]);
 
   const kbData: KbViewData = {
     attributesByItem,
@@ -69,6 +78,7 @@ export default async function GraphPage() {
     containment,
     shortcuts,
     currentUserId,
+    starredIds,
   };
 
   return (

@@ -636,6 +636,7 @@ export type Database = {
           progress: number | null;
           resource_id: string;
           space_id: string;
+          starred: boolean;
           updated_at: string;
           user_id: string;
         };
@@ -647,6 +648,7 @@ export type Database = {
           progress?: number | null;
           resource_id: string;
           space_id: string;
+          starred?: boolean;
           updated_at?: string;
           user_id: string;
         };
@@ -658,6 +660,7 @@ export type Database = {
           progress?: number | null;
           resource_id?: string;
           space_id?: string;
+          starred?: boolean;
           updated_at?: string;
           user_id?: string;
         };
