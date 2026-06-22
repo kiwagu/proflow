@@ -3,8 +3,10 @@
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
+import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
+import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
@@ -191,24 +193,89 @@ export function DriveProjectionView({
     }
   }, [folderId, containment, refreshKey, navigate]);
 
+  // Default ordering is by NAME (human-friendly: case-insensitive, natural) — for
+  // BOTH grid and list — instead of the raw containment `position`. `.slice()`
+  // before sorting so we never mutate the cached containment/shortcut arrays.
+  const byTitle = byText((node: LensNode) => node.title);
   const roots = rootFolders(containment);
   const isRoot = folderId == null;
   const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
-  const folders = isRoot
-    ? roots
-    : folder
-      ? childFolders(containment, folder.id)
-      : [];
-  const shortcuts = isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? []);
-  const items = isRoot
-    ? []
-    : folder
-      ? childContent(containment, folder.id)
-      : [];
+  const folders = (
+    isRoot ? roots : folder ? childFolders(containment, folder.id) : []
+  )
+    .slice()
+    .sort(byTitle);
+  const shortcuts = (
+    isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
+  )
+    .slice()
+    .sort(byTitle);
+  const items = (
+    isRoot ? [] : folder ? childContent(containment, folder.id) : []
+  )
+    .slice()
+    .sort(byTitle);
 
   if (!spaceId) {
     return null;
   }
+
+  // Unified row set for the LIST view (folders → shortcuts → files), each with its
+  // open (double-click) / details (single-click) handlers + the ⋯ actions menu —
+  // the SAME behaviours as the grid cards, just rendered as table rows.
+  const driveRows: DriveRow[] = [
+    ...folders.map((sub) => ({
+      id: sub.id,
+      node: sub,
+      rowKind: 'folder' as const,
+      onOpen: () => navigate(sub.id),
+      onDetails: () => onSelect(sub.id),
+      actions: (
+        <NodeActionsMenu
+          spaceId={spaceId}
+          t={t}
+          node={sub}
+          containment={containment}
+          onMutated={onMutated}
+          onDetails={() => onSelect(sub.id)}
+        />
+      ),
+    })),
+    ...shortcuts.map((target) => ({
+      id: `sc-${target.id}`,
+      node: target,
+      rowKind: 'shortcut' as const,
+      onOpen: () =>
+        target.kind === 'folder' ? navigate(target.id) : onSelect(target.id),
+      onDetails: () => onSelect(target.id),
+      actions: null,
+    })),
+    ...items.map((item) => ({
+      id: item.id,
+      node: item,
+      rowKind: 'item' as const,
+      onOpen: () =>
+        item.kind === 'text' && onOpenDocument
+          ? onOpenDocument(item.id)
+          : onSelect(item.id),
+      onDetails: () => onSelect(item.id),
+      actions: (
+        <NodeActionsMenu
+          spaceId={spaceId}
+          t={t}
+          node={item}
+          containment={containment}
+          onMutated={onMutated}
+          onDetails={() => onSelect(item.id)}
+          onEdit={
+            item.kind === 'text' && onEditNode
+              ? () => onEditNode(item.id)
+              : undefined
+          }
+        />
+      ),
+    })),
+  ];
 
   const sidebar = (
     <div className="flex flex-col gap-1">
@@ -384,103 +451,118 @@ export function DriveProjectionView({
         </div>
       ) : null}
 
-      {/* folders + shortcuts */}
-      {folders.length > 0 || shortcuts.length > 0 ? (
+      {/* contents — a sortable TABLE in list mode, cards in grid mode */}
+      {layout === 'list' ? (
+        driveRows.length > 0 ? (
+          <DriveListTable
+            rows={driveRows}
+            t={t}
+            metaByItem={metaByItem}
+            currentUserId={currentUserId}
+            selectedId={selectedId}
+          />
+        ) : null
+      ) : (
         <>
-          {!isRoot ? (
-            <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
-          ) : null}
-          <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-            {folders.map((sub) => (
-              <FolderCard
-                key={sub.id}
-                title={sub.title}
-                subtitle={t('graph.drive.itemsCount', {
-                  count:
-                    childFolders(containment, sub.id).length +
-                    childContent(containment, sub.id).length,
-                })}
-                layout={layout}
-                onOpen={() => navigate(sub.id)}
-                onDetails={() => onSelect(sub.id)}
-                actions={
-                  <NodeActionsMenu
-                    spaceId={spaceId}
-                    t={t}
-                    node={sub}
-                    containment={containment}
-                    onMutated={onMutated}
+          {/* folders + shortcuts */}
+          {folders.length > 0 || shortcuts.length > 0 ? (
+            <>
+              {!isRoot ? (
+                <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
+              ) : null}
+              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+                {folders.map((sub) => (
+                  <FolderCard
+                    key={sub.id}
+                    title={sub.title}
+                    subtitle={t('graph.drive.itemsCount', {
+                      count:
+                        childFolders(containment, sub.id).length +
+                        childContent(containment, sub.id).length,
+                    })}
+                    layout={layout}
+                    onOpen={() => navigate(sub.id)}
                     onDetails={() => onSelect(sub.id)}
-                    triggerClassName={CARD_ACTION_TRIGGER}
+                    actions={
+                      <NodeActionsMenu
+                        spaceId={spaceId}
+                        t={t}
+                        node={sub}
+                        containment={containment}
+                        onMutated={onMutated}
+                        onDetails={() => onSelect(sub.id)}
+                        triggerClassName={CARD_ACTION_TRIGGER}
+                      />
+                    }
                   />
-                }
-              />
-            ))}
-            {shortcuts.map((target) => (
-              <FolderCard
-                key={`sc-${target.id}`}
-                title={target.title}
-                subtitle={t('graph.drive.shortcutFolder')}
-                layout={layout}
-                shortcut
-                onOpen={() =>
-                  target.kind === 'folder'
-                    ? navigate(target.id)
-                    : onSelect(target.id)
-                }
-                onDetails={() => onSelect(target.id)}
-              />
-            ))}
-          </div>
-        </>
-      ) : null}
+                ))}
+                {shortcuts.map((target) => (
+                  <FolderCard
+                    key={`sc-${target.id}`}
+                    title={target.title}
+                    subtitle={t('graph.drive.shortcutFolder')}
+                    layout={layout}
+                    shortcut
+                    onOpen={() =>
+                      target.kind === 'folder'
+                        ? navigate(target.id)
+                        : onSelect(target.id)
+                    }
+                    onDetails={() => onSelect(target.id)}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
 
-      {/* files / docs */}
-      {items.length > 0 ? (
-        <>
-          <SectionLabel className="mt-[18px]">
-            {t('graph.canvas.files')}
-          </SectionLabel>
-          <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-            {items.map((item) => (
-              <ItemCard
-                key={item.id}
-                t={t}
-                node={item}
-                attributes={attributesByItem[item.id]}
-                meta={metaByItem[item.id]}
-                currentUserId={currentUserId}
-                layout={layout}
-                selected={item.id === selectedId}
-                onOpen={() =>
-                  // Double-click OPENS: a document opens its read-view; every
-                  // other kind has no distinct open, so it falls back to Details.
-                  item.kind === 'text' && onOpenDocument
-                    ? onOpenDocument(item.id)
-                    : onSelect(item.id)
-                }
-                onDetails={() => onSelect(item.id)}
-                actions={
-                  <NodeActionsMenu
-                    spaceId={spaceId}
+          {/* files / docs */}
+          {items.length > 0 ? (
+            <>
+              <SectionLabel className="mt-[18px]">
+                {t('graph.canvas.files')}
+              </SectionLabel>
+              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+                {items.map((item) => (
+                  <ItemCard
+                    key={item.id}
                     t={t}
                     node={item}
-                    containment={containment}
-                    onMutated={onMutated}
-                    onDetails={() => onSelect(item.id)}
-                    onEdit={
-                      item.kind === 'text' && onEditNode
-                        ? () => onEditNode(item.id)
-                        : undefined
+                    attributes={attributesByItem[item.id]}
+                    meta={metaByItem[item.id]}
+                    currentUserId={currentUserId}
+                    layout={layout}
+                    selected={item.id === selectedId}
+                    onOpen={() =>
+                      // Double-click OPENS: a document opens its read-view; every
+                      // other kind has no distinct open, so it falls back to Details.
+                      item.kind === 'text' && onOpenDocument
+                        ? onOpenDocument(item.id)
+                        : onSelect(item.id)
                     }
-                    triggerClassName={CARD_ACTION_TRIGGER}
+                    onDetails={() => onSelect(item.id)}
+                    actions={
+                      <NodeActionsMenu
+                        spaceId={spaceId}
+                        t={t}
+                        node={item}
+                        containment={containment}
+                        onMutated={onMutated}
+                        onDetails={() => onSelect(item.id)}
+                        onEdit={
+                          item.kind === 'text' && onEditNode
+                            ? () => onEditNode(item.id)
+                            : undefined
+                        }
+                        triggerClassName={CARD_ACTION_TRIGGER}
+                      />
+                    }
                   />
-                }
-              />
-            ))}
-          </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
 
       {/* empty states */}
       {isRoot && roots.length === 0 ? (
@@ -696,5 +778,142 @@ function SectionLabel({
     >
       {children}
     </div>
+  );
+}
+
+// ── list view (table) ─────────────────────────────────────────────────────
+
+/** One Drive row for the table view — a folder, a shortcut, or a content item. */
+type DriveRow = {
+  id: string;
+  node: LensNode;
+  rowKind: 'folder' | 'shortcut' | 'item';
+  /** Double-click / Enter: navigate in / open the reader. */
+  onOpen: () => void;
+  /** Single click: open the shared Details panel. */
+  onDetails: () => void;
+  /** Hover `⋯` actions (folders/items); shortcuts have none. */
+  actions: React.ReactNode | null;
+};
+
+/**
+ * DriveListTable — the LIST layout: the same folders/shortcuts/files rendered as a
+ * sortable table (the generic {@link DataTable}) instead of stretched cards. Row
+ * interaction matches the cards (single → Details, double → open). Columns are
+ * domain/i18n here; the generic table base lives in `@workspace/ui` and is ready to
+ * grow (pagination / filtering / column visibility / selection) for richer screens.
+ */
+function DriveListTable({
+  rows,
+  t,
+  metaByItem,
+  currentUserId,
+  selectedId,
+}: {
+  rows: DriveRow[];
+  t: GraphTranslator;
+  metaByItem: Record<string, NodeMeta>;
+  currentUserId: string | null;
+  selectedId?: string;
+}) {
+  const columns = React.useMemo<ColumnDef<DriveRow>[]>(
+    () => [
+      {
+        id: 'name',
+        accessorFn: (r) => r.node.title,
+        header: t('graph.table.name'),
+        cell: ({ row }) => {
+          const r = row.original;
+          const Icon =
+            r.rowKind === 'folder'
+              ? Folder
+              : r.rowKind === 'shortcut'
+                ? FolderSymlink
+                : iconForKind(r.node.kind);
+          return (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Icon
+                className="text-muted-foreground size-[18px] shrink-0"
+                aria-hidden
+              />
+              <span className="truncate font-medium">{r.node.title}</span>
+              {r.rowKind === 'shortcut' ? (
+                <ArrowUpRight
+                  className="text-muted-foreground size-3.5 shrink-0"
+                  aria-hidden
+                />
+              ) : null}
+            </div>
+          );
+        },
+        meta: { cellClassName: 'max-w-[460px]' },
+      },
+      {
+        id: 'type',
+        accessorFn: (r) => kindLabel(t, r.node.kind),
+        header: t('graph.table.type'),
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">{getValue() as string}</span>
+        ),
+        meta: { cellClassName: 'w-32' },
+      },
+      {
+        id: 'owner',
+        accessorFn: (r) =>
+          ownerLabel(t, metaByItem[r.node.id]?.ownerUserId, currentUserId),
+        header: t('graph.table.owner'),
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground">{getValue() as string}</span>
+        ),
+        meta: { cellClassName: 'w-32' },
+      },
+      {
+        id: 'modified',
+        accessorFn: (r) => metaByItem[r.node.id]?.updatedAt ?? '',
+        header: t('graph.table.modified'),
+        cell: ({ getValue }) => {
+          const v = getValue() as string;
+          return (
+            <span className="text-muted-foreground">
+              {v ? new Date(v).toLocaleDateString() : '—'}
+            </span>
+          );
+        },
+        meta: { cellClassName: 'w-32' },
+      },
+      {
+        id: 'actions',
+        header: '',
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.actions ? (
+            // Stop the row's open/details from firing when using the ⋯ menu.
+            <div
+              role="presentation"
+              className="flex justify-end"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {row.original.actions}
+            </div>
+          ) : null,
+        meta: { cellClassName: 'w-10' },
+      },
+    ],
+    [t, metaByItem, currentUserId]
+  );
+
+  return (
+    <DataTable
+      columns={columns}
+      data={rows}
+      getRowId={(r) => r.id}
+      activeRowId={selectedId}
+      defaultSorting={[{ id: 'name', desc: false }]}
+      // Folders + shortcuts (0) always sort as a block above files (1); the
+      // column sort applies within each group, so they never interleave.
+      groupOrder={(r) => (r.rowKind === 'item' ? 1 : 0)}
+      onRowClick={(r) => r.onDetails()}
+      onRowActivate={(r) => r.onOpen()}
+    />
   );
 }
