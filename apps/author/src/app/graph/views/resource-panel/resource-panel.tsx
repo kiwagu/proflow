@@ -3,6 +3,8 @@
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
+import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
+import { DocumentViewerDialog } from '@workspace/ui/components/platform/document-viewer-dialog';
 import {
   Select,
   SelectContent,
@@ -10,25 +12,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@workspace/ui/components/sheet';
 import { Textarea } from '@workspace/ui/components/textarea';
-import { Check, Pencil, Sparkles, Users, X } from 'lucide-react';
+import {
+  Check,
+  Eye,
+  FilePlus,
+  History,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import * as React from 'react';
 
+import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 import { type Containment } from '@/app/graph/containment';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
+import {
+  DocumentBodyView,
+  type SerializedLexical,
+} from '@/app/graph/views/document-reader/document-body-view';
 import type { KbAttributes, ScopeChoice } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
 /**
- * ResourcePanel — the node DETAIL drawer ("Details"): select a node (or pick
- * Details from its `⋯` menu) → side Sheet with the rich, edit-heavy surface.
+ * ResourcePanel — the node DETAIL panel ("Details"): single-click a node (or pick
+ * Details from its `⋯` menu) → an INLINE right-side panel (the prototype's `aside`,
+ * not a modal): a fixed-width column that lives in the workbench flex row and
+ * shrinks the content beside it (no overlay, the grid stays interactive), closed by
+ * the header `✕`. It carries the rich, edit-heavy surface.
  * Quick manipulations (new subfolder / rename / move / delete) do NOT live here —
  * they are one click from the card / toolbar via the shared {@link NodeActionsMenu},
  * which the header re-uses (sans its Details item) so the same actions are reachable
@@ -63,6 +77,8 @@ export type ResourcePanelProps = {
   onOpenChange: (open: boolean) => void;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */
   onMutated: () => void;
+  /** Edit a text node directly (the workbench's edit launcher). */
+  onEdit?: (nodeId: string) => void;
 };
 
 async function sendJson(
@@ -87,11 +103,12 @@ export function ResourcePanel({
   open,
   onOpenChange,
   onMutated,
+  onEdit,
 }: ResourcePanelProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const [busy, setBusy] = React.useState(false);
 
-  if (!node) {
+  if (!node || !open) {
     return null;
   }
   const KindIcon = iconForKind(node.kind);
@@ -113,65 +130,79 @@ export function ResourcePanel({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
-        <SheetHeader>
-          <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden
-              className="bg-muted grid size-8 shrink-0 place-items-center rounded-md"
-            >
-              <KindIcon className="text-muted-foreground size-[17px]" />
-            </span>
-            <SheetDescription className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
-              {kindLabel(t, node.kind)}
-            </SheetDescription>
-            {/* Same action menu as the cards — drawer = "Details", so no Details item. */}
-            <NodeActionsMenu
-              spaceId={spaceId}
-              t={t}
-              node={node}
-              containment={containment}
-              onMutated={onMutated}
-              onActed={() => onOpenChange(false)}
-            />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-              aria-label={t('graph.panel.close')}
-            >
-              <X className="size-4" aria-hidden />
-            </Button>
-          </div>
+    <aside
+      aria-label={node.title}
+      className="bg-card motion-safe:animate-in motion-safe:slide-in-from-right-4 flex h-full w-[360px] shrink-0 flex-col overflow-y-auto border-l motion-safe:duration-200"
+    >
+      {/* header — icon + kind + actions + close. Same vertical rhythm as the main
+          toolbar (`py-3` over 32px-tall controls) so the panel's bottom border
+          lines up with the content toolbar's across the split. */}
+      <div className="flex items-center gap-2.5 border-b px-4 py-3">
+        <span
+          aria-hidden
+          className="bg-muted grid size-8 shrink-0 place-items-center rounded-md"
+        >
+          <KindIcon className="text-muted-foreground size-[17px]" />
+        </span>
+        <span className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
+          {kindLabel(t, node.kind)}
+        </span>
+        {/* Same action menu as the cards — panel = "Details", so no Details item. */}
+        <NodeActionsMenu
+          spaceId={spaceId}
+          t={t}
+          node={node}
+          containment={containment}
+          onMutated={onMutated}
+          onActed={() => onOpenChange(false)}
+          onEdit={
+            node.kind === 'text' && onEdit ? () => onEdit(node.id) : undefined
+          }
+        />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={() => onOpenChange(false)}
+          aria-label={t('graph.panel.close')}
+        >
+          <X className="size-4" aria-hidden />
+        </Button>
+      </div>
 
-          <SheetTitle className="text-left">{node.title}</SheetTitle>
-
+      <div className="flex flex-col gap-5 px-4 py-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-xl font-bold tracking-tight">{node.title}</h2>
           {node.status ? (
             <div>
               <Badge variant="outline">{node.status}</Badge>
             </div>
           ) : null}
-        </SheetHeader>
+        </div>
 
-        <div className="flex flex-col gap-5 px-4 pb-4">
-          <EditableDescription
-            t={t}
-            value={attributes?.description ?? ''}
-            nodeId={node.id}
-            disabled={busy}
-            onSave={onSaveDescription}
-          />
-          <VisibilitySection
+        <EditableDescription
+          t={t}
+          value={attributes?.description ?? ''}
+          nodeId={node.id}
+          disabled={busy}
+          onSave={onSaveDescription}
+        />
+        <VisibilitySection
+          t={t}
+          spaceId={spaceId}
+          nodeId={node.id}
+          disabled={busy}
+          onMutated={onMutated}
+        />
+        {node.kind === 'text' ? (
+          <VersionsSection
             t={t}
             spaceId={spaceId}
             nodeId={node.id}
-            disabled={busy}
             onMutated={onMutated}
           />
-        </div>
-      </SheetContent>
-    </Sheet>
+        ) : null}
+      </div>
+    </aside>
   );
 }
 
@@ -380,6 +411,334 @@ function VisibilitySection({
           ) : null}
         </div>
       )}
+    </section>
+  );
+}
+
+type VersionEntry = { id: string; status: string | null; updatedAt: string };
+
+/**
+ * Versions — the tangible draft/publish history for a `kind=text` node's body
+ * (Payload records a version on every save). Read-only list, fetched on demand
+ * when the panel opens. Shows each version's draft/published status + time so the
+ * moderator sees the workflow concretely. Reads are RLS-gated server-side.
+ */
+function VersionsSection({
+  t,
+  spaceId,
+  nodeId,
+  onMutated,
+}: {
+  t: ReturnType<typeof createGraphTranslator>;
+  spaceId: string;
+  nodeId: string;
+  onMutated: () => void;
+}) {
+  const [versions, setVersions] = React.useState<VersionEntry[] | null>(null);
+  const [restoring, setRestoring] = React.useState(false);
+  const [confirmId, setConfirmId] = React.useState<string | null>(null);
+  const [viewBody, setViewBody] = React.useState<SerializedLexical | null>(
+    null
+  );
+  const [viewing, setViewing] = React.useState<VersionEntry | null>(null);
+  const [viewOpen, setViewOpen] = React.useState(false);
+  const [working, setWorking] = React.useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
+    null
+  );
+  const [deleting, setDeleting] = React.useState(false);
+
+  const base = `node_id=${encodeURIComponent(nodeId)}&space_id=${encodeURIComponent(spaceId)}`;
+
+  const load = React.useCallback(async () => {
+    const res = await fetch(`/author/graph/text-resources/versions?${base}`);
+    setVersions(
+      res.ok
+        ? ((await res.json()) as { versions: VersionEntry[] }).versions
+        : []
+    );
+  }, [base]);
+
+  React.useEffect(() => {
+    setVersions(null);
+    void load();
+  }, [load]);
+
+  async function viewVersion(entry: VersionEntry) {
+    const res = await fetch(
+      `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(entry.id)}`
+    );
+    if (res.ok) {
+      setViewBody(
+        ((await res.json()) as { body: SerializedLexical | null }).body ?? null
+      );
+      setViewing(entry);
+      setViewOpen(true);
+    }
+  }
+
+  // Edit from THIS version: open the editor seeded with it (`?version=<id>`). The
+  // draft is recorded when the editor saves — no premature, confusing version row.
+  // For a published version this starts a NEW draft from it; for a draft it
+  // continues that draft.
+  function editFromVersion() {
+    if (!viewing) {
+      return;
+    }
+    window.location.assign(
+      `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}?version=${encodeURIComponent(viewing.id)}`
+    );
+  }
+
+  // "Create draft from this version" (works for a draft OR a published version):
+  // record a NEW draft from this body, then land in the editor on it — so the draft
+  // is created AND immediately editable (not just a new row in the list).
+  async function createDraftFromVersion() {
+    setWorking(true);
+    const ok = await sendJson(
+      '/author/graph/text-resources',
+      { spaceId, nodeId, body: viewBody, status: 'draft' },
+      'PATCH'
+    );
+    setWorking(false);
+    if (ok) {
+      // The new draft is now the latest → the editor's default seed opens it.
+      window.location.assign(
+        `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}`
+      );
+    }
+  }
+
+  // Publish this DRAFT — act ON the draft, not via a forked copy. Payload's update
+  // always records a new version, so publishing then drops the SOURCE draft: the
+  // content ends up as a single PUBLISHED version with no leftover duplicate draft.
+  // (After publishing, the new published version is `latest`, so the source draft
+  // is non-latest and safe to delete.)
+  async function publishVersion() {
+    if (!viewing) {
+      return;
+    }
+    setWorking(true);
+    const sourceDraftId = viewing.id;
+    const ok = await sendJson(
+      '/author/graph/text-resources',
+      { spaceId, nodeId, body: viewBody, status: 'published' },
+      'PATCH'
+    );
+    if (ok) {
+      await sendJson(
+        '/author/graph/text-resources/versions',
+        { spaceId, nodeId, versionId: sourceDraftId },
+        'DELETE'
+      );
+    }
+    setWorking(false);
+    if (ok) {
+      setViewOpen(false);
+      await load();
+      onMutated();
+    }
+  }
+
+  // Delete a single DRAFT version from history (the backend rejects published ones).
+  async function deleteVersion() {
+    if (!confirmDeleteId) {
+      return;
+    }
+    setDeleting(true);
+    const ok = await sendJson(
+      '/author/graph/text-resources/versions',
+      { spaceId, nodeId, versionId: confirmDeleteId },
+      'DELETE'
+    );
+    setDeleting(false);
+    if (ok) {
+      if (viewing?.id === confirmDeleteId) {
+        setViewOpen(false);
+      }
+      setConfirmDeleteId(null);
+      await load();
+      onMutated();
+    }
+  }
+
+  async function restore() {
+    if (!confirmId) {
+      return;
+    }
+    setRestoring(true);
+    try {
+      const res = await fetch('/author/graph/text-resources/versions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          nodeId,
+          versionId: confirmId,
+          action: 'restore',
+        }),
+      });
+      if (res.ok) {
+        setConfirmId(null);
+        await load();
+      }
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+        <History className="size-3" aria-hidden />
+        {t('graph.panel.versions')}
+      </div>
+      {versions === null ? null : versions.length === 0 ? (
+        <p className="text-muted-foreground text-xs">
+          {t('graph.panel.versionsEmpty')}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {versions.map((v) => (
+            <li key={v.id} className="flex items-center gap-2 text-xs">
+              <Badge
+                variant={v.status === 'published' ? 'secondary' : 'outline'}
+              >
+                {v.status === 'published'
+                  ? t('graph.reader.statusPublished')
+                  : t('graph.reader.statusDraft')}
+              </Badge>
+              <span className="text-muted-foreground flex-1 truncate">
+                {new Date(v.updatedAt).toLocaleString()}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => void viewVersion(v)}
+                aria-label={t('graph.panel.versionView')}
+              >
+                <Eye className="size-3.5" aria-hidden />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setConfirmId(v.id)}
+                aria-label={t('graph.panel.versionRestore')}
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+              </Button>
+              {/* Delete — only DRAFT versions (published history is immutable).
+                  A fixed-width placeholder keeps the column aligned on published
+                  rows, so each column holds ONE action across the whole list. */}
+              {v.status !== 'published' ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setConfirmDeleteId(v.id)}
+                  aria-label={t('graph.panel.versionDelete')}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                </Button>
+              ) : (
+                <span className="size-8 shrink-0" aria-hidden />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmId(null);
+          }
+        }}
+        title={t('graph.panel.versionRestoreConfirm')}
+        confirmLabel={t('graph.panel.versionRestore')}
+        cancelLabel={t('graph.panel.cancel')}
+        onConfirm={() => void restore()}
+        busy={restoring}
+        confirmIcon={<RotateCcw className="size-4" aria-hidden />}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmDeleteId(null);
+          }
+        }}
+        title={t('graph.panel.versionDeleteConfirm')}
+        confirmLabel={t('graph.panel.versionDelete')}
+        cancelLabel={t('graph.panel.cancel')}
+        onConfirm={() => void deleteVersion()}
+        busy={deleting}
+        destructive
+        confirmIcon={<Trash2 className="size-4" aria-hidden />}
+      />
+
+      {/* Version preview — a CONTAINED modal (clearly a preview), at the SAME
+          reading width as the reader (the viewer dialog widens + un-pads so the
+          shared `DocumentBodyView` column renders identically). */}
+      <DocumentViewerDialog
+        open={viewOpen}
+        onOpenChange={setViewOpen}
+        title={t('graph.panel.versionViewTitle')}
+        footer={
+          <>
+            {/* Delete — only DRAFT versions; pushed to the left of the actions. */}
+            {viewing && viewing.status !== 'published' ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:text-destructive mr-auto"
+                disabled={working}
+                onClick={() => setConfirmDeleteId(viewing.id)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                {t('graph.panel.versionDelete')}
+              </Button>
+            ) : null}
+            {/* Publish makes a DRAFT version the latest published version. */}
+            {viewing?.status !== 'published' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={working}
+                onClick={() => void publishVersion()}
+              >
+                <Check className="size-4" aria-hidden />
+                {t('graph.reader.publish')}
+              </Button>
+            ) : null}
+            {/* Create draft from this version — fork a NEW draft (from a draft OR a
+                published version) and open it in the editor straight away. */}
+            <Button
+              size="sm"
+              variant={viewing?.status === 'published' ? 'default' : 'outline'}
+              disabled={working}
+              onClick={() => void createDraftFromVersion()}
+            >
+              <FilePlus className="size-4" aria-hidden />
+              {t('graph.panel.versionCreateDraft')}
+            </Button>
+            {/* Continue editing — resume THIS draft directly (no extra copy). */}
+            {viewing?.status !== 'published' ? (
+              <Button size="sm" disabled={working} onClick={editFromVersion}>
+                <Pencil className="size-4" aria-hidden />
+                {t('graph.panel.versionContinueEditing')}
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        <DocumentBodyView
+          body={viewBody}
+          emptyLabel={t('graph.reader.empty')}
+        />
+      </DocumentViewerDialog>
     </section>
   );
 }

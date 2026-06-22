@@ -30,6 +30,7 @@ import {
   FolderPlus,
   Info,
   Pencil,
+  SquarePen,
   Trash2,
 } from 'lucide-react';
 import * as React from 'react';
@@ -71,6 +72,7 @@ export function NodeActionsMenu({
   onMutated,
   onActed,
   onDetails,
+  onEdit,
   triggerClassName,
 }: {
   spaceId: string;
@@ -82,6 +84,8 @@ export function NodeActionsMenu({
   onActed?: () => void;
   /** Open the detail drawer. Omit (e.g. inside the drawer itself) to hide the item. */
   onDetails?: () => void;
+  /** Edit the document directly (text nodes). Omit to hide the item. */
+  onEdit?: () => void;
   /** Extra classes for the `⋯` trigger (e.g. hover-reveal on a card). */
   triggerClassName?: string;
 }) {
@@ -167,6 +171,16 @@ export function NodeActionsMenu({
   }
 
   const items: ActionMenuItem[] = [
+    ...(onEdit
+      ? [
+          {
+            id: 'edit',
+            icon: <SquarePen className="size-4" aria-hidden />,
+            label: t('graph.reader.edit'),
+            onSelect: onEdit,
+          } satisfies ActionMenuItem,
+        ]
+      : []),
     {
       id: 'new-subfolder',
       hidden: node.kind !== 'folder',
@@ -204,6 +218,12 @@ export function NodeActionsMenu({
       id: 'delete',
       separatorBefore: true,
       variant: 'destructive',
+      // A `text` node is a knowledge-base DOCUMENT — it may be referenced from
+      // elsewhere (folders, shortcuts, other projections; N→1), so hard-deleting
+      // it is deferred to the reference-aware lifecycle (Trash) flow. Disabled for
+      // now rather than risk silently severing those references. Folders/files/
+      // links keep delete; draft VERSIONS are pruned from the Versions list.
+      disabled: node.kind === 'text',
       icon: <Trash2 className="size-4" aria-hidden />,
       label: t('graph.panel.delete'),
       onSelect: () => setConfirmDelete(true),

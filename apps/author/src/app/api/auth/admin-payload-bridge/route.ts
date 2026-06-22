@@ -17,6 +17,11 @@ function resolvePostLoginAppPath(raw: string | null): string {
   if (d === '/admin' || d.startsWith('/admin/')) {
     return d;
   }
+  // The dedicated document editor also needs the bridged Payload session, so it is
+  // an allowed return target (the proxy routes `/doc/*` here when no token cookie).
+  if (d === '/doc' || d.startsWith('/doc/')) {
+    return d;
+  }
   return '/admin';
 }
 

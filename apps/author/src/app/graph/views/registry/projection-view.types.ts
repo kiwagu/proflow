@@ -46,6 +46,28 @@ export type ProjectionViewProps = {
   selectedId?: string;
   /** Select a node → opens the SHARED ResourcePanel (owned by the workbench). */
   onSelect: (nodeId: string) => void;
+  /**
+   * Open a `kind=text` node as a document → the SHARED read-view (owned by the
+   * workbench). Distinct from `onSelect` (the Details panel): clicking a document
+   * reads it, the ⋯ menu's Details still opens the panel. Optional — a view that
+   * has no document-open affordance simply omits it and falls back to `onSelect`.
+   */
+  onOpenDocument?: (nodeId: string) => void;
+  /**
+   * Edit a `kind=text` node directly (skip the reader) — the workbench's edit
+   * launcher runs the seed-choice flow and navigates to the editor. The card `⋯`
+   * menu wires this for text nodes. Optional — omitted where there is no editor.
+   */
+  onEditNode?: (nodeId: string) => void;
+  /**
+   * The current folder location (a `kind=folder` node id, or null for the root),
+   * owned by the workbench in the URL so it survives refresh / browser history.
+   * Drive-navigation props — views without a folder tree simply omit them and
+   * keep their own local location.
+   */
+  folderId?: string | null;
+  /** Navigate to a folder (null → root). The workbench writes it to the URL. */
+  onNavigate?: (folderId: string | null) => void;
   /** Bumped by the workbench after a mutation so views drop stale lazy children. */
   refreshKey: number;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */
