@@ -158,6 +158,9 @@ export const Bodies: CollectionConfig = {
   },
   versions: {
     drafts: true,
+    // Cap revision history per body (owner decision); Payload prunes the oldest
+    // beyond this on each new version (there is no per-version delete API).
+    maxPerDoc: 10,
   },
   hooks: {
     beforeChange: [

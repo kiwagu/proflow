@@ -191,6 +191,16 @@ function isAdminPath(path: string): boolean {
 }
 
 /**
+ * The dedicated document editor (`/author/doc/[nodeId]`). Like `/admin/*` it mounts
+ * Payload's editor — whose server-function REQUIRES a Payload user — so it needs the
+ * `payload-token` cookie, NOT just the Supabase session (unlike `/graph/*`, which is
+ * RLS-only). It must therefore go through the same Payload session bridge.
+ */
+function isDocEditorPath(path: string): boolean {
+  return path === '/doc' || path.startsWith('/doc/');
+}
+
+/**
  * Graph endpoints (`/author/graph/*`, slice-03 §5.1). A SEPARATE auth context
  * from `/admin/*`: they require the SUPABASE session (cookies) and build a
  * Postgres-RLS client inside the handler — Postgres RLS is the sole authority.
@@ -354,8 +364,18 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  if (user && isAdminPath(path) && !request.cookies.get(PAYLOAD_TOKEN_COOKIE)) {
-    return payloadBridgeRedirect(request, path, payloadTenantSync);
+  if (
+    user &&
+    (isAdminPath(path) || isDocEditorPath(path)) &&
+    !request.cookies.get(PAYLOAD_TOKEN_COOKIE)
+  ) {
+    // The editor's seed choice rides in the query (`?source=`/`?version=`), so
+    // the bridge must return to the FULL path+search — otherwise the choice is
+    // dropped and the editor falls back to the latest draft.
+    const target = isDocEditorPath(path)
+      ? `${path}${request.nextUrl.search}`
+      : path;
+    return payloadBridgeRedirect(request, target, payloadTenantSync);
   }
 
   return supabaseResponse;
