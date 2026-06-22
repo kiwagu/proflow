@@ -14,9 +14,11 @@ import {
 } from '@workspace/ui/components/select';
 import { Textarea } from '@workspace/ui/components/textarea';
 import {
+  ArrowRight,
   Check,
   Eye,
   FilePlus,
+  GitCompare,
   History,
   Pencil,
   RotateCcw,
@@ -34,6 +36,7 @@ import {
   DocumentBodyView,
   type SerializedLexical,
 } from '@/app/graph/views/document-reader/document-body-view';
+import { RevisionDiff } from '@/app/graph/views/document-reader/revision-diff';
 import type { KbAttributes, ScopeChoice } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
@@ -418,6 +421,47 @@ function VisibilitySection({
 type VersionEntry = { id: string; status: string | null; updatedAt: string };
 
 /**
+ * VersionPicker — one side of the revision-diff header: a compact <select> over
+ * the version list, each option labelled "status · time" (mirrors the row).
+ */
+function VersionPicker({
+  value,
+  onChange,
+  versions,
+  ariaLabel,
+  t,
+}: {
+  value: string | null;
+  onChange: (id: string) => void;
+  versions: VersionEntry[] | null;
+  ariaLabel: string;
+  t: ReturnType<typeof createGraphTranslator>;
+}) {
+  return (
+    <Select value={value ?? undefined} onValueChange={onChange}>
+      <SelectTrigger
+        size="sm"
+        className="w-auto max-w-[45%] gap-1.5 text-xs"
+        aria-label={ariaLabel}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {(versions ?? []).map((v) => (
+          <SelectItem key={v.id} value={v.id} className="text-xs">
+            {`${
+              v.status === 'published'
+                ? t('graph.reader.statusPublished')
+                : t('graph.reader.statusDraft')
+            } · ${new Date(v.updatedAt).toLocaleString()}`}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
  * Versions — the tangible draft/publish history for a `kind=text` node's body
  * (Payload records a version on every save). Read-only list, fetched on demand
  * when the panel opens. Shows each version's draft/published status + time so the
@@ -447,8 +491,30 @@ function VersionsSection({
     null
   );
   const [deleting, setDeleting] = React.useState(false);
+  const [diffOpen, setDiffOpen] = React.useState(false);
+  const [diffBeforeId, setDiffBeforeId] = React.useState<string | null>(null);
+  const [diffAfterId, setDiffAfterId] = React.useState<string | null>(null);
+  const [diffBefore, setDiffBefore] = React.useState<SerializedLexical | null>(
+    null
+  );
+  const [diffAfter, setDiffAfter] = React.useState<SerializedLexical | null>(
+    null
+  );
 
   const base = `node_id=${encodeURIComponent(nodeId)}&space_id=${encodeURIComponent(spaceId)}`;
+
+  const fetchVersionBody = React.useCallback(
+    async (id: string): Promise<SerializedLexical | null> => {
+      const res = await fetch(
+        `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(id)}`
+      );
+      return res.ok
+        ? (((await res.json()) as { body: SerializedLexical | null }).body ??
+            null)
+        : null;
+    },
+    [base]
+  );
 
   const load = React.useCallback(async () => {
     const res = await fetch(`/author/graph/text-resources/versions?${base}`);
@@ -465,15 +531,35 @@ function VersionsSection({
   }, [load]);
 
   async function viewVersion(entry: VersionEntry) {
-    const res = await fetch(
-      `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(entry.id)}`
-    );
-    if (res.ok) {
-      setViewBody(
-        ((await res.json()) as { body: SerializedLexical | null }).body ?? null
-      );
-      setViewing(entry);
-      setViewOpen(true);
+    setViewBody(await fetchVersionBody(entry.id));
+    setViewing(entry);
+    setViewOpen(true);
+  }
+
+  // Open the diff modal comparing any two versions. The Compare action seeds it
+  // with previous → current (the common case); inside, each side is freely
+  // reselectable (any-to-any).
+  async function openDiff(beforeId: string, afterId: string) {
+    const [olderBody, newerBody] = await Promise.all([
+      fetchVersionBody(beforeId),
+      fetchVersionBody(afterId),
+    ]);
+    setDiffBeforeId(beforeId);
+    setDiffAfterId(afterId);
+    setDiffBefore(olderBody);
+    setDiffAfter(newerBody);
+    setDiffOpen(true);
+  }
+
+  // Re-pick one side of the diff — fetch just that version's body.
+  async function selectDiffSide(side: 'before' | 'after', id: string) {
+    const body = await fetchVersionBody(id);
+    if (side === 'before') {
+      setDiffBeforeId(id);
+      setDiffBefore(body);
+    } else {
+      setDiffAfterId(id);
+      setDiffAfter(body);
     }
   }
 
@@ -599,7 +685,7 @@ function VersionsSection({
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {versions.map((v) => (
+          {versions.map((v, idx) => (
             <li key={v.id} className="flex items-center gap-2 text-xs">
               <Badge
                 variant={v.status === 'published' ? 'secondary' : 'outline'}
@@ -619,6 +705,26 @@ function VersionsSection({
               >
                 <Eye className="size-3.5" aria-hidden />
               </Button>
+              {/* Compare — seeds the diff with previous → this version; both
+                  sides are then freely reselectable (any-to-any). Placeholder on
+                  the oldest row keeps the column aligned. */}
+              {idx < versions.length - 1 ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    const previous = versions[idx + 1];
+                    if (previous) {
+                      void openDiff(previous.id, v.id);
+                    }
+                  }}
+                  aria-label={t('graph.panel.versionCompare')}
+                >
+                  <GitCompare className="size-3.5" aria-hidden />
+                </Button>
+              ) : (
+                <span className="size-8 shrink-0" aria-hidden />
+              )}
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -737,6 +843,41 @@ function VersionsSection({
         <DocumentBodyView
           body={viewBody}
           emptyLabel={t('graph.reader.empty')}
+        />
+      </DocumentViewerDialog>
+
+      {/* Revision diff — a word-level text diff between ANY two versions, at the
+          same reading width as the preview. The pinned header picks each side:
+          left = base (older), right = compared-to (newer). */}
+      <DocumentViewerDialog
+        open={diffOpen}
+        onOpenChange={setDiffOpen}
+        title={t('graph.panel.versionDiffTitle')}
+      >
+        <div className="bg-background sticky top-0 z-10 flex items-center justify-center gap-2 border-b px-6 py-2.5">
+          <VersionPicker
+            value={diffBeforeId}
+            onChange={(id) => void selectDiffSide('before', id)}
+            versions={versions}
+            ariaLabel={t('graph.panel.versionDiffBase')}
+            t={t}
+          />
+          <ArrowRight
+            className="text-muted-foreground size-3.5 shrink-0"
+            aria-hidden
+          />
+          <VersionPicker
+            value={diffAfterId}
+            onChange={(id) => void selectDiffSide('after', id)}
+            versions={versions}
+            ariaLabel={t('graph.panel.versionDiffCompared')}
+            t={t}
+          />
+        </div>
+        <RevisionDiff
+          before={diffBefore}
+          after={diffAfter}
+          emptyLabel={t('graph.panel.versionDiffEmpty')}
         />
       </DocumentViewerDialog>
     </section>
