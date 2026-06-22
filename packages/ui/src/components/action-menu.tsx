@@ -32,6 +32,8 @@ export type ActionMenuItem = {
   /** Draw a separator above this item (section break). */
   separatorBefore?: boolean;
   hidden?: boolean;
+  /** Render the item but block selection (greyed out). */
+  disabled?: boolean;
 };
 
 export function ActionMenu({
@@ -74,7 +76,11 @@ export function ActionMenu({
         {visible.map((item) => (
           <React.Fragment key={item.id}>
             {item.separatorBefore ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem variant={item.variant} onSelect={item.onSelect}>
+            <DropdownMenuItem
+              variant={item.variant}
+              disabled={item.disabled}
+              onSelect={item.onSelect}
+            >
               {item.icon}
               {item.label}
             </DropdownMenuItem>

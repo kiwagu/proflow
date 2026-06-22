@@ -134,6 +134,7 @@ export function DriveProjectionView({
   selectedId,
   onSelect,
   onOpenDocument,
+  onEditNode,
   folderId = null,
   onNavigate,
   onMutated,
@@ -467,6 +468,11 @@ export function DriveProjectionView({
                     containment={containment}
                     onMutated={onMutated}
                     onDetails={() => onSelect(item.id)}
+                    onEdit={
+                      item.kind === 'text' && onEditNode
+                        ? () => onEditNode(item.id)
+                        : undefined
+                    }
                     triggerClassName={CARD_ACTION_TRIGGER}
                   />
                 }

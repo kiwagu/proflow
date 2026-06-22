@@ -16,15 +16,18 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import {
   Check,
   Eye,
+  FilePlus,
   History,
   Pencil,
   RotateCcw,
   Sparkles,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
 import * as React from 'react';
 
+import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 import { type Containment } from '@/app/graph/containment';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
 import {
@@ -74,6 +77,8 @@ export type ResourcePanelProps = {
   onOpenChange: (open: boolean) => void;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */
   onMutated: () => void;
+  /** Edit a text node directly (the workbench's edit launcher). */
+  onEdit?: (nodeId: string) => void;
 };
 
 async function sendJson(
@@ -98,6 +103,7 @@ export function ResourcePanel({
   open,
   onOpenChange,
   onMutated,
+  onEdit,
 }: ResourcePanelProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const [busy, setBusy] = React.useState(false);
@@ -149,6 +155,9 @@ export function ResourcePanel({
           containment={containment}
           onMutated={onMutated}
           onActed={() => onOpenChange(false)}
+          onEdit={
+            node.kind === 'text' && onEdit ? () => onEdit(node.id) : undefined
+          }
         />
         <Button
           size="icon-sm"
@@ -185,7 +194,12 @@ export function ResourcePanel({
           onMutated={onMutated}
         />
         {node.kind === 'text' ? (
-          <VersionsSection t={t} spaceId={spaceId} nodeId={node.id} />
+          <VersionsSection
+            t={t}
+            spaceId={spaceId}
+            nodeId={node.id}
+            onMutated={onMutated}
+          />
         ) : null}
       </div>
     </aside>
@@ -413,10 +427,12 @@ function VersionsSection({
   t,
   spaceId,
   nodeId,
+  onMutated,
 }: {
   t: ReturnType<typeof createGraphTranslator>;
   spaceId: string;
   nodeId: string;
+  onMutated: () => void;
 }) {
   const [versions, setVersions] = React.useState<VersionEntry[] | null>(null);
   const [restoring, setRestoring] = React.useState(false);
@@ -424,7 +440,13 @@ function VersionsSection({
   const [viewBody, setViewBody] = React.useState<SerializedLexical | null>(
     null
   );
+  const [viewing, setViewing] = React.useState<VersionEntry | null>(null);
   const [viewOpen, setViewOpen] = React.useState(false);
+  const [working, setWorking] = React.useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
+    null
+  );
+  const [deleting, setDeleting] = React.useState(false);
 
   const base = `node_id=${encodeURIComponent(nodeId)}&space_id=${encodeURIComponent(spaceId)}`;
 
@@ -442,15 +464,101 @@ function VersionsSection({
     void load();
   }, [load]);
 
-  async function viewVersion(id: string) {
+  async function viewVersion(entry: VersionEntry) {
     const res = await fetch(
-      `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(id)}`
+      `/author/graph/text-resources/versions?${base}&version_id=${encodeURIComponent(entry.id)}`
     );
     if (res.ok) {
       setViewBody(
         ((await res.json()) as { body: SerializedLexical | null }).body ?? null
       );
+      setViewing(entry);
       setViewOpen(true);
+    }
+  }
+
+  // Edit from THIS version: open the editor seeded with it (`?version=<id>`). The
+  // draft is recorded when the editor saves — no premature, confusing version row.
+  // For a published version this starts a NEW draft from it; for a draft it
+  // continues that draft.
+  function editFromVersion() {
+    if (!viewing) {
+      return;
+    }
+    window.location.assign(
+      `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}?version=${encodeURIComponent(viewing.id)}`
+    );
+  }
+
+  // "Create draft from this version" (works for a draft OR a published version):
+  // record a NEW draft from this body, then land in the editor on it — so the draft
+  // is created AND immediately editable (not just a new row in the list).
+  async function createDraftFromVersion() {
+    setWorking(true);
+    const ok = await sendJson(
+      '/author/graph/text-resources',
+      { spaceId, nodeId, body: viewBody, status: 'draft' },
+      'PATCH'
+    );
+    setWorking(false);
+    if (ok) {
+      // The new draft is now the latest → the editor's default seed opens it.
+      window.location.assign(
+        `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}`
+      );
+    }
+  }
+
+  // Publish this DRAFT — act ON the draft, not via a forked copy. Payload's update
+  // always records a new version, so publishing then drops the SOURCE draft: the
+  // content ends up as a single PUBLISHED version with no leftover duplicate draft.
+  // (After publishing, the new published version is `latest`, so the source draft
+  // is non-latest and safe to delete.)
+  async function publishVersion() {
+    if (!viewing) {
+      return;
+    }
+    setWorking(true);
+    const sourceDraftId = viewing.id;
+    const ok = await sendJson(
+      '/author/graph/text-resources',
+      { spaceId, nodeId, body: viewBody, status: 'published' },
+      'PATCH'
+    );
+    if (ok) {
+      await sendJson(
+        '/author/graph/text-resources/versions',
+        { spaceId, nodeId, versionId: sourceDraftId },
+        'DELETE'
+      );
+    }
+    setWorking(false);
+    if (ok) {
+      setViewOpen(false);
+      await load();
+      onMutated();
+    }
+  }
+
+  // Delete a single DRAFT version from history (the backend rejects published ones).
+  async function deleteVersion() {
+    if (!confirmDeleteId) {
+      return;
+    }
+    setDeleting(true);
+    const ok = await sendJson(
+      '/author/graph/text-resources/versions',
+      { spaceId, nodeId, versionId: confirmDeleteId },
+      'DELETE'
+    );
+    setDeleting(false);
+    if (ok) {
+      if (viewing?.id === confirmDeleteId) {
+        setViewOpen(false);
+      }
+      setConfirmDeleteId(null);
+      await load();
+      onMutated();
     }
   }
 
@@ -506,7 +614,7 @@ function VersionsSection({
               <Button
                 size="icon-sm"
                 variant="ghost"
-                onClick={() => void viewVersion(v.id)}
+                onClick={() => void viewVersion(v)}
                 aria-label={t('graph.panel.versionView')}
               >
                 <Eye className="size-3.5" aria-hidden />
@@ -519,6 +627,22 @@ function VersionsSection({
               >
                 <RotateCcw className="size-3.5" aria-hidden />
               </Button>
+              {/* Delete — only DRAFT versions (published history is immutable).
+                  A fixed-width placeholder keeps the column aligned on published
+                  rows, so each column holds ONE action across the whole list. */}
+              {v.status !== 'published' ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setConfirmDeleteId(v.id)}
+                  aria-label={t('graph.panel.versionDelete')}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                </Button>
+              ) : (
+                <span className="size-8 shrink-0" aria-hidden />
+              )}
             </li>
           ))}
         </ul>
@@ -539,6 +663,22 @@ function VersionsSection({
         confirmIcon={<RotateCcw className="size-4" aria-hidden />}
       />
 
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmDeleteId(null);
+          }
+        }}
+        title={t('graph.panel.versionDeleteConfirm')}
+        confirmLabel={t('graph.panel.versionDelete')}
+        cancelLabel={t('graph.panel.cancel')}
+        onConfirm={() => void deleteVersion()}
+        busy={deleting}
+        destructive
+        confirmIcon={<Trash2 className="size-4" aria-hidden />}
+      />
+
       {/* Version preview — a CONTAINED modal (clearly a preview), at the SAME
           reading width as the reader (the viewer dialog widens + un-pads so the
           shared `DocumentBodyView` column renders identically). */}
@@ -546,6 +686,53 @@ function VersionsSection({
         open={viewOpen}
         onOpenChange={setViewOpen}
         title={t('graph.panel.versionViewTitle')}
+        footer={
+          <>
+            {/* Delete — only DRAFT versions; pushed to the left of the actions. */}
+            {viewing && viewing.status !== 'published' ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:text-destructive mr-auto"
+                disabled={working}
+                onClick={() => setConfirmDeleteId(viewing.id)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                {t('graph.panel.versionDelete')}
+              </Button>
+            ) : null}
+            {/* Publish makes a DRAFT version the latest published version. */}
+            {viewing?.status !== 'published' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={working}
+                onClick={() => void publishVersion()}
+              >
+                <Check className="size-4" aria-hidden />
+                {t('graph.reader.publish')}
+              </Button>
+            ) : null}
+            {/* Create draft from this version — fork a NEW draft (from a draft OR a
+                published version) and open it in the editor straight away. */}
+            <Button
+              size="sm"
+              variant={viewing?.status === 'published' ? 'default' : 'outline'}
+              disabled={working}
+              onClick={() => void createDraftFromVersion()}
+            >
+              <FilePlus className="size-4" aria-hidden />
+              {t('graph.panel.versionCreateDraft')}
+            </Button>
+            {/* Continue editing — resume THIS draft directly (no extra copy). */}
+            {viewing?.status !== 'published' ? (
+              <Button size="sm" disabled={working} onClick={editFromVersion}>
+                <Pencil className="size-4" aria-hidden />
+                {t('graph.panel.versionContinueEditing')}
+              </Button>
+            ) : null}
+          </>
+        }
       >
         <DocumentBodyView
           body={viewBody}

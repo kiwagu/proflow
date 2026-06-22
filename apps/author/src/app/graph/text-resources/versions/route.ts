@@ -17,6 +17,9 @@ import {
  *        (Payload records a new version). Verb is `update`; the version must
  *        belong to THIS node's body (parent check), so one cannot restore another
  *        document's revision.
+ * DELETE — `{ versionId }` removes a single DRAFT version from history (published
+ *        revisions are immutable here). Parent-checked like the others; never a
+ *        cross-document delete.
  *
  * Every read/write is gated by node access under the caller's OWN RLS (ADR-0002
  * §2): no node row ⇒ 404; the body is then reached by its bridge key via the
@@ -65,12 +68,14 @@ async function gate(
     };
   }
 
+  // Resolve the body doc id from the MAIN collection — NOT the `draft: true`
+  // versions view, which goes empty if the `latest` version was pruned (then the
+  // list would wrongly show zero versions even though history remains).
   const payload = await getPayload({ config });
   const { docs } = await payload.find({
     collection: 'bodies',
     where: { node_id: { equals: nodeId } },
     overrideAccess: true,
-    draft: true,
     depth: 0,
     limit: 1,
     pagination: false,
@@ -220,6 +225,75 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Restore failed.';
+    return NextResponse.json({ message }, { status: 422 });
+  }
+}
+
+const deleteSchema = z.object({
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1),
+  versionId: z.string().min(1),
+});
+
+export async function DELETE(request: Request) {
+  const raw = await request.json().catch(() => null);
+  const parsed = deleteSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: 'Invalid request', issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const gated = await gate(request, parsed.data.nodeId, parsed.data.spaceId);
+  if (!gated.ok) {
+    return gated.res;
+  }
+  const { payload, bodyDocId } = gated;
+  if (!bodyDocId) {
+    return NextResponse.json(
+      { message: 'Version not found.' },
+      { status: 404 }
+    );
+  }
+
+  // The version must belong to THIS node's body (no cross-document delete) AND be
+  // a DRAFT — published revisions are kept as the immutable approval record.
+  const version = (await payload
+    .findVersionByID({
+      collection: 'bodies',
+      id: parsed.data.versionId,
+      overrideAccess: true,
+      depth: 0,
+    })
+    .catch(() => null)) as {
+    parent?: string;
+    version?: { _status?: string };
+  } | null;
+  if (!version || version.parent !== bodyDocId) {
+    return NextResponse.json(
+      { message: 'Version not found.' },
+      { status: 404 }
+    );
+  }
+  if (version.version?._status === 'published') {
+    return NextResponse.json(
+      { message: 'Only draft versions can be deleted.' },
+      { status: 422 }
+    );
+  }
+
+  try {
+    await payload.db.deleteVersions({
+      collection: 'bodies',
+      where: { id: { equals: parsed.data.versionId } },
+    });
+    return NextResponse.json(
+      { ok: true },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Delete failed.';
     return NextResponse.json({ message }, { status: 422 });
   }
 }

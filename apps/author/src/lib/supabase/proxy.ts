@@ -369,7 +369,13 @@ export async function updateSession(request: NextRequest) {
     (isAdminPath(path) || isDocEditorPath(path)) &&
     !request.cookies.get(PAYLOAD_TOKEN_COOKIE)
   ) {
-    return payloadBridgeRedirect(request, path, payloadTenantSync);
+    // The editor's seed choice rides in the query (`?source=`/`?version=`), so
+    // the bridge must return to the FULL path+search — otherwise the choice is
+    // dropped and the editor falls back to the latest draft.
+    const target = isDocEditorPath(path)
+      ? `${path}${request.nextUrl.search}`
+      : path;
+    return payloadBridgeRedirect(request, target, payloadTenantSync);
   }
 
   return supabaseResponse;

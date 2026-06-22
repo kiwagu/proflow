@@ -114,7 +114,9 @@ export function DocEditorClient({
       <main className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto w-full max-w-[760px] px-6 py-8">
           <RenderLexical
-            field={{ name: 'body' }}
+            // `label: false` drops the redundant "Body" field label — the editor
+            // pane is obviously the document body.
+            field={{ name: 'body', label: false }}
             schemaPath="collection.bodies.body"
             value={value}
             setValue={handleSetValue}

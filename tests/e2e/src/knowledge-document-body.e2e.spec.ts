@@ -45,6 +45,18 @@ async function apiFor(actor: KnowledgeActor): Promise<APIRequestContext> {
   });
 }
 
+/** A real but empty Lexical body — a root with no children (no text nodes). */
+const EMPTY_LEXICAL = {
+  root: {
+    type: 'root',
+    format: '',
+    indent: 0,
+    version: 1,
+    direction: 'ltr',
+    children: [],
+  },
+} as const;
+
 /** A minimal Lexical body holding a single paragraph of `text`. */
 function lexicalWithText(text: string) {
   return {
@@ -108,7 +120,7 @@ test.describe('@full knowledge document body', () => {
     await teardownKnowledgeGraphTenant(tenant);
   });
 
-  test('create → body bridged → read round-trips the Lexical body', async () => {
+  test('create → body bridged → publish → read round-trips the Lexical body', async () => {
     const api = await apiFor(tenant.granted);
 
     const marker = `Hello from the body ${Date.now()}`;
@@ -134,36 +146,74 @@ test.describe('@full knowledge document body', () => {
       (row as { body_ref: { collection: string; doc_id: string } }).body_ref
     ).toEqual(created.body_ref);
 
+    // Read mode serves ONLY the published version; publish so the body is visible.
+    const pub = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: created.node_id,
+        body: lexicalWithText(marker),
+        status: 'published',
+      },
+    });
+    expect(pub.status()).toBe(200);
+
     // Reading the body back returns the SAME content (cross-store round-trip).
     const readRes = await api.get(
       `/author/graph/text-resources?node_id=${created.node_id}&space_id=${tenant.spaceId}`
     );
     expect(readRes.status()).toBe(200);
-    const read = (await readRes.json()) as { node_id: string; body: unknown };
+    const read = (await readRes.json()) as {
+      node_id: string;
+      body: unknown;
+      published: boolean;
+    };
     expect(read.node_id).toBe(created.node_id);
+    expect(read.published).toBe(true);
     expect(JSON.stringify(read.body)).toContain(marker);
 
     await api.dispose();
   });
 
-  test('empty-but-live: create without a body → readable empty body, node bridged', async () => {
+  test('read mode hides an unpublished document until it is published', async () => {
     const api = await apiFor(tenant.granted);
 
     const created = await createTextDoc(api, tenant.spaceId, 'Empty Doc');
     expect(created.body_ref.collection).toBe('bodies');
     expect(created.body_ref.doc_id.length).toBeGreaterThan(0);
 
-    const readRes = await api.get(
-      `/author/graph/text-resources?node_id=${created.node_id}&space_id=${tenant.spaceId}`
-    );
-    expect(readRes.status()).toBe(200);
-    const read = (await readRes.json()) as {
-      body: { root?: { children?: unknown[] } } | null;
+    const readUrl = `/author/graph/text-resources?node_id=${created.node_id}&space_id=${tenant.spaceId}`;
+
+    // Freshly created (never published) → read mode shows NOTHING: no published
+    // version, so the draft is not surfaced (the moderation gate).
+    const before = (await (await api.get(readUrl)).json()) as {
+      body: unknown;
+      status: string | null;
+      published: boolean;
     };
-    // A real but empty Lexical body — present (not null), with a root and no text.
-    expect(read.body).not.toBeNull();
-    expect(read.body?.root).toBeDefined();
-    expect(JSON.stringify(read.body)).not.toContain('"type":"text"');
+    expect(before.published).toBe(false);
+    expect(before.body).toBeNull();
+    expect(before.status).toBeNull();
+
+    // Publish the (empty) body → now read mode serves it: a real, empty Lexical
+    // body (present, with a root and no text).
+    const pub = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: created.node_id,
+        body: EMPTY_LEXICAL,
+        status: 'published',
+      },
+    });
+    expect(pub.status()).toBe(200);
+
+    const after = (await (await api.get(readUrl)).json()) as {
+      body: { root?: { children?: unknown[] } } | null;
+      published: boolean;
+    };
+    expect(after.published).toBe(true);
+    expect(after.body).not.toBeNull();
+    expect(after.body?.root).toBeDefined();
+    expect(JSON.stringify(after.body)).not.toContain('"type":"text"');
 
     await api.dispose();
   });
@@ -219,13 +269,14 @@ test.describe('@full knowledge document body', () => {
     const nodeId = (bare as { id: string }).id;
 
     // Saving self-heals (`ensureNodeBody` mints + bridges a body) then writes it.
+    // Publish so the content is visible in read mode (which serves published only).
     const marker = `Healed content ${Date.now()}`;
     const patch = await api.patch('/author/graph/text-resources', {
       data: {
         spaceId: tenant.spaceId,
         nodeId,
         body: lexicalWithText(marker),
-        status: 'draft',
+        status: 'published',
       },
     });
     expect(patch.status()).toBe(200);
@@ -253,7 +304,7 @@ test.describe('@full knowledge document body', () => {
     await api.dispose();
   });
 
-  test('PATCH saves a draft then publishes; read reflects content + _status; ungranted cannot save', async () => {
+  test('read mode hides the draft, then shows it once published; ungranted cannot save', async () => {
     const api = await apiFor(tenant.granted);
     const doc = await createTextDoc(api, tenant.spaceId, 'Editable Body Doc');
     const url = `/author/graph/text-resources?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
@@ -270,13 +321,16 @@ test.describe('@full knowledge document body', () => {
     });
     expect(draftRes.status()).toBe(200);
 
-    // The author surface reads the LATEST → sees the draft content + status.
+    // Read mode serves ONLY the published version → a draft is NOT surfaced
+    // (the moderation gate: a double-click never shows un-approved material).
     const draftRead = (await (await api.get(url)).json()) as {
       body: unknown;
       status: string | null;
+      published: boolean;
     };
-    expect(draftRead.status).toBe('draft');
-    expect(JSON.stringify(draftRead.body)).toContain(marker);
+    expect(draftRead.published).toBe(false);
+    expect(draftRead.body).toBeNull();
+    expect(draftRead.status).toBeNull();
 
     // PUBLISH — promotes to `_status: published`.
     const pubRes = await api.patch('/author/graph/text-resources', {
@@ -431,6 +485,97 @@ test.describe('@full knowledge document body', () => {
       }
     );
     expect(deniedRestore.status()).toBe(404);
+
+    await api.dispose();
+    await ungranted.dispose();
+  });
+
+  test('versions: delete a DRAFT revision; a published one cannot be deleted, RLS-gated', async () => {
+    const api = await apiFor(tenant.granted);
+    const doc = await createTextDoc(api, tenant.spaceId, 'Prunable Doc');
+    const versionsUrl = `/author/graph/text-resources/versions?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+    const del = (versionId: string, ctx = api) =>
+      ctx.delete('/author/graph/text-resources/versions', {
+        data: { spaceId: tenant.spaceId, nodeId: doc.node_id, versionId },
+      });
+
+    // Record a draft and a published version.
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('a draft to prune'),
+        status: 'draft',
+      },
+    });
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('the published one'),
+        status: 'published',
+      },
+    });
+
+    const list = async () =>
+      (
+        (await (await api.get(versionsUrl)).json()) as {
+          versions: { id: string; status: string | null }[];
+        }
+      ).versions;
+    const before = await list();
+    const draft = before.find((v) => v.status === 'draft');
+    const published = before.find((v) => v.status === 'published');
+    expect(draft).toBeDefined();
+    expect(published).toBeDefined();
+
+    // A published revision is immutable here → 422, still present.
+    const deniedPublished = await del(published!.id);
+    expect(deniedPublished.status()).toBe(422);
+
+    // RLS: an ungranted actor cannot delete (node not visible → 404).
+    const ungranted = await apiFor(tenant.ungranted);
+    const deniedRls = await del(draft!.id, ungranted);
+    expect(deniedRls.status()).toBe(404);
+
+    // The draft revision is removed from history.
+    const ok = await del(draft!.id);
+    expect(ok.status()).toBe(200);
+    const after = await list();
+    expect(after.some((v) => v.id === draft!.id)).toBe(false);
+    expect(after.some((v) => v.id === published!.id)).toBe(true);
+
+    // Deleting the LATEST draft (the one flagged `latest`) must NOT orphan the
+    // document: the body doc resolves from the main collection, so the list still
+    // shows history and the doc stays editable. (Regression: it previously emptied
+    // the version view and broke ensureNodeBody with a node_id conflict.)
+    await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('newest draft'),
+        status: 'draft',
+      },
+    });
+    const withLatest = await list();
+    const latestDraft = withLatest.find((v) => v.status === 'draft');
+    expect(latestDraft).toBeDefined();
+    expect((await del(latestDraft!.id)).status()).toBe(200);
+
+    const afterLatest = await list();
+    expect(afterLatest.length).toBeGreaterThan(0);
+    expect(afterLatest.some((v) => v.status === 'published')).toBe(true);
+
+    // Still editable — ensureNodeBody finds the existing body (no spurious create).
+    const reSave = await api.patch('/author/graph/text-resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        nodeId: doc.node_id,
+        body: lexicalWithText('after prune'),
+        status: 'draft',
+      },
+    });
+    expect(reSave.status()).toBe(200);
 
     await api.dispose();
     await ungranted.dispose();

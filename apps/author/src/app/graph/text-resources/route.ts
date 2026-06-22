@@ -13,15 +13,18 @@ import {
  * Text-resource write for the consumer authoring surface — the ONE node kind
  * that carries a Lexical body (ADR-0002 §1, ADR-0005).
  *
- * GET  — read a node's Lexical body. The cross-store RLS gate (ADR-0002 §2):
- *        first resolve node access under the user's OWN RLS (a PostgREST select
- *        on `knowledge_resources` — no row ⇒ no access ⇒ 404), THEN read the
- *        `bodies` doc by `node_id` via the Payload Local API with
+ * GET  — read a node's Lexical body for READ MODE: the LATEST PUBLISHED version
+ *        ONLY (never a draft or an older approved revision). The cross-store RLS
+ *        gate (ADR-0002 §2): first resolve node access under the user's OWN RLS
+ *        (a PostgREST select on `knowledge_resources` — no row ⇒ no access ⇒ 404),
+ *        THEN read the `bodies` doc by `node_id` via the Payload Local API with
  *        `overrideAccess` (the gate already passed). Body access is subordinate
  *        to node access — never a second authority.
- *        This is the AUTHOR/moderator surface, so it reads the LATEST version
- *        (`draft: true`) — the editor sees their own in-progress edit
- *        immediately. A future CONSUMER surface reads the published version.
+ *        Drafts and past versions are deliberately NOT served here — they stay
+ *        reachable for EDITING (the editor route loads the latest draft) and via
+ *        the version-preview modal, so a double-click never surfaces un-approved
+ *        material. A node with no published version yet returns
+ *        `{ body: null, status: null, published: false }`.
  * POST — create a `kind=text` node + its Payload `bodies` doc, bridged by
  *        `body_ref`, optionally placed inside a folder (FORWARD `contains`
  *        edge, ADR-0015). A SYNCHRONOUS cross-store fan-out: the node INSERT is
@@ -78,27 +81,54 @@ export async function GET(request: Request) {
     );
   }
 
-  // Read the body by node_id (the bridge key; unique in `bodies`). The gate
-  // passed, so overrideAccess is safe here — Bodies access stays the defence for
-  // direct admin/REST reads. `draft: true` returns the LATEST version (draft or
-  // published) — the author/moderator surface shows the in-progress edit.
+  // Resolve the body doc by node_id (the bridge key; unique in `bodies`) from the
+  // MAIN collection — NOT the `draft: true` versions view, which goes empty if the
+  // `latest` version was pruned. We only need the doc id here; the body served
+  // below is strictly the latest PUBLISHED version.
   const payload = await getPayload({ config });
   const { docs } = await payload.find({
     collection: 'bodies',
     where: { node_id: { equals: nodeId } },
     overrideAccess: true,
-    draft: true,
     depth: 0,
     limit: 1,
     pagination: false,
   });
-  const doc = docs[0] as { body?: unknown; _status?: string } | undefined;
+  const bodyDocId = (docs[0] as { id?: string } | undefined)?.id ?? null;
+
+  // Read mode shows ONLY the latest published version — pick the newest version
+  // whose `_status` is `published`. The main doc's non-draft state is ambiguous
+  // when never published, so query the versions directly (deterministic).
+  let publishedBody: unknown = null;
+  let hasPublished = false;
+  if (bodyDocId) {
+    const { docs: versions } = await payload.findVersions({
+      collection: 'bodies',
+      where: {
+        and: [
+          { parent: { equals: bodyDocId } },
+          { 'version._status': { equals: 'published' } },
+        ],
+      },
+      overrideAccess: true,
+      depth: 0,
+      limit: 1,
+      sort: '-updatedAt',
+      pagination: false,
+    });
+    const latest = versions[0] as { version?: { body?: unknown } } | undefined;
+    if (latest) {
+      hasPublished = true;
+      publishedBody = latest.version?.body ?? null;
+    }
+  }
 
   return NextResponse.json(
     {
       node_id: nodeId,
-      body: doc?.body ?? null,
-      status: doc?._status ?? null,
+      body: hasPublished ? publishedBody : null,
+      status: hasPublished ? 'published' : null,
+      published: hasPublished,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );

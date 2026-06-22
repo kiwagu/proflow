@@ -6,6 +6,7 @@ import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
+import { useEditLauncher } from './views/document-reader/use-edit-launcher';
 import { WorkbenchChrome } from './workbench-chrome';
 import { buildContainment } from './containment';
 import {
@@ -123,6 +124,13 @@ export function DriveWorkbench({
     return item ? { id: item.id, title: item.title } : null;
   }, [docId, result.items]);
 
+  // The ONE "edit this document" launcher (seed-choice flow + chooser), shared by
+  // the reader's Edit button and the `⋯` context menus on cards and the panel.
+  const { requestEdit, chooser, preparingEdit } = useEditLauncher({
+    spaceId: spaceId ?? '',
+    messages,
+  });
+
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       <WorkbenchChrome messages={messages} />
@@ -139,6 +147,7 @@ export function DriveWorkbench({
             kbData={kbData}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            onEditNode={spaceId ? requestEdit : undefined}
             onOpenDocument={(id) => {
               // Opening a document in the reader dismisses the transient Details
               // panel — otherwise it keeps showing the previously-selected node
@@ -164,7 +173,11 @@ export function DriveWorkbench({
               nodeId={openDoc.id}
               title={openDoc.title}
               messages={messages}
+              containment={containment}
               onClose={() => router.back()}
+              onEdit={() => requestEdit(openDoc.id)}
+              onMutated={refresh}
+              preparingEdit={preparingEdit}
             />
           ) : null}
         </div>
@@ -189,9 +202,13 @@ export function DriveWorkbench({
               }
             }}
             onMutated={refresh}
+            onEdit={requestEdit}
           />
         ) : null}
       </div>
+
+      {/* The shared edit-source chooser (opens when a published doc has drafts). */}
+      {chooser}
     </div>
   );
 }

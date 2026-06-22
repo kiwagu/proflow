@@ -22,11 +22,14 @@ export function DocumentViewerDialog({
   onOpenChange,
   title,
   children,
+  footer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: React.ReactNode;
   children: React.ReactNode;
+  /** Optional action bar pinned below the content (e.g. edit / publish). */
+  footer?: React.ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,6 +41,11 @@ export function DocumentViewerDialog({
           <DialogTitle className="text-left">{title}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[78vh] w-full overflow-auto">{children}</div>
+        {footer ? (
+          <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+            {footer}
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
