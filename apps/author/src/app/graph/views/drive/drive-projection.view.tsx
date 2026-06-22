@@ -123,7 +123,7 @@ function useCardOpen(onDetails: () => void, onOpen: () => void) {
  * (the active one highlights); absent = a not-yet-implemented stub that, for now,
  * just returns to the tree root (Shared / Recent / Trash land in later passes).
  */
-type DriveScope = 'kb' | 'starred';
+type DriveScope = 'kb' | 'starred' | 'recent';
 type NavItem = {
   icon: LucideIcon;
   /** Stable React key / id for the row. */
@@ -142,7 +142,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     scope: 'kb',
   },
   { icon: Users, key: 'navShared', label: (t) => t('graph.drive.navShared') },
-  { icon: Clock, key: 'navRecent', label: (t) => t('graph.drive.navRecent') },
+  {
+    icon: Clock,
+    key: 'navRecent',
+    label: (t) => t('graph.drive.navRecent'),
+    scope: 'recent',
+  },
   {
     icon: Star,
     key: 'navStarred',
@@ -182,11 +187,15 @@ export function DriveProjectionView({
   const currentUserId = kbData?.currentUserId ?? null;
 
   // Which sidebar filter is active. 'kb' browses the containment tree (the default
-  // Drive); 'starred' shows the flat set of THIS user's starred nodes — a
-  // cross-cutting filter, not a folder. Opening any folder returns to 'kb'. Local
-  // (like `layout`): a transient lens over the same RLS-resolved canvas.
+  // Drive); 'starred' and 'recent' are flat cross-cutting lenses over the same
+  // RLS-resolved canvas — not folders. Opening any folder returns to 'kb'. Local
+  // (like `layout`): a transient lens, not a location.
   const [scope, setScope] = React.useState<DriveScope>('kb');
   const isStarred = scope === 'starred';
+  const isRecent = scope === 'recent';
+  // A flat filter lens (Starred / Recent) hides the folder tree, breadcrumb path,
+  // and shortcuts — the canvas is a single flat list, not a folder you sit inside.
+  const isFilterScope = isStarred || isRecent;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
@@ -267,6 +276,12 @@ export function DriveProjectionView({
   // BOTH grid and list — instead of the raw containment `position`. `.slice()`
   // before sorting so we never mutate the cached containment/shortcut arrays.
   const byTitle = byText((node: LensNode) => node.title);
+  // Recent ordering: newest touch first. ISO `updated_at` strings compare
+  // lexicographically = chronologically; a missing timestamp sorts last.
+  const byRecency = (a: LensNode, b: LensNode) =>
+    (metaByItem[b.id]?.updatedAt ?? '').localeCompare(
+      metaByItem[a.id]?.updatedAt ?? ''
+    );
   const roots = rootFolders(containment);
   const isRoot = folderId == null;
   const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
@@ -280,33 +295,49 @@ export function DriveProjectionView({
         .filter((node): node is LensNode => node != null)
     : [];
 
+  // Recent = every content node (folders excluded — Recent lists touched files),
+  // flat across the space, newest first. Resolved through the canvas so RLS-hidden
+  // ids drop out, exactly as Starred does. Space-wide by `updated_at` (no per-user
+  // open tracking yet — that escalation lands only if needed).
+  const recentNodes = isRecent
+    ? result.items
+        .map((item) => containment.byId.get(item.id))
+        .filter(
+          (node): node is LensNode => node != null && node.kind !== 'folder'
+        )
+    : [];
+
   const folders = (
     isStarred
       ? starredNodes.filter((node) => node.kind === 'folder')
-      : isRoot
-        ? roots
-        : folder
-          ? childFolders(containment, folder.id)
-          : []
+      : isFilterScope // 'recent' lists no folders
+        ? []
+        : isRoot
+          ? roots
+          : folder
+            ? childFolders(containment, folder.id)
+            : []
   )
     .slice()
     .sort(byTitle);
   const shortcuts = (
-    isStarred || isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
+    isFilterScope || isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
   )
     .slice()
     .sort(byTitle);
   const items = (
     isStarred
       ? starredNodes.filter((node) => node.kind !== 'folder')
-      : isRoot
-        ? []
-        : folder
-          ? childContent(containment, folder.id)
-          : []
+      : isRecent
+        ? recentNodes
+        : isRoot
+          ? []
+          : folder
+            ? childContent(containment, folder.id)
+            : []
   )
     .slice()
-    .sort(byTitle);
+    .sort(isRecent ? byRecency : byTitle);
 
   if (!spaceId) {
     return null;
@@ -380,20 +411,19 @@ export function DriveProjectionView({
       </Button>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
-        // 'kb' is active whenever the Starred filter is off (even inside a folder);
-        // 'starred' when it is on; the not-yet-wired stubs never highlight.
-        const active =
-          item.scope === 'starred'
-            ? isStarred
-            : item.scope === 'kb'
-              ? !isStarred
-              : false;
+        // A wired item highlights when its scope is the active one ('kb' stays
+        // active even inside a folder); the not-yet-wired stubs never highlight.
+        const active = item.scope === scope;
         return (
           <Button
             key={item.key}
             variant="ghost"
             onClick={() =>
-              item.scope === 'starred' ? setScope('starred') : navigate(null)
+              // 'kb' + the not-yet-wired stubs return to the tree root (which also
+              // resets the scope); 'starred'/'recent' switch to that flat lens.
+              item.scope === 'starred' || item.scope === 'recent'
+                ? setScope(item.scope)
+                : navigate(null)
             }
             data-active={active}
             className={cn(
@@ -443,12 +473,18 @@ export function DriveProjectionView({
   const toolbar = (
     <div className="flex items-center gap-2.5 border-b px-5 py-3">
       <div className="flex min-w-0 items-center gap-1 text-sm">
-        {isStarred ? (
-          // The Starred filter is a flat lens, not a tree location — a single inert
-          // crumb stands in for the folder path.
+        {isFilterScope ? (
+          // A flat filter lens (Starred / Recent) is not a tree location — a single
+          // inert crumb stands in for the folder path.
           <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
-            <Star className="size-3.5" aria-hidden />
-            {t('graph.drive.navStarred')}
+            {isStarred ? (
+              <Star className="size-3.5" aria-hidden />
+            ) : (
+              <Clock className="size-3.5" aria-hidden />
+            )}
+            {isStarred
+              ? t('graph.drive.navStarred')
+              : t('graph.drive.navRecent')}
           </span>
         ) : (
           <button
@@ -467,7 +503,7 @@ export function DriveProjectionView({
         {/* Full ancestry path (deliberate delta: the prototype showed only the
             immediate folder). Each ancestor is a clickable crumb; the current one
             is bold and inert. */}
-        {!isStarred && !isRoot && folder
+        {!isFilterScope && !isRoot && folder
           ? pathTo(containment, folder.id).map((crumb, index, crumbs) => {
               const isCurrent = index === crumbs.length - 1;
               return (
@@ -496,7 +532,7 @@ export function DriveProjectionView({
         {/* current-folder actions (deliberate delta: the card ⋯ acts on a CHILD
             folder; this acts on the folder you are IN) → the shared action menu,
             with Details opening the panel. */}
-        {!isStarred && !isRoot && folder ? (
+        {!isFilterScope && !isRoot && folder ? (
           <span className="ml-0.5 shrink-0">
             <NodeActionsMenu
               spaceId={spaceId}
@@ -556,7 +592,7 @@ export function DriveProjectionView({
 
   const main = (
     <>
-      {!isStarred && isRoot ? (
+      {!isFilterScope && isRoot ? (
         <div className="text-muted-foreground mb-2 text-[13px]">
           {t('graph.drive.allSections', { count: roots.length })}
         </div>
@@ -573,6 +609,13 @@ export function DriveProjectionView({
             selectedId={selectedId}
             starredSet={starredSet}
             onToggleStar={toggleStar}
+            // Recent defaults the table to newest-modified-first (it is still
+            // re-sortable by any column); every other scope sorts by name.
+            defaultSorting={
+              isRecent
+                ? [{ id: 'modified', desc: true }]
+                : [{ id: 'name', desc: false }]
+            }
           />
         ) : null
       ) : (
@@ -580,7 +623,7 @@ export function DriveProjectionView({
           {/* folders + shortcuts */}
           {folders.length > 0 || shortcuts.length > 0 ? (
             <>
-              {!isRoot || isStarred ? (
+              {!isRoot || isFilterScope ? (
                 <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
               ) : null}
               <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
@@ -707,10 +750,16 @@ export function DriveProjectionView({
       {isStarred && folders.length === 0 && items.length === 0 ? (
         <EmptyState>{t('graph.drive.starredEmpty')}</EmptyState>
       ) : null}
-      {!isStarred && isRoot && roots.length === 0 ? (
+      {isRecent && items.length === 0 ? (
+        <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
+      ) : null}
+      {!isFilterScope && isRoot && roots.length === 0 ? (
         <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
       ) : null}
-      {!isStarred && !isRoot && folders.length === 0 && items.length === 0 ? (
+      {!isFilterScope &&
+      !isRoot &&
+      folders.length === 0 &&
+      items.length === 0 ? (
         <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
       ) : null}
     </>
@@ -1010,12 +1059,15 @@ function DriveListTable({
   selectedId,
   starredSet,
   onToggleStar,
+  defaultSorting,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
   metaByItem: Record<string, NodeMeta>;
   currentUserId: string | null;
   selectedId?: string;
+  /** Initial column sort (Recent → modified-desc; otherwise name-asc). */
+  defaultSorting: { id: string; desc: boolean }[];
   starredSet: Set<string>;
   onToggleStar: (nodeId: string, next: boolean) => void;
 }) {
@@ -1136,7 +1188,7 @@ function DriveListTable({
       data={rows}
       getRowId={(r) => r.id}
       activeRowId={selectedId}
-      defaultSorting={[{ id: 'name', desc: false }]}
+      defaultSorting={defaultSorting}
       // Folders + shortcuts (0) always sort as a block above files (1); the
       // column sort applies within each group, so they never interleave.
       groupOrder={(r) => (r.rowKind === 'item' ? 1 : 0)}

@@ -139,4 +139,66 @@ describe('DriveProjectionView (forward-port shell)', () => {
       screen.getByText(messages['graph.drive.starredEmpty']!)
     ).toBeTruthy();
   });
+
+  it('lists content newest-first and hides folders under the Recent filter', () => {
+    const props = baseProps({
+      result: {
+        projection_id: 'prj_test',
+        view: 'drive',
+        items: [
+          { id: 'knr_old', kind: 'text', title: 'Older' },
+          { id: 'knr_new', kind: 'text', title: 'Newer' },
+          { id: 'knr_folder', kind: 'folder', title: 'Docs' },
+        ] as ProjectionResult['items'],
+      },
+      kbData: {
+        attributesByItem: {},
+        metaByItem: {
+          knr_old: { ownerUserId: null, updatedAt: '2026-01-01T00:00:00Z' },
+          knr_new: { ownerUserId: null, updatedAt: '2026-06-01T00:00:00Z' },
+        },
+        containment: [],
+        shortcuts: [],
+        currentUserId: null,
+        starredIds: [],
+      },
+    });
+    render(<DriveProjectionView {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+
+    // The canvas lists exactly the two docs, newest (`updated_at`) first — the
+    // folder is excluded (only the two titles match, in recency order).
+    const titles = screen
+      .getAllByText(/^(Older|Newer)$/)
+      .map((node) => node.textContent);
+    expect(titles).toEqual(['Newer', 'Older']);
+  });
+
+  it('shows the empty-recent copy when there is no content', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps({
+          result: {
+            projection_id: 'prj_test',
+            view: 'drive',
+            items: [
+              { id: 'knr_folder', kind: 'folder', title: 'Docs' },
+            ] as ProjectionResult['items'],
+          },
+          kbData: {
+            attributesByItem: {},
+            metaByItem: {},
+            containment: [],
+            shortcuts: [],
+            currentUserId: null,
+            starredIds: [],
+          },
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    expect(screen.getByText(messages['graph.drive.recentEmpty']!)).toBeTruthy();
+  });
 });

@@ -51,6 +51,7 @@
   "graph.drive.shortcutFolder": "Shortcut · folder",
   "graph.drive.folderEmpty": "This folder is empty.",
   "graph.drive.starredEmpty": "Nothing starred yet.",
+  "graph.drive.recentEmpty": "No recent activity yet.",
   "graph.drive.star": "Add star",
   "graph.drive.unstar": "Remove star",
   "graph.drive.metaOwner": "{kind} · {owner}",

@@ -51,6 +51,7 @@
   "graph.drive.shortcutFolder": "Acceso directo · carpeta",
   "graph.drive.folderEmpty": "Esta carpeta está vacía.",
   "graph.drive.starredEmpty": "Aún no hay destacados.",
+  "graph.drive.recentEmpty": "Aún no hay actividad reciente.",
   "graph.drive.star": "Añadir a destacados",
   "graph.drive.unstar": "Quitar de destacados",
   "graph.drive.metaOwner": "{kind} · {owner}",
