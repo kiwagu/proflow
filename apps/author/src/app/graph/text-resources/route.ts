@@ -83,8 +83,9 @@ export async function GET(request: Request) {
 
   // Resolve the body doc by node_id (the bridge key; unique in `bodies`) from the
   // MAIN collection — NOT the `draft: true` versions view, which goes empty if the
-  // `latest` version was pruned. We only need the doc id here; the body served
-  // below is strictly the latest PUBLISHED version.
+  // `latest` version was pruned. The main row also carries `_status`: the document's
+  // CURRENT publish state, which a draft save leaves at `published` but Unpublish
+  // flips back to `draft` — so it gates whether read mode shows anything.
   const payload = await getPayload({ config });
   const { docs } = await payload.find({
     collection: 'bodies',
@@ -94,13 +95,19 @@ export async function GET(request: Request) {
     limit: 1,
     pagination: false,
   });
-  const bodyDocId = (docs[0] as { id?: string } | undefined)?.id ?? null;
+  const mainDoc = docs[0] as { id?: string; _status?: string } | undefined;
+  const bodyDocId = mainDoc?.id ?? null;
+  // Read mode shows content ONLY while the document is CURRENTLY published. A doc
+  // that was never published, is draft-only, or was Unpublished → nothing here
+  // (drafts/old revisions stay reachable for editing, not for reading).
+  const isPublished = mainDoc?._status === 'published';
 
-  // Read mode shows ONLY the latest published version — pick the newest version
-  // whose `_status` is `published`. The main doc's non-draft state is ambiguous
-  // when never published, so query the versions directly (deterministic).
+  // The body is the latest PUBLISHED version (querying versions is deterministic,
+  // unlike the main row's body which a draft save may have moved on). We also note
+  // whether the doc was EVER published — to tell "never published" apart from
+  // "was published, now Unpublished" for an honest read-mode notice.
   let publishedBody: unknown = null;
-  let hasPublished = false;
+  let everPublished = false;
   if (bodyDocId) {
     const { docs: versions } = await payload.findVersions({
       collection: 'bodies',
@@ -118,10 +125,13 @@ export async function GET(request: Request) {
     });
     const latest = versions[0] as { version?: { body?: unknown } } | undefined;
     if (latest) {
-      hasPublished = true;
+      everPublished = true;
       publishedBody = latest.version?.body ?? null;
     }
   }
+
+  // Read mode shows the published body ONLY while the doc is CURRENTLY published.
+  const hasPublished = isPublished && everPublished;
 
   return NextResponse.json(
     {
@@ -129,6 +139,8 @@ export async function GET(request: Request) {
       body: hasPublished ? publishedBody : null,
       status: hasPublished ? 'published' : null,
       published: hasPublished,
+      // distinguishes "never published" from "retracted" for the reader notice
+      everPublished,
     },
     { headers: { 'Cache-Control': 'no-store' } }
   );
@@ -187,7 +199,10 @@ export async function POST(request: Request) {
 const updateSchema = z.object({
   spaceId: z.string().min(1),
   nodeId: z.string().min(1), // knr_…
-  body: z.unknown(), // a Lexical SerializedEditorState ({ root })
+  // A Lexical SerializedEditorState ({ root }). OMIT for a status-only change:
+  //   - status:'draft'     → UNPUBLISH (retract to draft; body unchanged),
+  //   - status:'published' → publish the current state (no body change).
+  body: z.unknown().optional(),
   // 'draft' saves a draft version; 'published' promotes it (Payload drafts).
   status: z.enum(['draft', 'published']).default('draft'),
 });
@@ -233,18 +248,23 @@ export async function PATCH(request: Request) {
       { nodeId: parsed.data.nodeId, spaceId: parsed.data.spaceId },
       { db, payload }
     );
-    // draft → save a draft version; published → promote (`_status: published`).
     const isDraft = parsed.data.status === 'draft';
+    const hasBody = parsed.data.body !== undefined;
+    // With a body: save a draft version, or save + publish. Without a body, it is
+    // a STATUS-only change on the main doc — Unpublish (→ draft) or publish the
+    // current state (→ published) — never a draft version (`draft: false`).
     const data = (
-      isDraft
-        ? { body: parsed.data.body }
-        : { body: parsed.data.body, _status: 'published' }
+      hasBody
+        ? isDraft
+          ? { body: parsed.data.body }
+          : { body: parsed.data.body, _status: 'published' }
+        : { _status: parsed.data.status }
     ) as never;
     await payload.update({
       collection: 'bodies',
       id: docId,
       data,
-      draft: isDraft,
+      draft: hasBody ? isDraft : false,
       overrideAccess: true,
     });
     return NextResponse.json(

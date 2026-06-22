@@ -580,4 +580,55 @@ test.describe('@full knowledge document body', () => {
     await api.dispose();
     await ungranted.dispose();
   });
+
+  test('unpublish: a draft save keeps it published, but Unpublish hides it; RLS-gated', async () => {
+    const api = await apiFor(tenant.granted);
+    const doc = await createTextDoc(api, tenant.spaceId, 'Unpublishable Doc');
+    const readUrl = `/author/graph/text-resources?node_id=${doc.node_id}&space_id=${tenant.spaceId}`;
+    const read = async () =>
+      (await (await api.get(readUrl)).json()) as {
+        body: unknown;
+        published: boolean;
+      };
+    const patch = (data: Record<string, unknown>) =>
+      api.patch('/author/graph/text-resources', {
+        data: { spaceId: tenant.spaceId, nodeId: doc.node_id, ...data },
+      });
+
+    const pub = `Published ${Date.now()}`;
+    expect(
+      (
+        await patch({ body: lexicalWithText(pub), status: 'published' })
+      ).status()
+    ).toBe(200);
+    const published = await read();
+    expect(published.published).toBe(true);
+    expect(JSON.stringify(published.body)).toContain(pub);
+
+    // A draft save on top must NOT unpublish — read still shows the PUBLISHED body.
+    const wip = `Newer draft ${Date.now()}`;
+    expect(
+      (await patch({ body: lexicalWithText(wip), status: 'draft' })).status()
+    ).toBe(200);
+    const stillPublished = await read();
+    expect(stillPublished.published).toBe(true);
+    expect(JSON.stringify(stillPublished.body)).toContain(pub);
+    expect(JSON.stringify(stillPublished.body)).not.toContain(wip);
+
+    // Unpublish (status-only, no body) → read mode hides it.
+    expect((await patch({ status: 'draft' })).status()).toBe(200);
+    const unpublished = await read();
+    expect(unpublished.published).toBe(false);
+    expect(unpublished.body).toBeNull();
+
+    // RLS: an ungranted actor cannot unpublish (node not visible → 404).
+    const ungranted = await apiFor(tenant.ungranted);
+    const denied = await ungranted.patch('/author/graph/text-resources', {
+      data: { spaceId: tenant.spaceId, nodeId: doc.node_id, status: 'draft' },
+    });
+    expect(denied.status()).toBe(404);
+
+    await api.dispose();
+    await ungranted.dispose();
+  });
 });
