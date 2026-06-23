@@ -13,7 +13,10 @@ import {
   resolveCurrentUserId,
   resolveDefaultLensProjection,
 } from './graph-page.data';
-import type { KbViewData } from './views/registry/projection-view.types';
+import type {
+  DriveScope,
+  KbViewData,
+} from './views/registry/projection-view.types';
 
 /**
  * `/author/graph` — the knowledge workbench entry. Resolves the default lens
@@ -26,9 +29,36 @@ import type { KbViewData } from './views/registry/projection-view.types';
  */
 export const dynamic = 'force-dynamic';
 
-export default async function GraphPage() {
+/**
+ * Read the navigation location from the URL SERVER-SIDE and hand it to the
+ * workbench as the INITIAL state. The workbench then owns it in client state +
+ * mirrors it back to the URL (`?folder=&doc=&scope=`) — so the location survives
+ * refresh, is shareable, and (crucially) the SSR'd HTML already reflects it, which
+ * keeps hydration from mismatching the client's first render.
+ */
+function readLocation(sp: Record<string, string | string[] | undefined>): {
+  folder: string | null;
+  doc: string | null;
+  scope: DriveScope;
+} {
+  const one = (v: string | string[] | undefined): string | null =>
+    typeof v === 'string' && v.length > 0 ? v : null;
+  const scope = sp.scope;
+  return {
+    folder: one(sp.folder),
+    doc: one(sp.doc),
+    scope: scope === 'starred' || scope === 'recent' ? scope : 'kb',
+  };
+}
+
+export default async function GraphPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const messages = await loadGraphMessages('en');
   const spaceId = await resolveActiveSpaceId();
+  const location = readLocation(await searchParams);
 
   const emptyResult: ProjectionResult = {
     projection_id: DEFAULT_LENS_PROJECTION_ID,
@@ -50,6 +80,9 @@ export default async function GraphPage() {
         messages={messages}
         result={emptyResult}
         kbData={emptyKb}
+        initialFolder={location.folder}
+        initialDoc={location.doc}
+        initialScope={location.scope}
       />
     );
   }
@@ -87,6 +120,9 @@ export default async function GraphPage() {
       spaceId={spaceId}
       result={result}
       kbData={kbData}
+      initialFolder={location.folder}
+      initialDoc={location.doc}
+      initialScope={location.scope}
     />
   );
 }

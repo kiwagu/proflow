@@ -201,4 +201,33 @@ describe('DriveProjectionView (forward-port shell)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
     expect(screen.getByText(messages['graph.drive.recentEmpty']!)).toBeTruthy();
   });
+
+  it('lists loose top-level content at the Drive root (not only inside folders)', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps({
+          result: {
+            projection_id: 'prj_test',
+            view: 'drive',
+            items: [
+              { id: 'knr_folder', kind: 'folder', title: 'Docs' },
+              { id: 'knr_loose', kind: 'text', title: 'LooseDoc' },
+            ] as ProjectionResult['items'],
+          },
+          kbData: {
+            attributesByItem: {},
+            metaByItem: {},
+            containment: [], // no contains edges → both sit at the root
+            shortcuts: [],
+            currentUserId: null,
+            starredIds: [],
+          },
+        })}
+      />
+    );
+
+    // The default (kb) root lists the loose document next to the folder — it is no
+    // longer invisible until filed under a folder (only reachable via Recent).
+    expect(screen.getByText('LooseDoc')).toBeTruthy();
+  });
 });

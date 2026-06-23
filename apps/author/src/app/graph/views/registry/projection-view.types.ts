@@ -41,6 +41,13 @@ export type KbViewData = {
   starredIds: string[];
 };
 
+/**
+ * The active Drive sidebar filter, owned by the workbench and mirrored in the URL
+ * (`?scope=`) so Starred/Recent are shareable + survive refresh. 'kb' browses the
+ * containment tree; 'starred'/'recent' are flat cross-cutting lenses.
+ */
+export type DriveScope = 'kb' | 'starred' | 'recent';
+
 export type ProjectionViewProps = {
   result: ProjectionResult;
   /** Plain serializable message catalog (RSC-safe); the view builds its own `t`. */
@@ -74,6 +81,14 @@ export type ProjectionViewProps = {
   folderId?: string | null;
   /** Navigate to a folder (null → root). The workbench writes it to the URL. */
   onNavigate?: (folderId: string | null) => void;
+  /**
+   * The active filter scope, owned by the workbench in the URL (`?scope=`). When
+   * provided the view is CONTROLLED (Starred/Recent are shareable + SSR-stable);
+   * when omitted the view falls back to its own local scope (standalone / tests).
+   */
+  scope?: DriveScope;
+  /** Switch the filter scope. The workbench writes it to the URL. */
+  onScopeChange?: (scope: DriveScope) => void;
   /** Bumped by the workbench after a mutation so views drop stale lazy children. */
   refreshKey: number;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */

@@ -29,12 +29,16 @@ import * as React from 'react';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 
 import type { KbAttributes, NodeMeta } from '@/app/graph/graph-data.types';
-import type { ProjectionViewProps } from '@/app/graph/views/registry/projection-view.types';
+import type {
+  DriveScope,
+  ProjectionViewProps,
+} from '@/app/graph/views/registry/projection-view.types';
 import {
   buildContainment,
   childContent,
   childFolders,
   pathTo,
+  rootContent,
   rootFolders,
   type LensNode,
 } from '@/app/graph/containment';
@@ -121,9 +125,9 @@ function useCardOpen(onDetails: () => void, onOpen: () => void) {
 /**
  * A sidebar filter. `scope` present = the item is WIRED to a canvas filter
  * (the active one highlights); absent = a not-yet-implemented stub that, for now,
- * just returns to the tree root (Shared / Recent / Trash land in later passes).
+ * just returns to the tree root (Shared / Trash land in later passes). `DriveScope`
+ * is the shared type (the workbench owns it in the URL).
  */
-type DriveScope = 'kb' | 'starred' | 'recent';
 type NavItem = {
   icon: LucideIcon;
   /** Stable React key / id for the row. */
@@ -168,6 +172,8 @@ export function DriveProjectionView({
   onEditNode,
   folderId = null,
   onNavigate,
+  scope: scopeProp,
+  onScopeChange,
   onMutated,
   refreshKey,
   spaceId,
@@ -188,9 +194,24 @@ export function DriveProjectionView({
 
   // Which sidebar filter is active. 'kb' browses the containment tree (the default
   // Drive); 'starred' and 'recent' are flat cross-cutting lenses over the same
-  // RLS-resolved canvas — not folders. Opening any folder returns to 'kb'. Local
-  // (like `layout`): a transient lens, not a location.
-  const [scope, setScope] = React.useState<DriveScope>('kb');
+  // RLS-resolved canvas — not folders. Opening any folder returns to 'kb'.
+  //
+  // CONTROLLED when the workbench passes `scope`/`onScopeChange` — it owns the scope
+  // in the URL (`?scope=`), so Starred/Recent are shareable + SSR-stable. UNCONTROLLED
+  // fallback to local state when omitted (standalone render / tests).
+  const controlled = onScopeChange != null;
+  const [localScope, setLocalScope] = React.useState<DriveScope>('kb');
+  const scope = scopeProp ?? localScope;
+  const applyScope = React.useCallback(
+    (next: DriveScope) => {
+      if (controlled) {
+        onScopeChange(next);
+      } else {
+        setLocalScope(next);
+      }
+    },
+    [controlled, onScopeChange]
+  );
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
   // A flat filter lens (Starred / Recent) hides the folder tree, breadcrumb path,
@@ -228,13 +249,17 @@ export function DriveProjectionView({
   // Folder location is CONTROLLED by the workbench via the URL (`?folder=`), so
   // it survives refresh and browser history. `navigate(null)` returns to root.
   // Navigating into the tree always drops back to the 'kb' (browse) scope — the
-  // 'starred' filter is a flat lens, never a folder you can sit inside.
+  // 'starred' filter is a flat lens, never a folder you can sit inside. When the
+  // workbench owns the scope it resets it inside `onNavigate`; the local fallback
+  // resets here.
   const navigate = React.useCallback(
     (id: string | null) => {
-      setScope('kb');
+      if (!controlled) {
+        setLocalScope('kb');
+      }
       onNavigate?.(id);
     },
-    [onNavigate]
+    [controlled, onNavigate]
   );
   const [layout, setLayout] = React.useState<DriveLayout>('grid');
   const [createRequest, setCreateRequest] =
@@ -331,7 +356,7 @@ export function DriveProjectionView({
       : isRecent
         ? recentNodes
         : isRoot
-          ? []
+          ? rootContent(containment) // loose top-level content (no parent folder)
           : folder
             ? childContent(containment, folder.id)
             : []
@@ -422,7 +447,7 @@ export function DriveProjectionView({
               // 'kb' + the not-yet-wired stubs return to the tree root (which also
               // resets the scope); 'starred'/'recent' switch to that flat lens.
               item.scope === 'starred' || item.scope === 'recent'
-                ? setScope(item.scope)
+                ? applyScope(item.scope)
                 : navigate(null)
             }
             data-active={active}
@@ -753,7 +778,10 @@ export function DriveProjectionView({
       {isRecent && items.length === 0 ? (
         <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
       ) : null}
-      {!isFilterScope && isRoot && roots.length === 0 ? (
+      {!isFilterScope &&
+      isRoot &&
+      folders.length === 0 &&
+      items.length === 0 ? (
         <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
       ) : null}
       {!isFilterScope &&

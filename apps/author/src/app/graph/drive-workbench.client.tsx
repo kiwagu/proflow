@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 import { DriveProjectionView } from './views/drive/drive-projection.view';
@@ -13,7 +13,10 @@ import {
   ResourcePanel,
   type SelectedNode,
 } from './views/resource-panel/resource-panel';
-import type { KbViewData } from './views/registry/projection-view.types';
+import type {
+  DriveScope,
+  KbViewData,
+} from './views/registry/projection-view.types';
 
 /**
  * DriveWorkbench — the workbench host for the Drive shell. It reproduces the
@@ -35,21 +38,31 @@ export function DriveWorkbench({
   spaceId,
   result,
   kbData,
+  initialFolder = null,
+  initialDoc = null,
+  initialScope = 'kb',
 }: {
   messages: Record<string, string>;
   spaceId?: string;
   result: ProjectionResult;
   kbData?: KbViewData;
+  initialFolder?: string | null;
+  initialDoc?: string | null;
+  initialScope?: DriveScope;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
-  // Navigation state lives in the URL so it survives refresh and browser history:
-  //  - `?folder=` the current folder (null → root),
-  //  - `?doc=` the open document (a kind=text node, read in the overlay).
+  // The navigation LOCATION — current folder (`?folder=`, null → root), open
+  // document (`?doc=`, the reader overlay), and filter scope (`?scope=`, Starred/
+  // Recent) — is mirrored in the URL so it survives refresh and is shareable. But it
+  // is held in React STATE seeded from the SERVER-read initial values, NOT read from
+  // `useSearchParams` during render: that keeps the SSR'd HTML identical to the
+  // client's first render (no hydration mismatch). `pushState` keeps the URL/history
+  // in sync; a `popstate` (browser back/forward, the reader's Back) reads it back in.
   // The Details selection stays local (a transient drawer, not a location).
-  const folderId = searchParams.get('folder');
-  const docId = searchParams.get('doc');
+  const [folderId, setFolderId] = React.useState<string | null>(initialFolder);
+  const [docId, setDocId] = React.useState<string | null>(initialDoc);
+  const [scope, setScope] = React.useState<DriveScope>(initialScope);
 
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
     undefined
@@ -61,28 +74,15 @@ export function DriveWorkbench({
     router.refresh();
   }, [router]);
 
-  // Patch the navigation query string via the native History API (SHALLOW): it
-  // updates the URL + `useSearchParams` WITHOUT re-running the server component,
-  // so folder/document navigation never refetches the (identical) canvas — the
-  // page ignores searchParams and folder filtering is client-side. `pushState`
-  // still records a history entry, so opening a document from a folder
-  // (`?folder=X&doc=Y`) lets the reader's Back (and the browser's) return to
-  // `?folder=X`. A full refresh re-runs the server once, as expected.
-  //
-  // The new URL is a RELATIVE `?query` (or the current pathname to clear it) so it
-  // resolves against the current path and KEEPS the app `basePath` — `usePathname()`
-  // strips the basePath, which would drop `/author` from the URL.
-  const navigate = React.useCallback(
-    (next: { folder?: string | null; doc?: string | null }) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if ('folder' in next) {
-        if (next.folder) params.set('folder', next.folder);
-        else params.delete('folder');
-      }
-      if ('doc' in next) {
-        if (next.doc) params.set('doc', next.doc);
-        else params.delete('doc');
-      }
+  // Write the location to the URL via the History API (no server re-run): the canvas
+  // filters client-side, so navigation never refetches the (identical) data. A
+  // relative `?query` keeps the app `basePath`; an empty query clears to the pathname.
+  const pushLocation = React.useCallback(
+    (loc: { folder: string | null; doc: string | null; scope: DriveScope }) => {
+      const params = new URLSearchParams();
+      if (loc.folder) params.set('folder', loc.folder);
+      if (loc.doc) params.set('doc', loc.doc);
+      if (loc.scope !== 'kb') params.set('scope', loc.scope);
       const qs = params.toString();
       window.history.pushState(
         null,
@@ -90,7 +90,56 @@ export function DriveWorkbench({
         qs ? `?${qs}` : window.location.pathname
       );
     },
-    [searchParams]
+    []
+  );
+
+  // Browser back/forward (and the reader's `router.back()`) change the URL without
+  // one of our `pushState`s — sync state back from the URL so the canvas follows
+  // history.
+  React.useEffect(() => {
+    const onPop = () => {
+      const p = new URLSearchParams(window.location.search);
+      const s = p.get('scope');
+      setFolderId(p.get('folder'));
+      setDocId(p.get('doc'));
+      setScope(s === 'starred' || s === 'recent' ? s : 'kb');
+      setSelectedId(undefined);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  // Browse the tree → a folder (null = root). Clears a now-stale selection + open
+  // doc and returns to the 'kb' scope (the flat filters are not folders you enter).
+  const goFolder = React.useCallback(
+    (id: string | null) => {
+      setSelectedId(undefined);
+      setFolderId(id);
+      setDocId(null);
+      setScope('kb');
+      pushLocation({ folder: id, doc: null, scope: 'kb' });
+    },
+    [pushLocation]
+  );
+
+  // Switch the sidebar filter (kb / starred / recent) — a shareable location.
+  const goScope = React.useCallback(
+    (next: DriveScope) => {
+      setSelectedId(undefined);
+      setScope(next);
+      pushLocation({ folder: folderId, doc: docId, scope: next });
+    },
+    [pushLocation, folderId, docId]
+  );
+
+  // Open a document in the reader overlay (dismiss the transient Details panel).
+  const openDocument = React.useCallback(
+    (id: string) => {
+      setSelectedId(undefined);
+      setDocId(id);
+      pushLocation({ folder: folderId, doc: id, scope });
+    },
+    [pushLocation, folderId, scope]
   );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker).
@@ -148,20 +197,11 @@ export function DriveWorkbench({
             selectedId={selectedId}
             onSelect={setSelectedId}
             onEditNode={spaceId ? requestEdit : undefined}
-            onOpenDocument={(id) => {
-              // Opening a document in the reader dismisses the transient Details
-              // panel — otherwise it keeps showing the previously-selected node
-              // (right) while a different document reads (left): a false pairing.
-              setSelectedId(undefined);
-              navigate({ doc: id });
-            }}
+            onOpenDocument={openDocument}
             folderId={folderId}
-            onNavigate={(id) => {
-              // Navigating to another folder likewise clears a now-stale Details
-              // selection (the node may not even live in the new folder).
-              setSelectedId(undefined);
-              navigate({ folder: id, doc: null });
-            }}
+            onNavigate={goFolder}
+            scope={scope}
+            onScopeChange={goScope}
             onMutated={refresh}
             refreshKey={refreshKey}
           />

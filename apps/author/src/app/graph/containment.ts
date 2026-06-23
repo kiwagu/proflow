@@ -1,4 +1,5 @@
 import type { ProjectionResultItem } from '@workspace/knowledge-contracts';
+import { byText } from '@workspace/ui/lib/sort';
 import {
   buildForest,
   forestChildren,
@@ -60,14 +61,34 @@ export function rootFolders(c: Containment): LensNode[] {
       roots.push(node);
     }
   }
-  return roots.sort((a, b) => a.title.localeCompare(b.title));
+  return roots.sort(byText((node: LensNode) => node.title));
+}
+
+/**
+ * Root CONTENT = non-folder/non-tag nodes with no incoming `contains` (loose at
+ * the top level, not filed under any folder). The Drive root lists these next to
+ * the root folders — the "My Drive" shape (folders + loose files), so a document
+ * created without a folder is visible at root, not only via a flat lens.
+ */
+export function rootContent(c: Containment): LensNode[] {
+  const roots: LensNode[] = [];
+  for (const node of c.byId.values()) {
+    if (
+      node.kind !== 'folder' &&
+      node.kind !== 'tag' &&
+      !c.parentOf.has(node.id)
+    ) {
+      roots.push(node);
+    }
+  }
+  return roots.sort(byText((node: LensNode) => node.title));
 }
 
 /** Folders for a parent-folder picker (all folder nodes, by title). */
 export function allFolders(c: Containment): LensNode[] {
   return [...c.byId.values()]
     .filter((n) => n.kind === 'folder')
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort(byText((node: LensNode) => node.title));
 }
 
 /** Breadcrumb path of folders from the root down to (and including) `folderId`. */
