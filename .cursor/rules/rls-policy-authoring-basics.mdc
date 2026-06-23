@@ -29,6 +29,14 @@ alwaysApply: false
 - Avoid `for all`; create separate policies per operation.
 - Prefer `permissive` policies over `restrictive` unless there is a very specific reason.
 
+## Default Posture — Fail-Closed (private-by-default)
+
+The default access posture is **fail-closed**: a row is invisible unless a predicate **deliberately** admits it, and new user content defaults to **private (owner-only)** — sharing is an **additive, deliberate widening**, never the baseline.
+
+- When choosing a default for a visibility/ownership column or a new `select` predicate, **err toward private**. The forgotten case must fail **closed** (un-shared, recoverable) — never **open** (leaked, irrecoverable). A missing sharing decision means private, not exposed.
+- The guarantee is an **RLS fact, not an application filter.** Never rely on an app-side `where owner = me` or a `status='draft'` view filter as the privacy boundary — the stack exposes direct PostgREST/resolver access that bypasses it (ADR-0009; `poc-no-fallbacks`: no fake fence). The fence is the policy predicate.
+- Compose audience as **OR'd grants on top of a floor** (owner → broadcast-floor → cohort/role/user grants → supervisory), each an independent disjunct that only **widens**. See `refs/arch/adr/0017-per-person-visibility-and-deliberate-sharing.md` for the knowledge-graph instance of this posture.
+
 Operation rules:
 
 1. `select` policies use `using` and not `with check`.
