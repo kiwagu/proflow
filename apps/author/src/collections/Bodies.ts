@@ -1,6 +1,15 @@
-import { ACTIVE_SPACE_COOKIE } from '@workspace/gateway-auth/active-space.constants';
-import type { Access, CollectionConfig, PayloadRequest, Where } from 'payload';
+import { randomUUID } from 'node:crypto';
 
+import { ACTIVE_SPACE_COOKIE } from '@workspace/gateway-auth/active-space.constants';
+import type {
+  Access,
+  CollectionAfterChangeHook,
+  CollectionConfig,
+  PayloadRequest,
+  Where,
+} from 'payload';
+
+import { publishBodyActivity } from '@/knowledge/knowledge-activity.publisher';
 import { createRlsClientFromCookieHeader } from '@/lib/supabase/rls-from-request';
 
 /**
@@ -143,6 +152,36 @@ const mutateExistingAccess: Access = async ({ req, id }) => {
  */
 const createAccess: Access = () => false;
 
+/**
+ * afterChange: PUBLISH a body-edit activity event onto the knowledge-activity
+ * JetStream (ADR-0016 §5.3). A body edit is the most common authoring act and
+ * must move the node's `last_activity_at` recency — but the body lives in Mongo,
+ * unobservable to a Postgres trigger, so the signal crosses stores via the proven
+ * durable stream (the durable consumer appends `kb.resource_activity`,
+ * source=`nats-body`). Publish ONLY — no direct Postgres write here.
+ *
+ * Best-effort: this hook must NEVER throw on the user's save path (the body save
+ * already succeeded). `publishBodyActivity` swallows its own errors; we additionally
+ * guard against a missing bridge key. No body-bridge loop — an activity append
+ * never changes `body_ref` (§2.6).
+ */
+const publishActivityAfterChange: CollectionAfterChangeHook = ({ doc }) => {
+  const nodeId = typeof doc?.node_id === 'string' ? doc.node_id : null;
+  const spaceId = typeof doc?.space_id === 'string' ? doc.space_id : null;
+  if (!nodeId || !spaceId) {
+    return doc;
+  }
+  // Fire-and-forget: do not await on the user's save path. The publisher is
+  // best-effort and self-heals on the next touch; the consumer is at-least-once.
+  void publishBodyActivity({
+    event_id: randomUUID(),
+    node_id: nodeId,
+    space_id: spaceId,
+    occurred_at: new Date().toISOString(),
+  });
+  return doc;
+};
+
 export const Bodies: CollectionConfig = {
   slug: 'bodies',
   admin: {
@@ -163,6 +202,7 @@ export const Bodies: CollectionConfig = {
     maxPerDoc: 10,
   },
   hooks: {
+    afterChange: [publishActivityAfterChange],
     beforeChange: [
       ({ data, originalDoc, req }) => {
         const tenantFromCookies =

@@ -7,6 +7,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
-    include: ['tests/int/**/*.int.spec.{ts,tsx}'],
+    include: [
+      'tests/int/**/*.int.spec.{ts,tsx}',
+      // Pure unit tests (no live stack) — domain/fan-out shape under a mocked db.
+      'src/**/*.unit.test.{ts,tsx}',
+    ],
   },
 })
