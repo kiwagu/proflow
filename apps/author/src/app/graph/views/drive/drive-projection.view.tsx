@@ -1,6 +1,7 @@
 'use client';
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
+import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
@@ -136,6 +137,9 @@ type NavItem = {
    * even though the nav is data-driven). */
   label: (t: GraphTranslator) => string;
   scope?: DriveScope;
+  /** Not yet available (depends on the access-model work) — rendered muted + inert
+   * with a "Coming soon" badge instead of a dead `navigate(null)` stub. */
+  comingSoon?: boolean;
 };
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -145,7 +149,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: (t) => t('graph.drive.navKnowledgeBase'),
     scope: 'kb',
   },
-  { icon: Users, key: 'navShared', label: (t) => t('graph.drive.navShared') },
+  {
+    icon: Users,
+    key: 'navShared',
+    label: (t) => t('graph.drive.navShared'),
+    comingSoon: true,
+  },
   {
     icon: Clock,
     key: 'navRecent',
@@ -158,7 +167,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: (t) => t('graph.drive.navStarred'),
     scope: 'starred',
   },
-  { icon: Trash2, key: 'navTrash', label: (t) => t('graph.drive.navTrash') },
+  {
+    icon: Trash2,
+    key: 'navTrash',
+    label: (t) => t('graph.drive.navTrash'),
+    comingSoon: true,
+  },
 ];
 
 type DriveLayout = 'grid' | 'list';
@@ -446,6 +460,29 @@ export function DriveProjectionView({
         // A wired item highlights when its scope is the active one ('kb' stays
         // active even inside a folder); the not-yet-wired stubs never highlight.
         const active = item.scope === scope;
+        // Not-yet-available filters (depend on the access-model work) read as muted +
+        // inert with a "Coming soon" badge — honest, not a dead navigate-to-root stub.
+        if (item.comingSoon) {
+          return (
+            <div
+              key={item.key}
+              aria-disabled
+              title={t('graph.drive.comingSoon')}
+              className="flex h-auto w-full cursor-not-allowed items-center gap-2.5 px-2 py-1.5 text-left text-sm font-normal select-none"
+            >
+              <Icon
+                className="text-muted-foreground/70 size-4 shrink-0"
+                aria-hidden
+              />
+              <span className="text-muted-foreground/70 flex-1 truncate">
+                {item.label(t)}
+              </span>
+              <Badge variant="secondary" className="text-[10px] font-normal">
+                {t('graph.drive.comingSoon')}
+              </Badge>
+            </div>
+          );
+        }
         return (
           <Button
             key={item.key}
