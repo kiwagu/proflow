@@ -7,6 +7,7 @@ import {
   loadContainmentForest,
   loadKbAttributesForItems,
   loadNodeMetaForItems,
+  loadOpenedAtForItems,
   loadShortcutForest,
   loadStarredIds,
   resolveActiveSpaceId,
@@ -74,6 +75,7 @@ export default async function GraphPage({
       shortcuts: [],
       currentUserId: null,
       starredIds: [],
+      openedAtById: {},
     };
     return (
       <DriveWorkbench
@@ -96,6 +98,7 @@ export default async function GraphPage({
     metaByItem,
     currentUserId,
     starredIds,
+    openedAtById,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -103,6 +106,7 @@ export default async function GraphPage({
     loadNodeMetaForItems(spaceId, itemIds),
     resolveCurrentUserId(),
     loadStarredIds(spaceId),
+    loadOpenedAtForItems(spaceId),
   ]);
 
   const kbData: KbViewData = {
@@ -112,6 +116,7 @@ export default async function GraphPage({
     shortcuts,
     currentUserId,
     starredIds,
+    openedAtById,
   };
 
   return (

@@ -39,6 +39,12 @@ export type KbViewData = {
    * filled/empty star toggle on each card. Empty when nothing is starred.
    */
   starredIds: string[];
+  /**
+   * The CURRENT user's "last opened by me" timestamps (`resource_id → ISO`), per-user
+   * state under RLS. Drives the "Recent" filter (recently VIEWED by me) — its sort
+   * and its "Viewed" column. A missing key = never opened by this user.
+   */
+  openedAtById: Record<string, string>;
 };
 
 /**

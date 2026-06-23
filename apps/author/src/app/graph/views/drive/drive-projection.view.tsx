@@ -191,6 +191,9 @@ export function DriveProjectionView({
   const attributesByItem = kbData?.attributesByItem ?? {};
   const metaByItem = kbData?.metaByItem ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
+  // Per-user "last opened by me" overlay (`resource_id → ISO`); drives the Recent
+  // filter (recently VIEWED by me) and its "Viewed" column. Absent key = unopened.
+  const openedAtById = kbData?.openedAtById ?? {};
 
   // Which sidebar filter is active. 'kb' browses the containment tree (the default
   // Drive); 'starred' and 'recent' are flat cross-cutting lenses over the same
@@ -301,12 +304,13 @@ export function DriveProjectionView({
   // BOTH grid and list — instead of the raw containment `position`. `.slice()`
   // before sorting so we never mutate the cached containment/shortcut arrays.
   const byTitle = byText((node: LensNode) => node.title);
-  // Recent ordering: newest touch first. ISO `updated_at` strings compare
-  // lexicographically = chronologically; a missing timestamp sorts last.
+  // Recent ordering: most-recently VIEWED BY ME first — the per-user
+  // `last_opened_at` overlay (ADR-0016), NOT `updated_at`/activity. An item is in
+  // Recent BECAUSE I opened it, so its open time is always defined and is the honest
+  // timestamp (true whether or not it was edited). ISO strings compare
+  // lexicographically = chronologically.
   const byRecency = (a: LensNode, b: LensNode) =>
-    (metaByItem[b.id]?.updatedAt ?? '').localeCompare(
-      metaByItem[a.id]?.updatedAt ?? ''
-    );
+    (openedAtById[b.id] ?? '').localeCompare(openedAtById[a.id] ?? '');
   const roots = rootFolders(containment);
   const isRoot = folderId == null;
   const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
@@ -320,15 +324,18 @@ export function DriveProjectionView({
         .filter((node): node is LensNode => node != null)
     : [];
 
-  // Recent = every content node (folders excluded — Recent lists touched files),
-  // flat across the space, newest first. Resolved through the canvas so RLS-hidden
-  // ids drop out, exactly as Starred does. Space-wide by `updated_at` (no per-user
-  // open tracking yet — that escalation lands only if needed).
+  // Recent = the content nodes I have OPENED (a `last_opened_at` overlay entry),
+  // folders excluded, most-recently-viewed first. Resolved through the canvas so
+  // RLS-hidden ids drop out. Per-user, not space-wide: a fresh user sees an empty
+  // Recent until they open something (the open-record write feeds this overlay).
   const recentNodes = isRecent
     ? result.items
         .map((item) => containment.byId.get(item.id))
         .filter(
-          (node): node is LensNode => node != null && node.kind !== 'folder'
+          (node): node is LensNode =>
+            node != null &&
+            node.kind !== 'folder' &&
+            openedAtById[node.id] != null
         )
     : [];
 
@@ -634,11 +641,15 @@ export function DriveProjectionView({
             selectedId={selectedId}
             starredSet={starredSet}
             onToggleStar={toggleStar}
-            // Recent defaults the table to newest-modified-first (it is still
-            // re-sortable by any column); every other scope sorts by name.
+            // In Recent the 4th column is "Viewed" (when I last opened it) instead of
+            // "Modified" — that is why the item is here; pass the overlay so the
+            // column + sort read it.
+            recentOpenedAt={isRecent ? openedAtById : null}
+            // Recent defaults to most-recently-VIEWED first (still re-sortable by any
+            // column); every other scope sorts by name.
             defaultSorting={
               isRecent
-                ? [{ id: 'modified', desc: true }]
+                ? [{ id: 'viewed', desc: true }]
                 : [{ id: 'name', desc: false }]
             }
           />
@@ -1087,6 +1098,7 @@ function DriveListTable({
   selectedId,
   starredSet,
   onToggleStar,
+  recentOpenedAt,
   defaultSorting,
 }: {
   rows: DriveRow[];
@@ -1094,7 +1106,10 @@ function DriveListTable({
   metaByItem: Record<string, NodeMeta>;
   currentUserId: string | null;
   selectedId?: string;
-  /** Initial column sort (Recent → modified-desc; otherwise name-asc). */
+  /** Non-null in Recent (`resource_id → ISO last_opened_at`): the 4th column shows
+   * "Viewed" from it instead of "Modified" from `updated_at`. */
+  recentOpenedAt: Record<string, string> | null;
+  /** Initial column sort (Recent → viewed-desc; otherwise name-asc). */
   defaultSorting: { id: string; desc: boolean }[];
   starredSet: Set<string>;
   onToggleStar: (nodeId: string, next: boolean) => void;
@@ -1175,10 +1190,18 @@ function DriveListTable({
         ),
         meta: { cellClassName: 'w-32' },
       },
+      // In Recent the timestamp column is "Viewed" (when I last opened it, from the
+      // per-user overlay) — the reason the item is here; everywhere else it is
+      // "Modified" (the node row's `updated_at`).
       {
-        id: 'modified',
-        accessorFn: (r) => metaByItem[r.node.id]?.updatedAt ?? '',
-        header: t('graph.table.modified'),
+        id: recentOpenedAt ? 'viewed' : 'modified',
+        accessorFn: (r) =>
+          (recentOpenedAt
+            ? recentOpenedAt[r.node.id]
+            : metaByItem[r.node.id]?.lastModifiedAt) ?? '',
+        header: t(
+          recentOpenedAt ? 'graph.table.viewed' : 'graph.table.modified'
+        ),
         cell: ({ getValue }) => {
           const v = getValue() as string;
           return (
@@ -1207,7 +1230,7 @@ function DriveListTable({
         meta: { cellClassName: 'w-10' },
       },
     ],
-    [t, metaByItem, currentUserId, starredSet, onToggleStar]
+    [t, metaByItem, currentUserId, starredSet, onToggleStar, recentOpenedAt]
   );
 
   return (

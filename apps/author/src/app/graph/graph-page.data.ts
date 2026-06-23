@@ -194,9 +194,12 @@ export async function loadKbAttributesForItems(
 }
 
 /**
- * Batch-load owner + updated_at for the resolved item set. The Drive meta line
- * shows "{kind} · {owner}"; neither field is in the frozen result contract, so
- * they ride alongside as a thin RLS-scoped select (same authority as the resolve).
+ * Batch-load owner + last-modified for the resolved item set. The Drive meta line
+ * shows "{kind} · {owner}" and the "Modified" column reads `last_modified_at` — the
+ * EDIT recency roll-up (node + body + satellite + edge, EXCLUDING opens, ADR-0016),
+ * so a document BODY edit (which never touches the node row's `updated_at`) is
+ * reflected. Neither field is in the frozen result contract, so they ride alongside
+ * as a thin RLS-scoped select (same authority as the resolve).
  */
 export async function loadNodeMetaForItems(
   spaceId: string,
@@ -209,7 +212,7 @@ export async function loadNodeMetaForItems(
   const db = await createRlsClientFromServerCookies();
   const { data, error } = await db
     .from('knowledge_resources')
-    .select('id,owner_user_id,updated_at')
+    .select('id,owner_user_id,last_modified_at')
     .eq('space_id', spaceId)
     .in('id', itemIds);
   if (error) {
@@ -218,8 +221,37 @@ export async function loadNodeMetaForItems(
   for (const row of data ?? []) {
     map[(row as { id: string }).id] = {
       ownerUserId: (row as { owner_user_id: string | null }).owner_user_id,
-      updatedAt: (row as { updated_at: string }).updated_at,
+      lastModifiedAt: (row as { last_modified_at: string }).last_modified_at,
     };
+  }
+  return map;
+}
+
+/**
+ * Batch-load the CURRENT user's "last opened by me" timestamps (per-user state,
+ * own rows under RLS) for the space. Drives the "Recent" filter — recently VIEWED
+ * by me — and its "Viewed" column. Maintained by the activity roll-up (ADR-0016):
+ * a row exists only once the user has opened the resource, so a missing key means
+ * "never opened by me". Returns `resource_id → ISO last_opened_at`.
+ */
+export async function loadOpenedAtForItems(
+  spaceId: string
+): Promise<Record<string, string>> {
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('resource_user_state')
+    .select('resource_id,last_opened_at')
+    .eq('space_id', spaceId)
+    .not('last_opened_at', 'is', null);
+  if (error) {
+    throw new Error(`loadOpenedAtForItems: ${error.message}`);
+  }
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) {
+    const r = row as { resource_id: string; last_opened_at: string | null };
+    if (r.last_opened_at) {
+      map[r.resource_id] = r.last_opened_at;
+    }
   }
   return map;
 }

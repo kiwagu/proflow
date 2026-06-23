@@ -74,6 +74,36 @@ export function DriveWorkbench({
     router.refresh();
   }, [router]);
 
+  // Record a DELIBERATE open of a node — viewing it in Details, opening it in the
+  // reader, or navigating INTO a folder (ADR-0016 §3.3). Fire-and-forget under the
+  // user's RLS via the opened route (gated by `space.knowledge.open`); a failure
+  // NEVER blocks the UI (best-effort, an RLS rejection is a clean no-op). The DB
+  // roll-up advances `resource_user_state.last_opened_at` from the appended row. We
+  // do NOT re-resolve on an open — the per-user signal is read on the next refresh,
+  // not eagerly (no re-render storm on every click / hover-free, only real opens).
+  const recordOpen = React.useCallback(
+    (nodeId: string) => {
+      if (!spaceId) {
+        return;
+      }
+      void fetch('/author/graph/opened', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId, nodeId }),
+      });
+    },
+    [spaceId]
+  );
+
+  // Single-click a node → open the shared Details panel (a deliberate open).
+  const selectNode = React.useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      recordOpen(id);
+    },
+    [recordOpen]
+  );
+
   // Write the location to the URL via the History API (no server re-run): the canvas
   // filters client-side, so navigation never refetches the (identical) data. A
   // relative `?query` keeps the app `basePath`; an empty query clears to the pathname.
@@ -118,8 +148,11 @@ export function DriveWorkbench({
       setDocId(null);
       setScope('kb');
       pushLocation({ folder: id, doc: null, scope: 'kb' });
+      if (id) {
+        recordOpen(id); // entering a folder is a deliberate open (root is not a node)
+      }
     },
-    [pushLocation]
+    [pushLocation, recordOpen]
   );
 
   // Switch the sidebar filter (kb / starred / recent) — a shareable location.
@@ -138,8 +171,9 @@ export function DriveWorkbench({
       setSelectedId(undefined);
       setDocId(id);
       pushLocation({ folder: folderId, doc: id, scope });
+      recordOpen(id);
     },
-    [pushLocation, folderId, scope]
+    [pushLocation, folderId, scope, recordOpen]
   );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker).
@@ -195,7 +229,7 @@ export function DriveWorkbench({
             spaceId={spaceId}
             kbData={kbData}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectNode}
             onEditNode={spaceId ? requestEdit : undefined}
             onOpenDocument={openDocument}
             folderId={folderId}
@@ -214,7 +248,15 @@ export function DriveWorkbench({
               title={openDoc.title}
               messages={messages}
               containment={containment}
-              onClose={() => router.back()}
+              onClose={() => {
+                // Pop the `?doc=` entry (popstate restores the folder/scope), then
+                // re-resolve so the canvas REBUILDS with current server data — a
+                // change made while reading (a body edit / publish, or the activity
+                // recency just recorded) otherwise leaves the folder showing stale
+                // contents until a manual page refresh.
+                router.back();
+                refresh();
+              }}
               onEdit={() => requestEdit(openDoc.id)}
               onMutated={refresh}
               preparingEdit={preparingEdit}

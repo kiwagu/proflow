@@ -49,10 +49,15 @@ export type KbAttributes = {
 };
 
 /** Node owner + timestamp the Drive meta line needs but the FROZEN
- * `ProjectionResultItem` contract does not carry (`schema_version`=1). */
+ * `ProjectionResultItem` contract does not carry (`schema_version`=1). The "Recent"
+ * filter sorts by the PER-USER `last_opened_at` overlay (loaded separately). */
 export type NodeMeta = {
   ownerUserId: string | null;
-  updatedAt: string;
+  /** Last MODIFICATION (cross-store: node row + body + satellite + edge, EXCLUDING
+   * mere views), maintained by the recency roll-up (ADR-0016). Drives the "Modified"
+   * column — distinct from the node row's raw `updated_at`, which misses body/satellite
+   * edits, and from `last_activity_at`, which also counts opens. */
+  lastModifiedAt: string;
 };
 
 /** One cohort scope of the space + whether THIS node is fenced to it. Drives the

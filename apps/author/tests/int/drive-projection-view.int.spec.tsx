@@ -82,6 +82,7 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       shortcuts: [],
       currentUserId: null,
       starredIds: [],
+      openedAtById: {},
     },
   };
 }
@@ -140,7 +141,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
     ).toBeTruthy();
   });
 
-  it('lists content newest-first and hides folders under the Recent filter', () => {
+  it('lists opened content most-recently-viewed first under the Recent filter', () => {
     const props = baseProps({
       result: {
         projection_id: 'prj_test',
@@ -154,21 +155,33 @@ describe('DriveProjectionView (forward-port shell)', () => {
       kbData: {
         attributesByItem: {},
         metaByItem: {
-          knr_old: { ownerUserId: null, updatedAt: '2026-01-01T00:00:00Z' },
-          knr_new: { ownerUserId: null, updatedAt: '2026-06-01T00:00:00Z' },
+          knr_old: {
+            ownerUserId: null,
+            lastModifiedAt: '2026-01-01T00:00:00Z',
+          },
+          knr_new: {
+            ownerUserId: null,
+            lastModifiedAt: '2026-06-01T00:00:00Z',
+          },
         },
         containment: [],
         shortcuts: [],
         currentUserId: null,
         starredIds: [],
+        // Recent = opened by me, newest open first. The folder has no open entry
+        // (and folders are excluded regardless).
+        openedAtById: {
+          knr_old: '2026-01-01T00:00:00Z',
+          knr_new: '2026-06-01T00:00:00Z',
+        },
       },
     });
     render(<DriveProjectionView {...props} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
 
-    // The canvas lists exactly the two docs, newest (`updated_at`) first — the
-    // folder is excluded (only the two titles match, in recency order).
+    // The canvas lists exactly the two opened docs, most-recently-viewed
+    // (`last_opened_at`) first — the folder is excluded (no open entry anyway).
     const titles = screen
       .getAllByText(/^(Older|Newer)$/)
       .map((node) => node.textContent);
@@ -193,6 +206,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             shortcuts: [],
             currentUserId: null,
             starredIds: [],
+            openedAtById: {},
           },
         })}
       />
@@ -221,6 +235,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             shortcuts: [],
             currentUserId: null,
             starredIds: [],
+            openedAtById: {},
           },
         })}
       />
