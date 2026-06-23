@@ -220,6 +220,35 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       empty-schema-diff is asserted at the data level (demo data lives in the e2e harness, not a
       migration — production carries zero hardcoded demo rows)
 
+## 7. Resource recency & activity (ADR-0016)
+
+One append-only activity-log spine (`kb.resource_activity`); node `last_activity_at` and
+per-user `last_opened_at` are roll-ups of it via one DB trigger. Hybrid ingest: Postgres-origin
+in-txn triggers, the Mongo body path through a durable JetStream stream, and per-user opens under
+the user's RLS.
+
+- [x] Data layer (`kb.resource_activity` spine + roll-up trigger + Postgres-origin triggers +
+      both roll-up columns + the `space.knowledge.open` verb) — append-only log, RLS read
+      node-scoped + own-rows, INSERT split (open under `space.knowledge.open`, trigger definer,
+      consumer service-role)
+- [x] NATS activity worker + Bodies publish — `Bodies.afterChange` PUBLISHES a body-edit event on
+      `knowledge.activity.v1.body` (best-effort, never throws on the save path; `Nats-Msg-Id =
+      event_id` for dedupe); a durable consumer (`knowledge-activity.jetstream.worker`, stream
+      `KNOWLEDGE_ACTIVITY`, consumer `author-activity-v1`) appends `kb.resource_activity`
+      (`source=nats-body`) via service-role (authorize-at-produce, §0.3), idempotent on `event_id`.
+      The roll-up trigger advances `last_activity_at` via `greatest()` — replay/out-of-order safe.
+      Bootstrapped exactly like the identity & space-org workers (concurrently in `dev`; standalone
+      `bun run knowledge-activity:jetstream`)
+- [x] Opened route + contracts — `POST /author/graph/opened` (`{ spaceId, nodeId }`, zod-validated)
+      under the user's RLS appends an `open` row (`source=open`, `kind=open`, `user_id` from the
+      session) gated by `space.knowledge.open`; never service-role; best-effort. Contracts in
+      `@workspace/knowledge-contracts`: `openedRecordSchema` + `parseOpenedRecord`,
+      `last_opened_at` on `resourceUserStateSchema`, the `knowledgeActivityBodyEventSchema` NATS
+      envelope shared by producer + consumer, and the stream/subject constants
+- [ ] Read-path swap (Drive front) — loader selects `last_activity_at`, `byRecency` sorts by it,
+      the deliberate-open call site POSTs `/author/graph/opened`, optional "Opened by me"
+      (render-implementer, §5.5)
+
 ## Open items
 
 - [x] Assign entity-id prefixes for per-user state and its satellites — the anchor prefix `rus`

@@ -31,6 +31,11 @@ export const resourceUserStateSchema = z.object({
   // Per-(user, resource) pin flag. Mirrors the NOT NULL DEFAULT false column:
   // the row always carries it; absent input defaults to unstarred.
   starred: z.boolean().default(false),
+  // Per-user "recently opened by me" roll-up (ADR-0016 §3.1): the greatest
+  // occurred_at over this user's `kind=open` activity rows for the resource.
+  // Null/absent = never opened by this user. Maintained by the DB roll-up
+  // trigger; it is read-only state here (the open-route never writes it).
+  last_opened_at: z.string().datetime().nullable().optional(),
 });
 export type ResourceUserState = z.infer<typeof resourceUserStateSchema>;
 
@@ -49,6 +54,59 @@ export type StarredToggle = z.infer<typeof starredToggleSchema>;
 export function parseStarredToggle(raw: unknown) {
   return starredToggleSchema.safeParse(raw);
 }
+
+/**
+ * Open-record write contract (ADR-0016 §5.4). The thin `POST /author/graph/opened`
+ * body: the resource the caller deliberately opened, in a space. Identity comes
+ * from the SESSION (RLS), never the body — so this carries only the targeting keys.
+ */
+export const openedRecordSchema = z.object({
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1), // knr_…
+});
+export type OpenedRecord = z.infer<typeof openedRecordSchema>;
+
+export function parseOpenedRecord(raw: unknown) {
+  return openedRecordSchema.safeParse(raw);
+}
+
+/**
+ * NATS activity envelope for the body-edit path (ADR-0016 §5.2 / §5.3). The
+ * Payload `Bodies.afterChange` hook PUBLISHES this; the activity consumer worker
+ * VALIDATES + ingests it into `kb.resource_activity` (source=`nats-body`). The
+ * `event_id` doubles as the JetStream `Nats-Msg-Id` (producer dedupe) and the
+ * `kb.resource_activity.event_id` (consumer idempotent append). A body edit is
+ * NODE activity, not a per-user open — so the envelope carries no user_id.
+ */
+export const knowledgeActivityBodyEventSchema = z.object({
+  event_id: z.string().min(1),
+  node_id: z.string().min(1), // knr_…
+  space_id: z.string().min(1),
+  occurred_at: z.string().datetime(),
+});
+export type KnowledgeActivityBodyEvent = z.infer<
+  typeof knowledgeActivityBodyEventSchema
+>;
+
+export function parseKnowledgeActivityBodyEvent(raw: unknown) {
+  return knowledgeActivityBodyEventSchema.safeParse(raw);
+}
+
+/**
+ * JetStream stream / subject contract for the knowledge-activity namespace
+ * (ADR-0016 §5.2). One stream over `knowledge.activity.v1.>`; the body-edit
+ * producer publishes on `knowledge.activity.v1.body`. Fixed infra contracts live
+ * in code, not env (monorepo-env-minimalism) — env may OVERRIDE the stream /
+ * consumer name, but these are the defaults both producer and consumer share.
+ */
+export const KNOWLEDGE_ACTIVITY_STREAM_NAME = 'KNOWLEDGE_ACTIVITY' as const;
+export const KNOWLEDGE_ACTIVITY_SUBJECT_PREFIX =
+  'knowledge.activity.v1' as const;
+export const KNOWLEDGE_ACTIVITY_SUBJECT_FILTER =
+  'knowledge.activity.v1.>' as const;
+export const KNOWLEDGE_ACTIVITY_BODY_SUBJECT =
+  'knowledge.activity.v1.body' as const;
+export const KNOWLEDGE_ACTIVITY_CONSUMER_NAME = 'author-activity-v1' as const;
 
 /**
  * Overlay = a map node_id → coarse_status. The minimum the gating function needs

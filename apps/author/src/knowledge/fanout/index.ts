@@ -41,6 +41,12 @@ export {
   type SetResourceStarredInput,
 } from './resource-starred.fanout';
 export {
+  recordResourceOpened,
+  type RecordResourceOpenedDeps,
+  type RecordResourceOpenedInput,
+  type RecordResourceOpenedResult,
+} from './resource-opened.fanout';
+export {
   createTextResource,
   ensureNodeBody,
   type CreateTextResourceDeps,
