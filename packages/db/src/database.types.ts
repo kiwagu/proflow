@@ -226,6 +226,7 @@ export type Database = {
           id: string;
           kind: string;
           last_activity_at: string;
+          last_modified_at: string;
           owner_user_id: string | null;
           space_id: string;
           status: string;
@@ -241,6 +242,7 @@ export type Database = {
           id?: string;
           kind: string;
           last_activity_at?: string;
+          last_modified_at?: string;
           owner_user_id?: string | null;
           space_id: string;
           status?: string;
@@ -256,6 +258,7 @@ export type Database = {
           id?: string;
           kind?: string;
           last_activity_at?: string;
+          last_modified_at?: string;
           owner_user_id?: string | null;
           space_id?: string;
           status?: string;
