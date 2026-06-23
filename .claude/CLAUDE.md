@@ -10,6 +10,7 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/ai-artifacts-generic-wording.mdc
 @.cursor/rules/entity-first-module-naming.mdc
 @.cursor/rules/static-imports-only.mdc
+@.cursor/rules/text-sorting-centralized.mdc
 @.cursor/rules/use-bun-instead-of-node-vite-npm-pnpm-yarn.mdc
 @.cursor/rules/domain-context-first-analysis.mdc
 @.cursor/rules/process-check-rules-skills.mdc
