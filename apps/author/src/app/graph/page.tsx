@@ -13,6 +13,7 @@ import {
   resolveActiveSpaceId,
   resolveCurrentUserId,
   resolveDefaultLensProjection,
+  resolveDriveLayout,
 } from './graph-page.data';
 import type {
   DriveScope,
@@ -60,6 +61,7 @@ export default async function GraphPage({
   const messages = await loadGraphMessages('en');
   const spaceId = await resolveActiveSpaceId();
   const location = readLocation(await searchParams);
+  const initialLayout = await resolveDriveLayout();
 
   const emptyResult: ProjectionResult = {
     projection_id: DEFAULT_LENS_PROJECTION_ID,
@@ -85,6 +87,7 @@ export default async function GraphPage({
         initialFolder={location.folder}
         initialDoc={location.doc}
         initialScope={location.scope}
+        initialLayout={initialLayout}
       />
     );
   }
@@ -128,6 +131,7 @@ export default async function GraphPage({
       initialFolder={location.folder}
       initialDoc={location.doc}
       initialScope={location.scope}
+      initialLayout={initialLayout}
     />
   );
 }

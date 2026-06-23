@@ -35,6 +35,21 @@ export async function resolveActiveSpaceId(): Promise<string | undefined> {
   return cookieStore.get(ACTIVE_SPACE_COOKIE)?.value?.trim() || undefined;
 }
 
+/** The cookie the Drive grid/list toggle persists (a per-device UI preference). */
+export const DRIVE_LAYOUT_COOKIE = 'drive-layout';
+
+/**
+ * Resolve the persisted Drive layout (grid/list) from its cookie, SERVER-SIDE, so
+ * the SSR'd HTML already renders the chosen layout — no post-hydration flip/flash
+ * (the reason a cookie beats localStorage for an SSR-affecting view preference).
+ */
+export async function resolveDriveLayout(): Promise<'grid' | 'list'> {
+  const cookieStore = await cookies();
+  return cookieStore.get(DRIVE_LAYOUT_COOKIE)?.value === 'list'
+    ? 'list'
+    : 'grid';
+}
+
 /**
  * The current user's Supabase id, or `null` for a guest. Used ONLY to label a
  * node's owner as "You" vs another member — a display label, never an access

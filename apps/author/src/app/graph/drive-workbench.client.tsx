@@ -41,6 +41,7 @@ export function DriveWorkbench({
   initialFolder = null,
   initialDoc = null,
   initialScope = 'kb',
+  initialLayout = 'grid',
 }: {
   messages: Record<string, string>;
   spaceId?: string;
@@ -49,6 +50,7 @@ export function DriveWorkbench({
   initialFolder?: string | null;
   initialDoc?: string | null;
   initialScope?: DriveScope;
+  initialLayout?: 'grid' | 'list';
 }) {
   const router = useRouter();
 
@@ -236,6 +238,7 @@ export function DriveWorkbench({
             onNavigate={goFolder}
             scope={scope}
             onScopeChange={goScope}
+            initialLayout={initialLayout}
             onMutated={refresh}
             refreshKey={refreshKey}
           />

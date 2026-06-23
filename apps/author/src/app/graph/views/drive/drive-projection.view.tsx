@@ -188,6 +188,7 @@ export function DriveProjectionView({
   onNavigate,
   scope: scopeProp,
   onScopeChange,
+  initialLayout,
   onMutated,
   refreshKey,
   spaceId,
@@ -278,7 +279,19 @@ export function DriveProjectionView({
     },
     [controlled, onNavigate]
   );
-  const [layout, setLayout] = React.useState<DriveLayout>('grid');
+  // Grid/list is seeded from the SERVER-read `drive-layout` cookie (so SSR already
+  // renders the chosen layout — no post-hydration flip), and the toggle writes it
+  // back. A per-device UI preference: a cookie, not localStorage (SSR-consistent,
+  // no flash) and not the user profile (no cross-device need).
+  const [layout, setLayout] = React.useState<DriveLayout>(
+    initialLayout ?? 'grid'
+  );
+  const applyLayout = React.useCallback((next: DriveLayout) => {
+    setLayout(next);
+    if (typeof document !== 'undefined') {
+      document.cookie = `drive-layout=${next};path=/;max-age=31536000;samesite=lax`;
+    }
+  }, []);
   const [createRequest, setCreateRequest] =
     React.useState<CreateRequest | null>(null);
 
@@ -628,7 +641,7 @@ export function DriveProjectionView({
         <div className="flex overflow-hidden rounded-md border">
           <button
             type="button"
-            onClick={() => setLayout('grid')}
+            onClick={() => applyLayout('grid')}
             aria-label={t('graph.drive.layoutGrid')}
             aria-pressed={layout === 'grid'}
             className={cn(
@@ -642,7 +655,7 @@ export function DriveProjectionView({
           </button>
           <button
             type="button"
-            onClick={() => setLayout('list')}
+            onClick={() => applyLayout('list')}
             aria-label={t('graph.drive.layoutList')}
             aria-pressed={layout === 'list'}
             className={cn(

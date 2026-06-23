@@ -107,4 +107,8 @@ export type ProjectionViewProps = {
   spaceId?: string;
   /** Server-loaded KB seed (RLS-scoped fan-outs alongside the resolved canvas). */
   kbData?: KbViewData;
+  /** Persisted grid/list layout, read SERVER-SIDE from the `drive-layout` cookie so
+   * the SSR'd HTML already renders it (no post-hydration flip). Seeds the view's
+   * layout state; the toggle writes the cookie back. */
+  initialLayout?: 'grid' | 'list';
 };
