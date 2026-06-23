@@ -6,3 +6,8 @@ coverage/
 pnpm-lock.yaml
 .pnpm-store/
 bun.lock
+
+# Generated code — generator is the single basis; do not let Prettier fight codegen
+# (Payload regenerates these on boot/predev in its own style → eternal flicker otherwise)
+**/payload-types.ts
+**/admin/importMap.js
