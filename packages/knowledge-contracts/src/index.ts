@@ -46,11 +46,22 @@ export {
 } from './projection-result.schema.js';
 
 export {
+  KNOWLEDGE_ACTIVITY_BODY_SUBJECT,
+  KNOWLEDGE_ACTIVITY_CONSUMER_NAME,
+  KNOWLEDGE_ACTIVITY_STREAM_NAME,
+  KNOWLEDGE_ACTIVITY_SUBJECT_FILTER,
+  KNOWLEDGE_ACTIVITY_SUBJECT_PREFIX,
   coarseStatusSchema,
+  knowledgeActivityBodyEventSchema,
+  openedRecordSchema,
+  parseKnowledgeActivityBodyEvent,
+  parseOpenedRecord,
   parseResourceUserStateMap,
   resourceUserStateMapSchema,
   resourceUserStateSchema,
   type CoarseStatus,
+  type KnowledgeActivityBodyEvent,
+  type OpenedRecord,
   type ResourceUserState,
   type ResourceUserStateMap,
 } from './resource-user-state.schema.js';

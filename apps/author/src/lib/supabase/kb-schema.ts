@@ -22,6 +22,33 @@ type SatelliteBase = {
 
 type DescriptionRow = SatelliteBase & { body: string; created_by: string };
 
+/**
+ * `resource_activity` (prefix `kra`, ADR-0016) — the append-only activity-log
+ * spine. NOT the 1:1 `node_id` satellite shape: it is 1:N keyed by `resource_id`,
+ * with a `user_id` (per-user open) / `source` discriminator / `event_id` dedupe.
+ */
+type ResourceActivityRow = {
+  id: string;
+  space_id: string;
+  resource_id: string;
+  user_id: string | null;
+  kind: string;
+  source: 'pg-trigger' | 'nats-body' | 'open';
+  event_id: string | null;
+  occurred_at: string;
+  created_at: string;
+};
+
+type ResourceActivityInsert = {
+  space_id: string;
+  resource_id: string;
+  user_id?: string | null;
+  kind: string;
+  source: 'pg-trigger' | 'nats-body' | 'open';
+  event_id?: string | null;
+  occurred_at?: string;
+};
+
 type SatelliteTable<Row, Insert, Update> = {
   Row: Row;
   Insert: Insert;
@@ -36,6 +63,11 @@ export type KbDatabase = {
         DescriptionRow,
         { node_id: string; space_id: string; body: string; created_by: string },
         { body?: string }
+      >;
+      resource_activity: SatelliteTable<
+        ResourceActivityRow,
+        ResourceActivityInsert,
+        never
       >;
     };
     Views: { [_ in never]: never };

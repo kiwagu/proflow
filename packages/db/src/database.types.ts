@@ -225,6 +225,7 @@ export type Database = {
           created_by: string;
           id: string;
           kind: string;
+          last_activity_at: string;
           owner_user_id: string | null;
           space_id: string;
           status: string;
@@ -239,6 +240,7 @@ export type Database = {
           created_by: string;
           id?: string;
           kind: string;
+          last_activity_at?: string;
           owner_user_id?: string | null;
           space_id: string;
           status?: string;
@@ -253,6 +255,7 @@ export type Database = {
           created_by?: string;
           id?: string;
           kind?: string;
+          last_activity_at?: string;
           owner_user_id?: string | null;
           space_id?: string;
           status?: string;
@@ -632,6 +635,7 @@ export type Database = {
           coarse_status: string;
           created_at: string;
           id: string;
+          last_opened_at: string | null;
           metadata: Json;
           progress: number | null;
           resource_id: string;
@@ -643,6 +647,7 @@ export type Database = {
           coarse_status?: string;
           created_at?: string;
           id?: string;
+          last_opened_at?: string | null;
           metadata?: Json;
           progress?: number | null;
           resource_id: string;
@@ -654,6 +659,7 @@ export type Database = {
           coarse_status?: string;
           created_at?: string;
           id?: string;
+          last_opened_at?: string | null;
           metadata?: Json;
           progress?: number | null;
           resource_id?: string;

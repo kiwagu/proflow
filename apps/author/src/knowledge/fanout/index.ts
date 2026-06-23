@@ -35,6 +35,12 @@ export {
   type SetResourceDescriptionInput,
 } from './kb-attribute.fanout';
 export {
+  recordResourceOpened,
+  type RecordResourceOpenedDeps,
+  type RecordResourceOpenedInput,
+  type RecordResourceOpenedResult,
+} from './resource-opened.fanout';
+export {
   createTextResource,
   ensureNodeBody,
   type CreateTextResourceDeps,
