@@ -634,6 +634,11 @@ export function DriveProjectionView({
       {layout === 'list' ? (
         driveRows.length > 0 ? (
           <DriveListTable
+            // Remount when the column SET changes (Recent's "Viewed" column vs the
+            // "Modified" column elsewhere): the table's sort state is seeded once at
+            // mount, so without this it keeps a stale `{id:'viewed'}` sort after
+            // leaving Recent and TanStack throws "Column 'viewed' does not exist".
+            key={isRecent ? 'recent' : 'browse'}
             rows={driveRows}
             t={t}
             metaByItem={metaByItem}
