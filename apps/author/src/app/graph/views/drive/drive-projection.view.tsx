@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   Clock,
+  Columns2,
   Database,
   Folder,
   House,
@@ -200,6 +201,9 @@ export function DriveProjectionView({
   refreshKey,
   spaceId,
   kbData,
+  split = false,
+  onToggleSplit,
+  hideSidebar = false,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -749,6 +753,22 @@ export function DriveProjectionView({
             <List className="size-[15px]" aria-hidden />
           </button>
         </div>
+        {onToggleSplit && scope === 'kb' ? (
+          <button
+            type="button"
+            onClick={onToggleSplit}
+            aria-label={t(
+              split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
+            )}
+            aria-pressed={split}
+            className={cn(
+              'grid h-7 w-[30px] place-items-center rounded-md border',
+              split ? 'bg-accent text-foreground' : 'text-muted-foreground'
+            )}
+          >
+            <Columns2 className="size-[15px]" aria-hidden />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -973,12 +993,18 @@ export function DriveProjectionView({
   return (
     <>
       <WorkbenchShell
-        panel={{
-          kind: 'fixed',
-          width: 230,
-          'aria-label': t('graph.drive.navKnowledgeBase'),
-          children: sidebar,
-        }}
+        // The split's SECOND pane shares the first pane's sidebar (one nav for both),
+        // so it renders sidebar-less — just its own toolbar + canvas.
+        panel={
+          hideSidebar
+            ? undefined
+            : {
+                kind: 'fixed',
+                width: 230,
+                'aria-label': t('graph.drive.navKnowledgeBase'),
+                children: sidebar,
+              }
+        }
         toolbar={toolbar}
         main={main}
       />

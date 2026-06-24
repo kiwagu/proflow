@@ -51,6 +51,8 @@
   "graph.drive.upload": "Subir",
   "graph.drive.layoutGrid": "Vista de cuadrícula",
   "graph.drive.layoutList": "Vista de lista",
+  "graph.drive.splitOpen": "Dividir en dos paneles",
+  "graph.drive.splitClose": "Cerrar vista dividida",
   "graph.drive.allSections": "Todas las secciones · {count} carpetas",
   "graph.drive.itemsCount": "{count} elementos",
   "graph.drive.shortcutFolder": "Acceso directo · carpeta",

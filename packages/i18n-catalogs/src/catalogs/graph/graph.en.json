@@ -51,6 +51,8 @@
   "graph.drive.upload": "Upload",
   "graph.drive.layoutGrid": "Grid view",
   "graph.drive.layoutList": "List view",
+  "graph.drive.splitOpen": "Split into two panes",
+  "graph.drive.splitClose": "Close split view",
   "graph.drive.allSections": "All sections · {count} folders",
   "graph.drive.itemsCount": "{count} items",
   "graph.drive.shortcutFolder": "Shortcut · folder",

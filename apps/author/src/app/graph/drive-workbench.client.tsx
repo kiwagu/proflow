@@ -71,6 +71,15 @@ export function DriveWorkbench({
   );
   const [refreshKey, setRefreshKey] = React.useState(0);
 
+  // Dual-pane (Dolphin-style split) — KB-browse only. The SECOND pane is EPHEMERAL: it
+  // shares the first pane's ONE sidebar (renders sidebar-less), is always KB-browse,
+  // and its folder location is LOCAL (not URL-mirrored — only the primary is
+  // shareable). Selection (Details) + the document reader stay SHARED across both panes
+  // (they follow the pane you last acted in — both call the same `selectNode`/
+  // `openDocument`).
+  const [split, setSplit] = React.useState(false);
+  const [folderId2, setFolderId2] = React.useState<string | null>(null);
+
   const refresh = React.useCallback(() => {
     setRefreshKey((key) => key + 1);
     router.refresh();
@@ -161,15 +170,39 @@ export function DriveWorkbench({
     [pushLocation, recordOpen]
   );
 
-  // Switch the sidebar filter (kb / starred / recent) — a shareable location.
+  // Switch the sidebar filter (kb / starred / recent) — a shareable location. Leaving
+  // KB closes the split (it is a KB-browse-only affordance).
   const goScope = React.useCallback(
     (next: DriveScope) => {
       setSelectedId(undefined);
       setScope(next);
+      if (next !== 'kb') {
+        setSplit(false);
+      }
       pushLocation({ folder: folderId, doc: docId, scope: next });
     },
     [pushLocation, folderId, docId]
   );
+
+  // Second pane — folder navigation only, LOCAL (no URL): the ephemeral split view.
+  const goFolder2 = React.useCallback(
+    (id: string | null) => {
+      setFolderId2(id);
+      if (id) {
+        recordOpen(id);
+      }
+    },
+    [recordOpen]
+  );
+
+  // Toggle the split. Opening mirrors the primary pane's current folder, then the two
+  // diverge independently.
+  const toggleSplit = React.useCallback(() => {
+    if (!split) {
+      setFolderId2(folderId);
+    }
+    setSplit((on) => !on);
+  }, [split, folderId]);
 
   // Open a document in the reader overlay (dismiss the transient Details panel).
   const openDocument = React.useCallback(
@@ -220,6 +253,37 @@ export function DriveWorkbench({
     messages,
   });
 
+  // One Drive pane. Navigation (folder/scope) is per-pane; selection, the reader, the
+  // resolved canvas and the split toggle are shared.
+  const renderPane = (
+    paneFolderId: string | null,
+    paneScope: DriveScope,
+    onNav: (id: string | null) => void,
+    onScopeChg: ((next: DriveScope) => void) | undefined,
+    hideSidebar = false
+  ) => (
+    <DriveProjectionView
+      result={result}
+      messages={messages}
+      spaceId={spaceId}
+      kbData={kbData}
+      selectedId={selectedId}
+      onSelect={selectNode}
+      onEditNode={spaceId ? requestEdit : undefined}
+      onOpenDocument={openDocument}
+      folderId={paneFolderId}
+      onNavigate={onNav}
+      scope={paneScope}
+      onScopeChange={onScopeChg}
+      initialLayout={initialLayout}
+      onMutated={refresh}
+      refreshKey={refreshKey}
+      split={split}
+      onToggleSplit={toggleSplit}
+      hideSidebar={hideSidebar}
+    />
+  );
+
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       <WorkbenchChrome messages={messages} />
@@ -229,23 +293,20 @@ export function DriveWorkbench({
           right column that shrinks the content beside it when a node is selected */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          <DriveProjectionView
-            result={result}
-            messages={messages}
-            spaceId={spaceId}
-            kbData={kbData}
-            selectedId={selectedId}
-            onSelect={selectNode}
-            onEditNode={spaceId ? requestEdit : undefined}
-            onOpenDocument={openDocument}
-            folderId={folderId}
-            onNavigate={goFolder}
-            scope={scope}
-            onScopeChange={goScope}
-            initialLayout={initialLayout}
-            onMutated={refresh}
-            refreshKey={refreshKey}
-          />
+          {split ? (
+            <div className="flex min-w-0 flex-1 overflow-hidden">
+              {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
+                  always KB-browse, navigating independently. */}
+              <div className="min-w-0 flex-1 overflow-hidden border-r">
+                {renderPane(folderId, scope, goFolder, goScope)}
+              </div>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                {renderPane(folderId2, 'kb', goFolder2, undefined, true)}
+              </div>
+            </div>
+          ) : (
+            renderPane(folderId, scope, goFolder, goScope)
+          )}
 
           {spaceId && openDoc ? (
             <DocumentReader

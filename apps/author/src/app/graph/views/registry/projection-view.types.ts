@@ -115,4 +115,13 @@ export type ProjectionViewProps = {
    * the SSR'd HTML already renders it (no post-hydration flip). Seeds the view's
    * layout state; the toggle writes the cookie back. */
   initialLayout?: 'grid' | 'list';
+  /** Dual-pane is active (the workbench shows two independent panes). Drives the
+   * toolbar toggle's pressed state. */
+  split?: boolean;
+  /** Toggle dual-pane on/off (a second, ephemeral navigation pane). Optional — a view
+   * without the affordance omits it. */
+  onToggleSplit?: () => void;
+  /** Render WITHOUT the left sidebar — used for the split's second pane, which shares
+   * the first pane's one sidebar (just its own toolbar + canvas). */
+  hideSidebar?: boolean;
 };
