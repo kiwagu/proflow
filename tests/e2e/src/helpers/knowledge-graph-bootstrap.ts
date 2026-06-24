@@ -1228,6 +1228,11 @@ export async function seedAccessLayerDemo(
       status: 'active',
       created_by: granted.userId,
       owner_user_id: granted.userId,
+      // Published floor: the tag is a SHARED organizing anchor both owners tag into
+      // (subordinate tags its own nodes into it). Under private-by-default (Step 3)
+      // it would otherwise be private to `granted`, and the cross-owner tagged edge's
+      // same-space trigger could not see it as the to-endpoint.
+      visibility: 'space',
     })
     .select('id')
     .single();

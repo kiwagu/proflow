@@ -63,11 +63,12 @@ create table public.knowledge_resources (
   title text not null,
   status text not null default 'draft'
     check (status in ('draft', 'active', 'archived')),
-  -- broadcast floor (ADR-0017 §1.5). default 'space' = published broadcast
-  -- (Step 1: predicate live, zero observable narrowing). Step 3 flips the default
-  -- to 'private' (private-by-default / fail-closed draft) for NEW content — a
-  -- deliberate, separately signed-off one-way change.
-  visibility text not null default 'space'
+  -- broadcast floor (ADR-0017 §1.5). default 'private' = private-by-default /
+  -- fail-closed draft (Step 3, the deliberate one-way flip): a NEW node is a private
+  -- draft until its owner consciously publishes (floor→space) or shares to a cohort.
+  -- The audience widens only by a deliberate act (owner-sovereign, D9). `visibility`
+  -- (access floor) is orthogonal to `status` (workflow) — never merge them.
+  visibility text not null default 'private'
     check (visibility in ('private', 'space', 'organization')),
   body_ref jsonb,
   created_by uuid not null,
