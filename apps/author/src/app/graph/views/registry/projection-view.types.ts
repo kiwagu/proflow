@@ -49,10 +49,12 @@ export type KbViewData = {
 
 /**
  * The active Drive sidebar filter, owned by the workbench and mirrored in the URL
- * (`?scope=`) so Starred/Recent are shareable + survive refresh. 'kb' browses the
- * containment tree; 'starred'/'recent' are flat cross-cutting lenses.
+ * (`?scope=`) so the lenses are shareable + survive refresh. 'kb' browses the
+ * containment tree; 'starred'/'recent'/'shared' are flat cross-cutting lenses.
+ * 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader lens on top of the
+ * already-personal RLS floor, NOT a security boundary (ADR-0017 §2.1).
  */
-export type DriveScope = 'kb' | 'starred' | 'recent';
+export type DriveScope = 'kb' | 'starred' | 'recent' | 'shared';
 
 export type ProjectionViewProps = {
   result: ProjectionResult;

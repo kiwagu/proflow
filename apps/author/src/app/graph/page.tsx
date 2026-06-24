@@ -49,7 +49,10 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
   return {
     folder: one(sp.folder),
     doc: one(sp.doc),
-    scope: scope === 'starred' || scope === 'recent' ? scope : 'kb',
+    scope:
+      scope === 'starred' || scope === 'recent' || scope === 'shared'
+        ? scope
+        : 'kb',
   };
 }
 

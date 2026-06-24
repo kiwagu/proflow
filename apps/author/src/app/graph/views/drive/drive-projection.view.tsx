@@ -153,7 +153,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: Users,
     key: 'navShared',
     label: (t) => t('graph.drive.navShared'),
-    comingSoon: true,
+    scope: 'shared',
   },
   {
     icon: Clock,
@@ -232,9 +232,10 @@ export function DriveProjectionView({
   );
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
-  // A flat filter lens (Starred / Recent) hides the folder tree, breadcrumb path,
-  // and shortcuts — the canvas is a single flat list, not a folder you sit inside.
-  const isFilterScope = isStarred || isRecent;
+  const isShared = scope === 'shared';
+  // A flat filter lens (Starred / Recent / Shared) hides the folder tree, breadcrumb
+  // path, and shortcuts — the canvas is a single flat list, not a folder you sit in.
+  const isFilterScope = isStarred || isRecent || isShared;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
@@ -366,16 +367,32 @@ export function DriveProjectionView({
         )
     : [];
 
+  // Shared with me = the visible nodes I do NOT own (owner ≠ me), folders + content.
+  // A loader lens over the already-RLS-narrowed canvas (ADR-0017 §2.1) — the owner
+  // filter is a DISPLAY path, not a fence (the RLS floor is the authority). At Step 1
+  // the floor is still 'space', so this surfaces "space-published by someone else".
+  const sharedNodes = isShared
+    ? result.items
+        .map((item) => containment.byId.get(item.id))
+        .filter((node): node is LensNode => {
+          if (node == null) return false;
+          const owner = metaByItem[node.id]?.ownerUserId;
+          return owner != null && owner !== currentUserId;
+        })
+    : [];
+
   const folders = (
     isStarred
       ? starredNodes.filter((node) => node.kind === 'folder')
-      : isFilterScope // 'recent' lists no folders
-        ? []
-        : isRoot
-          ? roots
-          : folder
-            ? childFolders(containment, folder.id)
-            : []
+      : isShared
+        ? sharedNodes.filter((node) => node.kind === 'folder')
+        : isFilterScope // 'recent' lists no folders
+          ? []
+          : isRoot
+            ? roots
+            : folder
+              ? childFolders(containment, folder.id)
+              : []
   )
     .slice()
     .sort(byTitle);
@@ -387,13 +404,15 @@ export function DriveProjectionView({
   const items = (
     isStarred
       ? starredNodes.filter((node) => node.kind !== 'folder')
-      : isRecent
-        ? recentNodes
-        : isRoot
-          ? rootContent(containment) // loose top-level content (no parent folder)
-          : folder
-            ? childContent(containment, folder.id)
-            : []
+      : isShared
+        ? sharedNodes.filter((node) => node.kind !== 'folder')
+        : isRecent
+          ? recentNodes
+          : isRoot
+            ? rootContent(containment) // loose top-level content (no parent folder)
+            : folder
+              ? childContent(containment, folder.id)
+              : []
   )
     .slice()
     .sort(isRecent ? byRecency : byTitle);
@@ -501,9 +520,9 @@ export function DriveProjectionView({
             key={item.key}
             variant="ghost"
             onClick={() =>
-              // 'kb' + the not-yet-wired stubs return to the tree root (which also
-              // resets the scope); 'starred'/'recent' switch to that flat lens.
-              item.scope === 'starred' || item.scope === 'recent'
+              // 'kb' returns to the tree root (which also resets the scope); any flat
+              // lens ('starred'/'recent'/'shared') switches to that scope.
+              item.scope && item.scope !== 'kb'
                 ? applyScope(item.scope)
                 : navigate(null)
             }
@@ -561,12 +580,16 @@ export function DriveProjectionView({
           <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
             {isStarred ? (
               <Star className="size-3.5" aria-hidden />
+            ) : isShared ? (
+              <Users className="size-3.5" aria-hidden />
             ) : (
               <Clock className="size-3.5" aria-hidden />
             )}
             {isStarred
               ? t('graph.drive.navStarred')
-              : t('graph.drive.navRecent')}
+              : isShared
+                ? t('graph.drive.navShared')
+                : t('graph.drive.navRecent')}
           </span>
         ) : (
           <button
@@ -843,6 +866,9 @@ export function DriveProjectionView({
       ) : null}
       {isRecent && items.length === 0 ? (
         <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
+      ) : null}
+      {isShared && folders.length === 0 && items.length === 0 ? (
+        <EmptyState>{t('graph.drive.sharedEmpty')}</EmptyState>
       ) : null}
       {!isFilterScope &&
       isRoot &&

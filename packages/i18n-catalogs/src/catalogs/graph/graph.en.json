@@ -53,6 +53,7 @@
   "graph.drive.folderEmpty": "This folder is empty.",
   "graph.drive.starredEmpty": "Nothing starred yet.",
   "graph.drive.recentEmpty": "Nothing opened yet.",
+  "graph.drive.sharedEmpty": "Nothing shared with you yet.",
   "graph.drive.star": "Add star",
   "graph.drive.unstar": "Remove star",
   "graph.drive.metaOwner": "{kind} · {owner}",

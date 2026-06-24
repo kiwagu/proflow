@@ -134,7 +134,7 @@ export function DriveWorkbench({
       const s = p.get('scope');
       setFolderId(p.get('folder'));
       setDocId(p.get('doc'));
-      setScope(s === 'starred' || s === 'recent' ? s : 'kb');
+      setScope(s === 'starred' || s === 'recent' || s === 'shared' ? s : 'kb');
       setSelectedId(undefined);
     };
     window.addEventListener('popstate', onPop);
