@@ -63,7 +63,11 @@ create table public.knowledge_resources (
   title text not null,
   status text not null default 'draft'
     check (status in ('draft', 'active', 'archived')),
-  visibility text not null default 'private'
+  -- broadcast floor (ADR-0017 §1.5). default 'space' = published broadcast
+  -- (Step 1: predicate live, zero observable narrowing). Step 3 flips the default
+  -- to 'private' (private-by-default / fail-closed draft) for NEW content — a
+  -- deliberate, separately signed-off one-way change.
+  visibility text not null default 'space'
     check (visibility in ('private', 'space', 'organization')),
   body_ref jsonb,
   created_by uuid not null,

@@ -190,7 +190,7 @@ using (
   and exists (
     select 1 from public.knowledge_resources r
     where r.id = resource_activity.resource_id
-      and public.auth_user_can_access_resource(r.id, r.space_id, r.owner_user_id, 'space.knowledge.read')
+      and public.auth_user_can_access_resource(r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.read')
   )
 );
 

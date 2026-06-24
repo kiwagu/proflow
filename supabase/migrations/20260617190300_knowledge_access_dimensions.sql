@@ -23,7 +23,7 @@
  * - hierarchy: a manager sees resources owned by transitive subordinates, within the
  *   SAME space only — the space membership check lives INSIDE the predicate so the
  *   OR branch cannot leak across spaces.
- * - composition formula (parens are normative): (base_access AND scope_gate) OR hierarchy.
+ * - composition formula (ADR-0017 §1.5, parens normative): is_owner OR (base_access AND (visibility floor OR cohort grant)) OR hierarchy.
  * - same-space guard on the cohort link table (calque of content_item_scopes).
  * - entity-id prefix: rpl (reporting_lines) — registered in the architecture state list.
  *
@@ -143,7 +143,7 @@ create index reporting_lines_space_subordinate_idx
 -- cohort predicate (pure, data-driven sub-function)
 -- ---------------------------------------------------------------------------
 
-create or replace function public.knowledge_resource_scope_gate(
+create or replace function public.knowledge_resource_scope_member(
   p_resource_id text
 )
 returns boolean
@@ -152,27 +152,25 @@ stable
 security definer
 set search_path = public
 as $$
-  -- unrestricted node (no scope link) → visible; restricted → member of >= 1 scope.
-  select
-    not exists (
-      select 1
-      from public.knowledge_resource_scopes krs
-      where krs.resource_id = p_resource_id
-    )
-    or exists (
-      select 1
-      from public.knowledge_resource_scopes krs
-      join public.scope_memberships sm on sm.scope_id = krs.scope_id
-      where krs.resource_id = p_resource_id
-        and sm.user_id = (select auth.uid())
-    );
+  -- POSITIVE cohort GRANT (ADR-0017 §1.5): true iff the resource is linked to >= 1
+  -- cohort the current user belongs to. Unlike a fence, it NEVER defaults true for
+  -- an unlinked node — it is an ADDITIVE grant OR-composed on top of the visibility
+  -- floor, so it only ever WIDENS access (a private node shared with a cohort
+  -- becomes visible to owner + that cohort, nobody else).
+  select exists (
+    select 1
+    from public.knowledge_resource_scopes krs
+    join public.scope_memberships sm on sm.scope_id = krs.scope_id
+    where krs.resource_id = p_resource_id
+      and sm.user_id = (select auth.uid())
+  );
 $$;
 
-comment on function public.knowledge_resource_scope_gate(text) is
-  'Cohort dimension: true if the resource is unrestricted (no scope link) or the current user belongs to at least one of its scopes. Pure, data-driven, no DDL per cohort.';
+comment on function public.knowledge_resource_scope_member(text) is
+  'Cohort GRANT dimension (ADR-0017 §1.5): true iff the resource is linked to >= 1 cohort the current user belongs to. Additive (OR-composed on the visibility floor); never defaults true for an unlinked node. Pure, data-driven, no DDL per cohort.';
 
-revoke all on function public.knowledge_resource_scope_gate(text) from public;
-grant execute on function public.knowledge_resource_scope_gate(text) to authenticated;
+revoke all on function public.knowledge_resource_scope_member(text) from public;
+grant execute on function public.knowledge_resource_scope_member(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- hierarchy predicate (recursive transitive closure; space-checked INSIDE)
@@ -216,13 +214,15 @@ revoke all on function public.auth_user_manages_owner(uuid, text) from public;
 grant execute on function public.auth_user_manages_owner(uuid, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- resource-level composing helper: (base AND scope) OR hierarchy
+-- resource-level composing helper (ADR-0017 §1.5): ONE broadcast floor + grants
+--   visible ⟸ is_owner OR (base AND (floor published OR cohort grant)) OR hierarchy
 -- ---------------------------------------------------------------------------
 
 create or replace function public.auth_user_can_access_resource(
   p_resource_id text,
   p_space_id text,
   p_owner_user_id uuid,
+  p_visibility text,
   p_verb text
 )
 returns boolean
@@ -231,30 +231,38 @@ stable
 security definer
 set search_path = public
 as $$
-  -- composition formula (parens are normative, ADR-0008 §1):
-  --   (base_access AND scope_gate) OR hierarchy
-  -- a new access dimension is one more sub-function + one line here, with NO change
-  -- to the SELECT policy (it already references this helper).
+  -- Visibility model (ADR-0017 §1.5): ONE broadcast floor (visibility) + additive
+  -- OR'd grants. The floor is the single broadcast dial; cohort/role/user grants
+  -- only ever WIDEN. is_owner is intrinsic ("you see your own"), hierarchy is the
+  -- supervisory branch. Parens are normative (ADR-0008 §1): the base space-membership
+  -- check is INSIDE the broadcast/cohort branch so no branch leaks across spaces.
   --
-  -- the resource's identifying columns are passed IN by the policy (id/space_id/
-  -- owner_user_id) rather than self-fetched: a self-fetch by id cannot see the row
+  -- the row's identifying columns (id/space_id/owner_user_id/visibility) are passed
+  -- IN by the policy rather than self-fetched: a self-fetch by id cannot see the row
   -- during an INSERT/UPDATE ... RETURNING (the new row is not yet visible to a
   -- sub-query in the same command), which would spuriously deny the RETURNING read.
-  -- the only sub-predicate still keyed on id is the cohort gate, which reads the
+  -- the only sub-predicate still keyed on id is the cohort grant, which reads the
   -- separate knowledge_resource_scopes table (visible regardless).
   select
-    (
+    -- intrinsic ownership: you always see what you own
+    p_owner_user_id = (select auth.uid())
+    -- base space-membership + (broadcast floor OR additive cohort grant)
+    or (
       public.auth_user_can_access_in_space(p_space_id, p_verb)
-      and public.knowledge_resource_scope_gate(p_resource_id)
+      and (
+        p_visibility in ('space', 'organization')
+        or public.knowledge_resource_scope_member(p_resource_id)
+      )
     )
+    -- supervisory oversight (checks space membership INSIDE; no cross-space leak)
     or public.auth_user_manages_owner(p_owner_user_id, p_space_id);
 $$;
 
-comment on function public.auth_user_can_access_resource(text, text, uuid, text) is
-  'Composes the knowledge-resource hard-access dimensions: (base space+verb AND cohort) OR manager hierarchy. The single helper every knowledge_resources SELECT policy references; the policy passes the row''s id/space_id/owner_user_id so it also works under INSERT/UPDATE ... RETURNING.';
+comment on function public.auth_user_can_access_resource(text, text, uuid, text, text) is
+  'Composes knowledge-resource hard-access (ADR-0017 §1.5): is_owner OR (base space+verb AND (visibility floor in space/organization OR cohort grant)) OR manager hierarchy. The single helper every knowledge_resources SELECT policy references; the policy passes the row''s id/space_id/owner_user_id/visibility so it also works under INSERT/UPDATE ... RETURNING.';
 
-revoke all on function public.auth_user_can_access_resource(text, text, uuid, text) from public;
-grant execute on function public.auth_user_can_access_resource(text, text, uuid, text) to authenticated;
+revoke all on function public.auth_user_can_access_resource(text, text, uuid, text, text) from public;
+grant execute on function public.auth_user_can_access_resource(text, text, uuid, text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- rls — new link/hierarchy tables
@@ -412,6 +420,7 @@ using (
     knowledge_resources.id,
     knowledge_resources.space_id,
     knowledge_resources.owner_user_id,
+    knowledge_resources.visibility,
     'space.knowledge.read'
   )
 );

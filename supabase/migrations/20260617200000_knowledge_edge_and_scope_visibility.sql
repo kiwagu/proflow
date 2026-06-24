@@ -54,6 +54,7 @@ using (
         r.id,
         r.space_id,
         r.owner_user_id,
+        r.visibility,
         'space.knowledge.read'
       )
   )
@@ -67,6 +68,7 @@ using (
         r.id,
         r.space_id,
         r.owner_user_id,
+        r.visibility,
         'space.knowledge.read'
       )
   )
@@ -93,6 +95,7 @@ using (
         r.id,
         r.space_id,
         r.owner_user_id,
+        r.visibility,
         'space.knowledge.read'
       )
   )
