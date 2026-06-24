@@ -26,6 +26,7 @@ import {
 } from '@workspace/ui/components/select';
 import {
   Check,
+  Copy,
   FolderInput,
   FolderPlus,
   Info,
@@ -149,6 +150,21 @@ export function NodeActionsMenu({
     await run(ok, () => setMoveOpen(false));
   }
 
+  // Copy = deep-duplicate the node and its `contains` subtree as a SIBLING (same
+  // parent), "{title} (copy)". The clone is the copier's own private content
+  // (the route pins owner + leaves the private floor). Paste-elsewhere / drag is a
+  // later increment (the split-pane is its target).
+  async function onCopy() {
+    setBusy(true);
+    const ok = await sendJson('/author/graph/copy', {
+      spaceId,
+      sourceId: node.id,
+      targetFolderId: containment.parentOf.get(node.id) ?? null,
+      rootTitle: t('graph.panel.copySuffix', { title: node.title }),
+    });
+    await run(ok, () => undefined);
+  }
+
   async function onCreateSubfolder(title: string) {
     setBusy(true);
     const ok = await sendJson('/author/graph/resources', {
@@ -202,6 +218,12 @@ export function NodeActionsMenu({
         setMoveTarget(containment.parentOf.get(node.id) ?? 'top');
         setMoveOpen(true);
       },
+    },
+    {
+      id: 'copy',
+      icon: <Copy className="size-4" aria-hidden />,
+      label: t('graph.panel.copy'),
+      onSelect: onCopy,
     },
     ...(onDetails
       ? [

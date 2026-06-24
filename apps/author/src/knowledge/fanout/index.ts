@@ -32,6 +32,12 @@ export {
   type DeleteResourceInput,
 } from './delete-resource.fanout';
 export {
+  copyResourceSubtree,
+  type CopyResourceSubtreeDeps,
+  type CopyResourceSubtreeInput,
+  type CopyResourceSubtreeResult,
+} from './copy-resource.fanout';
+export {
   setResourceDescription,
   type KbAttributeDeps,
   type SetResourceDescriptionInput,

@@ -176,6 +176,8 @@
   "graph.panel.noConnections": "No hay conexiones para mostrar.",
   "graph.panel.close": "Cerrar",
   "graph.panel.move": "Mover a…",
+  "graph.panel.copy": "Copiar",
+  "graph.panel.copySuffix": "{title} (copia)",
   "graph.panel.delete": "Eliminar",
   "graph.panel.deleteConfirm": "¿Eliminar este recurso? Los elementos que solo él contiene también se eliminan; lo que esté enlazado en otro lugar se conserva.",
   "graph.panel.visibility": "Visibilidad",
