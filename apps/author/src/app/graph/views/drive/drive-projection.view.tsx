@@ -15,6 +15,7 @@ import {
   Clock,
   Database,
   Folder,
+  House,
   FolderSymlink,
   LayoutGrid,
   List,
@@ -144,6 +145,12 @@ type NavItem = {
 
 const NAV_ITEMS: readonly NavItem[] = [
   {
+    icon: House,
+    key: 'navHome',
+    label: (t) => t('graph.drive.navHome'),
+    scope: 'home',
+  },
+  {
     icon: Database,
     key: 'navKnowledgeBase',
     label: (t) => t('graph.drive.navKnowledgeBase'),
@@ -233,9 +240,10 @@ export function DriveProjectionView({
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
   const isShared = scope === 'shared';
-  // A flat filter lens (Starred / Recent / Shared) hides the folder tree, breadcrumb
-  // path, and shortcuts — the canvas is a single flat list, not a folder you sit in.
-  const isFilterScope = isStarred || isRecent || isShared;
+  const isHome = scope === 'home';
+  // A flat lens (Home / Starred / Recent / Shared) hides the folder tree, breadcrumb
+  // path, and shortcuts — the canvas is a flat digest/list, not a folder you sit in.
+  const isFilterScope = isStarred || isRecent || isShared || isHome;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
@@ -380,6 +388,35 @@ export function DriveProjectionView({
           return owner != null && owner !== currentUserId;
         })
     : [];
+
+  // "For you" home (ADR-0017 §4): a personal DIGEST over the now-personal visible set,
+  // not a flat filter. Two sections, content only (folders excluded): what I recently
+  // OPENED ("jump back in", `last_opened_at`) and what recently CHANGED that I can see
+  // ("recently updated", `last_modified_at`). Both client-side over already-loaded
+  // overlays — zero new data/migrations.
+  // Cap each section: this is a relevance digest, not an archive — beyond ~50 the
+  // entries are stale enough to have lost their "for you" value (and the list would
+  // grow unbounded).
+  const HOME_LIMIT = 50;
+  const homeContent = isHome
+    ? result.items
+        .map((item) => containment.byId.get(item.id))
+        .filter((n): n is LensNode => n != null && n.kind !== 'folder')
+    : [];
+  const jumpBackNodes = homeContent
+    .filter((n) => openedAtById[n.id] != null)
+    .sort((a, b) =>
+      (openedAtById[b.id] ?? '').localeCompare(openedAtById[a.id] ?? '')
+    )
+    .slice(0, HOME_LIMIT);
+  const recentlyUpdatedNodes = homeContent
+    .slice()
+    .sort((a, b) =>
+      (metaByItem[b.id]?.lastModifiedAt ?? '').localeCompare(
+        metaByItem[a.id]?.lastModifiedAt ?? ''
+      )
+    )
+    .slice(0, HOME_LIMIT);
 
   const folders = (
     isStarred
@@ -578,18 +615,22 @@ export function DriveProjectionView({
           // A flat filter lens (Starred / Recent) is not a tree location — a single
           // inert crumb stands in for the folder path.
           <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
-            {isStarred ? (
+            {isHome ? (
+              <House className="size-3.5" aria-hidden />
+            ) : isStarred ? (
               <Star className="size-3.5" aria-hidden />
             ) : isShared ? (
               <Users className="size-3.5" aria-hidden />
             ) : (
               <Clock className="size-3.5" aria-hidden />
             )}
-            {isStarred
-              ? t('graph.drive.navStarred')
-              : isShared
-                ? t('graph.drive.navShared')
-                : t('graph.drive.navRecent')}
+            {isHome
+              ? t('graph.drive.navHome')
+              : isStarred
+                ? t('graph.drive.navStarred')
+                : isShared
+                  ? t('graph.drive.navShared')
+                  : t('graph.drive.navRecent')}
           </span>
         ) : (
           <button
@@ -695,193 +736,219 @@ export function DriveProjectionView({
     </div>
   );
 
+  // One content card, reused by the flat items grid and the "For you" home sections.
+  const renderItemCard = (item: LensNode) => (
+    <ItemCard
+      key={item.id}
+      t={t}
+      node={item}
+      attributes={attributesByItem[item.id]}
+      meta={metaByItem[item.id]}
+      currentUserId={currentUserId}
+      layout={layout}
+      selected={item.id === selectedId}
+      onOpen={() =>
+        item.kind === 'text' && onOpenDocument
+          ? onOpenDocument(item.id)
+          : onSelect(item.id)
+      }
+      onDetails={() => onSelect(item.id)}
+      star={
+        <StarButton
+          starred={starredSet.has(item.id)}
+          onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
+          label={t(
+            starredSet.has(item.id) ? 'graph.drive.unstar' : 'graph.drive.star'
+          )}
+        />
+      }
+      actions={
+        <NodeActionsMenu
+          spaceId={spaceId}
+          t={t}
+          node={item}
+          containment={containment}
+          onMutated={onMutated}
+          onDetails={() => onSelect(item.id)}
+          onEdit={
+            item.kind === 'text' && onEditNode
+              ? () => onEditNode(item.id)
+              : undefined
+          }
+          triggerClassName={CARD_ACTION_TRIGGER}
+        />
+      }
+    />
+  );
+
+  // "For you" — a personal digest: two sections of content cards. Shown instead of the
+  // browse tree / flat list when scope='home'. Respects the grid/list toggle (cards vs
+  // list rows); the sortable TABLE is browse-only — it does not fit a 2-section digest.
+  const homeSection = (label: string, nodes: LensNode[]) =>
+    nodes.length > 0 ? (
+      <>
+        <SectionLabel className="mt-[18px] first:mt-0">{label}</SectionLabel>
+        <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+          {nodes.map(renderItemCard)}
+        </div>
+      </>
+    ) : null;
+
   const main = (
     <>
-      {!isFilterScope && isRoot ? (
-        <div className="text-muted-foreground mb-2 text-[13px]">
-          {t('graph.drive.allSections', { count: roots.length })}
-        </div>
-      ) : null}
-
-      {/* contents — a sortable TABLE in list mode, cards in grid mode */}
-      {layout === 'list' ? (
-        driveRows.length > 0 ? (
-          <DriveListTable
-            // Remount when the column SET changes (Recent's "Viewed" column vs the
-            // "Modified" column elsewhere): the table's sort state is seeded once at
-            // mount, so without this it keeps a stale `{id:'viewed'}` sort after
-            // leaving Recent and TanStack throws "Column 'viewed' does not exist".
-            key={isRecent ? 'recent' : 'browse'}
-            rows={driveRows}
-            t={t}
-            metaByItem={metaByItem}
-            currentUserId={currentUserId}
-            selectedId={selectedId}
-            starredSet={starredSet}
-            onToggleStar={toggleStar}
-            // In Recent the 4th column is "Viewed" (when I last opened it) instead of
-            // "Modified" — that is why the item is here; pass the overlay so the
-            // column + sort read it.
-            recentOpenedAt={isRecent ? openedAtById : null}
-            // Recent defaults to most-recently-VIEWED first (still re-sortable by any
-            // column); every other scope sorts by name.
-            defaultSorting={
-              isRecent
-                ? [{ id: 'viewed', desc: true }]
-                : [{ id: 'name', desc: false }]
-            }
-          />
-        ) : null
+      {isHome ? (
+        jumpBackNodes.length === 0 && recentlyUpdatedNodes.length === 0 ? (
+          <EmptyState>{t('graph.drive.homeEmpty')}</EmptyState>
+        ) : (
+          <>
+            {homeSection(t('graph.drive.homeJumpBackIn'), jumpBackNodes)}
+            {homeSection(
+              t('graph.drive.homeRecentlyUpdated'),
+              recentlyUpdatedNodes
+            )}
+          </>
+        )
       ) : (
         <>
-          {/* folders + shortcuts */}
-          {folders.length > 0 || shortcuts.length > 0 ? (
-            <>
-              {!isRoot || isFilterScope ? (
-                <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
-              ) : null}
-              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                {folders.map((sub) => (
-                  <FolderCard
-                    key={sub.id}
-                    title={sub.title}
-                    subtitle={t('graph.drive.itemsCount', {
-                      count:
-                        childFolders(containment, sub.id).length +
-                        childContent(containment, sub.id).length,
-                    })}
-                    layout={layout}
-                    onOpen={() => navigate(sub.id)}
-                    onDetails={() => onSelect(sub.id)}
-                    star={
-                      <StarButton
-                        starred={starredSet.has(sub.id)}
-                        onToggle={() =>
-                          toggleStar(sub.id, !starredSet.has(sub.id))
-                        }
-                        label={t(
-                          starredSet.has(sub.id)
-                            ? 'graph.drive.unstar'
-                            : 'graph.drive.star'
-                        )}
-                      />
-                    }
-                    actions={
-                      <NodeActionsMenu
-                        spaceId={spaceId}
-                        t={t}
-                        node={sub}
-                        containment={containment}
-                        onMutated={onMutated}
-                        onDetails={() => onSelect(sub.id)}
-                        triggerClassName={CARD_ACTION_TRIGGER}
-                      />
-                    }
-                  />
-                ))}
-                {shortcuts.map((target) => (
-                  <FolderCard
-                    key={`sc-${target.id}`}
-                    title={target.title}
-                    subtitle={t('graph.drive.shortcutFolder')}
-                    layout={layout}
-                    shortcut
-                    onOpen={() =>
-                      target.kind === 'folder'
-                        ? navigate(target.id)
-                        : onSelect(target.id)
-                    }
-                    onDetails={() => onSelect(target.id)}
-                  />
-                ))}
-              </div>
-            </>
+          {!isFilterScope && isRoot ? (
+            <div className="text-muted-foreground mb-2 text-[13px]">
+              {t('graph.drive.allSections', { count: roots.length })}
+            </div>
           ) : null}
 
-          {/* files / docs */}
-          {items.length > 0 ? (
+          {/* contents — a sortable TABLE in list mode, cards in grid mode */}
+          {layout === 'list' ? (
+            driveRows.length > 0 ? (
+              <DriveListTable
+                // Remount when the column SET changes (Recent's "Viewed" column vs the
+                // "Modified" column elsewhere): the table's sort state is seeded once at
+                // mount, so without this it keeps a stale `{id:'viewed'}` sort after
+                // leaving Recent and TanStack throws "Column 'viewed' does not exist".
+                key={isRecent ? 'recent' : 'browse'}
+                rows={driveRows}
+                t={t}
+                metaByItem={metaByItem}
+                currentUserId={currentUserId}
+                selectedId={selectedId}
+                starredSet={starredSet}
+                onToggleStar={toggleStar}
+                // In Recent the 4th column is "Viewed" (when I last opened it) instead of
+                // "Modified" — that is why the item is here; pass the overlay so the
+                // column + sort read it.
+                recentOpenedAt={isRecent ? openedAtById : null}
+                // Recent defaults to most-recently-VIEWED first (still re-sortable by any
+                // column); every other scope sorts by name.
+                defaultSorting={
+                  isRecent
+                    ? [{ id: 'viewed', desc: true }]
+                    : [{ id: 'name', desc: false }]
+                }
+              />
+            ) : null
+          ) : (
             <>
-              <SectionLabel className="mt-[18px]">
-                {t('graph.canvas.files')}
-              </SectionLabel>
-              <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                {items.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    t={t}
-                    node={item}
-                    attributes={attributesByItem[item.id]}
-                    meta={metaByItem[item.id]}
-                    currentUserId={currentUserId}
-                    layout={layout}
-                    selected={item.id === selectedId}
-                    onOpen={() =>
-                      // Double-click OPENS: a document opens its read-view; every
-                      // other kind has no distinct open, so it falls back to Details.
-                      item.kind === 'text' && onOpenDocument
-                        ? onOpenDocument(item.id)
-                        : onSelect(item.id)
-                    }
-                    onDetails={() => onSelect(item.id)}
-                    star={
-                      <StarButton
-                        starred={starredSet.has(item.id)}
-                        onToggle={() =>
-                          toggleStar(item.id, !starredSet.has(item.id))
+              {/* folders + shortcuts */}
+              {folders.length > 0 || shortcuts.length > 0 ? (
+                <>
+                  {!isRoot || isFilterScope ? (
+                    <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
+                  ) : null}
+                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+                    {folders.map((sub) => (
+                      <FolderCard
+                        key={sub.id}
+                        title={sub.title}
+                        subtitle={t('graph.drive.itemsCount', {
+                          count:
+                            childFolders(containment, sub.id).length +
+                            childContent(containment, sub.id).length,
+                        })}
+                        layout={layout}
+                        onOpen={() => navigate(sub.id)}
+                        onDetails={() => onSelect(sub.id)}
+                        star={
+                          <StarButton
+                            starred={starredSet.has(sub.id)}
+                            onToggle={() =>
+                              toggleStar(sub.id, !starredSet.has(sub.id))
+                            }
+                            label={t(
+                              starredSet.has(sub.id)
+                                ? 'graph.drive.unstar'
+                                : 'graph.drive.star'
+                            )}
+                          />
                         }
-                        label={t(
-                          starredSet.has(item.id)
-                            ? 'graph.drive.unstar'
-                            : 'graph.drive.star'
-                        )}
-                      />
-                    }
-                    actions={
-                      <NodeActionsMenu
-                        spaceId={spaceId}
-                        t={t}
-                        node={item}
-                        containment={containment}
-                        onMutated={onMutated}
-                        onDetails={() => onSelect(item.id)}
-                        onEdit={
-                          item.kind === 'text' && onEditNode
-                            ? () => onEditNode(item.id)
-                            : undefined
+                        actions={
+                          <NodeActionsMenu
+                            spaceId={spaceId}
+                            t={t}
+                            node={sub}
+                            containment={containment}
+                            onMutated={onMutated}
+                            onDetails={() => onSelect(sub.id)}
+                            triggerClassName={CARD_ACTION_TRIGGER}
+                          />
                         }
-                        triggerClassName={CARD_ACTION_TRIGGER}
                       />
-                    }
-                  />
-                ))}
-              </div>
+                    ))}
+                    {shortcuts.map((target) => (
+                      <FolderCard
+                        key={`sc-${target.id}`}
+                        title={target.title}
+                        subtitle={t('graph.drive.shortcutFolder')}
+                        layout={layout}
+                        shortcut
+                        onOpen={() =>
+                          target.kind === 'folder'
+                            ? navigate(target.id)
+                            : onSelect(target.id)
+                        }
+                        onDetails={() => onSelect(target.id)}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
+              {/* files / docs */}
+              {items.length > 0 ? (
+                <>
+                  <SectionLabel className="mt-[18px]">
+                    {t('graph.canvas.files')}
+                  </SectionLabel>
+                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+                    {items.map(renderItemCard)}
+                  </div>
+                </>
+              ) : null}
             </>
+          )}
+
+          {/* empty states */}
+          {isStarred && folders.length === 0 && items.length === 0 ? (
+            <EmptyState>{t('graph.drive.starredEmpty')}</EmptyState>
+          ) : null}
+          {isRecent && items.length === 0 ? (
+            <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
+          ) : null}
+          {isShared && folders.length === 0 && items.length === 0 ? (
+            <EmptyState>{t('graph.drive.sharedEmpty')}</EmptyState>
+          ) : null}
+          {!isFilterScope &&
+          isRoot &&
+          folders.length === 0 &&
+          items.length === 0 ? (
+            <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
+          ) : null}
+          {!isFilterScope &&
+          !isRoot &&
+          folders.length === 0 &&
+          items.length === 0 ? (
+            <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
           ) : null}
         </>
       )}
-
-      {/* empty states */}
-      {isStarred && folders.length === 0 && items.length === 0 ? (
-        <EmptyState>{t('graph.drive.starredEmpty')}</EmptyState>
-      ) : null}
-      {isRecent && items.length === 0 ? (
-        <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
-      ) : null}
-      {isShared && folders.length === 0 && items.length === 0 ? (
-        <EmptyState>{t('graph.drive.sharedEmpty')}</EmptyState>
-      ) : null}
-      {!isFilterScope &&
-      isRoot &&
-      folders.length === 0 &&
-      items.length === 0 ? (
-        <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
-      ) : null}
-      {!isFilterScope &&
-      !isRoot &&
-      folders.length === 0 &&
-      items.length === 0 ? (
-        <EmptyState>{t('graph.drive.folderEmpty')}</EmptyState>
-      ) : null}
     </>
   );
 
