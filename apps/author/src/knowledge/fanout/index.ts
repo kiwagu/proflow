@@ -23,6 +23,8 @@ export {
   linkResourceScope,
   listScopeChoices,
   unlinkResourceScope,
+  loadResourceFloor,
+  setResourceFloor,
   type LinkResourceScopeInput,
 } from './resource-scope.fanout';
 export {

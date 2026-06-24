@@ -9,19 +9,24 @@ import {
   linkResourceScope,
   listScopeChoices,
   unlinkResourceScope,
+  loadResourceFloor,
+  setResourceFloor,
 } from '@/knowledge/fanout';
 
 /**
- * Resource visibility — cohort/scope sharing for the consumer authoring surface.
+ * Resource visibility — broadcast floor + cohort grants for the authoring surface
+ * (ADR-0017 Model B).
  *
- * GET    — list the space's cohort scopes + whether this node is fenced to each.
- * POST   — link a resource to a cohort scope (fence it: members-only-read).
- * DELETE — unlink (widen back toward all-space-readers).
+ * GET    — the node's current floor (`visibility`) + the space's cohort scopes and
+ *          whether this node is granted to each.
+ * PATCH  — set the broadcast floor (publish private→space, or restrict space→private).
+ * POST   — grant a cohort access (additive; share with members).
+ * DELETE — remove a cohort grant.
  *
- * Auth context: the Supabase SESSION under `/author/graph/*`. Postgres RLS is the
- * SOLE authority: link/unlink gate on `space.knowledge.access` in the resource's
- * space, enforced on the `knowledge_resource_scopes` row; `linked_by` comes from
- * the SESSION, never the body. Zero service-role. THIN transport.
+ * Auth context: the Supabase SESSION under `/author/graph/*`. Postgres RLS is the SOLE
+ * authority: cohort link/unlink gate on `space.knowledge.access`; the floor change is
+ * owner-sovereign (D9 trigger: owner OR `space.knowledge.access`). `linked_by` comes
+ * from the SESSION, never the body. Zero service-role. THIN transport.
  */
 
 export const dynamic = 'force-dynamic';
@@ -43,17 +48,50 @@ export async function GET(request: Request) {
   }
 
   try {
-    const choices = await listScopeChoices(
-      { spaceId, nodeId },
-      { db: session.db }
-    );
+    const [choices, floor] = await Promise.all([
+      listScopeChoices({ spaceId, nodeId }, { db: session.db }),
+      loadResourceFloor({ nodeId }, { db: session.db }),
+    ]);
     return NextResponse.json(
-      { choices },
+      { choices, floor },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Could not load visibility.';
+    return NextResponse.json({ message }, { status: 422 });
+  }
+}
+
+const floorSchema = z.object({
+  resourceId: z.string().min(1), // knr_…
+  visibility: z.enum(['private', 'space', 'organization']),
+});
+
+export async function PATCH(request: Request) {
+  const parsed = floorSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: 'Invalid request', issues: parsed.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const session = await requireRlsSession(request);
+  if (isAuthFailure(session)) {
+    return session;
+  }
+
+  try {
+    const result = await setResourceFloor(parsed.data, { db: session.db });
+    return NextResponse.json(result, {
+      status: 200,
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Could not change visibility.';
+    // RLS / D9 trigger rejection (not owner, no access) → clean failure.
     return NextResponse.json({ message }, { status: 422 });
   }
 }

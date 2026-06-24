@@ -67,3 +67,8 @@ export type ScopeChoice = {
   name: string;
   linked: boolean;
 };
+
+/** Broadcast floor (the `knowledge_resources.visibility` enum) — the single
+ * per-resource dial: private (owner + supervisory) / space / organization
+ * (ADR-0017 §1.5). Cohort grants compose additively on top. */
+export type ResourceFloor = 'private' | 'space' | 'organization';
