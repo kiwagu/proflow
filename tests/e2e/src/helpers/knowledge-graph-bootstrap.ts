@@ -267,6 +267,49 @@ async function resolveRoleIds(
   return { adminRoleId, spaceAdminRoleId };
 }
 
+/**
+ * Add a `member`-role actor to an existing tenant (ADR-0017 D5-revision: every space
+ * member can author their OWN content). `member` holds read + create only — owner-
+ * sovereign UPDATE/DELETE policies let it edit/delete its own without the verb, and
+ * deny it on others' content. Created through the real RBAC path (service-role
+ * membership + `user_role`), never raw inserts.
+ */
+export async function bootstrapMemberActor(
+  tenant: KnowledgeGraphTenant
+): Promise<KnowledgeActor> {
+  const { service, organizationId, spaceId } = tenant;
+  const { data: roleRow, error: roleErr } = await service
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', 'member')
+    .maybeSingle();
+  if (roleErr || !roleRow?.id) {
+    throw new Error(
+      `bootstrapMemberActor: member role not found — ${roleErr?.message ?? 'missing'}`
+    );
+  }
+  const u = await createActor(service, 'member');
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: u.id });
+  if (omErr) throw new Error(`bootstrapMemberActor org: ${omErr.message}`);
+  const { error: smErr } = await service
+    .from('space_memberships')
+    .insert({ space_id: spaceId, user_id: u.id, status: 'active' });
+  if (smErr) throw new Error(`bootstrapMemberActor space: ${smErr.message}`);
+  const { error: urErr } = await service
+    .from('user_role')
+    .insert({ user_id: u.id, space_id: spaceId, role_id: roleRow.id });
+  if (urErr) throw new Error(`bootstrapMemberActor role: ${urErr.message}`);
+  return {
+    userId: u.id,
+    email: u.email,
+    password: u.password,
+    client: await authenticatedClient(u.email, u.password),
+  };
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -1020,13 +1063,13 @@ export type AccessLayerActors = {
 export type AccessLayerGraph = {
   /** scope-A id (the cohort restricting `cohortRestrictedNodeId`). */
   scopeAId: string;
-  /** A node linked to scope-A: visible to members only (cohort hides it). */
+  /** floor=private + scope-A grant: visible to cohort members + owner only (ADR-0017 Model B). */
   cohortRestrictedNodeId: string;
   cohortRestrictedTitle: string;
-  /** A node with NO scope link: visible to everyone with read (scope_gate=true). */
+  /** A published node (floor='space', no grant needed): visible to all space members. */
   unrestrictedNodeId: string;
   unrestrictedTitle: string;
-  /** A node owned by `subordinate`, restricted to an empty cohort: hierarchy-only visibility. */
+  /** floor=private, owned by `subordinate`, empty cohort: surfaces ONLY via the manager hierarchy. */
   hierarchyNodeId: string;
   hierarchyTitle: string;
   /** A node BOTH scope-A-restricted AND owned by `subordinate` (composition test). */
@@ -1131,17 +1174,17 @@ export async function bootstrapAccessLayerActors(
  * Seed the slice-07 access-layer demo over the tenant, as the granted admin actor
  * (every write passes RLS `with check`):
  *  - a cohort scope-A with `cohortMember` enrolled (NOT `cohortStranger`);
- *  - a cohort scope-B with NOBODY enrolled (isolates the hierarchy branch: a node
- *    restricted to scope-B fails the (base AND scope) branch for everyone, so only
- *    the hierarchy OR-branch can reveal it);
+ *  - a cohort scope-B with NOBODY enrolled (an empty grant: a private node linked to
+ *    scope-B is admitted by no cohort, so only the hierarchy branch can reveal it);
  *  - a `reporting_lines` chain managerOfManager → manager → subordinate;
- *  - four demo nodes tagged into an 'Access KB' tag:
- *      • cohortRestricted — linked to scope-A (cohort hides it from non-members);
- *      • unrestricted — no scope link, default-visible to all space members;
- *      • hierarchy — owned by `subordinate` AND restricted to scope-B (nobody is a
- *        member), so it surfaces ONLY through the manager-hierarchy branch;
- *      • composed — scope-A-restricted AND owned by `subordinate` (composition:
- *        cohort member sees via scope, manager sees via hierarchy, stranger neither);
+ *  - four demo nodes tagged into an 'Access KB' tag (ADR-0017 Model B — floor +
+ *    additive grants):
+ *      • cohortRestricted — floor=private + scope-A grant (members + owner see it);
+ *      • unrestricted — floor='space' (published), visible to all space members;
+ *      • hierarchy — floor=private, owned by `subordinate`, empty scope-B, so it
+ *        surfaces ONLY through the manager-hierarchy branch;
+ *      • composed — floor=private + scope-A grant AND owned by `subordinate`
+ *        (cohort member sees via grant, manager via hierarchy, stranger neither);
  *  - a saved KB projection selecting these via the incoming `tagged` traversal.
  */
 export async function seedAccessLayerDemo(
@@ -1228,6 +1271,11 @@ export async function seedAccessLayerDemo(
       status: 'active',
       created_by: granted.userId,
       owner_user_id: granted.userId,
+      // Published floor: the tag is a SHARED organizing anchor both owners tag into
+      // (subordinate tags its own nodes into it). Under private-by-default (Step 3)
+      // it would otherwise be private to `granted`, and the cross-owner tagged edge's
+      // same-space trigger could not see it as the to-endpoint.
+      visibility: 'space',
     })
     .select('id')
     .single();
@@ -1236,7 +1284,16 @@ export async function seedAccessLayerDemo(
   }
   const tagNodeId = tag.id;
 
-  const { data: nodes, error: nodesErr } = await db
+  // Each node is created BY ITS OWNER, through that owner's RLS — production has no
+  // system/service account, so the fixture must not either. Under ADR-0017 Model B a
+  // private node is RETURNING-readable only by its owner (is_owner), so a non-owner
+  // could not create-and-read it back. (Bulk insert also forces every row to set
+  // `visibility` explicitly: PostgREST NULLs a key missing on only SOME rows, so the
+  // DB default would not apply.)
+  //
+  // granted-owned: cohortRestricted (floor=private, later shared to scope-A) +
+  // unrestricted (floor='space', published to all members).
+  const { data: ownNodes, error: ownErr } = await db
     .from('knowledge_resources')
     .insert([
       {
@@ -1246,6 +1303,7 @@ export async function seedAccessLayerDemo(
         status: 'active',
         created_by: granted.userId,
         owner_user_id: granted.userId,
+        visibility: 'private',
       },
       {
         space_id: spaceId,
@@ -1254,29 +1312,51 @@ export async function seedAccessLayerDemo(
         status: 'active',
         created_by: granted.userId,
         owner_user_id: granted.userId,
+        visibility: 'space',
       },
+    ])
+    .select('id,title');
+  if (ownErr || !ownNodes) {
+    throw new Error(
+      `seedAccessLayerDemo own nodes: ${ownErr?.message ?? 'none'}`
+    );
+  }
+
+  // subordinate-owned: hierarchy + composed (both floor=private), created AS the
+  // subordinate so the is_owner branch admits the RETURNING read.
+  const subDb = actors.subordinate.client;
+  const { data: subNodes, error: subErr } = await subDb
+    .from('knowledge_resources')
+    .insert([
       {
         space_id: spaceId,
         kind: 'text',
         title: hierarchyTitle,
         status: 'active',
-        created_by: granted.userId,
+        created_by: actors.subordinate.userId,
         owner_user_id: actors.subordinate.userId,
+        visibility: 'private',
       },
       {
         space_id: spaceId,
         kind: 'text',
         title: composedTitle,
         status: 'active',
-        created_by: granted.userId,
+        created_by: actors.subordinate.userId,
         owner_user_id: actors.subordinate.userId,
+        visibility: 'private',
       },
     ])
     .select('id,title');
-  if (nodesErr || !nodes || nodes.length !== 4) {
+  if (subErr || !subNodes) {
     throw new Error(
-      `seedAccessLayerDemo nodes: ${nodesErr?.message ?? 'count'}`
+      `seedAccessLayerDemo subordinate nodes: ${subErr?.message ?? 'none'}`
     );
+  }
+
+  const nodes = [...ownNodes, ...subNodes];
+  if (nodes.length !== 4) {
+    throw new Error(`seedAccessLayerDemo nodes: count ${nodes.length}`);
   }
   const byTitle = new Map(nodes.map((n) => [n.title, n.id]));
   const cohortRestrictedNodeId = byTitle.get(cohortRestrictedTitle);
@@ -1293,47 +1373,75 @@ export async function seedAccessLayerDemo(
   }
 
   // ── tagged edges (node → tag), the Variant-B selection seam ────────────────
-  const { error: edgeErr } = await db.from('knowledge_edges').insert(
-    [
-      cohortRestrictedNodeId,
-      unrestrictedNodeId,
-      hierarchyNodeId,
-      composedNodeId,
-    ].map((nodeId, i) => ({
-      space_id: spaceId,
-      from_id: nodeId,
-      to_id: tagNodeId,
-      relation_type: 'tagged',
-      position: i,
-      created_by: granted.userId,
-    }))
-  );
-  if (edgeErr)
-    throw new Error(`seedAccessLayerDemo tagged: ${edgeErr.message}`);
+  // Each owner tags ITS OWN nodes (the same-space edge trigger reads the from-
+  // endpoint under RLS; a subordinate-owned private node is invisible to `granted`
+  // under Model B). The `tag` node is floor='space', so both owners see it as the
+  // to-endpoint.
+  const taggedEdge = (nodeId: string, position: number, createdBy: string) => ({
+    space_id: spaceId,
+    from_id: nodeId,
+    to_id: tagNodeId,
+    relation_type: 'tagged',
+    position,
+    created_by: createdBy,
+  });
+  const { error: ownEdgeErr } = await db
+    .from('knowledge_edges')
+    .insert([
+      taggedEdge(cohortRestrictedNodeId, 0, granted.userId),
+      taggedEdge(unrestrictedNodeId, 1, granted.userId),
+    ]);
+  if (ownEdgeErr)
+    throw new Error(
+      `seedAccessLayerDemo tagged (granted): ${ownEdgeErr.message}`
+    );
+  const { error: subEdgeErr } = await subDb
+    .from('knowledge_edges')
+    .insert([
+      taggedEdge(hierarchyNodeId, 2, actors.subordinate.userId),
+      taggedEdge(composedNodeId, 3, actors.subordinate.userId),
+    ]);
+  if (subEdgeErr)
+    throw new Error(
+      `seedAccessLayerDemo tagged (subordinate): ${subEdgeErr.message}`
+    );
 
-  // ── cohort links ───────────────────────────────────────────────────────────
+  // ── cohort links (D9 owner-sovereign: each owner shares ITS OWN node) ──────
   //  - cohortRestricted + composed → scope-A (cohortMember is a member);
-  //  - hierarchy → scope-B (NO members), so its (base AND scope) branch fails for
-  //    everyone and it can surface ONLY through the manager-hierarchy OR-branch.
-  const { error: krsErr } = await db.from('knowledge_resource_scopes').insert([
-    {
+  //  - hierarchy → scope-B (NO members): an empty grant, so (with floor=private) it
+  //    surfaces ONLY through the manager-hierarchy OR-branch.
+  // The link WITH CHECK reads the target node under RLS, so each owner links its own
+  // (both actors hold the `access` verb via the admin role). granted links its node,
+  // subordinate links the two it owns.
+  const { error: ownKrsErr } = await db
+    .from('knowledge_resource_scopes')
+    .insert({
       resource_id: cohortRestrictedNodeId,
       scope_id: scopeAId,
       linked_by: granted.userId,
-    },
-    {
-      resource_id: composedNodeId,
-      scope_id: scopeAId,
-      linked_by: granted.userId,
-    },
-    {
-      resource_id: hierarchyNodeId,
-      scope_id: scopeBId,
-      linked_by: granted.userId,
-    },
-  ]);
-  if (krsErr)
-    throw new Error(`seedAccessLayerDemo resource_scopes: ${krsErr.message}`);
+    });
+  if (ownKrsErr)
+    throw new Error(
+      `seedAccessLayerDemo scopes (granted): ${ownKrsErr.message}`
+    );
+  const { error: subKrsErr } = await subDb
+    .from('knowledge_resource_scopes')
+    .insert([
+      {
+        resource_id: composedNodeId,
+        scope_id: scopeAId,
+        linked_by: actors.subordinate.userId,
+      },
+      {
+        resource_id: hierarchyNodeId,
+        scope_id: scopeBId,
+        linked_by: actors.subordinate.userId,
+      },
+    ]);
+  if (subKrsErr)
+    throw new Error(
+      `seedAccessLayerDemo scopes (subordinate): ${subKrsErr.message}`
+    );
 
   // ── saved KB projection over the demo nodes (incoming `tagged`) ────────────
   const { data: prj, error: prjErr } = await db

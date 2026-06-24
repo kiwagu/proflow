@@ -12,9 +12,9 @@ import { kbSchema } from '@/lib/supabase/kb-schema';
  * by me" signal; it is per-user state on the existing anchor, NOT a new model.
  *
  * Every write runs under the USER's RLS-scoped `db` — NEVER service-role. The open
- * append is gated by the dedicated `space.knowledge.open` verb (all space members
- * hold it). An RLS rejection is a clean no-op (best-effort): a failed open must
- * never block the read (§3.3).
+ * append is gated by the dedicated `space.knowledge.open` verb — a READ-TIER verb
+ * held by whoever holds `space.knowledge.read` (ADR-0017 §3). An RLS rejection is a
+ * clean no-op (best-effort): a failed open must never block the read (§3.3).
  */
 
 export type RecordResourceOpenedDeps = {
@@ -42,11 +42,12 @@ export async function recordResourceOpened(
   const { db, userId } = deps;
 
   // Append the authoritative `open` activity row under the user's RLS, gated by
-  // `space.knowledge.open` (held by every member). The SECURITY DEFINER roll-up
-  // trigger UPSERTS the resource_user_state anchor and advances `last_opened_at`
-  // from this row — so the route never writes the anchor itself. That keeps the
-  // "opened by me" signal honest for EVERY member, with no dependency on the
-  // `space.knowledge.progress` verb (which the base `member` role does not hold).
+  // `space.knowledge.open` (read-tier — held by whoever holds `read`). The
+  // SECURITY DEFINER roll-up trigger UPSERTS the resource_user_state anchor and
+  // advances `last_opened_at` from this row — so the route never writes the
+  // anchor itself. That keeps the "opened by me" signal honest for every reader
+  // via its own dedicated `open` verb, independent of the separate read-tier
+  // `space.knowledge.progress` (course-pacing) verb.
   const { error } = await kbSchema(db).from('resource_activity').insert({
     space_id: input.spaceId,
     resource_id: input.nodeId,

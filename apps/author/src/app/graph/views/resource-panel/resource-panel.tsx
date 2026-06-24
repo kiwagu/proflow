@@ -37,7 +37,11 @@ import {
   type SerializedLexical,
 } from '@/app/graph/views/document-reader/document-body-view';
 import { RevisionDiff } from '@/app/graph/views/document-reader/revision-diff';
-import type { KbAttributes, ScopeChoice } from '@/app/graph/graph-data.types';
+import type {
+  KbAttributes,
+  ResourceFloor,
+  ScopeChoice,
+} from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
 /**
@@ -328,19 +332,29 @@ function VisibilitySection({
   onMutated: () => void;
 }) {
   const [choices, setChoices] = React.useState<ScopeChoice[] | null>(null);
+  const [floor, setFloor] = React.useState<ResourceFloor | null>(null);
   const [working, setWorking] = React.useState(false);
 
   const load = React.useCallback(async () => {
     const res = await fetch(
       `/author/graph/visibility?space_id=${encodeURIComponent(spaceId)}&node_id=${encodeURIComponent(nodeId)}`
     );
-    setChoices(
-      res.ok ? ((await res.json()) as { choices: ScopeChoice[] }).choices : []
-    );
+    if (res.ok) {
+      const data = (await res.json()) as {
+        choices: ScopeChoice[];
+        floor: ResourceFloor | null;
+      };
+      setChoices(data.choices);
+      setFloor(data.floor);
+    } else {
+      setChoices([]);
+      setFloor(null);
+    }
   }, [spaceId, nodeId]);
 
   React.useEffect(() => {
     setChoices(null);
+    setFloor(null);
     void load();
   }, [load]);
 
@@ -353,7 +367,22 @@ function VisibilitySection({
     );
     await load();
     setWorking(false);
-    // fencing changes who can see the node → re-resolve the canvas.
+    // a cohort grant changes who can see the node → re-resolve the canvas.
+    onMutated();
+  }
+
+  // The broadcast floor (publish private→space, or restrict space→private). Owner-
+  // sovereign (D9): a non-owner/non-admin write is rejected by the DB guard → the
+  // select reverts on the reload.
+  async function changeFloor(next: ResourceFloor) {
+    setWorking(true);
+    await sendJson(
+      '/author/graph/visibility',
+      { resourceId: nodeId, visibility: next },
+      'PATCH'
+    );
+    await load();
+    setWorking(false);
     onMutated();
   }
 
@@ -366,6 +395,34 @@ function VisibilitySection({
         <Users className="size-3" aria-hidden />
         {t('graph.panel.visibility')}
       </div>
+      {/* broadcast floor — the single per-resource dial (ADR-0017 §1.5). */}
+      {floor != null ? (
+        <div className="flex flex-col gap-1.5">
+          <Select
+            value={floor}
+            disabled={disabled || working}
+            onValueChange={(next) => changeFloor(next as ResourceFloor)}
+          >
+            <SelectTrigger className="h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="private">
+                {t('graph.panel.floorPrivate')}
+              </SelectItem>
+              <SelectItem value="space">
+                {t('graph.panel.floorSpace')}
+              </SelectItem>
+              <SelectItem value="organization">
+                {t('graph.panel.floorOrganization')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            {t('graph.panel.floorHint')}
+          </p>
+        </div>
+      ) : null}
       {choices === null ? null : choices.length === 0 ? (
         <p className="text-muted-foreground text-xs">
           {t('graph.panel.visibilityNoCohorts')}

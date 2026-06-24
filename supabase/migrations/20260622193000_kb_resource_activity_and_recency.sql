@@ -40,29 +40,18 @@
  */
 
 -- ===========================================================================
--- (e) verb space.knowledge.open — permission row + base member-role mapping
---     (ADR-0011 §6 default grant: every space member holds it, so opens never
---     silently fail). Gates the user-initiated open append (5.1a INSERT policy).
+-- (e) verb space.knowledge.open — permission row ONLY.
+--     The role mapping is the READ-TIER derive (open follows whoever holds
+--     space.knowledge.read), seeded in 20260623193000 — NOT a name-by-name
+--     role grant. ADR-0017 §3 supersedes ADR-0011 §6's member-grant: the old
+--     name-by-name member→open map left `member` holding `open` without
+--     `read`, an incoherence the derive removes. Gates the user-initiated open
+--     append (5.1a INSERT policy).
 -- ===========================================================================
 
 insert into public.permissions (key, description) values
   ('space.knowledge.open', 'Record one''s own deliberate "open" of a knowledge resource in one space.')
 on conflict (key) do nothing;
-
-with mapping(role_key, permission_key) as (
-  values
-    ('member', 'space.knowledge.open')
-)
-insert into public.role_permission (role_id, permission_id)
-select r.id, p.id
-from mapping m
-join public.roles r
-  on r.key = m.role_key
- and r.role_kind = 'system'
- and r.owner_organization_id is null
- and r.archived_at is null
-join public.permissions p on p.key = m.permission_key
-on conflict (role_id, permission_id) do nothing;
 
 -- ===========================================================================
 -- (b) denormalized roll-up columns (the SQL/RLS-queryable read targets)
@@ -201,7 +190,7 @@ using (
   and exists (
     select 1 from public.knowledge_resources r
     where r.id = resource_activity.resource_id
-      and public.auth_user_can_access_resource(r.id, r.space_id, r.owner_user_id, 'space.knowledge.read')
+      and public.auth_user_can_access_resource(r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.read')
   )
 );
 
