@@ -74,6 +74,7 @@ export function NodeActionsMenu({
   onActed,
   onDetails,
   onEdit,
+  onCopyToClipboard,
   triggerClassName,
 }: {
   spaceId: string;
@@ -87,6 +88,11 @@ export function NodeActionsMenu({
   onDetails?: () => void;
   /** Edit the document directly (text nodes). Omit to hide the item. */
   onEdit?: () => void;
+  /**
+   * MARK this node on the Dolphin-style clipboard (no write) — the workbench then
+   * offers a Paste affordance in each pane's toolbar. When omitted (standalone /
+   * tests), "Copy" falls back to the legacy immediate duplicate-in-place. */
+  onCopyToClipboard?: (nodeId: string, title: string) => void;
   /** Extra classes for the `⋯` trigger (e.g. hover-reveal on a card). */
   triggerClassName?: string;
 }) {
@@ -150,11 +156,17 @@ export function NodeActionsMenu({
     await run(ok, () => setMoveOpen(false));
   }
 
-  // Copy = deep-duplicate the node and its `contains` subtree as a SIBLING (same
-  // parent), "{title} (copy)". The clone is the copier's own private content
-  // (the route pins owner + leaves the private floor). Paste-elsewhere / drag is a
-  // later increment (the split-pane is its target).
+  // Copy = MARK the node on the Dolphin clipboard (no write). The workbench then
+  // surfaces a Paste affordance in each pane's toolbar, so the source can be pasted
+  // into ANY folder (the split-pane's payoff) — multi-paste until a new Copy replaces
+  // it. Legacy fallback (no clipboard host wired): deep-duplicate in place as a
+  // sibling, "{title} (copy)".
   async function onCopy() {
+    if (onCopyToClipboard) {
+      onCopyToClipboard(node.id, node.title);
+      onActed?.();
+      return;
+    }
     setBusy(true);
     const ok = await sendJson('/author/graph/copy', {
       spaceId,
