@@ -124,4 +124,19 @@ export type ProjectionViewProps = {
   /** Render WITHOUT the left sidebar — used for the split's second pane, which shares
    * the first pane's one sidebar (just its own toolbar + canvas). */
   hideSidebar?: boolean;
+  /**
+   * The Dolphin-style clipboard (owned by the workbench): a node MARKED for copy via
+   * the `⋯` "Copy" action. When set AND this pane is in 'kb' browse scope, the view
+   * shows a Paste affordance in its toolbar that pastes INTO this pane's current
+   * folder. Null = nothing marked. Persists after a paste (multi-paste) until a new
+   * Copy replaces it. */
+  clipboard?: { sourceId: string; title: string } | null;
+  /** MARK a node for copy (no write) — replaces the old immediate duplicate-in-place.
+   * The `⋯` "Copy" calls this. */
+  onCopyToClipboard?: (nodeId: string, title: string) => void;
+  /** PASTE the clipboard source into a folder (null → top level). The VIEW builds the
+   * "X (copy)" rootTitle (it has `t`); the workbench just POSTs the deep-copy. */
+  onPaste?: (targetFolderId: string | null, rootTitle: string) => void;
+  /** CLEAR the clipboard (the ✕ on the Paste control / Escape). */
+  onClearClipboard?: () => void;
 };

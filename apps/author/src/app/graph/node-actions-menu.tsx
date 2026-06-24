@@ -26,6 +26,7 @@ import {
 } from '@workspace/ui/components/select';
 import {
   Check,
+  Copy,
   FolderInput,
   FolderPlus,
   Info,
@@ -73,6 +74,7 @@ export function NodeActionsMenu({
   onActed,
   onDetails,
   onEdit,
+  onCopyToClipboard,
   triggerClassName,
 }: {
   spaceId: string;
@@ -86,6 +88,11 @@ export function NodeActionsMenu({
   onDetails?: () => void;
   /** Edit the document directly (text nodes). Omit to hide the item. */
   onEdit?: () => void;
+  /**
+   * MARK this node on the Dolphin-style clipboard (no write) — the workbench then
+   * offers a Paste affordance in each pane's toolbar. When omitted (standalone /
+   * tests), "Copy" falls back to the legacy immediate duplicate-in-place. */
+  onCopyToClipboard?: (nodeId: string, title: string) => void;
   /** Extra classes for the `⋯` trigger (e.g. hover-reveal on a card). */
   triggerClassName?: string;
 }) {
@@ -149,6 +156,27 @@ export function NodeActionsMenu({
     await run(ok, () => setMoveOpen(false));
   }
 
+  // Copy = MARK the node on the Dolphin clipboard (no write). The workbench then
+  // surfaces a Paste affordance in each pane's toolbar, so the source can be pasted
+  // into ANY folder (the split-pane's payoff) — multi-paste until a new Copy replaces
+  // it. Legacy fallback (no clipboard host wired): deep-duplicate in place as a
+  // sibling, "{title} (copy)".
+  async function onCopy() {
+    if (onCopyToClipboard) {
+      onCopyToClipboard(node.id, node.title);
+      onActed?.();
+      return;
+    }
+    setBusy(true);
+    const ok = await sendJson('/author/graph/copy', {
+      spaceId,
+      sourceId: node.id,
+      targetFolderId: containment.parentOf.get(node.id) ?? null,
+      rootTitle: t('graph.panel.copySuffix', { title: node.title }),
+    });
+    await run(ok, () => undefined);
+  }
+
   async function onCreateSubfolder(title: string) {
     setBusy(true);
     const ok = await sendJson('/author/graph/resources', {
@@ -202,6 +230,12 @@ export function NodeActionsMenu({
         setMoveTarget(containment.parentOf.get(node.id) ?? 'top');
         setMoveOpen(true);
       },
+    },
+    {
+      id: 'copy',
+      icon: <Copy className="size-4" aria-hidden />,
+      label: t('graph.panel.copy'),
+      onSelect: onCopy,
     },
     ...(onDetails
       ? [

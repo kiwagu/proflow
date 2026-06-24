@@ -2,6 +2,7 @@
 
 import {
   type ColumnDef,
+  type Row,
   type RowData,
   type SortingState,
   type Table as TableInstance,
@@ -101,6 +102,24 @@ export type DataTableProps<TData, TValue> = {
   toolbar?: (table: TableInstance<TData>) => React.ReactNode;
   footer?: (table: TableInstance<TData>) => React.ReactNode;
   className?: string;
+
+  /**
+   * Optional drag-and-drop wiring for a row — a HOOK the consumer provides (it owns
+   * the DnD library + context; the table stays presentation-only). It is called ONCE
+   * per row from inside each row's own component instance (keyed by row id), so it may
+   * safely call dnd hooks (`useDraggable`/`useDroppable`) — rules-of-hooks hold even as
+   * rows expand/collapse. It returns the props to spread onto the row's `<tr>`
+   * (draggable handle + droppable target) plus `isDropTarget` (a valid drag is hovering
+   * this row) and `isCandidate` (a drag is active and this row is a valid landing zone)
+   * flags the table uses to highlight. Returning nothing leaves the row inert.
+   */
+  rowDnd?: (row: TData) => {
+    rowProps?: React.HTMLAttributes<HTMLTableRowElement> & {
+      ref?: React.Ref<HTMLTableRowElement>;
+    };
+    isDropTarget?: boolean;
+    isCandidate?: boolean;
+  } | void;
 };
 
 export function DataTable<TData, TValue>({
@@ -120,6 +139,7 @@ export function DataTable<TData, TValue>({
   toolbar,
   footer,
   className,
+  rowDnd,
 }: DataTableProps<TData, TValue>) {
   // Control ONLY sorting (the proven-minimal config). Filtering / visibility /
   // selection use TanStack's own internal state — still fully drivable through the
@@ -288,29 +308,70 @@ export function DataTable<TData, TValue>({
             </TableRow>
           ) : (
             rows.map((row) => (
-              <TableRow
+              <DataTableRow
                 key={row.id}
-                data-selected={
-                  activeRowId != null && row.id === activeRowId
-                    ? true
-                    : undefined
-                }
-                {...rowHandlers(row.original)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
+                row={row}
+                rowProps={rowHandlers(row.original)}
+                active={activeRowId != null && row.id === activeRowId}
+                rowDnd={rowDnd}
+              />
             ))
           )}
         </TableBody>
       </Table>
       {footer ? footer(table) : null}
     </div>
+  );
+}
+
+/**
+ * One table row, as its OWN component so a per-row dnd hook (`rowDnd`) is called
+ * exactly once per instance (keyed by row id) — rules-of-hooks safe even as the row
+ * set grows/shrinks (tree expand/collapse). `rowProps` carries the shared
+ * single/double-click handlers; `rowDnd` (if any) layers on draggable/droppable.
+ */
+function DataTableRow<TData>({
+  row,
+  rowProps,
+  active,
+  rowDnd,
+}: {
+  row: Row<TData>;
+  rowProps: React.HTMLAttributes<HTMLTableRowElement>;
+  active: boolean;
+  rowDnd?: (row: TData) => {
+    rowProps?: React.HTMLAttributes<HTMLTableRowElement> & {
+      ref?: React.Ref<HTMLTableRowElement>;
+    };
+    isDropTarget?: boolean;
+    isCandidate?: boolean;
+  } | void;
+}) {
+  const dnd = rowDnd?.(row.original) || undefined;
+  const dndProps = dnd?.rowProps;
+  return (
+    <TableRow
+      data-selected={active ? true : undefined}
+      data-drop-target={dnd?.isDropTarget ? true : undefined}
+      {...rowProps}
+      {...dndProps}
+      className={cn(
+        rowProps.className,
+        dndProps?.className,
+        dnd?.isCandidate &&
+          !dnd?.isDropTarget &&
+          'ring-ring/30 ring-1 ring-inset',
+        dnd?.isDropTarget && 'bg-accent/60 ring-ring/40 ring-1 ring-inset'
+      )}
+    >
+      {row.getVisibleCells().map((cell) => (
+        <TableCell
+          key={cell.id}
+          className={cell.column.columnDef.meta?.cellClassName}
+        >
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </TableCell>
+      ))}
+    </TableRow>
   );
 }
