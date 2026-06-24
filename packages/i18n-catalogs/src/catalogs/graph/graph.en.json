@@ -145,6 +145,8 @@
   "graph.relation.shortcut": "Shortcut to",
   "graph.canvas.folders": "Folders",
   "graph.canvas.files": "Files",
+  "graph.tree.expand": "Expand folder",
+  "graph.tree.collapse": "Collapse folder",
   "graph.table.name": "Name",
   "graph.table.type": "Type",
   "graph.table.owner": "Owner",

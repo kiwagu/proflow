@@ -145,6 +145,8 @@
   "graph.relation.shortcut": "Acceso directo a",
   "graph.canvas.folders": "Carpetas",
   "graph.canvas.files": "Archivos",
+  "graph.tree.expand": "Expandir carpeta",
+  "graph.tree.collapse": "Contraer carpeta",
   "graph.table.name": "Nombre",
   "graph.table.type": "Tipo",
   "graph.table.owner": "Propietario",

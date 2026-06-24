@@ -461,24 +461,65 @@ export function DriveProjectionView({
   // Unified row set for the LIST view (folders → shortcuts → files), each with its
   // open (double-click) / details (single-click) handlers + the ⋯ actions menu —
   // the SAME behaviours as the grid cards, just rendered as table rows.
+  // In BROWSE (the containment tree) folders carry recursive `subRows` so the list
+  // view expands them inline (Dolphin-style). A flat filter lens (Recent/Starred/
+  // Shared) has no subRows → the table stays flat. The `ancestors` set guards a
+  // malformed containment cycle. The forest is single-parent (first-wins), so each
+  // node appears under exactly one parent — no duplicate rows.
+  const isTree = !isFilterScope;
+  const itemRow = (node: LensNode): DriveRow => ({
+    id: node.id,
+    node,
+    rowKind: 'item',
+    onOpen: () =>
+      node.kind === 'text' && onOpenDocument
+        ? onOpenDocument(node.id)
+        : onSelect(node.id),
+    onDetails: () => onSelect(node.id),
+    actions: (
+      <NodeActionsMenu
+        spaceId={spaceId}
+        t={t}
+        node={node}
+        containment={containment}
+        onMutated={onMutated}
+        onDetails={() => onSelect(node.id)}
+        onEdit={
+          node.kind === 'text' && onEditNode
+            ? () => onEditNode(node.id)
+            : undefined
+        }
+      />
+    ),
+  });
+  const folderRow = (node: LensNode, ancestors: Set<string>): DriveRow => ({
+    id: node.id,
+    node,
+    rowKind: 'folder',
+    onOpen: () => navigate(node.id),
+    onDetails: () => onSelect(node.id),
+    actions: (
+      <NodeActionsMenu
+        spaceId={spaceId}
+        t={t}
+        node={node}
+        containment={containment}
+        onMutated={onMutated}
+        onDetails={() => onSelect(node.id)}
+      />
+    ),
+    subRows:
+      isTree && !ancestors.has(node.id)
+        ? [
+            ...childFolders(containment, node.id).map((f) =>
+              folderRow(f, new Set(ancestors).add(node.id))
+            ),
+            ...childContent(containment, node.id).map(itemRow),
+          ]
+        : undefined,
+  });
   const driveRows: DriveRow[] = [
-    ...folders.map((sub) => ({
-      id: sub.id,
-      node: sub,
-      rowKind: 'folder' as const,
-      onOpen: () => navigate(sub.id),
-      onDetails: () => onSelect(sub.id),
-      actions: (
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={sub}
-          containment={containment}
-          onMutated={onMutated}
-          onDetails={() => onSelect(sub.id)}
-        />
-      ),
-    })),
+    ...folders.map((sub) => folderRow(sub, new Set<string>())),
     ...shortcuts.map((target) => ({
       id: `sc-${target.id}`,
       node: target,
@@ -488,31 +529,7 @@ export function DriveProjectionView({
       onDetails: () => onSelect(target.id),
       actions: null,
     })),
-    ...items.map((item) => ({
-      id: item.id,
-      node: item,
-      rowKind: 'item' as const,
-      onOpen: () =>
-        item.kind === 'text' && onOpenDocument
-          ? onOpenDocument(item.id)
-          : onSelect(item.id),
-      onDetails: () => onSelect(item.id),
-      actions: (
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={item}
-          containment={containment}
-          onMutated={onMutated}
-          onDetails={() => onSelect(item.id)}
-          onEdit={
-            item.kind === 'text' && onEditNode
-              ? () => onEditNode(item.id)
-              : undefined
-          }
-        />
-      ),
-    })),
+    ...items.map(itemRow),
   ];
 
   const sidebar = (
@@ -826,6 +843,7 @@ export function DriveProjectionView({
                 // leaving Recent and TanStack throws "Column 'viewed' does not exist".
                 key={isRecent ? 'recent' : 'browse'}
                 rows={driveRows}
+                tree={isTree}
                 t={t}
                 metaByItem={metaByItem}
                 currentUserId={currentUserId}
@@ -1229,6 +1247,9 @@ type DriveRow = {
   onDetails: () => void;
   /** Hover `⋯` actions (folders/items); shortcuts have none. */
   actions: React.ReactNode | null;
+  /** Tree mode (browse): a folder's children (folders then content), recursively.
+   * Undefined in flat lenses → the table renders flat. */
+  subRows?: DriveRow[];
 };
 
 /**
@@ -1248,6 +1269,7 @@ function DriveListTable({
   onToggleStar,
   recentOpenedAt,
   defaultSorting,
+  tree = false,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -1261,9 +1283,28 @@ function DriveListTable({
   defaultSorting: { id: string; desc: boolean }[];
   starredSet: Set<string>;
   onToggleStar: (nodeId: string, next: boolean) => void;
+  /** Browse tree: folders expand inline (a chevron + depth indent in the name cell,
+   * `subRows` drive the children). Off → a flat table. */
+  tree?: boolean;
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
+      // Tree only: a HIDDEN rank (folders/shortcuts 0, files 1) pinned as the primary
+      // sort, so "folders first" holds at every level regardless of the column sort
+      // direction (the visible column becomes the secondary sort). Auto-hidden by the
+      // DataTable's `pinnedSort`.
+      ...(tree
+        ? [
+            {
+              id: 'group',
+              accessorFn: (r: DriveRow) => (r.rowKind === 'item' ? 1 : 0),
+              enableSorting: true,
+              sortingFn: 'basic' as const,
+              header: '',
+              cell: () => null,
+            },
+          ]
+        : []),
       {
         id: 'star',
         header: '',
@@ -1302,7 +1343,38 @@ function DriveListTable({
                 ? FolderSymlink
                 : iconForKind(r.node.kind);
           return (
-            <div className="flex min-w-0 items-center gap-2.5">
+            <div
+              className="flex min-w-0 items-center gap-2.5"
+              style={tree ? { paddingLeft: row.depth * 18 } : undefined}
+            >
+              {tree ? (
+                row.getCanExpand() ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      row.getToggleExpandedHandler()();
+                    }}
+                    className="text-muted-foreground hover:text-foreground -ml-1 shrink-0 rounded p-0.5"
+                    aria-label={t(
+                      row.getIsExpanded()
+                        ? 'graph.tree.collapse'
+                        : 'graph.tree.expand'
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'size-3.5 transition-transform',
+                        row.getIsExpanded() && 'rotate-90'
+                      )}
+                      aria-hidden
+                    />
+                  </button>
+                ) : (
+                  // Align leaf rows with the chevron of expandable siblings.
+                  <span className="size-3.5 shrink-0" aria-hidden />
+                )
+              ) : null}
               <Icon
                 className="text-muted-foreground size-[18px] shrink-0"
                 aria-hidden
@@ -1378,7 +1450,15 @@ function DriveListTable({
         meta: { cellClassName: 'w-10' },
       },
     ],
-    [t, metaByItem, currentUserId, starredSet, onToggleStar, recentOpenedAt]
+    [
+      t,
+      metaByItem,
+      currentUserId,
+      starredSet,
+      onToggleStar,
+      recentOpenedAt,
+      tree,
+    ]
   );
 
   return (
@@ -1388,6 +1468,11 @@ function DriveListTable({
       getRowId={(r) => r.id}
       activeRowId={selectedId}
       defaultSorting={defaultSorting}
+      // Browse tree: folders expand inline via `subRows`, and a pinned hidden "group"
+      // rank keeps folders above files at EVERY level (direction-stable). Flat lenses
+      // pass neither → the flat group-order block applies instead.
+      getSubRows={tree ? (r) => r.subRows : undefined}
+      pinnedSort={tree ? 'group' : undefined}
       // Folders + shortcuts (0) always sort as a block above files (1); the
       // column sort applies within each group, so they never interleave.
       groupOrder={(r) => (r.rowKind === 'item' ? 1 : 0)}
