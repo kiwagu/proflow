@@ -31,6 +31,13 @@ insert into public.permissions (key, description) values
   ('space.knowledge.delete', 'Delete knowledge resources and edges in one space.')
 on conflict (key) do nothing;
 
+-- ADR-0017 D5-revision (personal authoring): EVERY space member can author their
+-- OWN content (a private-by-default personal KB / "Drive"). So `member` holds
+-- read + create (open/progress derive from read, 20260623193000). update/delete are
+-- NOT granted to member as verbs — the owner-sovereign UPDATE/DELETE policies below
+-- let an owner edit/delete their OWN node without the verb; the verb is what lets
+-- author/admin act CROSS-owner. (Group co-authoring — a cohort editing a shared node
+-- — is a separate, deferred dimension.)
 with mapping(role_key, permission_key) as (
   values
     ('admin', 'space.knowledge.read'),
@@ -39,7 +46,9 @@ with mapping(role_key, permission_key) as (
     ('admin', 'space.knowledge.delete'),
     ('author', 'space.knowledge.read'),
     ('author', 'space.knowledge.create'),
-    ('author', 'space.knowledge.update')
+    ('author', 'space.knowledge.update'),
+    ('member', 'space.knowledge.read'),
+    ('member', 'space.knowledge.create')
 )
 insert into public.role_permission (role_id, permission_id)
 select r.id, p.id
@@ -234,18 +243,25 @@ with check (
   )
 );
 
+-- OWNER-SOVEREIGN authoring (ADR-0017 D5-revision): an owner may edit/delete their
+-- OWN content (their personal KB) without the verb; the `update`/`delete` verb is what
+-- lets author/admin act CROSS-owner. The visibility floor change inside an UPDATE is
+-- further gated owner-sovereign by the D9 trigger (assert_visibility_change_authorized,
+-- 20260624120000).
 create policy "knowledge_resources update for scoped editors"
 on public.knowledge_resources
 for update
 to authenticated
 using (
-  public.auth_user_can_access_in_space(
+  knowledge_resources.owner_user_id = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_resources.space_id,
     'space.knowledge.update'
   )
 )
 with check (
-  public.auth_user_can_access_in_space(
+  knowledge_resources.owner_user_id = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_resources.space_id,
     'space.knowledge.update'
   )
@@ -256,7 +272,8 @@ on public.knowledge_resources
 for delete
 to authenticated
 using (
-  public.auth_user_can_access_in_space(
+  knowledge_resources.owner_user_id = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_resources.space_id,
     'space.knowledge.delete'
   )
@@ -286,18 +303,24 @@ with check (
   )
 );
 
+-- OWNER-SOVEREIGN edge wiring (ADR-0017 D5-revision): the author of an edge
+-- (`created_by` — there is no `owner_user_id` on edges) may update/delete their OWN
+-- wiring (untag, unlink, move) without the verb; the verb lets author/admin manage
+-- edges CROSS-author. Node deletion still cascades its edges via the FK regardless.
 create policy "knowledge_edges update for scoped editors"
 on public.knowledge_edges
 for update
 to authenticated
 using (
-  public.auth_user_can_access_in_space(
+  knowledge_edges.created_by = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_edges.space_id,
     'space.knowledge.update'
   )
 )
 with check (
-  public.auth_user_can_access_in_space(
+  knowledge_edges.created_by = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_edges.space_id,
     'space.knowledge.update'
   )
@@ -308,7 +331,8 @@ on public.knowledge_edges
 for delete
 to authenticated
 using (
-  public.auth_user_can_access_in_space(
+  knowledge_edges.created_by = (select auth.uid())
+  or public.auth_user_can_access_in_space(
     knowledge_edges.space_id,
     'space.knowledge.delete'
   )

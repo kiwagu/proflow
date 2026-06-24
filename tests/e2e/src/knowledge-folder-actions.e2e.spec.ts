@@ -25,6 +25,7 @@ import {
 import {
   actorSsrAuthCookies,
   bootstrapKnowledgeGraphTenant,
+  bootstrapMemberActor,
   teardownKnowledgeGraphTenant,
   type KnowledgeActor,
   type KnowledgeGraphTenant,
@@ -237,5 +238,83 @@ test.describe('@full knowledge folder actions', () => {
     expect(gone ?? []).toHaveLength(0);
 
     await api.dispose();
+  });
+
+  test('personal authoring: a member authors its OWN, cannot touch others (ADR-0017 D5-revision)', async () => {
+    const member = await bootstrapMemberActor(tenant);
+    const memberApi = await apiFor(member);
+    const grantedApi = await apiFor(tenant.granted);
+
+    // A `member` CAN create its own content (read + create → a personal Drive).
+    const ownFolder = await createFolder(
+      memberApi,
+      tenant.spaceId,
+      'Member Drive'
+    );
+    const { data: ownRow } = await tenant.service
+      .from('knowledge_resources')
+      .select('owner_user_id,visibility')
+      .eq('id', ownFolder)
+      .single();
+    // owned by the member, and private-by-default (Step 3 — a private draft).
+    expect((ownRow as { owner_user_id: string }).owner_user_id).toBe(
+      member.userId
+    );
+    expect((ownRow as { visibility: string }).visibility).toBe('private');
+
+    // Owner-sovereign: the member edits its OWN node WITHOUT the update verb.
+    const renameOwn = await memberApi.patch('/author/graph/resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        resourceId: ownFolder,
+        title: 'My Drive',
+      },
+    });
+    expect(renameOwn.status()).toBe(200);
+
+    // …but CANNOT edit a granted-owned node (not owner, no update verb). Assert the DB
+    // is unchanged (robust to however the route reports a 0-row update).
+    const grantedFolder = await createFolder(
+      grantedApi,
+      tenant.spaceId,
+      'Granted Only'
+    );
+    await memberApi.patch('/author/graph/resources', {
+      data: {
+        spaceId: tenant.spaceId,
+        resourceId: grantedFolder,
+        title: 'Hijacked',
+      },
+    });
+    const { data: afterRename } = await tenant.service
+      .from('knowledge_resources')
+      .select('title')
+      .eq('id', grantedFolder)
+      .single();
+    expect((afterRename as { title: string }).title).toBe('Granted Only');
+
+    // …cannot delete a granted-owned node — it SURVIVES.
+    await memberApi.delete('/author/graph/resources', {
+      data: { spaceId: tenant.spaceId, resourceId: grantedFolder },
+    });
+    const { data: survives } = await tenant.service
+      .from('knowledge_resources')
+      .select('id')
+      .eq('id', grantedFolder);
+    expect(survives ?? []).toHaveLength(1);
+
+    // …but CAN delete its OWN (owner-sovereign).
+    const delOwn = await memberApi.delete('/author/graph/resources', {
+      data: { spaceId: tenant.spaceId, resourceId: ownFolder },
+    });
+    expect(delOwn.status()).toBe(200);
+    const { data: ownGone } = await tenant.service
+      .from('knowledge_resources')
+      .select('id')
+      .eq('id', ownFolder);
+    expect(ownGone ?? []).toHaveLength(0);
+
+    await memberApi.dispose();
+    await grantedApi.dispose();
   });
 });

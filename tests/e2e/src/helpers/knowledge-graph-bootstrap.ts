@@ -267,6 +267,49 @@ async function resolveRoleIds(
   return { adminRoleId, spaceAdminRoleId };
 }
 
+/**
+ * Add a `member`-role actor to an existing tenant (ADR-0017 D5-revision: every space
+ * member can author their OWN content). `member` holds read + create only — owner-
+ * sovereign UPDATE/DELETE policies let it edit/delete its own without the verb, and
+ * deny it on others' content. Created through the real RBAC path (service-role
+ * membership + `user_role`), never raw inserts.
+ */
+export async function bootstrapMemberActor(
+  tenant: KnowledgeGraphTenant
+): Promise<KnowledgeActor> {
+  const { service, organizationId, spaceId } = tenant;
+  const { data: roleRow, error: roleErr } = await service
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', 'member')
+    .maybeSingle();
+  if (roleErr || !roleRow?.id) {
+    throw new Error(
+      `bootstrapMemberActor: member role not found — ${roleErr?.message ?? 'missing'}`
+    );
+  }
+  const u = await createActor(service, 'member');
+  const { error: omErr } = await service
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: u.id });
+  if (omErr) throw new Error(`bootstrapMemberActor org: ${omErr.message}`);
+  const { error: smErr } = await service
+    .from('space_memberships')
+    .insert({ space_id: spaceId, user_id: u.id, status: 'active' });
+  if (smErr) throw new Error(`bootstrapMemberActor space: ${smErr.message}`);
+  const { error: urErr } = await service
+    .from('user_role')
+    .insert({ user_id: u.id, space_id: spaceId, role_id: roleRow.id });
+  if (urErr) throw new Error(`bootstrapMemberActor role: ${urErr.message}`);
+  return {
+    userId: u.id,
+    email: u.email,
+    password: u.password,
+    client: await authenticatedClient(u.email, u.password),
+  };
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
