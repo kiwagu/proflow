@@ -1,5 +1,6 @@
 'use client';
 
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
@@ -12,7 +13,9 @@ import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
   ChevronRight,
+  ClipboardPaste,
   Clock,
+  Columns2,
   Database,
   Folder,
   House,
@@ -24,6 +27,7 @@ import {
   Trash2,
   Upload,
   Users,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import * as React from 'react';
@@ -55,6 +59,8 @@ import {
   type CreateRequest,
 } from '@/app/graph/create-resource.view';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
+import { usePaneId, useDriveDragState } from '@/app/graph/drive-dnd';
+import type { DriveDragData, DriveDropData } from '@/app/graph/drive-dnd';
 
 // Hover-reveal classes for a card's `⋯` action trigger (stays visible while open).
 const CARD_ACTION_TRIGGER =
@@ -200,6 +206,13 @@ export function DriveProjectionView({
   refreshKey,
   spaceId,
   kbData,
+  split = false,
+  onToggleSplit,
+  hideSidebar = false,
+  clipboard,
+  onCopyToClipboard,
+  onPaste,
+  onClearClipboard,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -458,27 +471,87 @@ export function DriveProjectionView({
     return null;
   }
 
+  // Paste the clipboard source INTO this pane's current folder (null → top level).
+  // The VIEW builds the "X (copy)" rootTitle (it owns `t`); the workbench POSTs the
+  // deep-copy. Only meaningful while a clipboard is set and this pane browses 'kb'.
+  const canPaste = clipboard != null && onPaste != null && scope === 'kb';
+  const handlePaste = () => {
+    if (clipboard && onPaste) {
+      onPaste(
+        folderId,
+        t('graph.panel.copySuffix', { title: clipboard.title })
+      );
+    }
+  };
+
+  // DnD is a 'kb' browse-only affordance (move = re-parent in the containment tree);
+  // the flat lenses (Home/Starred/Recent/Shared) are read-only digests, no drag there.
+  const dndEnabled = scope === 'kb';
+
   // Unified row set for the LIST view (folders → shortcuts → files), each with its
   // open (double-click) / details (single-click) handlers + the ⋯ actions menu —
   // the SAME behaviours as the grid cards, just rendered as table rows.
+  // In BROWSE (the containment tree) folders carry recursive `subRows` so the list
+  // view expands them inline (Dolphin-style). A flat filter lens (Recent/Starred/
+  // Shared) has no subRows → the table stays flat. The `ancestors` set guards a
+  // malformed containment cycle. The forest is single-parent (first-wins), so each
+  // node appears under exactly one parent — no duplicate rows.
+  const isTree = !isFilterScope;
+  const itemRow = (node: LensNode): DriveRow => ({
+    id: node.id,
+    node,
+    rowKind: 'item',
+    onOpen: () =>
+      node.kind === 'text' && onOpenDocument
+        ? onOpenDocument(node.id)
+        : onSelect(node.id),
+    onDetails: () => onSelect(node.id),
+    actions: (
+      <NodeActionsMenu
+        spaceId={spaceId}
+        t={t}
+        node={node}
+        containment={containment}
+        onMutated={onMutated}
+        onDetails={() => onSelect(node.id)}
+        onCopyToClipboard={onCopyToClipboard}
+        onEdit={
+          node.kind === 'text' && onEditNode
+            ? () => onEditNode(node.id)
+            : undefined
+        }
+      />
+    ),
+  });
+  const folderRow = (node: LensNode, ancestors: Set<string>): DriveRow => ({
+    id: node.id,
+    node,
+    rowKind: 'folder',
+    onOpen: () => navigate(node.id),
+    onDetails: () => onSelect(node.id),
+    actions: (
+      <NodeActionsMenu
+        spaceId={spaceId}
+        t={t}
+        node={node}
+        containment={containment}
+        onMutated={onMutated}
+        onDetails={() => onSelect(node.id)}
+        onCopyToClipboard={onCopyToClipboard}
+      />
+    ),
+    subRows:
+      isTree && !ancestors.has(node.id)
+        ? [
+            ...childFolders(containment, node.id).map((f) =>
+              folderRow(f, new Set(ancestors).add(node.id))
+            ),
+            ...childContent(containment, node.id).map(itemRow),
+          ]
+        : undefined,
+  });
   const driveRows: DriveRow[] = [
-    ...folders.map((sub) => ({
-      id: sub.id,
-      node: sub,
-      rowKind: 'folder' as const,
-      onOpen: () => navigate(sub.id),
-      onDetails: () => onSelect(sub.id),
-      actions: (
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={sub}
-          containment={containment}
-          onMutated={onMutated}
-          onDetails={() => onSelect(sub.id)}
-        />
-      ),
-    })),
+    ...folders.map((sub) => folderRow(sub, new Set<string>())),
     ...shortcuts.map((target) => ({
       id: `sc-${target.id}`,
       node: target,
@@ -488,31 +561,7 @@ export function DriveProjectionView({
       onDetails: () => onSelect(target.id),
       actions: null,
     })),
-    ...items.map((item) => ({
-      id: item.id,
-      node: item,
-      rowKind: 'item' as const,
-      onOpen: () =>
-        item.kind === 'text' && onOpenDocument
-          ? onOpenDocument(item.id)
-          : onSelect(item.id),
-      onDetails: () => onSelect(item.id),
-      actions: (
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={item}
-          containment={containment}
-          onMutated={onMutated}
-          onDetails={() => onSelect(item.id)}
-          onEdit={
-            item.kind === 'text' && onEditNode
-              ? () => onEditNode(item.id)
-              : undefined
-          }
-        />
-      ),
-    })),
+    ...items.map(itemRow),
   ];
 
   const sidebar = (
@@ -632,6 +681,27 @@ export function DriveProjectionView({
                   ? t('graph.drive.navShared')
                   : t('graph.drive.navRecent')}
           </span>
+        ) : dndEnabled ? (
+          // The root crumb is also a drop target: dropping a node here re-parents it
+          // to the top level (drop the current contains edge, add no new one).
+          <RootDropZone>
+            {(over) => (
+              <button
+                type="button"
+                onClick={() => navigate(null)}
+                title={t('graph.drive.dropOnRoot')}
+                className={cn(
+                  'shrink-0 rounded px-1',
+                  isRoot
+                    ? 'text-foreground font-semibold'
+                    : 'text-muted-foreground hover:text-foreground',
+                  over && 'bg-accent text-foreground ring-ring/50 ring-1'
+                )}
+              >
+                {t('graph.lens.knowledgeBase')}
+              </button>
+            )}
+          </RootDropZone>
         ) : (
           <button
             type="button"
@@ -687,11 +757,39 @@ export function DriveProjectionView({
               containment={containment}
               onMutated={onMutated}
               onDetails={() => onSelect(folder.id)}
+              onCopyToClipboard={onCopyToClipboard}
             />
           </span>
         ) : null}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
+        {/* Paste — appears when a node is on the clipboard (Dolphin model) and this
+            pane browses 'kb'; pastes the source INTO this pane's current folder. The
+            split-pane's payoff: Copy in A, navigate B, Paste here. The ✕ clears the
+            clipboard (also cleared by Escape). */}
+        {canPaste && clipboard ? (
+          <div className="flex items-center overflow-hidden rounded-md border">
+            <button
+              type="button"
+              onClick={handlePaste}
+              title={t(isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste', {
+                title: clipboard.title,
+              })}
+              className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+            >
+              <ClipboardPaste className="size-[15px]" aria-hidden />
+              <span className="max-w-[120px] truncate">{clipboard.title}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClearClipboard}
+              aria-label={t('graph.drive.pasteClear')}
+              className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+            >
+              <X className="size-[14px]" aria-hidden />
+            </button>
+          </div>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -732,54 +830,91 @@ export function DriveProjectionView({
             <List className="size-[15px]" aria-hidden />
           </button>
         </div>
+        {onToggleSplit && scope === 'kb' ? (
+          <button
+            type="button"
+            onClick={onToggleSplit}
+            aria-label={t(
+              split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
+            )}
+            aria-pressed={split}
+            className={cn(
+              'grid h-7 w-[30px] place-items-center rounded-md border',
+              split ? 'bg-accent text-foreground' : 'text-muted-foreground'
+            )}
+          >
+            <Columns2 className="size-[15px]" aria-hidden />
+          </button>
+        ) : null}
       </div>
     </div>
   );
 
   // One content card, reused by the flat items grid and the "For you" home sections.
-  const renderItemCard = (item: LensNode) => (
-    <ItemCard
-      key={item.id}
-      t={t}
-      node={item}
-      attributes={attributesByItem[item.id]}
-      meta={metaByItem[item.id]}
-      currentUserId={currentUserId}
-      layout={layout}
-      selected={item.id === selectedId}
-      onOpen={() =>
-        item.kind === 'text' && onOpenDocument
-          ? onOpenDocument(item.id)
-          : onSelect(item.id)
-      }
-      onDetails={() => onSelect(item.id)}
-      star={
-        <StarButton
-          starred={starredSet.has(item.id)}
-          onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
-          label={t(
-            starredSet.has(item.id) ? 'graph.drive.unstar' : 'graph.drive.star'
-          )}
-        />
-      }
-      actions={
-        <NodeActionsMenu
-          spaceId={spaceId}
-          t={t}
-          node={item}
-          containment={containment}
-          onMutated={onMutated}
-          onDetails={() => onSelect(item.id)}
-          onEdit={
-            item.kind === 'text' && onEditNode
-              ? () => onEditNode(item.id)
-              : undefined
-          }
-          triggerClassName={CARD_ACTION_TRIGGER}
-        />
-      }
-    />
-  );
+  // In 'kb' browse it is a drag source (re-parent on drop); flat lenses render plain.
+  const renderItemCard = (item: LensNode) => {
+    const card = (
+      <ItemCard
+        key={item.id}
+        t={t}
+        node={item}
+        attributes={attributesByItem[item.id]}
+        meta={metaByItem[item.id]}
+        currentUserId={currentUserId}
+        layout={layout}
+        selected={item.id === selectedId}
+        onOpen={() =>
+          item.kind === 'text' && onOpenDocument
+            ? onOpenDocument(item.id)
+            : onSelect(item.id)
+        }
+        onDetails={() => onSelect(item.id)}
+        star={
+          <StarButton
+            starred={starredSet.has(item.id)}
+            onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
+            label={t(
+              starredSet.has(item.id)
+                ? 'graph.drive.unstar'
+                : 'graph.drive.star'
+            )}
+          />
+        }
+        actions={
+          <NodeActionsMenu
+            spaceId={spaceId}
+            t={t}
+            node={item}
+            containment={containment}
+            onMutated={onMutated}
+            onDetails={() => onSelect(item.id)}
+            onCopyToClipboard={onCopyToClipboard}
+            onEdit={
+              item.kind === 'text' && onEditNode
+                ? () => onEditNode(item.id)
+                : undefined
+            }
+            triggerClassName={CARD_ACTION_TRIGGER}
+          />
+        }
+      />
+    );
+    if (!dndEnabled) {
+      return card;
+    }
+    return (
+      <DraggableItemCard
+        key={item.id}
+        {...(card.props as React.ComponentProps<typeof ItemCard>)}
+        dragData={{
+          type: 'node',
+          nodeId: item.id,
+          title: item.title,
+          kind: item.kind,
+        }}
+      />
+    );
+  };
 
   // "For you" — a personal digest: two sections of content cards. Shown instead of the
   // browse tree / flat list when scope='home'. Respects the grid/list toggle (cards vs
@@ -826,6 +961,7 @@ export function DriveProjectionView({
                 // leaving Recent and TanStack throws "Column 'viewed' does not exist".
                 key={isRecent ? 'recent' : 'browse'}
                 rows={driveRows}
+                tree={isTree}
                 t={t}
                 metaByItem={metaByItem}
                 currentUserId={currentUserId}
@@ -843,6 +979,7 @@ export function DriveProjectionView({
                     ? [{ id: 'viewed', desc: true }]
                     : [{ id: 'name', desc: false }]
                 }
+                dndEnabled={dndEnabled}
               />
             ) : null
           ) : (
@@ -854,19 +991,18 @@ export function DriveProjectionView({
                     <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
                   ) : null}
                   <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                    {folders.map((sub) => (
-                      <FolderCard
-                        key={sub.id}
-                        title={sub.title}
-                        subtitle={t('graph.drive.itemsCount', {
+                    {folders.map((sub) => {
+                      const folderCardProps = {
+                        title: sub.title,
+                        subtitle: t('graph.drive.itemsCount', {
                           count:
                             childFolders(containment, sub.id).length +
                             childContent(containment, sub.id).length,
-                        })}
-                        layout={layout}
-                        onOpen={() => navigate(sub.id)}
-                        onDetails={() => onSelect(sub.id)}
-                        star={
+                        }),
+                        layout,
+                        onOpen: () => navigate(sub.id),
+                        onDetails: () => onSelect(sub.id),
+                        star: (
                           <StarButton
                             starred={starredSet.has(sub.id)}
                             onToggle={() =>
@@ -878,8 +1014,8 @@ export function DriveProjectionView({
                                 : 'graph.drive.star'
                             )}
                           />
-                        }
-                        actions={
+                        ),
+                        actions: (
                           <NodeActionsMenu
                             spaceId={spaceId}
                             t={t}
@@ -887,11 +1023,26 @@ export function DriveProjectionView({
                             containment={containment}
                             onMutated={onMutated}
                             onDetails={() => onSelect(sub.id)}
+                            onCopyToClipboard={onCopyToClipboard}
                             triggerClassName={CARD_ACTION_TRIGGER}
                           />
-                        }
-                      />
-                    ))}
+                        ),
+                      };
+                      return dndEnabled ? (
+                        <DraggableDroppableFolderCard
+                          key={sub.id}
+                          {...folderCardProps}
+                          dragData={{
+                            type: 'node',
+                            nodeId: sub.id,
+                            title: sub.title,
+                            kind: 'folder',
+                          }}
+                        />
+                      ) : (
+                        <FolderCard key={sub.id} {...folderCardProps} />
+                      );
+                    })}
                     {shortcuts.map((target) => (
                       <FolderCard
                         key={`sc-${target.id}`}
@@ -955,14 +1106,26 @@ export function DriveProjectionView({
   return (
     <>
       <WorkbenchShell
-        panel={{
-          kind: 'fixed',
-          width: 230,
-          'aria-label': t('graph.drive.navKnowledgeBase'),
-          children: sidebar,
-        }}
+        // The split's SECOND pane shares the first pane's sidebar (one nav for both),
+        // so it renders sidebar-less — just its own toolbar + canvas.
+        panel={
+          hideSidebar
+            ? undefined
+            : {
+                kind: 'fixed',
+                width: 230,
+                'aria-label': t('graph.drive.navKnowledgeBase'),
+                children: sidebar,
+              }
+        }
         toolbar={toolbar}
-        main={main}
+        main={
+          dndEnabled ? (
+            <CanvasRootDropZone folderId={folderId}>{main}</CanvasRootDropZone>
+          ) : (
+            main
+          )
+        }
       />
 
       <CreateResource
@@ -1037,6 +1200,22 @@ function StarButton({
   );
 }
 
+/** Drag/drop wiring a card applies to its outer wrapper (the workbench owns the
+ * DndContext; the cards just mark themselves draggable / droppable). */
+type CardDnd = {
+  /** Combined draggable+droppable ref + listeners/attributes for the wrapper. */
+  setRef?: (el: HTMLElement | null) => void;
+  listeners?: Record<string, unknown>;
+  attributes?: Record<string, unknown>;
+  /** This card is the source being dragged (dim it). */
+  dragging?: boolean;
+  /** A valid drag is hovering this folder (highlight as the active drop target). */
+  dropOver?: boolean;
+  /** A drag is in progress and this folder is a VALID landing zone — show a quiet
+   * "you can drop here" affordance (distinct from the stronger `dropOver` hover). */
+  candidate?: boolean;
+};
+
 function FolderCard({
   title,
   subtitle,
@@ -1046,6 +1225,7 @@ function FolderCard({
   onDetails,
   star,
   actions,
+  dnd,
 }: {
   title: string;
   subtitle: string;
@@ -1061,12 +1241,25 @@ function FolderCard({
    * need a separate affordance — a deliberate delta from the prototype (which
    * navigated folders with no action surface). Omitted for shortcut cards. */
   actions?: React.ReactNode;
+  /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
+  dnd?: CardDnd;
 }) {
   const list = layout === 'list';
   const open = useCardOpen(onDetails, onOpen);
   return (
     <div
-      className={cn('group relative select-none', list ? 'w-full' : GRID_CARD)}
+      ref={dnd?.setRef}
+      {...(dnd?.attributes ?? {})}
+      {...(dnd?.listeners ?? {})}
+      className={cn(
+        'group relative select-none',
+        list ? 'w-full' : GRID_CARD,
+        dnd?.dragging && 'opacity-40',
+        dnd?.candidate &&
+          !dnd?.dropOver &&
+          'outline-ring/40 rounded-lg outline-1 outline-offset-1 outline-dashed',
+        dnd?.dropOver && 'outline-ring rounded-lg outline-2 outline-offset-1'
+      )}
     >
       <CardTile
         {...open}
@@ -1122,6 +1315,7 @@ function ItemCard({
   onDetails,
   star,
   actions,
+  dnd,
 }: {
   t: GraphTranslator;
   node: LensNode;
@@ -1138,6 +1332,8 @@ function ItemCard({
   star?: React.ReactNode;
   /** Hover `⋯` action menu for this node (Details opens the panel). */
   actions?: React.ReactNode;
+  /** Drag wiring (a content card is draggable, but not a drop target). */
+  dnd?: CardDnd;
 }) {
   const list = layout === 'list';
   const open = useCardOpen(onDetails, onOpen);
@@ -1162,7 +1358,14 @@ function ItemCard({
 
   return (
     <div
-      className={cn('group relative select-none', list ? 'w-full' : GRID_CARD)}
+      ref={dnd?.setRef}
+      {...(dnd?.attributes ?? {})}
+      {...(dnd?.listeners ?? {})}
+      className={cn(
+        'group relative select-none',
+        list ? 'w-full' : GRID_CARD,
+        dnd?.dragging && 'opacity-40'
+      )}
     >
       <CardTile
         {...open}
@@ -1216,6 +1419,212 @@ function SectionLabel({
   );
 }
 
+// ── drag & drop card wrappers ─────────────────────────────────────────────
+// `useDraggable`/`useDroppable` are hooks, so they can't run inside a `.map()`;
+// these one-per-card wrapper components call them and hand the wiring to the card.
+// The workbench owns the DndContext + the move/copy mutation; these only mark a card
+// as a drag source / drop target. A stable drag id lets the overlay/collision work.
+
+/** Merge dnd-kit's draggable + droppable refs onto one element (folders are both). */
+function useMergedRef(
+  a?: (el: HTMLElement | null) => void,
+  b?: (el: HTMLElement | null) => void
+) {
+  return React.useCallback(
+    (el: HTMLElement | null) => {
+      a?.(el);
+      b?.(el);
+    },
+    [a, b]
+  );
+}
+
+/** A content card (file/doc/video) — a drag SOURCE only (not a drop target). */
+function DraggableItemCard(
+  props: React.ComponentProps<typeof ItemCard> & { dragData: DriveDragData }
+) {
+  const { dragData, ...rest } = props;
+  const paneId = usePaneId();
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: `${paneId}:node-${dragData.nodeId}`,
+    data: dragData,
+  });
+  return (
+    <ItemCard
+      {...rest}
+      dnd={{
+        setRef: setNodeRef,
+        listeners: listeners as Record<string, unknown> | undefined,
+        attributes: attributes as unknown as Record<string, unknown>,
+        dragging: isDragging,
+      }}
+    />
+  );
+}
+
+/** A folder card — a drag SOURCE and a drop TARGET (other nodes re-parent into it). */
+function DraggableDroppableFolderCard(
+  props: React.ComponentProps<typeof FolderCard> & { dragData: DriveDragData }
+) {
+  const { dragData, ...rest } = props;
+  const paneId = usePaneId();
+  const dragState = useDriveDragState();
+  const drag = useDraggable({
+    id: `${paneId}:node-${dragData.nodeId}`,
+    data: dragData,
+  });
+  const drop = useDroppable({
+    id: `${paneId}:folder-${dragData.nodeId}`,
+    data: { type: 'folder', folderId: dragData.nodeId } satisfies DriveDropData,
+  });
+  const setRef = useMergedRef(drag.setNodeRef, drop.setNodeRef);
+  // Don't highlight a folder being dragged onto itself (compare the active drag's
+  // node id, not the DOM element — the ids carry different prefixes).
+  const activeNodeId = (drop.active?.data.current as DriveDragData | undefined)
+    ?.nodeId;
+  const dropOver = drop.isOver && activeNodeId !== dragData.nodeId;
+  // A valid landing zone for the live drag (any folder except this drag's source /
+  // its own subtree) — lit up the moment the drag starts.
+  const candidate =
+    !!dragState &&
+    !dragState.isInvalidTarget(dragData.nodeId) &&
+    !drag.isDragging;
+  return (
+    <FolderCard
+      {...rest}
+      dnd={{
+        setRef,
+        listeners: drag.listeners as Record<string, unknown> | undefined,
+        attributes: drag.attributes as unknown as Record<string, unknown>,
+        dragging: drag.isDragging,
+        dropOver: dropOver && !drag.isDragging,
+        candidate,
+      }}
+    />
+  );
+}
+
+/** The breadcrumb "top level" drop zone — dropping here re-parents to the root. */
+function RootDropZone({
+  children,
+}: {
+  children: (over: boolean) => React.ReactNode;
+}) {
+  const paneId = usePaneId();
+  const { setNodeRef, isOver } = useDroppable({
+    id: `${paneId}:drop-root-crumb`,
+    data: { type: 'root' } satisfies DriveDropData,
+  });
+  return <span ref={setNodeRef}>{children(isOver)}</span>;
+}
+
+/**
+ * The CANVAS drop zone — wraps the whole content area so a drop on the EMPTY space
+ * below the items (not on a folder) re-parents into the folder THIS PANE is currently
+ * viewing (the Dolphin/Finder model: dropping in the open folder lands in it; the
+ * breadcrumb is for going up). At the root that means the top level — so this also
+ * serves the "drop on empty space → root" case. Fills the pane height (`min-h-full`)
+ * so the empty area is catchable; lights up dashed while a drag is active and solid on
+ * hover. The custom `driveCollision` keeps folders winning when the pointer is on them.
+ */
+function CanvasRootDropZone({
+  folderId,
+  children,
+}: {
+  folderId: string | null;
+  children: React.ReactNode;
+}) {
+  const paneId = usePaneId();
+  const dragState = useDriveDragState();
+  // Dropping into the folder we're viewing is invalid only when THAT folder is the
+  // active node itself or its descendant (can't re-parent into your own subtree).
+  const invalid =
+    !!folderId && !!dragState && dragState.isInvalidTarget(folderId);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `${paneId}:drop-canvas`,
+    disabled: invalid,
+    data: (folderId
+      ? { type: 'folder', folderId }
+      : { type: 'root' }) satisfies DriveDropData,
+  });
+  const active = !!dragState && !invalid;
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'min-h-full rounded-lg',
+        active &&
+          'outline-ring/30 outline-1 -outline-offset-2 transition-colors outline-dashed',
+        isOver && 'bg-accent/40 outline-ring/70'
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Per-row drag/drop wiring for the LIST/TREE table. Runs INSIDE each table row's own
+ * component (`DataTableRow`), so the dnd hooks here are rules-of-hooks safe. A
+ * content/folder ROW is a drag source; a FOLDER row is also a drop target (re-parent
+ * into it). Shortcut rows (symlinks, not nodes) are inert. The returned `rowProps`
+ * (ref + listeners + draggable attrs) and `isDropTarget` flag are spread by the table.
+ */
+function useDriveRowDnd(row: DriveRow): {
+  rowProps?: React.HTMLAttributes<HTMLTableRowElement> & {
+    ref?: React.Ref<HTMLTableRowElement>;
+  };
+  isDropTarget?: boolean;
+  isCandidate?: boolean;
+} | void {
+  const paneId = usePaneId();
+  const dragState = useDriveDragState();
+  const draggable = row.rowKind !== 'shortcut';
+  const isFolder = row.rowKind === 'folder';
+  const drag = useDraggable({
+    id: `${paneId}:row-node-${row.id}`,
+    disabled: !draggable,
+    data: {
+      type: 'node',
+      nodeId: row.node.id,
+      title: row.node.title,
+      kind: row.node.kind,
+    } satisfies DriveDragData,
+  });
+  const drop = useDroppable({
+    id: `${paneId}:row-folder-${row.id}`,
+    disabled: !isFolder,
+    data: { type: 'folder', folderId: row.node.id } satisfies DriveDropData,
+  });
+  if (row.rowKind === 'shortcut') {
+    return undefined;
+  }
+  const setRef = (el: HTMLTableRowElement | null) => {
+    drag.setNodeRef(el);
+    if (isFolder) {
+      drop.setNodeRef(el);
+    }
+  };
+  const activeNodeId = (drop.active?.data.current as DriveDragData | undefined)
+    ?.nodeId;
+  const dropOver = isFolder && drop.isOver && activeNodeId !== row.node.id;
+  const candidate =
+    isFolder &&
+    !!dragState &&
+    !dragState.isInvalidTarget(row.node.id) &&
+    !drag.isDragging;
+  return {
+    rowProps: {
+      ref: setRef,
+      ...(drag.attributes as unknown as React.HTMLAttributes<HTMLTableRowElement>),
+      ...(drag.listeners as unknown as React.HTMLAttributes<HTMLTableRowElement>),
+      className: cn(drag.isDragging && 'opacity-40'),
+    },
+    isDropTarget: dropOver && !drag.isDragging,
+    isCandidate: candidate,
+  };
+}
+
 // ── list view (table) ─────────────────────────────────────────────────────
 
 /** One Drive row for the table view — a folder, a shortcut, or a content item. */
@@ -1229,6 +1638,9 @@ type DriveRow = {
   onDetails: () => void;
   /** Hover `⋯` actions (folders/items); shortcuts have none. */
   actions: React.ReactNode | null;
+  /** Tree mode (browse): a folder's children (folders then content), recursively.
+   * Undefined in flat lenses → the table renders flat. */
+  subRows?: DriveRow[];
 };
 
 /**
@@ -1248,6 +1660,8 @@ function DriveListTable({
   onToggleStar,
   recentOpenedAt,
   defaultSorting,
+  tree = false,
+  dndEnabled = false,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -1261,9 +1675,31 @@ function DriveListTable({
   defaultSorting: { id: string; desc: boolean }[];
   starredSet: Set<string>;
   onToggleStar: (nodeId: string, next: boolean) => void;
+  /** Browse tree: folders expand inline (a chevron + depth indent in the name cell,
+   * `subRows` drive the children). Off → a flat table. */
+  tree?: boolean;
+  /** Wire rows as drag sources / folder rows as drop targets (move = re-parent).
+   * Only in 'kb' browse — flat lenses are read-only digests. */
+  dndEnabled?: boolean;
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
+      // Tree only: a HIDDEN rank (folders/shortcuts 0, files 1) pinned as the primary
+      // sort, so "folders first" holds at every level regardless of the column sort
+      // direction (the visible column becomes the secondary sort). Auto-hidden by the
+      // DataTable's `pinnedSort`.
+      ...(tree
+        ? [
+            {
+              id: 'group',
+              accessorFn: (r: DriveRow) => (r.rowKind === 'item' ? 1 : 0),
+              enableSorting: true,
+              sortingFn: 'basic' as const,
+              header: '',
+              cell: () => null,
+            },
+          ]
+        : []),
       {
         id: 'star',
         header: '',
@@ -1302,7 +1738,38 @@ function DriveListTable({
                 ? FolderSymlink
                 : iconForKind(r.node.kind);
           return (
-            <div className="flex min-w-0 items-center gap-2.5">
+            <div
+              className="flex min-w-0 items-center gap-2.5"
+              style={tree ? { paddingLeft: row.depth * 18 } : undefined}
+            >
+              {tree ? (
+                row.getCanExpand() ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      row.getToggleExpandedHandler()();
+                    }}
+                    className="text-muted-foreground hover:text-foreground -ml-1 shrink-0 rounded p-0.5"
+                    aria-label={t(
+                      row.getIsExpanded()
+                        ? 'graph.tree.collapse'
+                        : 'graph.tree.expand'
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'size-3.5 transition-transform',
+                        row.getIsExpanded() && 'rotate-90'
+                      )}
+                      aria-hidden
+                    />
+                  </button>
+                ) : (
+                  // Align leaf rows with the chevron of expandable siblings.
+                  <span className="size-3.5 shrink-0" aria-hidden />
+                )
+              ) : null}
               <Icon
                 className="text-muted-foreground size-[18px] shrink-0"
                 aria-hidden
@@ -1378,7 +1845,15 @@ function DriveListTable({
         meta: { cellClassName: 'w-10' },
       },
     ],
-    [t, metaByItem, currentUserId, starredSet, onToggleStar, recentOpenedAt]
+    [
+      t,
+      metaByItem,
+      currentUserId,
+      starredSet,
+      onToggleStar,
+      recentOpenedAt,
+      tree,
+    ]
   );
 
   return (
@@ -1388,11 +1863,20 @@ function DriveListTable({
       getRowId={(r) => r.id}
       activeRowId={selectedId}
       defaultSorting={defaultSorting}
+      // Browse tree: folders expand inline via `subRows`, and a pinned hidden "group"
+      // rank keeps folders above files at EVERY level (direction-stable). Flat lenses
+      // pass neither → the flat group-order block applies instead.
+      getSubRows={tree ? (r) => r.subRows : undefined}
+      pinnedSort={tree ? 'group' : undefined}
       // Folders + shortcuts (0) always sort as a block above files (1); the
       // column sort applies within each group, so they never interleave.
       groupOrder={(r) => (r.rowKind === 'item' ? 1 : 0)}
       onRowClick={(r) => r.onDetails()}
       onRowActivate={(r) => r.onOpen()}
+      // 'kb' browse only: each row is a drag source, folder rows are drop targets
+      // (move = re-parent). `useDriveRowDnd` runs inside each row's own component, so
+      // its dnd hooks are rules-of-hooks safe across tree expand/collapse.
+      rowDnd={dndEnabled ? useDriveRowDnd : undefined}
     />
   );
 }

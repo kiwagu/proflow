@@ -1,9 +1,31 @@
 'use client';
 
+import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { CardTile } from '@workspace/ui/components/card-tile';
+import { iconForKind } from './presentation';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
+import {
+  DriveDragProvider,
+  DrivePaneProvider,
+  DrivePointerSensor,
+  driveCollision,
+  useCopyModifier,
+  type DriveDragData,
+  type DriveDragState,
+  type DriveDropData,
+} from './drive-dnd';
 import { DriveProjectionView } from './views/drive/drive-projection.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
 import { useEditLauncher } from './views/document-reader/use-edit-launcher';
@@ -53,6 +75,7 @@ export function DriveWorkbench({
   initialLayout?: 'grid' | 'list';
 }) {
   const router = useRouter();
+  const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
   // The navigation LOCATION — current folder (`?folder=`, null → root), open
   // document (`?doc=`, the reader overlay), and filter scope (`?scope=`, Starred/
@@ -71,10 +94,76 @@ export function DriveWorkbench({
   );
   const [refreshKey, setRefreshKey] = React.useState(0);
 
+  // Dual-pane (Dolphin-style split) — KB-browse only. The SECOND pane is EPHEMERAL: it
+  // shares the first pane's ONE sidebar (renders sidebar-less), is always KB-browse,
+  // and its folder location is LOCAL (not URL-mirrored — only the primary is
+  // shareable). Selection (Details) + the document reader stay SHARED across both panes
+  // (they follow the pane you last acted in — both call the same `selectNode`/
+  // `openDocument`).
+  const [split, setSplit] = React.useState(false);
+  const [folderId2, setFolderId2] = React.useState<string | null>(null);
+
+  // The Dolphin-style clipboard — a node MARKED for copy by the `⋯` "Copy" action.
+  // It is NOT an immediate write: a Paste affordance appears in each KB-browse pane's
+  // toolbar and deep-copies the source into THAT pane's current folder. Persists
+  // after a paste (multi-paste) until a new Copy replaces it (or Escape clears it).
+  const [clipboard, setClipboard] = React.useState<{
+    sourceId: string;
+    title: string;
+  } | null>(null);
+
   const refresh = React.useCallback(() => {
     setRefreshKey((key) => key + 1);
     router.refresh();
   }, [router]);
+
+  const copyToClipboard = React.useCallback(
+    (sourceId: string, title: string) => {
+      setClipboard({ sourceId, title });
+    },
+    []
+  );
+  const clearClipboard = React.useCallback(() => setClipboard(null), []);
+
+  // Escape clears the clipboard (Dolphin parity) — a clear, always-available exit.
+  React.useEffect(() => {
+    if (!clipboard) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setClipboard(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [clipboard]);
+
+  // PASTE — deep-copy the clipboard source into a folder (null → top level). The VIEW
+  // builds the "X (copy)" rootTitle (it owns `t`); here we just POST under the user's
+  // RLS, then re-resolve. Clipboard persists for further pastes.
+  const pasteInto = React.useCallback(
+    (targetFolderId: string | null, rootTitle: string) => {
+      if (!spaceId || !clipboard) {
+        return;
+      }
+      void fetch('/author/graph/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          sourceId: clipboard.sourceId,
+          targetFolderId,
+          rootTitle,
+        }),
+      }).then((res) => {
+        if (res.ok) {
+          refresh();
+        }
+      });
+    },
+    [spaceId, clipboard, refresh]
+  );
 
   // Record a DELIBERATE open of a node — viewing it in Details, opening it in the
   // reader, or navigating INTO a folder (ADR-0016 §3.3). Fire-and-forget under the
@@ -161,15 +250,39 @@ export function DriveWorkbench({
     [pushLocation, recordOpen]
   );
 
-  // Switch the sidebar filter (kb / starred / recent) — a shareable location.
+  // Switch the sidebar filter (kb / starred / recent) — a shareable location. Leaving
+  // KB closes the split (it is a KB-browse-only affordance).
   const goScope = React.useCallback(
     (next: DriveScope) => {
       setSelectedId(undefined);
       setScope(next);
+      if (next !== 'kb') {
+        setSplit(false);
+      }
       pushLocation({ folder: folderId, doc: docId, scope: next });
     },
     [pushLocation, folderId, docId]
   );
+
+  // Second pane — folder navigation only, LOCAL (no URL): the ephemeral split view.
+  const goFolder2 = React.useCallback(
+    (id: string | null) => {
+      setFolderId2(id);
+      if (id) {
+        recordOpen(id);
+      }
+    },
+    [recordOpen]
+  );
+
+  // Toggle the split. Opening mirrors the primary pane's current folder, then the two
+  // diverge independently.
+  const toggleSplit = React.useCallback(() => {
+    if (!split) {
+      setFolderId2(folderId);
+    }
+    setSplit((on) => !on);
+  }, [split, folderId]);
 
   // Open a document in the reader overlay (dismiss the transient Details panel).
   const openDocument = React.useCallback(
@@ -182,10 +295,165 @@ export function DriveWorkbench({
     [pushLocation, folderId, scope, recordOpen]
   );
 
-  // Containment over the resolved canvas — fed to the panel (Move folder picker).
+  // Containment over the resolved canvas — fed to the panel (Move folder picker)
+  // AND the drag-and-drop guard (a folder can't drop into itself / a descendant).
   const containment = React.useMemo(
     () => buildContainment(result.items, kbData?.containment ?? []),
     [result.items, kbData]
+  );
+
+  // ── Drag & drop (move = re-parent; Alt-held = copy) ───────────────────────
+  // ONE DndContext spans both split panes (declared in JSX below), so a drag from
+  // pane A can drop onto a folder in pane B. Folder/root targets are ABSOLUTE (a
+  // graph node id / top-level), so no per-pane folder threading is needed.
+  const dndSensors = useSensors(
+    // A small activation distance so a click still selects/opens a row (the
+    // single/double-click split is preserved) — only a real drag past 6px starts DnD.
+    useSensor(DrivePointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor)
+  );
+  const copyHeld = useCopyModifier();
+  const [dragData, setDragData] = React.useState<DriveDragData | null>(null);
+  // The live drag, shared with every droppable so valid landing zones light up the
+  // moment a drag starts (folders + the root). Null between drags.
+  const [dragState, setDragState] = React.useState<DriveDragState | null>(null);
+
+  // Is `folderId` the node itself or a descendant of `nodeId`? (a folder may not be
+  // re-parented into its own subtree — that would orphan the cycle).
+  const isSelfOrDescendant = React.useCallback(
+    (nodeId: string, folderId: string): boolean => {
+      if (nodeId === folderId) {
+        return true;
+      }
+      let cursor: string | undefined = folderId;
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === nodeId) {
+          return true;
+        }
+        seen.add(cursor);
+        cursor = containment.parentOf.get(cursor);
+      }
+      return false;
+    },
+    [containment]
+  );
+
+  const onDragStart = React.useCallback(
+    (event: DragStartEvent) => {
+      const data = event.active.data.current as DriveDragData | undefined;
+      setDragData(data ?? null);
+      setDragState(
+        data
+          ? {
+              activeId: data.nodeId,
+              isInvalidTarget: (folderId) =>
+                isSelfOrDescendant(data.nodeId, folderId),
+            }
+          : null
+      );
+    },
+    [isSelfOrDescendant]
+  );
+
+  const endDrag = React.useCallback(() => {
+    setDragData(null);
+    setDragState(null);
+  }, []);
+
+  const onDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      const active = event.active.data.current as DriveDragData | undefined;
+      const over = event.over?.data.current as DriveDropData | undefined;
+      endDrag();
+      if (!active || !over || !spaceId) {
+        return;
+      }
+      const targetFolderId = over.type === 'folder' ? over.folderId : null;
+      const currentParent = containment.parentOf.get(active.nodeId) ?? null;
+      const copy = copyHeld.current;
+
+      // Move guards: a no-op drop (already in this folder, or onto itself) and the
+      // self/descendant cycle. Copy has no such restriction — a copy into the same
+      // folder is a legitimate duplicate.
+      if (!copy) {
+        if (targetFolderId === currentParent) {
+          return; // already here (root→root or same folder) — nothing to do.
+        }
+        if (
+          targetFolderId &&
+          isSelfOrDescendant(active.nodeId, targetFolderId)
+        ) {
+          return; // can't move a folder into its own subtree.
+        }
+      } else if (
+        targetFolderId &&
+        isSelfOrDescendant(active.nodeId, targetFolderId)
+      ) {
+        return; // copying a folder into its own subtree would recurse — skip.
+      }
+
+      if (copy) {
+        // Copying into the SAME folder is a duplicate — suffix "(copy)" so it is not a
+        // same-named sibling. A copy to a DIFFERENT folder keeps the name (no clash),
+        // matching Finder/Dolphin.
+        const rootTitle =
+          targetFolderId === currentParent
+            ? t('graph.panel.copySuffix', { title: active.title })
+            : undefined;
+        void fetch('/author/graph/copy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            spaceId,
+            sourceId: active.nodeId,
+            targetFolderId,
+            ...(rootTitle ? { rootTitle } : {}),
+          }),
+        }).then((res) => {
+          if (res.ok) {
+            refresh();
+          }
+        });
+        return;
+      }
+
+      // Move = re-parent: drop the current contains edge, then (unless top level)
+      // add a contains edge from the target folder — the same dance the ⋯ Move uses.
+      void (async () => {
+        let ok = true;
+        if (currentParent) {
+          const res = await fetch('/author/graph/edges', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              spaceId,
+              fromId: currentParent,
+              toId: active.nodeId,
+              relationType: 'contains',
+            }),
+          });
+          ok = res.ok;
+        }
+        if (ok && targetFolderId) {
+          const res = await fetch('/author/graph/edges', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'contain',
+              spaceId,
+              folderId: targetFolderId,
+              childId: active.nodeId,
+            }),
+          });
+          ok = res.ok;
+        }
+        if (ok) {
+          refresh();
+        }
+      })();
+    },
+    [spaceId, containment, copyHeld, isSelfOrDescendant, refresh, endDrag, t]
   );
 
   const selectedNode = React.useMemo<SelectedNode | null>(() => {
@@ -220,6 +488,41 @@ export function DriveWorkbench({
     messages,
   });
 
+  // One Drive pane. Navigation (folder/scope) is per-pane; selection, the reader, the
+  // resolved canvas and the split toggle are shared.
+  const renderPane = (
+    paneFolderId: string | null,
+    paneScope: DriveScope,
+    onNav: (id: string | null) => void,
+    onScopeChg: ((next: DriveScope) => void) | undefined,
+    hideSidebar = false
+  ) => (
+    <DriveProjectionView
+      result={result}
+      messages={messages}
+      spaceId={spaceId}
+      kbData={kbData}
+      selectedId={selectedId}
+      onSelect={selectNode}
+      onEditNode={spaceId ? requestEdit : undefined}
+      onOpenDocument={openDocument}
+      folderId={paneFolderId}
+      onNavigate={onNav}
+      scope={paneScope}
+      onScopeChange={onScopeChg}
+      initialLayout={initialLayout}
+      onMutated={refresh}
+      refreshKey={refreshKey}
+      split={split}
+      onToggleSplit={toggleSplit}
+      hideSidebar={hideSidebar}
+      clipboard={clipboard}
+      onCopyToClipboard={copyToClipboard}
+      onPaste={pasteInto}
+      onClearClipboard={clearClipboard}
+    />
+  );
+
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       <WorkbenchChrome messages={messages} />
@@ -229,23 +532,57 @@ export function DriveWorkbench({
           right column that shrinks the content beside it when a node is selected */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          <DriveProjectionView
-            result={result}
-            messages={messages}
-            spaceId={spaceId}
-            kbData={kbData}
-            selectedId={selectedId}
-            onSelect={selectNode}
-            onEditNode={spaceId ? requestEdit : undefined}
-            onOpenDocument={openDocument}
-            folderId={folderId}
-            onNavigate={goFolder}
-            scope={scope}
-            onScopeChange={goScope}
-            initialLayout={initialLayout}
-            onMutated={refresh}
-            refreshKey={refreshKey}
-          />
+          {/* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a
+              folder in pane B (folder/root targets are absolute graph ids). The custom
+              `driveCollision` prefers a folder over the nested root zone (empty canvas /
+              breadcrumb = root). The overlay shows the dragged node's title. `dragState`
+              lights up valid landing zones for every droppable the moment a drag starts. */}
+          <DndContext
+            id="drive-dnd"
+            sensors={dndSensors}
+            collisionDetection={driveCollision}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragCancel={endDrag}
+          >
+            <DriveDragProvider value={dragState}>
+              {split ? (
+                <div className="flex min-w-0 flex-1 overflow-hidden">
+                  {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
+                      always KB-browse, navigating independently. Each pane namespaces its
+                      dnd ids (a/b) so the SAME node rendered in both does not collide. */}
+                  <div className="flex min-w-0 flex-1 overflow-hidden border-r">
+                    <DrivePaneProvider value="a">
+                      {renderPane(folderId, scope, goFolder, goScope)}
+                    </DrivePaneProvider>
+                  </div>
+                  <div className="flex min-w-0 flex-1 overflow-hidden">
+                    <DrivePaneProvider value="b">
+                      {renderPane(folderId2, 'kb', goFolder2, undefined, true)}
+                    </DrivePaneProvider>
+                  </div>
+                </div>
+              ) : (
+                <DrivePaneProvider value="a">
+                  {renderPane(folderId, scope, goFolder, goScope)}
+                </DrivePaneProvider>
+              )}
+            </DriveDragProvider>
+
+            <DragOverlay dropAnimation={null}>
+              {dragData ? (
+                <CardTile className="pointer-events-none w-[240px] gap-2.5 px-3.5 py-2.5 shadow-lg">
+                  {React.createElement(iconForKind(dragData.kind), {
+                    className: 'text-muted-foreground size-[18px] shrink-0',
+                    'aria-hidden': true,
+                  })}
+                  <span className="truncate text-sm font-medium">
+                    {dragData.title}
+                  </span>
+                </CardTile>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
 
           {spaceId && openDoc ? (
             <DocumentReader

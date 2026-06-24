@@ -2,11 +2,13 @@
 
 import {
   type ColumnDef,
+  type Row,
   type RowData,
   type SortingState,
   type Table as TableInstance,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
@@ -77,13 +79,47 @@ export type DataTableProps<TData, TValue> = {
    * Keep rows in stable GROUPS that never interleave: rows sort by this rank FIRST
    * (ascending, fixed), and the user's column sort applies only WITHIN each group.
    * So e.g. folders always stay above files regardless of sort direction.
+   * Ignored in tree mode (`getSubRows`) — the parent/child order is the structure.
    */
   groupOrder?: (row: TData) => number;
+  /**
+   * TREE mode: return a row's children to make it expandable (a chevron in any cell
+   * via `row.getCanExpand()` / `row.getToggleExpandedHandler()` / `row.depth`). The
+   * rendered rows become the flattened EXPANDED tree; column sort applies within each
+   * level. Off (undefined) → a flat table (the default).
+   */
+  getSubRows?: (row: TData) => TData[] | undefined;
+  /**
+   * A column id that is ALWAYS the primary sort, ascending, regardless of the user's
+   * column sort (which becomes secondary). Use for a stable group key that survives
+   * sort direction — e.g. a hidden "folders before files" rank in a tree (the flat
+   * `groupOrder` post-sort cannot, as it would scramble the nesting). The column is
+   * auto-hidden.
+   */
+  pinnedSort?: string;
 
   // chrome — complex consumers drive controls off the live table instance
   toolbar?: (table: TableInstance<TData>) => React.ReactNode;
   footer?: (table: TableInstance<TData>) => React.ReactNode;
   className?: string;
+
+  /**
+   * Optional drag-and-drop wiring for a row — a HOOK the consumer provides (it owns
+   * the DnD library + context; the table stays presentation-only). It is called ONCE
+   * per row from inside each row's own component instance (keyed by row id), so it may
+   * safely call dnd hooks (`useDraggable`/`useDroppable`) — rules-of-hooks hold even as
+   * rows expand/collapse. It returns the props to spread onto the row's `<tr>`
+   * (draggable handle + droppable target) plus `isDropTarget` (a valid drag is hovering
+   * this row) and `isCandidate` (a drag is active and this row is a valid landing zone)
+   * flags the table uses to highlight. Returning nothing leaves the row inert.
+   */
+  rowDnd?: (row: TData) => {
+    rowProps?: React.HTMLAttributes<HTMLTableRowElement> & {
+      ref?: React.Ref<HTMLTableRowElement>;
+    };
+    isDropTarget?: boolean;
+    isCandidate?: boolean;
+  } | void;
 };
 
 export function DataTable<TData, TValue>({
@@ -98,17 +134,28 @@ export function DataTable<TData, TValue>({
   pagination = false,
   enableRowSelection = false,
   groupOrder,
+  getSubRows,
+  pinnedSort,
   toolbar,
   footer,
   className,
+  rowDnd,
 }: DataTableProps<TData, TValue>) {
   // Control ONLY sorting (the proven-minimal config). Filtering / visibility /
   // selection use TanStack's own internal state — still fully drivable through the
   // `table` instance exposed to `toolbar` / `footer` for richer screens, without
   // the controlled-state churn that re-rendered on every sort.
+  // `sorting` holds the USER's column sort; `pinnedSort` (if any) is force-prepended
+  // as the always-ascending primary so the group never flips with sort direction.
   const [sorting, setSorting] = React.useState<SortingState>(
     defaultSorting ?? []
   );
+  const effectiveSorting = pinnedSort
+    ? [
+        { id: pinnedSort, desc: false },
+        ...sorting.filter((s) => s.id !== pinnedSort),
+      ]
+    : sorting;
 
   const table = useReactTable({
     data,
@@ -119,16 +166,28 @@ export function DataTable<TData, TValue>({
     defaultColumn: { sortingFn: textSortingFn },
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    ...(getSubRows
+      ? { getSubRows, getExpandedRowModel: getExpandedRowModel() }
+      : {}),
     ...(pagination ? { getPaginationRowModel: getPaginationRowModel() } : {}),
     enableRowSelection,
-    onSortingChange: setSorting,
+    // Strip the pinned primary back out before storing — it is re-prepended each
+    // render, so the user's clicks only ever toggle the SECONDARY column sort.
+    onSortingChange: (updater) => {
+      const next =
+        typeof updater === 'function' ? updater(effectiveSorting) : updater;
+      setSorting(pinnedSort ? next.filter((s) => s.id !== pinnedSort) : next);
+    },
     // No pagination here → don't let a sort queue a page-index reset (which, with
     // the row models recreated each render, can re-fire into a render loop).
     autoResetPageIndex: false,
-    initialState: pagination
-      ? { pagination: { pageIndex: 0, pageSize: pagination } }
-      : undefined,
-    state: { sorting },
+    initialState: {
+      ...(pagination
+        ? { pagination: { pageIndex: 0, pageSize: pagination } }
+        : {}),
+      ...(pinnedSort ? { columnVisibility: { [pinnedSort]: false } } : {}),
+    },
+    state: { sorting: effectiveSorting },
   });
 
   // Single vs double click discrimination, shared across rows (one click
@@ -181,11 +240,12 @@ export function DataTable<TData, TValue>({
   // the within-group order, so sort DIRECTION never reshuffles the blocks). Pure
   // render-time derivation — no table state is touched.
   const sortedRows = table.getRowModel().rows;
-  const rows = groupOrder
-    ? [...sortedRows].sort(
-        (a, b) => groupOrder(a.original) - groupOrder(b.original)
-      )
-    : sortedRows;
+  const rows =
+    groupOrder && !getSubRows
+      ? [...sortedRows].sort(
+          (a, b) => groupOrder(a.original) - groupOrder(b.original)
+        )
+      : sortedRows;
   const colCount = table.getVisibleLeafColumns().length;
 
   return (
@@ -248,29 +308,70 @@ export function DataTable<TData, TValue>({
             </TableRow>
           ) : (
             rows.map((row) => (
-              <TableRow
+              <DataTableRow
                 key={row.id}
-                data-selected={
-                  activeRowId != null && row.id === activeRowId
-                    ? true
-                    : undefined
-                }
-                {...rowHandlers(row.original)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
+                row={row}
+                rowProps={rowHandlers(row.original)}
+                active={activeRowId != null && row.id === activeRowId}
+                rowDnd={rowDnd}
+              />
             ))
           )}
         </TableBody>
       </Table>
       {footer ? footer(table) : null}
     </div>
+  );
+}
+
+/**
+ * One table row, as its OWN component so a per-row dnd hook (`rowDnd`) is called
+ * exactly once per instance (keyed by row id) — rules-of-hooks safe even as the row
+ * set grows/shrinks (tree expand/collapse). `rowProps` carries the shared
+ * single/double-click handlers; `rowDnd` (if any) layers on draggable/droppable.
+ */
+function DataTableRow<TData>({
+  row,
+  rowProps,
+  active,
+  rowDnd,
+}: {
+  row: Row<TData>;
+  rowProps: React.HTMLAttributes<HTMLTableRowElement>;
+  active: boolean;
+  rowDnd?: (row: TData) => {
+    rowProps?: React.HTMLAttributes<HTMLTableRowElement> & {
+      ref?: React.Ref<HTMLTableRowElement>;
+    };
+    isDropTarget?: boolean;
+    isCandidate?: boolean;
+  } | void;
+}) {
+  const dnd = rowDnd?.(row.original) || undefined;
+  const dndProps = dnd?.rowProps;
+  return (
+    <TableRow
+      data-selected={active ? true : undefined}
+      data-drop-target={dnd?.isDropTarget ? true : undefined}
+      {...rowProps}
+      {...dndProps}
+      className={cn(
+        rowProps.className,
+        dndProps?.className,
+        dnd?.isCandidate &&
+          !dnd?.isDropTarget &&
+          'ring-ring/30 ring-1 ring-inset',
+        dnd?.isDropTarget && 'bg-accent/60 ring-ring/40 ring-1 ring-inset'
+      )}
+    >
+      {row.getVisibleCells().map((cell) => (
+        <TableCell
+          key={cell.id}
+          className={cell.column.columnDef.meta?.cellClassName}
+        >
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </TableCell>
+      ))}
+    </TableRow>
   );
 }
