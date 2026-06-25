@@ -133,14 +133,14 @@ test.describe('@full knowledge folder actions', () => {
     await ungranted.dispose();
   });
 
-  test('delete cascade: orphan child removed, multi-parent child survives', async () => {
+  test('delete = soft-trash cascade: orphan child trashed, multi-parent child survives (ADR-0018)', async () => {
     const api = await apiFor(tenant.granted);
 
     const parent = await createFolder(api, tenant.spaceId, 'Parent');
     const other = await createFolder(api, tenant.spaceId, 'Other');
-    // child only inside Parent → becomes an orphan when Parent is deleted.
+    // child only inside Parent → becomes an orphan when Parent is trashed.
     const onlyChild = await createFolder(api, tenant.spaceId, 'Only', parent);
-    // child inside Parent AND Other → has another parent → must SURVIVE.
+    // child inside Parent AND Other → has another LIVING parent → must SURVIVE.
     const sharedChild = await createFolder(
       api,
       tenant.spaceId,
@@ -157,20 +157,29 @@ test.describe('@full knowledge folder actions', () => {
     });
     expect(addParent.status()).toBe(201);
 
+    // DELETE now TRASHES (soft, reference-aware — ADR-0018). The orphan rule is
+    // mirrored as a soft cascade: rows are stamped deleted_at, NOT destroyed.
     const delRes = await api.delete('/author/graph/resources', {
       data: { spaceId: tenant.spaceId, resourceId: parent },
     });
     expect(delRes.status()).toBe(200);
 
-    const { data: survivors } = await tenant.service
+    const { data: rows } = await tenant.service
       .from('knowledge_resources')
-      .select('id')
+      .select('id,deleted_at')
       .in('id', [parent, other, onlyChild, sharedChild]);
-    const ids = new Set((survivors ?? []).map((r) => (r as { id: string }).id));
-    expect(ids.has(parent)).toBe(false); // deleted (target)
-    expect(ids.has(onlyChild)).toBe(false); // deleted (orphan)
-    expect(ids.has(sharedChild)).toBe(true); // SURVIVES (still under Other)
-    expect(ids.has(other)).toBe(true); // untouched
+    const trashed = new Map(
+      (rows ?? []).map((r) => [
+        (r as { id: string }).id,
+        (r as { deleted_at: string | null }).deleted_at !== null,
+      ])
+    );
+    // Every row still EXISTS (soft-delete) — only the lifecycle flag differs.
+    expect(rows ?? []).toHaveLength(4);
+    expect(trashed.get(parent)).toBe(true); // trashed (target)
+    expect(trashed.get(onlyChild)).toBe(true); // trashed (orphan)
+    expect(trashed.get(sharedChild)).toBe(false); // SURVIVES (living parent Other)
+    expect(trashed.get(other)).toBe(false); // untouched
 
     await api.dispose();
   });
@@ -226,16 +235,20 @@ test.describe('@full knowledge folder actions', () => {
     };
     expect(vis.choices.find((c) => c.id === scopeId)?.linked).toBe(true);
 
+    // DELETE now TRASHES (soft, ADR-0018): the row survives, stamped deleted_at.
     const delRes = await api.delete('/author/graph/resources', {
       data: { spaceId: tenant.spaceId, resourceId: folderId },
     });
     expect(delRes.status()).toBe(200);
 
-    const { data: gone } = await tenant.service
+    const { data: trashedRow } = await tenant.service
       .from('knowledge_resources')
-      .select('id')
-      .eq('id', folderId);
-    expect(gone ?? []).toHaveLength(0);
+      .select('deleted_at')
+      .eq('id', folderId)
+      .single();
+    expect(
+      (trashedRow as { deleted_at: string | null }).deleted_at
+    ).not.toBeNull();
 
     await api.dispose();
   });
@@ -293,26 +306,31 @@ test.describe('@full knowledge folder actions', () => {
       .single();
     expect((afterRename as { title: string }).title).toBe('Granted Only');
 
-    // …cannot delete a granted-owned node — it SURVIVES.
+    // …cannot trash a granted-owned node — it stays LIVE (the trash authority
+    // guard blocks a non-owner without space.knowledge.delete; ADR-0018 fork #5).
     await memberApi.delete('/author/graph/resources', {
       data: { spaceId: tenant.spaceId, resourceId: grantedFolder },
     });
     const { data: survives } = await tenant.service
       .from('knowledge_resources')
-      .select('id')
-      .eq('id', grantedFolder);
-    expect(survives ?? []).toHaveLength(1);
+      .select('deleted_at')
+      .eq('id', grantedFolder)
+      .single();
+    expect((survives as { deleted_at: string | null }).deleted_at).toBeNull();
 
-    // …but CAN delete its OWN (owner-sovereign).
+    // …but CAN trash its OWN (owner-sovereign): the row survives, stamped deleted_at.
     const delOwn = await memberApi.delete('/author/graph/resources', {
       data: { spaceId: tenant.spaceId, resourceId: ownFolder },
     });
     expect(delOwn.status()).toBe(200);
-    const { data: ownGone } = await tenant.service
+    const { data: ownTrashed } = await tenant.service
       .from('knowledge_resources')
-      .select('id')
-      .eq('id', ownFolder);
-    expect(ownGone ?? []).toHaveLength(0);
+      .select('deleted_at')
+      .eq('id', ownFolder)
+      .single();
+    expect(
+      (ownTrashed as { deleted_at: string | null }).deleted_at
+    ).not.toBeNull();
 
     await memberApi.dispose();
     await grantedApi.dispose();

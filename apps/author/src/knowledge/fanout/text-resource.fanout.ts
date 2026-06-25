@@ -250,8 +250,17 @@ async function deleteNode(
     .eq('space_id', spaceId);
 }
 
-/** Best-effort compensation: drop the orphaned Payload body. */
-async function deleteBody(payload: Payload, docId: string): Promise<void> {
+/**
+ * Best-effort: drop a Payload body doc. Used as create-compensation here AND as
+ * the purge body-reap (ADR-0018 §13.2) — exported so the purge fan-out can reap
+ * the orphaned body AFTER the node DELETE commits (best-effort, idempotent: a
+ * missing body is a no-op; a Mongo failure leaves an unreachable orphan, never a
+ * thrown error).
+ */
+export async function deleteBody(
+  payload: Payload,
+  docId: string
+): Promise<void> {
   try {
     await payload.delete({
       collection: 'bodies',

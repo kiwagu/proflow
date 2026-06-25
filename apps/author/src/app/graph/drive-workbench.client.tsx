@@ -165,6 +165,55 @@ export function DriveWorkbench({
     [spaceId, clipboard, refresh]
   );
 
+  // ── Trash lens lifecycle (ADR-0018) — RESTORE + PURGE ─────────────────────
+  // Both are reached only from the Trash lens and run under the user's RLS via the
+  // distinct `/author/graph/trash` route (PATCH = restore, DELETE = purge). The DB
+  // guards are the sole authority: an unauthorized restore is a clean no-op; an
+  // in-use purge is rejected (the route tags `reason: 'in-use'`). A success
+  // re-resolves so the trashed node leaves (restore) / is gone (purge).
+  const restoreNode = React.useCallback(
+    async (nodeId: string): Promise<boolean> => {
+      if (!spaceId) {
+        return false;
+      }
+      const res = await fetch('/author/graph/trash', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId, resourceId: nodeId }),
+      });
+      if (res.ok) {
+        refresh();
+        return true;
+      }
+      return false;
+    },
+    [spaceId, refresh]
+  );
+
+  const purgeNode = React.useCallback(
+    async (nodeId: string): Promise<'purged' | 'in-use' | 'error'> => {
+      if (!spaceId) {
+        return 'error';
+      }
+      const res = await fetch('/author/graph/trash', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId, resourceId: nodeId }),
+      });
+      if (res.ok) {
+        refresh();
+        return 'purged';
+      }
+      // The route distinguishes the in-use guard rejection from any other clean
+      // failure (graceful — nothing was destroyed either way).
+      const body = (await res.json().catch(() => null)) as {
+        reason?: string;
+      } | null;
+      return body?.reason === 'in-use' ? 'in-use' : 'error';
+    },
+    [spaceId, refresh]
+  );
+
   // Record a DELIBERATE open of a node — viewing it in Details, opening it in the
   // reader, or navigating INTO a folder (ADR-0016 §3.3). Fire-and-forget under the
   // user's RLS via the opened route (gated by `space.knowledge.open`); a failure
@@ -224,7 +273,11 @@ export function DriveWorkbench({
       setFolderId(p.get('folder'));
       setDocId(p.get('doc'));
       setScope(
-        s === 'home' || s === 'starred' || s === 'recent' || s === 'shared'
+        s === 'home' ||
+          s === 'starred' ||
+          s === 'recent' ||
+          s === 'shared' ||
+          s === 'trash'
           ? s
           : 'kb'
       );
@@ -520,6 +573,8 @@ export function DriveWorkbench({
       onCopyToClipboard={copyToClipboard}
       onPaste={pasteInto}
       onClearClipboard={clearClipboard}
+      onRestore={restoreNode}
+      onPurge={purgeNode}
     />
   );
 
@@ -592,6 +647,15 @@ export function DriveWorkbench({
               title={openDoc.title}
               messages={messages}
               containment={containment}
+              currentUserId={kbData?.currentUserId ?? null}
+              ownerUserId={kbData?.metaByItem[openDoc.id]?.ownerUserId ?? null}
+              capabilities={
+                kbData?.capabilities ?? {
+                  canUpdate: false,
+                  canDelete: false,
+                  canCreate: false,
+                }
+              }
               onClose={() => {
                 // Pop the `?doc=` entry (popstate restores the folder/scope), then
                 // re-resolve so the canvas REBUILDS with current server data — a
@@ -621,6 +685,19 @@ export function DriveWorkbench({
                 : undefined
             }
             containment={containment}
+            currentUserId={kbData?.currentUserId ?? null}
+            ownerUserId={
+              selectedNode
+                ? (kbData?.metaByItem[selectedNode.id]?.ownerUserId ?? null)
+                : null
+            }
+            capabilities={
+              kbData?.capabilities ?? {
+                canUpdate: false,
+                canDelete: false,
+                canCreate: false,
+              }
+            }
             open={selectedNode != null}
             onOpenChange={(isOpen) => {
               if (!isOpen) {

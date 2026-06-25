@@ -37,6 +37,7 @@ import {
 import * as React from 'react';
 
 import { allFolders, type Containment } from '@/app/graph/containment';
+import type { SpaceCapabilities } from '@/app/graph/graph-data.types';
 
 /**
  * NodeActionsMenu — the graph node's `⋯` action set. A thin DOMAIN composition over
@@ -70,6 +71,9 @@ export function NodeActionsMenu({
   t,
   node,
   containment,
+  currentUserId,
+  ownerUserId,
+  capabilities,
   onMutated,
   onActed,
   onDetails,
@@ -81,6 +85,21 @@ export function NodeActionsMenu({
   t: GraphTranslator;
   node: { id: string; kind: string; title: string };
   containment: Containment;
+  /**
+   * The viewer's own Supabase id — combined with `ownerUserId` to decide whether the
+   * viewer owns THIS node (the owner-sovereign half of the RLS predicate). A display
+   * decision only; RLS is the authority.
+   */
+  currentUserId: string | null;
+  /** This node's owner (`knowledge_resources.owner_user_id`). `null` → ownerless. */
+  ownerUserId: string | null;
+  /**
+   * The viewer's space-level knowledge verbs, resolved once server-side. Combined
+   * with ownership to DISPLAY-GATE the edit/move/delete/new-subfolder items per the
+   * `knowledge_resources` RLS predicate (ADR-0006: gating = display, fail-safe). A
+   * shared, non-owner viewer without the verbs sees only Copy + Details.
+   */
+  capabilities: SpaceCapabilities;
   onMutated: () => void;
   /** Fired after any successful action (e.g. the drawer closes itself). */
   onActed?: () => void;
@@ -107,6 +126,27 @@ export function NodeActionsMenu({
     () => allFolders(containment).filter((f) => f.id !== node.id),
     [containment, node.id]
   );
+
+  // Display gates — the EXACT `knowledge_resources` RLS predicate, evaluated client-
+  // side from the already-resolved inputs (owner-sovereign OR the space verb). NEVER
+  // the security boundary: RLS re-checks on every route, so a forged client cannot
+  // widen access — hiding only spares a non-owner a silent no-op. There are NO
+  // per-node write grants, so the space verb is the whole non-owner capability.
+  const owned = ownerUserId != null && ownerUserId === currentUserId;
+  const canModify = owned || capabilities.canUpdate;
+  const canDelete = owned || capabilities.canDelete;
+  // New-subfolder INSERTs a folder node (needs the create verb) AND wires a `contains`
+  // edge; it is offered only on a folder the viewer can modify and create within.
+  const canCreate = capabilities.canCreate;
+  // Move = DELETE the current `contains` edge + INSERT a new one. The edge DELETE
+  // policy is (`created_by = me OR space.knowledge.delete`) and the edge INSERT is
+  // (`created_by = me AND space.knowledge.create`) — NOT a single `update` verb. But
+  // the ratified item→gate mapping ties Move to `canModify`, and the realistic gated
+  // case (a shared NON-owner WITHOUT verbs) is hidden by `canModify` regardless. A
+  // node owner who modifies but lacks create/delete could still see a Move that the
+  // edge route then no-ops — RLS catches it (fail-safe), so `canModify` is the chosen,
+  // safe display tier; see the verb note in refs/git-logs.
+  const canMove = canModify;
 
   async function run(ok: boolean, close: () => void) {
     setBusy(false);
@@ -203,6 +243,7 @@ export function NodeActionsMenu({
       ? [
           {
             id: 'edit',
+            hidden: !canModify,
             icon: <SquarePen className="size-4" aria-hidden />,
             label: t('graph.reader.edit'),
             onSelect: onEdit,
@@ -211,19 +252,21 @@ export function NodeActionsMenu({
       : []),
     {
       id: 'new-subfolder',
-      hidden: node.kind !== 'folder',
+      hidden: node.kind !== 'folder' || !canModify || !canCreate,
       icon: <FolderPlus className="size-4" aria-hidden />,
       label: t('graph.panel.newSubfolder'),
       onSelect: () => setSubfolderOpen(true),
     },
     {
       id: 'rename',
+      hidden: !canModify,
       icon: <Pencil className="size-4" aria-hidden />,
       label: t('graph.panel.rename'),
       onSelect: () => setRenameOpen(true),
     },
     {
       id: 'move',
+      hidden: !canMove,
       icon: <FolderInput className="size-4" aria-hidden />,
       label: t('graph.panel.move'),
       onSelect: () => {
@@ -250,14 +293,15 @@ export function NodeActionsMenu({
       : []),
     {
       id: 'delete',
+      hidden: !canDelete,
       separatorBefore: true,
       variant: 'destructive',
-      // A `text` node is a knowledge-base DOCUMENT — it may be referenced from
-      // elsewhere (folders, shortcuts, other projections; N→1), so hard-deleting
-      // it is deferred to the reference-aware lifecycle (Trash) flow. Disabled for
-      // now rather than risk silently severing those references. Folders/files/
-      // links keep delete; draft VERSIONS are pruned from the Versions list.
-      disabled: node.kind === 'text',
+      // Delete now routes through the reference-aware Trash flow (ADR-0018): a soft,
+      // reversible trash that PRESERVES references (folders, shortcuts, other-folder
+      // containment, the Payload body) as dormant rows — so the N→1 reference-severing
+      // that disabled `text` delete is gone. Enabled for ALL kinds; the destructive
+      // `DELETE` is now a recoverable trash (permanent destruction is the distinct
+      // purge path inside the Trash lens).
       icon: <Trash2 className="size-4" aria-hidden />,
       label: t('graph.panel.delete'),
       onSelect: () => setConfirmDelete(true),

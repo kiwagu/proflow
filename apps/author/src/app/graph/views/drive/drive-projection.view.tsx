@@ -5,6 +5,7 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { CardTile } from '@workspace/ui/components/card-tile';
+import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
@@ -13,6 +14,7 @@ import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
   ChevronRight,
+  Clipboard,
   ClipboardPaste,
   Clock,
   Columns2,
@@ -23,6 +25,7 @@ import {
   LayoutGrid,
   List,
   Plus,
+  RotateCcw,
   Star,
   Trash2,
   Upload,
@@ -184,7 +187,7 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: Trash2,
     key: 'navTrash',
     label: (t) => t('graph.drive.navTrash'),
-    comingSoon: true,
+    scope: 'trash',
   },
 ];
 
@@ -213,6 +216,8 @@ export function DriveProjectionView({
   onCopyToClipboard,
   onPaste,
   onClearClipboard,
+  onRestore,
+  onPurge,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -226,6 +231,14 @@ export function DriveProjectionView({
   const attributesByItem = kbData?.attributesByItem ?? {};
   const metaByItem = kbData?.metaByItem ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
+  // The viewer's space verbs — combined with each node's owner (from `metaByItem`)
+  // to display-gate its `⋯` menu. Fail-CLOSED default (all false) when no seed: the
+  // standalone/empty case shows only the always-on Copy + Details.
+  const capabilities = kbData?.capabilities ?? {
+    canUpdate: false,
+    canDelete: false,
+    canCreate: false,
+  };
   // Per-user "last opened by me" overlay (`resource_id → ISO`); drives the Recent
   // filter (recently VIEWED by me) and its "Viewed" column. Absent key = unopened.
   const openedAtById = kbData?.openedAtById ?? {};
@@ -254,9 +267,16 @@ export function DriveProjectionView({
   const isRecent = scope === 'recent';
   const isShared = scope === 'shared';
   const isHome = scope === 'home';
-  // A flat lens (Home / Starred / Recent / Shared) hides the folder tree, breadcrumb
-  // path, and shortcuts — the canvas is a flat digest/list, not a folder you sit in.
-  const isFilterScope = isStarred || isRecent || isShared || isHome;
+  // The Trash lens (ADR-0018 fork #4): the trashed set (`deleted_at IS NOT NULL`),
+  // resolved server-side under the user's RLS and threaded in `kbData.trash`. It is a
+  // flat lens — edges among trashed nodes are dormant (both-endpoints-trashed → hidden
+  // by the edge SELECT policy), so every trashed node is its own "trashed root". No
+  // tree, no shortcuts, no breadcrumb, no DnD, no create/upload — only Restore + Purge.
+  const isTrash = scope === 'trash';
+  // A flat lens (Home / Starred / Recent / Shared / Trash) hides the folder tree,
+  // breadcrumb path, and shortcuts — the canvas is a flat digest/list, not a folder
+  // you sit in.
+  const isFilterScope = isStarred || isRecent || isShared || isHome || isTrash;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
@@ -431,6 +451,22 @@ export function DriveProjectionView({
     )
     .slice(0, HOME_LIMIT);
 
+  // The Trash lens set (ADR-0018) — the server-resolved trashed nodes, read from
+  // `kbData.trash` (NOT the live `containment`, which is `deleted_at IS NULL`). Sorted
+  // by name; folders + content render together (no tree — trashed roots are flat).
+  // An empty/ungranted Trash is `[]` → the empty-trash copy.
+  const trashNodes: LensNode[] = isTrash
+    ? (kbData?.trash.items ?? [])
+        .map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          title: item.title,
+        }))
+        .slice()
+        .sort(byTitle)
+    : [];
+  const trashMetaByItem = kbData?.trash.metaByItem ?? {};
+
   const folders = (
     isStarred
       ? starredNodes.filter((node) => node.kind === 'folder')
@@ -512,6 +548,9 @@ export function DriveProjectionView({
         t={t}
         node={node}
         containment={containment}
+        currentUserId={currentUserId}
+        ownerUserId={metaByItem[node.id]?.ownerUserId ?? null}
+        capabilities={capabilities}
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
@@ -535,6 +574,9 @@ export function DriveProjectionView({
         t={t}
         node={node}
         containment={containment}
+        currentUserId={currentUserId}
+        ownerUserId={metaByItem[node.id]?.ownerUserId ?? null}
+        capabilities={capabilities}
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
@@ -670,6 +712,8 @@ export function DriveProjectionView({
               <Star className="size-3.5" aria-hidden />
             ) : isShared ? (
               <Users className="size-3.5" aria-hidden />
+            ) : isTrash ? (
+              <Trash2 className="size-3.5" aria-hidden />
             ) : (
               <Clock className="size-3.5" aria-hidden />
             )}
@@ -679,7 +723,9 @@ export function DriveProjectionView({
                 ? t('graph.drive.navStarred')
                 : isShared
                   ? t('graph.drive.navShared')
-                  : t('graph.drive.navRecent')}
+                  : isTrash
+                    ? t('graph.drive.navTrash')
+                    : t('graph.drive.navRecent')}
           </span>
         ) : dndEnabled ? (
           // The root crumb is also a drop target: dropping a node here re-parents it
@@ -755,6 +801,9 @@ export function DriveProjectionView({
               t={t}
               node={folder}
               containment={containment}
+              currentUserId={currentUserId}
+              ownerUserId={metaByItem[folder.id]?.ownerUserId ?? null}
+              capabilities={capabilities}
               onMutated={onMutated}
               onDetails={() => onSelect(folder.id)}
               onCopyToClipboard={onCopyToClipboard}
@@ -763,43 +812,80 @@ export function DriveProjectionView({
         ) : null}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        {/* Paste — appears when a node is on the clipboard (Dolphin model) and this
-            pane browses 'kb'; pastes the source INTO this pane's current folder. The
-            split-pane's payoff: Copy in A, navigate B, Paste here. The ✕ clears the
-            clipboard (also cleared by Escape). */}
-        {canPaste && clipboard ? (
-          <div className="flex items-center overflow-hidden rounded-md border">
-            <button
-              type="button"
-              onClick={handlePaste}
-              title={t(isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste', {
-                title: clipboard.title,
-              })}
-              className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
-            >
-              <ClipboardPaste className="size-[15px]" aria-hidden />
-              <span className="max-w-[120px] truncate">{clipboard.title}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClearClipboard}
-              aria-label={t('graph.drive.pasteClear')}
-              className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
-            >
-              <X className="size-[14px]" aria-hidden />
-            </button>
-          </div>
+        {/* Clipboard indicator (Dolphin model) — two states of the SAME affordance:
+            • ACTIVE (canPaste: clipboard set AND this pane browses 'kb') → the full
+              chip: a clickable Paste (source INTO this pane's current folder) + the ✕
+              clear. The split-pane's payoff: Copy in A, navigate B, Paste here.
+            • READ-ONLY (clipboard set but no paste target — a flat lens like Shared/
+              Starred/Recent/Trash) → a muted "on your clipboard" hint: no Paste
+              (nowhere to paste into here), but the ✕ clear IS present so the buffer
+              can be cleared from ANY lens (not just by navigating back to KB / Escape).
+              Escape still clears globally (the workbench keydown handler is
+              scope-independent). */}
+        {clipboard != null ? (
+          canPaste ? (
+            <div className="flex items-center overflow-hidden rounded-md border">
+              <button
+                type="button"
+                onClick={handlePaste}
+                title={t(
+                  isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
+                  { title: clipboard.title }
+                )}
+                className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+              >
+                <ClipboardPaste className="size-[15px]" aria-hidden />
+                <span className="max-w-[120px] truncate">
+                  {clipboard.title}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={onClearClipboard}
+                aria-label={t('graph.drive.pasteClear')}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+              >
+                <X className="size-[14px]" aria-hidden />
+              </button>
+            </div>
+          ) : (
+            <div className="text-muted-foreground flex items-center overflow-hidden rounded-md border">
+              <div
+                title={t('graph.drive.clipboardHint', {
+                  title: clipboard.title,
+                })}
+                className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
+              >
+                <Clipboard className="size-[15px]" aria-hidden />
+                <span className="max-w-[120px] truncate">
+                  {clipboard.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onClearClipboard}
+                aria-label={t('graph.drive.pasteClear')}
+                className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+              >
+                <X className="size-[14px]" aria-hidden />
+              </button>
+            </div>
+          )
         ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            setCreateRequest({ kind: 'file', parentFolderId: folderId })
-          }
-        >
-          <Upload className="size-[15px]" aria-hidden />
-          {t('graph.drive.upload')}
-        </Button>
+        {/* Upload creates into the current location — meaningless in the Trash lens
+            (a holding state for trashed nodes, not a place to author into). */}
+        {!isTrash ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setCreateRequest({ kind: 'file', parentFolderId: folderId })
+            }
+          >
+            <Upload className="size-[15px]" aria-hidden />
+            {t('graph.drive.upload')}
+          </Button>
+        ) : null}
         <div className="flex overflow-hidden rounded-md border">
           <button
             type="button"
@@ -886,6 +972,9 @@ export function DriveProjectionView({
             t={t}
             node={item}
             containment={containment}
+            currentUserId={currentUserId}
+            ownerUserId={metaByItem[item.id]?.ownerUserId ?? null}
+            capabilities={capabilities}
             onMutated={onMutated}
             onDetails={() => onSelect(item.id)}
             onCopyToClipboard={onCopyToClipboard}
@@ -929,9 +1018,33 @@ export function DriveProjectionView({
       </>
     ) : null;
 
+  // One trashed row — the node's title + meta line, with Restore + Purge actions
+  // (no star, no ⋯ menu, no open/navigate: a trashed node is a holding-state entry,
+  // not a browsable item). Purge confirms and surfaces the in-use rejection.
+  const renderTrashCard = (node: LensNode) => (
+    <TrashCard
+      key={node.id}
+      t={t}
+      node={node}
+      meta={trashMetaByItem[node.id]}
+      currentUserId={currentUserId}
+      layout={layout}
+      onRestore={onRestore}
+      onPurge={onPurge}
+    />
+  );
+
   const main = (
     <>
-      {isHome ? (
+      {isTrash ? (
+        trashNodes.length === 0 ? (
+          <EmptyState>{t('graph.trash.empty')}</EmptyState>
+        ) : (
+          <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
+            {trashNodes.map(renderTrashCard)}
+          </div>
+        )
+      ) : isHome ? (
         jumpBackNodes.length === 0 && recentlyUpdatedNodes.length === 0 ? (
           <EmptyState>{t('graph.drive.homeEmpty')}</EmptyState>
         ) : (
@@ -1021,6 +1134,11 @@ export function DriveProjectionView({
                             t={t}
                             node={sub}
                             containment={containment}
+                            currentUserId={currentUserId}
+                            ownerUserId={
+                              metaByItem[sub.id]?.ownerUserId ?? null
+                            }
+                            capabilities={capabilities}
                             onMutated={onMutated}
                             onDetails={() => onSelect(sub.id)}
                             onCopyToClipboard={onCopyToClipboard}
@@ -1397,6 +1515,169 @@ function ItemCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * TrashCard — one trashed node in the Trash lens (ADR-0018 §10.7). It is NOT a
+ * browsable card: a trashed node has no open / navigate / star / ⋯ menu — only the
+ * two lifecycle verbs reached from inside Trash, Restore and Purge.
+ *
+ * - Restore (`PATCH /author/graph/trash`) clears `deleted_at`; references re-admit
+ *   automatically (dormant edges). Owner-sovereign / `delete`-verb gated in the DB.
+ * - Purge (`DELETE /author/graph/trash`) is the one-way door — it ALWAYS confirms
+ *   first, and when the in-use guard rejects it (living cross-owner references) the
+ *   confirm switches to the cooperative "in use" message instead of destroying. The
+ *   guard rejection is surfaced gracefully (never thrown).
+ */
+function TrashCard({
+  t,
+  node,
+  meta,
+  currentUserId,
+  layout,
+  onRestore,
+  onPurge,
+}: {
+  t: GraphTranslator;
+  node: LensNode;
+  meta?: NodeMeta;
+  currentUserId: string | null;
+  layout: DriveLayout;
+  onRestore?: (nodeId: string) => Promise<boolean>;
+  onPurge?: (nodeId: string) => Promise<'purged' | 'in-use' | 'error'>;
+}) {
+  const list = layout === 'list';
+  const [busy, setBusy] = React.useState(false);
+  const [confirmPurge, setConfirmPurge] = React.useState(false);
+  // When the in-use guard rejects a purge, the confirm dialog stays open and shows the
+  // cooperative "in use" message instead of the destructive prompt (nothing destroyed).
+  const [inUse, setInUse] = React.useState(false);
+
+  const metaLine = t('graph.drive.metaOwner', {
+    kind: kindLabel(t, node.kind),
+    owner: ownerLabel(t, meta?.ownerUserId, currentUserId),
+  });
+
+  const handleRestore = async () => {
+    if (!onRestore) {
+      return;
+    }
+    setBusy(true);
+    await onRestore(node.id);
+    // Success re-resolves (the row leaves Trash); a no-op (unauthorized) just clears
+    // busy. Either way no throw.
+    setBusy(false);
+  };
+
+  const handlePurge = async () => {
+    if (!onPurge) {
+      return;
+    }
+    setBusy(true);
+    const outcome = await onPurge(node.id);
+    setBusy(false);
+    if (outcome === 'in-use') {
+      // Cooperative rejection — keep the dialog open, swap to the in-use message.
+      setInUse(true);
+      return;
+    }
+    // 'purged' re-resolves (row gone); 'error' is a clean no-op — close either way.
+    setConfirmPurge(false);
+  };
+
+  return (
+    <>
+      {/* A trashed node is NOT clickable (no open/navigate) — so this is a plain
+          surface DIV, not the clickable CardTile (which is a <button> and would
+          nest the Restore/Purge buttons). Same card tokens, no hover-to-ring.
+
+          List = one horizontal row [icon][title flex-1][actions]. Grid is a fixed
+          264px card: the two TEXT actions + icon would squeeze the flex-1 title to
+          ~zero and hide it, so grid STACKS — [icon + title] on top, the actions on
+          their own justify-end row beneath — keeping the title fully readable. */}
+      <div
+        className={cn(
+          'bg-card flex border shadow-xs',
+          'rounded-lg',
+          list
+            ? 'w-full items-center gap-3 px-3.5 py-2.5'
+            : cn(GRID_CARD, 'flex-col gap-2.5 p-4')
+        )}
+      >
+        <div
+          className={cn(
+            'flex min-w-0 items-center',
+            list ? 'flex-1 gap-3' : 'w-full gap-2.5'
+          )}
+        >
+          {React.createElement(iconForKind(node.kind), {
+            className: cn(
+              'text-muted-foreground shrink-0',
+              list ? 'size-[18px]' : 'size-[22px]'
+            ),
+            'aria-hidden': true,
+          })}
+          <div className="min-w-0 flex-1 text-left">
+            <div className="truncate text-sm font-medium">{node.title}</div>
+            <div className="text-muted-foreground truncate text-xs">
+              {metaLine}
+            </div>
+          </div>
+        </div>
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-1',
+            list ? '' : 'justify-end'
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRestore}
+            disabled={busy || !onRestore}
+          >
+            <RotateCcw className="size-4" aria-hidden />
+            {t('graph.trash.restore')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setInUse(false);
+              setConfirmPurge(true);
+            }}
+            disabled={busy || !onPurge}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="size-4" aria-hidden />
+            {t('graph.trash.purge')}
+          </Button>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmPurge}
+        onOpenChange={(open) => {
+          setConfirmPurge(open);
+          if (!open) {
+            setInUse(false);
+          }
+        }}
+        title={t('graph.trash.purge')}
+        description={
+          inUse
+            ? t('graph.trash.inUse', { title: node.title })
+            : t('graph.trash.purgeConfirm', { title: node.title })
+        }
+        confirmLabel={t('graph.trash.purge')}
+        cancelLabel={t('graph.panel.cancel')}
+        onConfirm={handlePurge}
+        busy={busy}
+        destructive
+        confirmIcon={<Trash2 className="size-4" aria-hidden />}
+      />
+    </>
   );
 }
 

@@ -20,6 +20,7 @@ import type {
   KbAttributes,
   NodeMeta,
   ShortcutEdge,
+  SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 
 /**
@@ -62,6 +63,45 @@ export async function resolveCurrentUserId(): Promise<string | null> {
 }
 
 /**
+ * The CURRENT user's space-level knowledge verbs (`update`/`delete`/`create`) for
+ * the active space, resolved ONCE here server-side under the user's RLS client —
+ * the verdict is constant across every node in the space, so the `⋯` menu combines
+ * it with per-node ownership client-side (zero per-node round-trips, zero client-side
+ * access re-derivation). Used PURELY to display-gate the menu (ADR-0006) — RLS stays
+ * the sole authority; this only spares the user silent no-op route hits.
+ *
+ * It calls `auth_user_can_access_in_space(space_id, verb)` — the EXACT predicate the
+ * `knowledge_resources` update/delete and insert RLS policies use (membership AND the
+ * verb), under the user's session (never service-role). The standalone `hasPermission`
+ * helper is deliberately NOT used: it calls `auth_user_has_permission` directly and
+ * omits the `auth_user_active_in_space` half of `auth_user_can_access_in_space`, so it
+ * would NOT mirror the policy exactly. Any RPC error denies (fail-closed).
+ */
+export async function resolveSpaceCapabilities(
+  spaceId: string
+): Promise<SpaceCapabilities> {
+  const db = await createRlsClientFromServerCookies();
+  const can = async (verb: string): Promise<boolean> => {
+    const { data, error } = await db.rpc('auth_user_can_access_in_space', {
+      p_space_id: spaceId,
+      p_permission_key: verb,
+    });
+    if (error) {
+      // Fail-closed: an unresolved verb hides the gated item (the route would
+      // no-op under RLS anyway). RLS is the authority, not this hint.
+      return false;
+    }
+    return data === true;
+  };
+  const [canUpdate, canDelete, canCreate] = await Promise.all([
+    can('space.knowledge.update'),
+    can('space.knowledge.delete'),
+    can('space.knowledge.create'),
+  ]);
+  return { canUpdate, canDelete, canCreate };
+}
+
+/**
  * The default implicit lens-spec (ADR-0012 §5). The product entry `/author/graph`
  * renders the KB editor ALWAYS — at zero resources and with NO saved projection.
  * The entry resolves this spec built in code:
@@ -100,13 +140,37 @@ export function buildDefaultLensSpec(): ProjectionSpec {
 }
 
 /**
+ * The lifecycle lens selector (ADR-0018 fork #4). Trash is a THIRD axis
+ * (existence), orthogonal to access (RLS) and workflow (status): the same RLS
+ * verdict, the same user, sees a node in ONE lens and not the other. So the
+ * trashed/normal split is a query lens, NOT an access fence — the engine /
+ * `ProjectionSpec` contract stays frozen (`schema_version`=1, Invariant #1), and
+ * this `deleted_at` filter rides as a thin POST-RESOLVE loader filter, never an
+ * engine DDL change. It can never leak: it only ever narrows the user's already-
+ * accessible set (a direct-PostgREST bypass sees exactly their own accessible
+ * trashed rows — which is what the Trash lens shows anyway).
+ *
+ *   - 'live'    — normal browse: `deleted_at IS NULL` (the default everywhere);
+ *   - 'trashed' — the Trash lens: `deleted_at IS NOT NULL`.
+ */
+export type LifecycleScope = 'live' | 'trashed';
+
+/**
  * Resolve the default implicit lens projection for the active space. No
  * `projections` row is read — the spec is built in code and validated at the
  * boundary (zod), then executed under the user's RLS via the landed transport
  * (ADR-0009), never service-role. An ungranted user resolves to `items=[]`.
+ *
+ * The lifecycle `scope` (ADR-0018) is applied as a thin POST-RESOLVE filter over
+ * the resolved items — the engine resolves the RLS-allowed set (trashed or not),
+ * then this narrows to the requested existence lens. Zero engine DDL: the frozen
+ * `ProjectionSpec` cannot express `deleted_at`, so the split lives here, not in
+ * the compiled SQL. Normal browse (`live`) excludes trashed; the Trash lens
+ * (`trashed`) shows only trashed.
  */
 export async function resolveDefaultLensProjection(
-  spaceId: string
+  spaceId: string,
+  scope: LifecycleScope = 'live'
 ): Promise<ProjectionResult> {
   const spec = buildDefaultLensSpec();
   const parsed = parseProjectionSpec(spec);
@@ -117,12 +181,49 @@ export async function resolveDefaultLensProjection(
 
   const db = await createRlsClientFromServerCookies();
   const claims = await resolveJwtClaimsFromSession(db);
-  return resolveProjection(parsed.data, {
+  const result = await resolveProjection(parsed.data, {
     projectionId: DEFAULT_LENS_PROJECTION_ID,
     spaceId,
     db,
     transport: createProjectionResolveTransport(claims),
   });
+
+  // Apply the lifecycle lens. Resolve the deleted_at state of the resolved ids
+  // under the user's RLS (same authority as the resolve), then keep only the ids
+  // matching the requested existence scope.
+  const live = await loadLiveIds(
+    spaceId,
+    result.items.map((item) => item.id)
+  );
+  const items = result.items.filter((item) =>
+    scope === 'live' ? live.has(item.id) : !live.has(item.id)
+  );
+  return { ...result, items };
+}
+
+/**
+ * The subset of `itemIds` that are LIVE (`deleted_at IS NULL`) in this space,
+ * read under the user's RLS. The complement (returned ids minus this set) are the
+ * trashed ones. A thin select used by the lifecycle lens split (ADR-0018 fork #4).
+ */
+async function loadLiveIds(
+  spaceId: string,
+  itemIds: string[]
+): Promise<Set<string>> {
+  if (itemIds.length === 0) {
+    return new Set();
+  }
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('knowledge_resources')
+    .select('id')
+    .eq('space_id', spaceId)
+    .in('id', itemIds)
+    .is('deleted_at', null);
+  if (error) {
+    throw new Error(`loadLiveIds: ${error.message}`);
+  }
+  return new Set((data ?? []).map((row) => (row as { id: string }).id));
 }
 
 /**

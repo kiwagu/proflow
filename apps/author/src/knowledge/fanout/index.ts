@@ -28,9 +28,12 @@ export {
   type LinkResourceScopeInput,
 } from './resource-scope.fanout';
 export {
-  deleteResourceCascade,
-  type DeleteResourceInput,
-} from './delete-resource.fanout';
+  purgeResource,
+  restoreResource,
+  trashResource,
+  type PurgeResourceDeps,
+  type TrashResourceDeps,
+} from './trash-resource.fanout';
 export {
   copyResourceSubtree,
   type CopyResourceSubtreeDeps,
