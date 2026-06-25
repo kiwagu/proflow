@@ -11,7 +11,12 @@
  *  2. multi-parent survival: trashing folder A trashes an only-child orphan but a
  *     child ALSO under folder B survives (it keeps a living parent); restore re-shows.
  *  3. cross-owner gating: a `member` (no `space.knowledge.delete`) cannot trash or
- *     restore a granted-owned node; the owner / a delete-holder can.
+ *     restore a granted-owned node; the owner / a delete-holder can. And cross-owner
+ *     PURGE authority (ADR-0018 §8) is fail-closed (ADR-0017): a delete-holder CAN
+ *     purge a SHARED member node (visible → `purged:[id]`, durable audit stamped to
+ *     the admin), but a still-PRIVATE member node is owner-only-visible, so the admin
+ *     purge is an HONEST no-op (`purged:[]`, 200, row + audit untouched — to ACT you
+ *     must be able to SEE; never a silent delete-without-report).
  *  4. purge destroys the node + reaps the body best-effort; a missing body
  *     (Mongo-down simulation) still purges the node (orphan acceptable, not a throw).
  *  5. graceful-absence (§14): trashing a node mid-tree leaves the parent folder's
@@ -365,6 +370,186 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect((parentRow as { deleted_at: string | null }).deleted_at).toBeNull();
 
     await api.dispose();
+  });
+
+  test('in-use purge guard: an unauthorized purge of a node with a live cross-owner reference is rejected as reason:in-use (422), nothing destroyed', async () => {
+    // The Trash lens render (ADR-0018 §10.7) surfaces the in-use rejection as a
+    // cooperative "in use" state. This proves the route signal that drives it: the
+    // `assert_purge_not_in_use` guard rejects an unauthorized purge of a resource with
+    // LIVING cross-owner references, and the `/author/graph/trash` DELETE tags that
+    // rejection `reason:'in-use'` (422) so the UI can show it WITHOUT throwing. (The
+    // cooperative escalation — a delete-holder completing the purge — is a Phase A
+    // authority concern asserted there; here we pin the render-facing rejection signal.)
+    const member = await bootstrapMemberActor(tenant);
+    const memberApi = await apiFor(member);
+    const grantedApi = await apiFor(tenant.granted);
+    const sid = tenant.spaceId;
+
+    // `granted` owns a live folder; `member` owns a doc. The cross-owner `contains`
+    // edge (granted's live folder → member's doc) is the living reference the in-use
+    // guard fires on. Cross-owner edge CREATION is itself RLS-restricted (a delete/
+    // update holder cannot freely file another owner's node under their folder), so
+    // the edge is set up via service-role — legitimate TEST SETUP of the precondition,
+    // not the code path under test (the purge guard is what we exercise).
+    const grantedFolder = await createFolder(grantedApi, sid, 'In-Use Holder');
+    const { nodeId: memberDoc } = await createTextDoc(
+      memberApi,
+      sid,
+      'In-Use Doc'
+    );
+    const { error: edgeErr } = await tenant.service
+      .from('knowledge_edges')
+      .insert({
+        space_id: sid,
+        from_id: grantedFolder,
+        to_id: memberDoc,
+        relation_type: 'contains',
+        position: 0,
+        created_by: tenant.granted.userId,
+      });
+    expect(edgeErr).toBeNull();
+
+    // `member` trashes its OWN doc (owner-sovereign — allowed).
+    const trashRes = await memberApi.delete('/author/graph/resources', {
+      data: { spaceId: sid, resourceId: memberDoc },
+    });
+    expect(trashRes.status()).toBe(200);
+
+    // `member` (no space.knowledge.delete) tries to PURGE it → the in-use guard
+    // rejects (living cross-owner reference). The route surfaces `reason:'in-use'`,
+    // 422, and NOTHING is destroyed.
+    const memberPurge = await memberApi.delete('/author/graph/trash', {
+      data: { spaceId: sid, resourceId: memberDoc },
+    });
+    expect(memberPurge.status()).toBe(422);
+    expect(((await memberPurge.json()) as { reason?: string }).reason).toBe(
+      'in-use'
+    );
+    const { data: stillThere } = await tenant.service
+      .from('knowledge_resources')
+      .select('id,deleted_at')
+      .eq('id', memberDoc);
+    expect(stillThere ?? []).toHaveLength(1); // nothing destroyed
+    // …and it stays TRASHED (a rejected purge does not silently restore it).
+    expect(
+      (stillThere ?? [])[0] as { deleted_at: string | null }
+    ).not.toBeNull();
+
+    await memberApi.dispose();
+    await grantedApi.dispose();
+  });
+
+  test('cross-owner purge authority (ADR-0018 §8): a delete-holder CAN purge a SHARED member node, but a PRIVATE one is an honest no-op (fail-closed: to act you must SEE)', async () => {
+    // The companion to the in-use rejection above: the COMPLETION half. Under
+    // ADR-0017 fail-closed, a delete-verb holder can only PURGE a cross-owner node it
+    // can SEE — Postgres folds the SELECT policy into DELETE (a row you cannot select,
+    // you cannot delete), so the purge reaches a member node only when the member has
+    // shared it (floor=space). A still-private member node is owner-only-visible, so
+    // the admin's purge legitimately destroys NOTHING and the route reports `purged:[]`
+    // FAITHFULLY (no silent delete-without-report; the row + audit are untouched).
+    const member = await bootstrapMemberActor(tenant);
+    const memberApi = await apiFor(member);
+    const grantedApi = await apiFor(tenant.granted); // holds space.knowledge.delete
+    const sid = tenant.spaceId;
+
+    // ── arm 1: a SHARED member node — the delete-holder CAN purge it ────────────
+    const { nodeId: sharedDoc } = await createTextDoc(
+      memberApi,
+      sid,
+      'Member Shared Purge Target'
+    );
+    // The member publishes its OWN node to the space floor (owner-sovereign), so the
+    // admin can SEE it — the precondition for acting on it cross-owner.
+    const pubRes = await memberApi.patch('/author/graph/visibility', {
+      data: { resourceId: sharedDoc, visibility: 'space' },
+    });
+    expect(pubRes.status()).toBe(200);
+    // The member trashes its own node (purge is reached only from the Trash lens).
+    const trashShared = await memberApi.delete('/author/graph/resources', {
+      data: { spaceId: sid, resourceId: sharedDoc },
+    });
+    expect(trashShared.status()).toBe(200);
+
+    // The admin (delete-holder, NOT the owner) purges the shared, trashed member node.
+    const adminPurge = await grantedApi.delete('/author/graph/trash', {
+      data: { spaceId: sid, resourceId: sharedDoc },
+    });
+    expect(adminPurge.status()).toBe(200);
+    expect(
+      ((await adminPurge.json()) as { purged: string[] }).purged
+    ).toContain(sharedDoc); // FAITHFUL report: the row really was destroyed
+
+    // The node row is GONE (the one-way door reached it cross-owner).
+    const { data: sharedGone } = await tenant.service
+      .from('knowledge_resources')
+      .select('id')
+      .eq('id', sharedDoc);
+    expect(sharedGone ?? []).toHaveLength(0);
+
+    // …and the durable purge tombstone survives, stamped with the ADMIN as actor.
+    const { data: sharedAudit } = await tenant.service
+      .from('space_admin_audit_log')
+      .select('actor_user_id,entity_id')
+      .eq('action', 'knowledge.resource.purged')
+      .eq('entity_id', sharedDoc);
+    expect((sharedAudit ?? []).length).toBe(1);
+    expect(
+      (sharedAudit ?? [])[0] as { actor_user_id: string | null }
+    ).toMatchObject({ actor_user_id: tenant.granted.userId });
+
+    // ── arm 2: a PRIVATE member node — the delete-holder purge is an honest no-op ─
+    const { nodeId: privateDoc } = await createTextDoc(
+      memberApi,
+      sid,
+      'Member Private Purge Target'
+    );
+    // No publish: the node stays floor=private (private-by-default, ADR-0017), so it
+    // is invisible to the admin even though the admin holds the delete verb.
+    const trashPrivate = await memberApi.delete('/author/graph/resources', {
+      data: { spaceId: sid, resourceId: privateDoc },
+    });
+    expect(trashPrivate.status()).toBe(200);
+
+    // The admin attempts the SAME purge. The DELETE-USING (delete verb) passes, but
+    // the SELECT policy hides the private member row, so Postgres deletes NOTHING and
+    // the RETURNING is empty — the route reports a CLEAN, HONEST no-op (not a throw,
+    // not a fabricated success, and crucially NOT a silent destruction).
+    const adminPurgePrivate = await grantedApi.delete('/author/graph/trash', {
+      data: { spaceId: sid, resourceId: privateDoc },
+    });
+    expect(adminPurgePrivate.status()).toBe(200);
+    expect(
+      ((await adminPurgePrivate.json()) as { purged: string[] }).purged
+    ).toHaveLength(0); // honest no-op: nothing reported destroyed
+
+    // The private member node SURVIVES (no silent delete) and stays TRASHED.
+    const { data: privateStill } = await tenant.service
+      .from('knowledge_resources')
+      .select('id,deleted_at')
+      .eq('id', privateDoc);
+    expect(privateStill ?? []).toHaveLength(1);
+    expect(
+      (privateStill ?? [])[0] as { deleted_at: string | null }
+    ).not.toBeNull();
+    // No purge tombstone was written for the untouched private node (the BEFORE-DELETE
+    // audit trigger never fired — the row was never visited by the DELETE).
+    const { data: privateAudit } = await tenant.service
+      .from('space_admin_audit_log')
+      .select('entity_id')
+      .eq('action', 'knowledge.resource.purged')
+      .eq('entity_id', privateDoc);
+    expect(privateAudit ?? []).toHaveLength(0);
+    // The OWNER can still purge their own private node (sovereignty intact).
+    const ownerPurge = await memberApi.delete('/author/graph/trash', {
+      data: { spaceId: sid, resourceId: privateDoc },
+    });
+    expect(ownerPurge.status()).toBe(200);
+    expect(
+      ((await ownerPurge.json()) as { purged: string[] }).purged
+    ).toContain(privateDoc);
+
+    await memberApi.dispose();
+    await grantedApi.dispose();
   });
 
   test('lifecycle audit: trash+restore = two immutable kra rows (actor-stamped); purge = durable audit', async () => {

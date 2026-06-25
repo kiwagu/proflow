@@ -87,8 +87,19 @@ export async function DELETE(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Purge failed.';
-    // RLS rejection (no delete authority) / in-use guard (42501) → clean failure,
-    // nothing destroyed.
-    return NextResponse.json({ message }, { status: 422 });
+    // The in-use guard (`assert_purge_not_in_use`, ADR-0018 §10.5) rejects purge of a
+    // resource still referenced by LIVING cross-owner edges unless the caller holds
+    // `space.knowledge.delete` — surfaced so the Trash lens can show the cooperative
+    // "in use" state (graceful-absence cannot restore a purged row). The guard raises
+    // SQLSTATE 42501 with a stable "(living cross-owner references)" message; detect
+    // it and tag the response `reason: 'in-use'`. Any other clean rejection (no delete
+    // authority, etc.) stays a generic failure. NOTHING was destroyed either way.
+    const inUse =
+      message.includes('living cross-owner references') ||
+      message.includes('42501');
+    return NextResponse.json(
+      { message, reason: inUse ? 'in-use' : 'error' },
+      { status: 422 }
+    );
   }
 }

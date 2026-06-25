@@ -45,6 +45,33 @@ export type KbViewData = {
    * and its "Viewed" column. A missing key = never opened by this user.
    */
   openedAtById: Record<string, string>;
+  /**
+   * The TRASH lens seed (ADR-0018 fork #4) — the same machinery as the live canvas,
+   * resolved server-side under the user's RLS with the `deleted_at IS NOT NULL`
+   * selector. Trash is a THIRD axis (existence), orthogonal to access + workflow:
+   * the same user sees a node in ONE lens and not the other, so the trashed/normal
+   * split is a query lens, never an access fence (the RLS floor is unmoved). The
+   * trashed set rides alongside the live `result` exactly as Starred/Recent are flat
+   * lenses over the live canvas — so the client-side scope switch needs no server
+   * re-navigation. Absent (no active space / never resolved) = an empty Trash lens.
+   *
+   * Edges AMONG trashed nodes are dormant (both-endpoints-trashed → hidden by the
+   * fork #2 edge SELECT policy), so the trashed set renders FLAT (each trashed node
+   * is its own "trashed root") — there is no containment tree inside Trash.
+   */
+  trash: TrashLensData;
+};
+
+/**
+ * The server-resolved Trash lens (ADR-0018). The trashed node set + its owner meta,
+ * resolved under the user's RLS with `deleted_at IS NOT NULL`. An ungranted/empty
+ * Trash is `items=[]`, never an error.
+ */
+export type TrashLensData = {
+  /** The trashed nodes (flat — dormant edges hide any tree among them). */
+  items: { id: string; kind: string; title: string }[];
+  /** Owner + last-modified for the trashed nodes (the "{kind} · {owner}" meta line). */
+  metaByItem: Record<string, NodeMeta>;
 };
 
 /**
@@ -56,7 +83,13 @@ export type KbViewData = {
  * personalized "For you" digest (recently opened + recently updated) over the
  * now-personal visible set (ADR-0017 §4, personalization on the activity spine).
  */
-export type DriveScope = 'kb' | 'home' | 'starred' | 'recent' | 'shared';
+export type DriveScope =
+  | 'kb'
+  | 'home'
+  | 'starred'
+  | 'recent'
+  | 'shared'
+  | 'trash';
 
 export type ProjectionViewProps = {
   result: ProjectionResult;
@@ -139,4 +172,19 @@ export type ProjectionViewProps = {
   onPaste?: (targetFolderId: string | null, rootTitle: string) => void;
   /** CLEAR the clipboard (the ✕ on the Paste control / Escape). */
   onClearClipboard?: () => void;
+  /**
+   * RESTORE a trashed node (Trash lens) — `PATCH /author/graph/trash`. Clears
+   * `deleted_at`; references re-admit automatically (dormant edges). Resolves to
+   * `true` on success so the view can re-resolve. Owner-sovereign / `delete`-verb
+   * gated in the DB — an unauthorized restore is a clean no-op (false), never a throw.
+   */
+  onRestore?: (nodeId: string) => Promise<boolean>;
+  /**
+   * PURGE a trashed node (Trash lens) — `DELETE /author/graph/trash`, the one-way
+   * door. Returns the outcome so the view surfaces it: `purged` on success;
+   * `in-use` when the in-use guard rejected it (living cross-owner references — the
+   * purge needs `space.knowledge.delete`); `error` for any other clean rejection.
+   * Never throws (graceful — the guard rejection is surfaced, not raised).
+   */
+  onPurge?: (nodeId: string) => Promise<'purged' | 'in-use' | 'error'>;
 };

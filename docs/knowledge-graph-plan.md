@@ -283,9 +283,15 @@ guarded for in-use cross-owner references.
       multi-parent survival; cross-owner trash/restore gated; purge destroys + body
       reap (failure non-fatal); graceful-absence (parent renders); immutable kra
       trail (actor); durable purge audit survives the node + its kra rows
-- [ ] Trash lens UI (Phase B, render-implementer) — `DriveScope += 'trash'`, the
-      `navTrash` sidebar entry (drop `comingSoon`), Restore/Purge per-row affordances
-      ("in use by N" confirm), the tree-builder graceful-absence audit, i18n keys
+- [x] Trash lens UI (Phase B, render-implementer) — `DriveScope += 'trash'`, the
+      `navTrash` sidebar entry (drop `comingSoon`, `scope: 'trash'`), the Trash lens
+      resolved server-side under RLS (`deleted_at IS NOT NULL`) and threaded alongside
+      the live canvas as a flat lens, Restore/Purge per-row affordances (purge confirms;
+      the in-use guard rejection surfaces the cooperative "in use" message — never
+      thrown), the tree-builder graceful-absence audit (no non-null assertions on
+      cross-query lookups; dangling edges dropped at `buildForest`, every lookup guarded;
+      int test asserts a parent renders when a contained child is absent), i18n keys
+      (`graph.trash.restore/purge/purgeConfirm/inUse/empty`, en+es)
 
 ## Open items
 

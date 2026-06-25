@@ -83,6 +83,7 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       currentUserId: null,
       starredIds: [],
       openedAtById: {},
+      trash: { items: [], metaByItem: {} },
     },
   };
 }
@@ -174,6 +175,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_old: '2026-01-01T00:00:00Z',
           knr_new: '2026-06-01T00:00:00Z',
         },
+        trash: { items: [], metaByItem: {} },
       },
     });
     render(<DriveProjectionView {...props} />);
@@ -207,6 +209,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             currentUserId: null,
             starredIds: [],
             openedAtById: {},
+            trash: { items: [], metaByItem: {} },
           },
         })}
       />
@@ -236,6 +239,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             currentUserId: null,
             starredIds: [],
             openedAtById: {},
+            trash: { items: [], metaByItem: {} },
           },
         })}
       />
@@ -244,5 +248,163 @@ describe('DriveProjectionView (forward-port shell)', () => {
     // The default (kb) root lists the loose document next to the folder — it is no
     // longer invisible until filed under a folder (only reachable via Recent).
     expect(screen.getByText('LooseDoc')).toBeTruthy();
+  });
+
+  // ── Trash lens (ADR-0018 §10.7) ──────────────────────────────────────────
+
+  /** A trashed node — the seed for the Trash lens (`kbData.trash`). It is NOT in the
+   * live canvas/containment (which is `deleted_at IS NULL`); the trashed set rides
+   * alongside as its own resolved lens. */
+  function withTrash(
+    items: { id: string; kind: string; title: string }[]
+  ): Partial<ProjectionViewProps> {
+    const props = baseProps();
+    return {
+      kbData: {
+        ...props.kbData!,
+        ...{
+          attributesByItem: {},
+          metaByItem: {},
+          containment: [],
+          shortcuts: [],
+          currentUserId: null,
+          starredIds: [],
+          openedAtById: {},
+        },
+        trash: { items, metaByItem: {} },
+      },
+    };
+  }
+
+  it('shows the empty-trash copy when nothing is trashed', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps()}
+        scope="trash"
+        onScopeChange={vi.fn()}
+      />
+    );
+    expect(screen.getByText(messages['graph.trash.empty']!)).toBeTruthy();
+  });
+
+  it('renders trashed nodes with Restore + Delete-forever in the Trash lens', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps(
+          withTrash([{ id: 'knr_gone', kind: 'text', title: 'Old Draft' }])
+        )}
+        scope="trash"
+        onScopeChange={vi.fn()}
+        onRestore={vi.fn(async () => true)}
+        onPurge={vi.fn(async () => 'purged' as const)}
+      />
+    );
+
+    expect(screen.getByText('Old Draft')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: messages['graph.trash.restore']! })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: messages['graph.trash.purge']! })
+    ).toBeTruthy();
+  });
+
+  it('restores a trashed node via the Trash lens action', () => {
+    const onRestore = vi.fn(async () => true);
+    render(
+      <DriveProjectionView
+        {...baseProps(
+          withTrash([{ id: 'knr_gone', kind: 'text', title: 'Old Draft' }])
+        )}
+        scope="trash"
+        onScopeChange={vi.fn()}
+        onRestore={onRestore}
+        onPurge={vi.fn(async () => 'purged' as const)}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: messages['graph.trash.restore']! })
+    );
+    expect(onRestore).toHaveBeenCalledWith('knr_gone');
+  });
+
+  it('confirms before purging (the one-way door) and only then calls onPurge', () => {
+    const onPurge = vi.fn(async () => 'purged' as const);
+    render(
+      <DriveProjectionView
+        {...baseProps(
+          withTrash([{ id: 'knr_gone', kind: 'text', title: 'Old Draft' }])
+        )}
+        scope="trash"
+        onScopeChange={vi.fn()}
+        onRestore={vi.fn(async () => true)}
+        onPurge={onPurge}
+      />
+    );
+
+    // Clicking "Delete forever" opens the confirm — it does NOT purge yet.
+    fireEvent.click(
+      screen.getByRole('button', { name: messages['graph.trash.purge']! })
+    );
+    expect(onPurge).not.toHaveBeenCalled();
+
+    // The confirm dialog shows the purge prompt; confirming fires the purge.
+    expect(
+      screen.getByText(
+        messages['graph.trash.purgeConfirm']!.replace('{title}', 'Old Draft')
+      )
+    ).toBeTruthy();
+    const confirms = screen.getAllByRole('button', {
+      name: messages['graph.trash.purge']!,
+    });
+    // The dialog's confirm button is the last one (the card trigger is the first).
+    fireEvent.click(confirms[confirms.length - 1]!);
+    expect(onPurge).toHaveBeenCalledWith('knr_gone');
+  });
+
+  // ── §14 graceful-absence: a referenced-but-absent node never throws ──────
+
+  it('renders a parent folder even when a contained child is absent from the item set (TOCTOU)', () => {
+    // A `contains` edge points at `knr_ghost`, but that node is NOT in the resolved
+    // item set (it was trashed BETWEEN the items query and the edges query — the
+    // §14 TOCTOU window). The tree-builder must skip the absent slot, NOT throw.
+    render(
+      <ControlledDrive
+        {...baseProps({
+          result: {
+            projection_id: 'prj_test',
+            view: 'drive',
+            items: [
+              { id: 'knr_folder', kind: 'folder', title: 'Docs' },
+              { id: 'knr_doc', kind: 'text', title: 'Welcome' },
+            ] as ProjectionResult['items'],
+          },
+          kbData: {
+            attributesByItem: {},
+            metaByItem: {},
+            containment: [
+              { from: 'knr_folder', to: 'knr_doc', position: 0 },
+              // dangling edge → a node absent from the item set (graceful absence)
+              { from: 'knr_folder', to: 'knr_ghost', position: 1 },
+            ],
+            shortcuts: [],
+            currentUserId: null,
+            starredIds: [],
+            openedAtById: {},
+            trash: { items: [], metaByItem: {} },
+          },
+        })}
+      />
+    );
+
+    // The folder still renders (no thrown render / error boundary).
+    const folderButtons = screen.getAllByRole('button', { name: /Docs/ });
+    expect(folderButtons.length).toBeGreaterThan(0);
+
+    // Navigating in shows the present child; the absent child is simply not shown.
+    fireEvent.click(folderButtons[0]!);
+    expect(screen.getByText('Welcome')).toBeTruthy();
+    expect(screen.queryByText('knr_ghost')).toBeNull();
   });
 });

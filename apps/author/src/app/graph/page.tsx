@@ -53,7 +53,8 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
       scope === 'home' ||
       scope === 'starred' ||
       scope === 'recent' ||
-      scope === 'shared'
+      scope === 'shared' ||
+      scope === 'trash'
         ? scope
         : 'kb',
   };
@@ -84,6 +85,7 @@ export default async function GraphPage({
       currentUserId: null,
       starredIds: [],
       openedAtById: {},
+      trash: { items: [], metaByItem: {} },
     };
     return (
       <DriveWorkbench
@@ -98,8 +100,17 @@ export default async function GraphPage({
     );
   }
 
-  const result = await resolveDefaultLensProjection(spaceId);
+  // The LIVE lens (deleted_at IS NULL) and the TRASH lens (deleted_at IS NOT NULL)
+  // are resolved by the SAME machinery (ADR-0018 fork #4), both server-side under
+  // the user's RLS. The trash set rides alongside the live canvas as the seed for
+  // the client-side 'trash' scope switch — the same shape as Starred/Recent flat
+  // lenses over the live canvas. An ungranted/empty Trash resolves to items=[].
+  const [result, trashResult] = await Promise.all([
+    resolveDefaultLensProjection(spaceId),
+    resolveDefaultLensProjection(spaceId, 'trashed'),
+  ]);
   const itemIds = result.items.map((item) => item.id);
+  const trashIds = trashResult.items.map((item) => item.id);
   const [
     containment,
     shortcuts,
@@ -108,6 +119,7 @@ export default async function GraphPage({
     currentUserId,
     starredIds,
     openedAtById,
+    trashMetaByItem,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -116,6 +128,7 @@ export default async function GraphPage({
     resolveCurrentUserId(),
     loadStarredIds(spaceId),
     loadOpenedAtForItems(spaceId),
+    loadNodeMetaForItems(spaceId, trashIds),
   ]);
 
   const kbData: KbViewData = {
@@ -126,6 +139,14 @@ export default async function GraphPage({
     currentUserId,
     starredIds,
     openedAtById,
+    trash: {
+      items: trashResult.items.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+      })),
+      metaByItem: trashMetaByItem,
+    },
   };
 
   return (
