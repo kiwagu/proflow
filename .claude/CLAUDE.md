@@ -17,6 +17,7 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/standard-design-patterns.mdc
 @.cursor/rules/zod-schema-first-contracts.mdc
 @.cursor/rules/ui-i18n-json-required.mdc
+@.cursor/rules/seed-dictionary-coverage.mdc
 
 ## Architecture & routing
 

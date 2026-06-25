@@ -184,7 +184,7 @@ make db-types
 # Create a new migration file
 make db-new NAME=add_my_table
 
-# Run Vitest unit tests
+# Run Vitest unit tests (alias: `bun run test`)
 bun run test:vitest
 
 # Run full E2E suite (non-interactive)
@@ -196,6 +196,12 @@ bun run test:e2e:smoke:ni
 # Lint, typecheck, format
 bun run check
 ```
+
+> **Do not run `bun test`.** Bun's native test runner scans every `*.test.ts` /
+> `*.spec.ts` and tries to run them itself — but our unit tests are **Vitest** and our
+> e2e are **Playwright**, neither of which Bun's runner can execute, so it reports a wall
+> of false failures. Always use the scripts above (`bun run test:vitest` /
+> `bun run test:e2e*`), which invoke the correct runners via Turbo.
 
 ## Shared packages
 

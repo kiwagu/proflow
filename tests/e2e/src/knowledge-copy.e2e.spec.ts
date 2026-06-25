@@ -11,69 +11,23 @@
  *     gets their OWN PRIVATE drafts — the source's audience is never re-broadcast.
  *     This is the security-critical property of copy, so it gets its own test.
  *
- * Driven over HTTP as bootstrapped actors (runtime tenant, never a migration seed —
- * the identity-sync lesson). Tagged `@full` — needs the running stack. Truth is read
- * back with service-role (bypasses RLS) — the body lives in Payload, but the
+ * Driven over HTTP through the SHARED seed client; the deep-copy input is the shared
+ * `drive-copy-chain` catalog fixture (one dictionary for seed + tests). Runtime
+ * tenant, never a migration seed. Tagged `@full` — needs the running stack. Truth is
+ * read back with service-role (bypasses RLS) — the body lives in Payload, but the
  * `body_ref` bridge is in Postgres, so body cloning is provable here without Mongo.
  */
-import {
-  expect,
-  request,
-  test,
-  type APIRequestContext,
-} from '@playwright/test';
+import { DRIVE_COPY_CHAIN_SCENARIO } from '@workspace/seed';
+import { expect, test } from '@playwright/test';
 
 import {
-  actorSsrAuthCookies,
   bootstrapKnowledgeGraphTenant,
   bootstrapMemberActor,
+  materializeFixture,
+  seedClientFor,
   teardownKnowledgeGraphTenant,
-  type KnowledgeActor,
   type KnowledgeGraphTenant,
 } from './helpers/knowledge-graph-bootstrap.js';
-
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local';
-
-async function apiFor(actor: KnowledgeActor): Promise<APIRequestContext> {
-  const cookies = await actorSsrAuthCookies(actor);
-  const cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-  return request.newContext({
-    baseURL: BASE,
-    ignoreHTTPSErrors: true,
-    extraHTTPHeaders: { cookie },
-  });
-}
-
-async function createFolder(
-  api: APIRequestContext,
-  spaceId: string,
-  title: string,
-  parentFolderId?: string
-): Promise<string> {
-  const res = await api.post('/author/graph/resources', {
-    data: {
-      spaceId,
-      kind: 'folder',
-      title,
-      ...(parentFolderId ? { parentFolder: { parentFolderId } } : {}),
-    },
-  });
-  expect(res.status()).toBe(201);
-  return ((await res.json()) as { node_id: string }).node_id;
-}
-
-async function createDoc(
-  api: APIRequestContext,
-  spaceId: string,
-  title: string,
-  parentFolderId: string
-): Promise<string> {
-  const res = await api.post('/author/graph/text-resources', {
-    data: { spaceId, title, parentFolder: { parentFolderId } },
-  });
-  expect(res.status()).toBe(201);
-  return ((await res.json()) as { node_id: string }).node_id;
-}
 
 /** The single `contains` child of a node (the deep-copy tree is a strict chain here). */
 async function onlyChild(
@@ -110,17 +64,6 @@ async function resource(
   return data as ResourceRow;
 }
 
-async function setFloor(
-  api: APIRequestContext,
-  resourceId: string,
-  visibility: 'private' | 'space' | 'organization'
-): Promise<void> {
-  const res = await api.patch('/author/graph/visibility', {
-    data: { resourceId, visibility },
-  });
-  expect(res.status()).toBe(200);
-}
-
 test.describe('@full knowledge deep-copy', () => {
   let tenant: KnowledgeGraphTenant;
 
@@ -133,32 +76,30 @@ test.describe('@full knowledge deep-copy', () => {
   });
 
   test('deep: duplicates the contains subtree + clones each body, source untouched', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
 
-    // Root → Child → Doc (a text node, born with an empty-but-live body).
-    const root = await createFolder(api, tenant.spaceId, 'Root');
-    const child = await createFolder(api, tenant.spaceId, 'Child', root);
-    const doc = await createDoc(api, tenant.spaceId, 'Doc', child);
+    // Root → Child → Doc (a text node with a real body) — the shared fixture.
+    const { refs } = await materializeFixture(
+      DRIVE_COPY_CHAIN_SCENARIO,
+      tenant
+    );
+    const root = refs.get('copy/root')!;
+    const child = refs.get('copy/child')!;
+    const doc = refs.get('copy/doc')!;
     const srcDoc = await resource(tenant, doc);
     expect(srcDoc.body_ref?.doc_id).toBeTruthy();
 
     // Copy the whole Root to the top level (the UI builds the "(copy)" suffix and
     // passes it as rootTitle; the route itself stays suffix-agnostic).
-    const res = await api.post('/author/graph/copy', {
-      data: {
-        spaceId: tenant.spaceId,
-        sourceId: root,
-        targetFolderId: null,
-        rootTitle: 'Root (copy)',
-      },
+    const copied = await api.copy(tenant.spaceId, root, {
+      targetFolderId: null,
+      rootTitle: 'Root (copy)',
     });
-    expect(res.status()).toBe(201);
-    const copied = (await res.json()) as { node_id: string; count: number };
     expect(copied.count).toBe(3); // root + child + doc
 
     // The new root: owner-pinned, PRIVATE, "(copy)" title — a distinct node.
-    expect(copied.node_id).not.toBe(root);
-    const newRoot = await resource(tenant, copied.node_id);
+    expect(copied.nodeId).not.toBe(root);
+    const newRoot = await resource(tenant, copied.nodeId);
     expect(newRoot).toMatchObject({
       kind: 'folder',
       title: 'Root (copy)',
@@ -167,7 +108,7 @@ test.describe('@full knowledge deep-copy', () => {
     });
 
     // Structure preserved: newRoot → newChild → newDoc, all fresh + private.
-    const newChild = await onlyChild(tenant, copied.node_id);
+    const newChild = await onlyChild(tenant, copied.nodeId);
     expect(newChild).not.toBe(child);
     expect(await resource(tenant, newChild)).toMatchObject({
       kind: 'folder',
@@ -200,34 +141,34 @@ test.describe('@full knowledge deep-copy', () => {
   });
 
   test('fail-closed: a member copying a SPACE-shared tree gets private own drafts', async () => {
-    const ownerApi = await apiFor(tenant.granted);
+    const ownerApi = await seedClientFor(tenant.granted);
 
     // granted publishes a folder + doc to the whole space (owner-sovereign floor).
-    const folder = await createFolder(ownerApi, tenant.spaceId, 'Shared');
-    const note = await createDoc(ownerApi, tenant.spaceId, 'Note', folder);
-    await setFloor(ownerApi, folder, 'space');
-    await setFloor(ownerApi, note, 'space');
+    const folder = await ownerApi.createFolder(tenant.spaceId, 'Shared');
+    const { nodeId: note } = await ownerApi.createDoc(tenant.spaceId, 'Note', {
+      parentFolderId: folder,
+    });
+    await ownerApi.setFloor(folder, 'space');
+    await ownerApi.setFloor(note, 'space');
 
     // A space member (read + create, ADR-0017 D5-revision) copies the shared tree.
     const member = await bootstrapMemberActor(tenant);
-    const memberApi = await apiFor(member);
-    const res = await memberApi.post('/author/graph/copy', {
-      data: { spaceId: tenant.spaceId, sourceId: folder, targetFolderId: null },
+    const memberApi = await seedClientFor(member);
+    const copied = await memberApi.copy(tenant.spaceId, folder, {
+      targetFolderId: null,
     });
-    expect(res.status()).toBe(201);
-    const copied = (await res.json()) as { node_id: string; count: number };
     expect(copied.count).toBe(2);
 
     // The copies are the MEMBER's own PRIVATE drafts — the space audience is NOT
     // carried over (fail-closed: copy never re-broadcasts the source's reach).
-    const copyRoot = await resource(tenant, copied.node_id);
+    const copyRoot = await resource(tenant, copied.nodeId);
     expect(copyRoot).toMatchObject({
       owner_user_id: member.userId,
       visibility: 'private',
     });
     const copyNote = await resource(
       tenant,
-      await onlyChild(tenant, copied.node_id)
+      await onlyChild(tenant, copied.nodeId)
     );
     expect(copyNote).toMatchObject({
       kind: 'text',

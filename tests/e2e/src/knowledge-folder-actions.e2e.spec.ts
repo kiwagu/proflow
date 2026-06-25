@@ -12,55 +12,22 @@
  *  3. BREADTH happy-path: one granted flow through create → rename → describe → fence →
  *     delete — any broken route/wiring trips it.
  *
- * Driven over HTTP as the bootstrapped actors (runtime tenant, never a migration seed —
- * the identity-sync lesson). Tagged `@full` — needs the running stack.
+ * Driven over HTTP as the bootstrapped actors through the SHARED seed client (the
+ * `/author/graph/*` create-vocabulary), and the cascade shape comes from the shared
+ * `drive-cascade` catalog fixture — one dictionary for the seed and the tests.
+ * Runtime tenant, never a migration seed. Tagged `@full` — needs the running stack.
  */
-import {
-  expect,
-  request,
-  test,
-  type APIRequestContext,
-} from '@playwright/test';
+import { DRIVE_CASCADE_SCENARIO } from '@workspace/seed';
+import { expect, test } from '@playwright/test';
 
 import {
-  actorSsrAuthCookies,
   bootstrapKnowledgeGraphTenant,
   bootstrapMemberActor,
+  materializeFixture,
+  seedClientFor,
   teardownKnowledgeGraphTenant,
-  type KnowledgeActor,
   type KnowledgeGraphTenant,
 } from './helpers/knowledge-graph-bootstrap.js';
-
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local';
-
-/** An HTTP context carrying an actor's SSR auth cookies. */
-async function apiFor(actor: KnowledgeActor): Promise<APIRequestContext> {
-  const cookies = await actorSsrAuthCookies(actor);
-  const cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-  return request.newContext({
-    baseURL: BASE,
-    ignoreHTTPSErrors: true,
-    extraHTTPHeaders: { cookie },
-  });
-}
-
-async function createFolder(
-  api: APIRequestContext,
-  spaceId: string,
-  title: string,
-  parentFolderId?: string
-): Promise<string> {
-  const res = await api.post('/author/graph/resources', {
-    data: {
-      spaceId,
-      kind: 'folder',
-      title,
-      ...(parentFolderId ? { parentFolder: { parentFolderId } } : {}),
-    },
-  });
-  expect(res.status()).toBe(201);
-  return ((await res.json()) as { node_id: string }).node_id;
-}
 
 test.describe('@full knowledge folder actions', () => {
   let tenant: KnowledgeGraphTenant;
@@ -74,14 +41,16 @@ test.describe('@full knowledge folder actions', () => {
   });
 
   test('RLS: an ungranted actor cannot create / describe / fence', async () => {
-    const granted = await apiFor(tenant.granted);
-    const ungranted = await apiFor(tenant.ungranted);
+    const granted = await seedClientFor(tenant.granted);
+    const ungranted = await seedClientFor(tenant.ungranted);
 
     // The ungranted actor (no space.knowledge.*) is rejected at the row policy.
     const createRes = await ungranted.post('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, kind: 'folder', title: 'Forbidden' },
+      spaceId: tenant.spaceId,
+      kind: 'folder',
+      title: 'Forbidden',
     });
-    expect(createRes.status()).toBe(422);
+    expect(createRes.status).toBe(422);
 
     // …and nothing was written (service-role bypasses RLS to check the truth).
     const { data: forbiddenRows } = await tenant.service
@@ -92,21 +61,18 @@ test.describe('@full knowledge folder actions', () => {
     expect(forbiddenRows ?? []).toHaveLength(0);
 
     // A granted-created folder cannot be described or fenced by the ungranted actor.
-    const folderId = await createFolder(
-      granted,
+    const folderId = await granted.createFolder(
       tenant.spaceId,
       'Granted Folder'
     );
 
     const descRes = await ungranted.post('/author/graph/attributes', {
-      data: {
-        attribute: 'description',
-        spaceId: tenant.spaceId,
-        nodeId: folderId,
-        body: 'should not stick',
-      },
+      attribute: 'description',
+      spaceId: tenant.spaceId,
+      nodeId: folderId,
+      body: 'should not stick',
     });
-    expect(descRes.status()).toBe(422);
+    expect(descRes.status).toBe(422);
 
     const { data: scope } = await tenant.service
       .from('scopes')
@@ -119,9 +85,10 @@ test.describe('@full knowledge folder actions', () => {
       .select('id')
       .single();
     const fenceRes = await ungranted.post('/author/graph/visibility', {
-      data: { resourceId: folderId, scopeId: (scope as { id: string }).id },
+      resourceId: folderId,
+      scopeId: (scope as { id: string }).id,
     });
-    expect(fenceRes.status()).toBe(422);
+    expect(fenceRes.status).toBe(422);
 
     const { data: links } = await tenant.service
       .from('knowledge_resource_scopes')
@@ -134,35 +101,19 @@ test.describe('@full knowledge folder actions', () => {
   });
 
   test('delete = soft-trash cascade: orphan child trashed, multi-parent child survives (ADR-0018)', async () => {
-    const api = await apiFor(tenant.granted);
+    // The cascade shape (Parent → {Only, Shared}, with Shared ALSO under Other) is
+    // the shared `drive-cascade` fixture from the dictionary.
+    const { refs } = await materializeFixture(DRIVE_CASCADE_SCENARIO, tenant);
+    const parent = refs.get('cascade/parent')!;
+    const other = refs.get('cascade/other')!;
+    const onlyChild = refs.get('cascade/only')!;
+    const sharedChild = refs.get('cascade/shared')!;
 
-    const parent = await createFolder(api, tenant.spaceId, 'Parent');
-    const other = await createFolder(api, tenant.spaceId, 'Other');
-    // child only inside Parent → becomes an orphan when Parent is trashed.
-    const onlyChild = await createFolder(api, tenant.spaceId, 'Only', parent);
-    // child inside Parent AND Other → has another LIVING parent → must SURVIVE.
-    const sharedChild = await createFolder(
-      api,
-      tenant.spaceId,
-      'Shared',
-      parent
-    );
-    const addParent = await api.post('/author/graph/edges', {
-      data: {
-        action: 'contain',
-        spaceId: tenant.spaceId,
-        folderId: other,
-        childId: sharedChild,
-      },
-    });
-    expect(addParent.status()).toBe(201);
+    const api = await seedClientFor(tenant.granted);
 
     // DELETE now TRASHES (soft, reference-aware — ADR-0018). The orphan rule is
     // mirrored as a soft cascade: rows are stamped deleted_at, NOT destroyed.
-    const delRes = await api.delete('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, resourceId: parent },
-    });
-    expect(delRes.status()).toBe(200);
+    await api.trash(tenant.spaceId, parent);
 
     const { data: rows } = await tenant.service
       .from('knowledge_resources')
@@ -185,25 +136,12 @@ test.describe('@full knowledge folder actions', () => {
   });
 
   test('breadth: create → rename → describe → fence → delete', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
 
-    const folderId = await createFolder(api, tenant.spaceId, 'Lifecycle');
+    const folderId = await api.createFolder(tenant.spaceId, 'Lifecycle');
 
-    const renameRes = await api.patch('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, resourceId: folderId, title: 'Renamed' },
-    });
-    expect(renameRes.status()).toBe(200);
-    expect((await renameRes.json()).title).toBe('Renamed');
-
-    const descRes = await api.post('/author/graph/attributes', {
-      data: {
-        attribute: 'description',
-        spaceId: tenant.spaceId,
-        nodeId: folderId,
-        body: 'RAG text',
-      },
-    });
-    expect(descRes.status()).toBe(200);
+    await api.rename(tenant.spaceId, folderId, 'Renamed');
+    await api.describe(tenant.spaceId, folderId, 'RAG text');
 
     // fence to a cohort the granted actor belongs to (so it stays visible to them).
     const { data: scope } = await tenant.service
@@ -222,24 +160,16 @@ test.describe('@full knowledge folder actions', () => {
       user_id: tenant.granted.userId,
       created_by: tenant.granted.userId,
     });
-    const fenceRes = await api.post('/author/graph/visibility', {
-      data: { resourceId: folderId, scopeId },
-    });
-    expect(fenceRes.status()).toBe(201);
+    await api.linkScope(folderId, scopeId);
 
     const visRes = await api.get(
       `/author/graph/visibility?space_id=${tenant.spaceId}&node_id=${folderId}`
     );
-    const vis = (await visRes.json()) as {
-      choices: { id: string; linked: boolean }[];
-    };
+    const vis = visRes.body as { choices: { id: string; linked: boolean }[] };
     expect(vis.choices.find((c) => c.id === scopeId)?.linked).toBe(true);
 
     // DELETE now TRASHES (soft, ADR-0018): the row survives, stamped deleted_at.
-    const delRes = await api.delete('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, resourceId: folderId },
-    });
-    expect(delRes.status()).toBe(200);
+    await api.trash(tenant.spaceId, folderId);
 
     const { data: trashedRow } = await tenant.service
       .from('knowledge_resources')
@@ -255,12 +185,11 @@ test.describe('@full knowledge folder actions', () => {
 
   test('personal authoring: a member authors its OWN, cannot touch others (ADR-0017 D5-revision)', async () => {
     const member = await bootstrapMemberActor(tenant);
-    const memberApi = await apiFor(member);
-    const grantedApi = await apiFor(tenant.granted);
+    const memberApi = await seedClientFor(member);
+    const grantedApi = await seedClientFor(tenant.granted);
 
     // A `member` CAN create its own content (read + create → a personal Drive).
-    const ownFolder = await createFolder(
-      memberApi,
+    const ownFolder = await memberApi.createFolder(
       tenant.spaceId,
       'Member Drive'
     );
@@ -276,28 +205,18 @@ test.describe('@full knowledge folder actions', () => {
     expect((ownRow as { visibility: string }).visibility).toBe('private');
 
     // Owner-sovereign: the member edits its OWN node WITHOUT the update verb.
-    const renameOwn = await memberApi.patch('/author/graph/resources', {
-      data: {
-        spaceId: tenant.spaceId,
-        resourceId: ownFolder,
-        title: 'My Drive',
-      },
-    });
-    expect(renameOwn.status()).toBe(200);
+    await memberApi.rename(tenant.spaceId, ownFolder, 'My Drive');
 
     // …but CANNOT edit a granted-owned node (not owner, no update verb). Assert the DB
     // is unchanged (robust to however the route reports a 0-row update).
-    const grantedFolder = await createFolder(
-      grantedApi,
+    const grantedFolder = await grantedApi.createFolder(
       tenant.spaceId,
       'Granted Only'
     );
     await memberApi.patch('/author/graph/resources', {
-      data: {
-        spaceId: tenant.spaceId,
-        resourceId: grantedFolder,
-        title: 'Hijacked',
-      },
+      spaceId: tenant.spaceId,
+      resourceId: grantedFolder,
+      title: 'Hijacked',
     });
     const { data: afterRename } = await tenant.service
       .from('knowledge_resources')
@@ -308,8 +227,9 @@ test.describe('@full knowledge folder actions', () => {
 
     // …cannot trash a granted-owned node — it stays LIVE (the trash authority
     // guard blocks a non-owner without space.knowledge.delete; ADR-0018 fork #5).
-    await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, resourceId: grantedFolder },
+    await memberApi.del('/author/graph/resources', {
+      spaceId: tenant.spaceId,
+      resourceId: grantedFolder,
     });
     const { data: survives } = await tenant.service
       .from('knowledge_resources')
@@ -319,10 +239,7 @@ test.describe('@full knowledge folder actions', () => {
     expect((survives as { deleted_at: string | null }).deleted_at).toBeNull();
 
     // …but CAN trash its OWN (owner-sovereign): the row survives, stamped deleted_at.
-    const delOwn = await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: tenant.spaceId, resourceId: ownFolder },
-    });
-    expect(delOwn.status()).toBe(200);
+    await memberApi.trash(tenant.spaceId, ownFolder);
     const { data: ownTrashed } = await tenant.service
       .from('knowledge_resources')
       .select('deleted_at')

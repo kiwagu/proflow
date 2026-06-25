@@ -1,0 +1,311 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import type { SeedClient } from '../engine/http.js';
+import type { SeedActor, SeedTenant } from '../engine/types.js';
+import type { SeedNode, SeedScenario } from './types.js';
+
+/**
+ * Caller-supplied wiring: how to build an HTTP client for an actor (CLI → fetch;
+ * e2e → Playwright) and how to mint a fresh/stable actor with a system role.
+ */
+export type MaterializeDeps = {
+  tenant: SeedTenant;
+  clientFor: (actor: SeedActor) => Promise<SeedClient>;
+  mintActor: (ref: string, roleKey: string) => Promise<SeedActor>;
+};
+
+export type MaterializedScenario = {
+  scenarioId: string;
+  /** Every addressable handle → its concrete id: node refs, `tag:<title>`,
+   * `scope:<ref>`, `projection:<ref>`. */
+  refs: Map<string, string>;
+};
+
+/**
+ * Walk one scenario through the `/author/graph/*` endpoints (and the owner's RLS
+ * client for the few writes no endpoint exposes), returning every `ref → id`.
+ * This is the single interpreter both the demo seed and the e2e specs run.
+ */
+export async function materializeScenario(
+  scenario: SeedScenario,
+  deps: MaterializeDeps
+): Promise<MaterializedScenario> {
+  const { tenant } = deps;
+  const refs = new Map<string, string>();
+
+  // ── actors ─────────────────────────────────────────────────────────────────
+  const actors = new Map<string, SeedActor>([
+    ['admin', tenant.granted],
+    ['viewer', tenant.ungranted],
+  ]);
+  for (const spec of scenario.actors ?? []) {
+    actors.set(spec.ref, await deps.mintActor(spec.ref, spec.role ?? 'admin'));
+  }
+  const clients = new Map<string, SeedClient>();
+  const actor = (ref = 'admin'): SeedActor => {
+    const a = actors.get(ref);
+    if (!a) throw new Error(`${scenario.id}: unknown actor ref "${ref}"`);
+    return a;
+  };
+  const client = async (ref = 'admin'): Promise<SeedClient> => {
+    if (!clients.has(ref)) clients.set(ref, await deps.clientFor(actor(ref)));
+    return clients.get(ref)!;
+  };
+  const db = (ref = 'admin'): SupabaseClient => actor(ref).client;
+  const spaceId = tenant.spaceId;
+  const adminClient = await client('admin');
+
+  // ── cohorts (scopes) + memberships ──────────────────────────────────────────
+  for (const scope of scenario.scopes ?? []) {
+    const scopeId = await ensureScope(
+      db('admin'),
+      spaceId,
+      `seed-${scenario.id}-${scope.ref}`,
+      scope.name,
+      actor('admin').userId
+    );
+    refs.set(`scope:${scope.ref}`, scopeId);
+    for (const memberRef of scope.members ?? []) {
+      const { error } = await db('admin')
+        .from('scope_memberships')
+        .insert({
+          scope_id: scopeId,
+          user_id: actor(memberRef).userId,
+          created_by: actor('admin').userId,
+        });
+      if (error && error.code !== '23505') {
+        throw new Error(`${scenario.id} scope membership: ${error.message}`);
+      }
+    }
+  }
+
+  // ── reporting lines ─────────────────────────────────────────────────────────
+  for (const line of scenario.reportingLines ?? []) {
+    const { error } = await db('admin')
+      .from('reporting_lines')
+      .insert({
+        space_id: spaceId,
+        manager_id: actor(line.manager).userId,
+        subordinate_id: actor(line.subordinate).userId,
+        created_by: actor('admin').userId,
+      });
+    if (error && error.code !== '23505') {
+      throw new Error(`${scenario.id} reporting line: ${error.message}`);
+    }
+  }
+
+  // ── tag nodes (deduped by title, owned by the primary actor) ────────────────
+  for (const title of collectTagTitles(scenario.tree)) {
+    const tagId = await adminClient.createNode(spaceId, 'tag', title);
+    refs.set(`tag:${title}`, tagId);
+  }
+
+  // ── the resource forest ─────────────────────────────────────────────────────
+  for (const node of scenario.tree) {
+    await materializeNode(node, undefined);
+  }
+
+  async function materializeNode(
+    node: SeedNode,
+    parentFolderId: string | undefined
+  ): Promise<void> {
+    const ownerRef = node.owner ?? 'admin';
+    const c = await client(ownerRef);
+    const owner = actor(ownerRef);
+
+    let nodeId: string;
+    const hasWorkflow =
+      node.kind === 'text' && (node.status || node.workflowKey);
+
+    if (hasWorkflow) {
+      // Status/workflow fields are not exposed by the create endpoints — author
+      // the node directly under the owner's RLS client (as the e2e seeders do).
+      const { data, error } = await db(ownerRef)
+        .from('knowledge_resources')
+        .insert({
+          space_id: spaceId,
+          kind: 'text',
+          title: node.title,
+          status: node.status ?? 'active',
+          workflow_key: node.workflowKey ?? null,
+          created_by: owner.userId,
+          owner_user_id: owner.userId,
+          visibility: node.visibility ?? 'private',
+        })
+        .select('id')
+        .single();
+      if (error || !data?.id) {
+        throw new Error(
+          `${scenario.id} node "${node.title}": ${error?.message}`
+        );
+      }
+      nodeId = data.id;
+      if (parentFolderId) await c.contain(spaceId, parentFolderId, nodeId);
+    } else if (node.kind === 'text') {
+      const created = await c.createDoc(spaceId, node.title, {
+        parentFolderId,
+        lexicalBody: node.body,
+      });
+      nodeId = created.nodeId;
+      // A new doc's body is born as a draft; publish it so read mode shows it,
+      // unless the node opts into staying a draft (to demo the draft state).
+      if (!node.draft) await c.publishDoc(spaceId, nodeId);
+      // Successive published versions → the reader's version history.
+      for (const revision of node.revisions ?? []) {
+        await c.saveRevision(spaceId, nodeId, revision);
+      }
+    } else {
+      nodeId = await c.createNode(
+        spaceId,
+        node.kind,
+        node.title,
+        parentFolderId
+      );
+    }
+    refs.set(node.ref, nodeId);
+
+    if (node.description) await c.describe(spaceId, nodeId, node.description);
+    // Floor is only widened from the private default — set it before sharing.
+    if (node.visibility && !hasWorkflow) {
+      await c.setFloor(nodeId, node.visibility);
+    }
+    for (const scopeRef of node.scopes ?? []) {
+      const scopeId = refs.get(`scope:${scopeRef}`);
+      if (!scopeId)
+        throw new Error(`${scenario.id}: unknown scope "${scopeRef}"`);
+      await c.linkScope(nodeId, scopeId);
+    }
+    for (const tagTitle of node.tags ?? []) {
+      const tagId = refs.get(`tag:${tagTitle}`);
+      if (!tagId) throw new Error(`${scenario.id}: tag "${tagTitle}" missing`);
+      await c.tag(spaceId, nodeId, { tagId });
+    }
+    // Star is per-user — pin it in the OWNER's Starred lens (owner needs progress).
+    if (node.starred) await c.star(spaceId, nodeId, true);
+    // …and for any explicit actors (e.g. star a doc that another user shared with you).
+    for (const ref of node.starredBy ?? []) {
+      await (await client(ref)).star(spaceId, nodeId, true);
+    }
+    // Record opens so the node lands in each actor's "Recent" lens (ADR-0016).
+    for (const ref of node.openedBy ?? []) {
+      await (await client(ref)).open(spaceId, nodeId);
+    }
+
+    if (node.kind === 'folder') {
+      for (const child of node.children ?? []) {
+        await materializeNode(child, nodeId);
+      }
+    }
+  }
+
+  // ── extra containment / shortcuts / typed edges ─────────────────────────────
+  for (const e of scenario.contains ?? []) {
+    await adminClient.contain(spaceId, idOf(e.folder), idOf(e.child));
+  }
+  for (const e of scenario.shortcuts ?? []) {
+    await adminClient.shortcut(spaceId, idOf(e.folder), idOf(e.target));
+  }
+  for (const e of scenario.edges ?? []) {
+    const { error } = await db('admin')
+      .from('knowledge_edges')
+      .insert({
+        space_id: spaceId,
+        from_id: idOf(e.from),
+        to_id: idOf(e.to),
+        relation_type: e.relation,
+        position: e.position ?? 0,
+        created_by: actor('admin').userId,
+      });
+    if (error)
+      throw new Error(`${scenario.id} edge ${e.relation}: ${error.message}`);
+  }
+
+  // ── projections ─────────────────────────────────────────────────────────────
+  if ((scenario.projections ?? []).some((p) => p.view === 'board')) {
+    await ensureBoardViewType(tenant.service);
+  }
+  for (const p of scenario.projections ?? []) {
+    const ownerRef = p.owner ?? 'admin';
+    const { data, error } = await db(ownerRef)
+      .from('projections')
+      .insert({
+        space_id: spaceId,
+        app_type: p.appType,
+        name: p.name,
+        view: p.view,
+        spec: p.spec(refs),
+        created_by: actor(ownerRef).userId,
+        owner_user_id: actor(ownerRef).userId,
+      })
+      .select('id')
+      .single();
+    if (error || !data?.id) {
+      throw new Error(
+        `${scenario.id} projection "${p.name}": ${error?.message}`
+      );
+    }
+    refs.set(`projection:${p.ref}`, data.id);
+  }
+
+  // ── trash lifecycle demo ────────────────────────────────────────────────────
+  for (const ref of scenario.trash ?? []) {
+    await adminClient.trash(spaceId, idOf(ref));
+  }
+
+  function idOf(ref: string): string {
+    const id = refs.get(ref);
+    if (!id) throw new Error(`${scenario.id}: unresolved ref "${ref}"`);
+    return id;
+  }
+
+  return { scenarioId: scenario.id, refs };
+}
+
+function collectTagTitles(nodes: SeedNode[]): string[] {
+  const titles = new Set<string>();
+  const walk = (ns: SeedNode[]): void => {
+    for (const n of ns) {
+      for (const t of n.tags ?? []) titles.add(t);
+      if (n.kind === 'folder') walk(n.children ?? []);
+    }
+  };
+  walk(nodes);
+  return [...titles];
+}
+
+async function ensureScope(
+  adminDb: SupabaseClient,
+  spaceId: string,
+  key: string,
+  name: string,
+  createdBy: string
+): Promise<string> {
+  const ins = await adminDb
+    .from('scopes')
+    .insert({ space_id: spaceId, key, name, created_by: createdBy })
+    .select('id')
+    .single();
+  if (!ins.error && ins.data?.id) return ins.data.id;
+  if (ins.error?.code === '23505') {
+    const { data } = await adminDb
+      .from('scopes')
+      .select('id')
+      .eq('space_id', spaceId)
+      .eq('key', key)
+      .single();
+    if (data?.id) return data.id;
+  }
+  throw new Error(`ensureScope(${key}): ${ins.error?.message ?? 'no id'}`);
+}
+
+async function ensureBoardViewType(service: SupabaseClient): Promise<void> {
+  const { error } = await service.from('view_types').upsert(
+    {
+      key: 'board',
+      label: 'Board',
+      description: 'Status-segmented board view.',
+    },
+    { onConflict: 'key' }
+  );
+  if (error) throw new Error(`ensureBoardViewType: ${error.message}`);
+}

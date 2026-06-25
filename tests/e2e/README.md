@@ -13,7 +13,13 @@ This workspace provides end-to-end coverage for:
 ## Policy and workflow references
 
 - Rule (mandatory coverage policy): `/.cursor/rules/e2e-required-for-critical-flows.mdc`
+- Rule (seed data lives in `@workspace/seed`, not inline): `/.cursor/rules/seed-dictionary-coverage.mdc`
 - Skill (agent workflow/playbook): `/.agents/skills/e2e-dx-workflow/SKILL.md`
+
+Knowledge specs draw their trees/actors from the shared dictionary via
+`materializeFixture(scenario, tenant)` + `seedClientFor(actor)` (in
+`src/helpers/knowledge-graph-bootstrap.ts`) — fixtures live in `seed/src/catalog/*`, never
+re-implemented inline. The `seed-curator` agent owns keeping seed ↔ demo ↔ e2e in sync.
 
 ## Prerequisites
 

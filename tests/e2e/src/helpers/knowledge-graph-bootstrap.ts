@@ -20,85 +20,74 @@
  * created here at runtime and torn down after the test, so production carries
  * zero hardcoded demo rows. See docs/knowledge-graph-plan.md §6.
  */
-import { createServerClient } from '@supabase/ssr';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { request } from '@playwright/test';
 
 import {
-  resolveAnonKey,
-  resolveServiceRoleKey,
-  resolveSupabaseUrl,
-} from './test-user.js';
+  actorCookieHeader,
+  actorSsrAuthCookies,
+  addActor,
+  authenticatedClient,
+  bootstrapEphemeralTenant,
+  bootstrapMemberActor,
+  buildBoardSpec,
+  buildKnowledgeBaseSpec,
+  createActor,
+  makeSeedClient,
+  materializeScenario,
+  resolveRoleIds,
+  slug,
+  teardownTenant,
+  type MaterializedScenario,
+  type SeedActor,
+  type SeedClient,
+  type SeedFetcher,
+  type SeedScenario,
+  type SeedTenant,
+} from '@workspace/seed';
 
-// ── slice-03: HTTP auth for the fan-out endpoints ─────────────────────────────
-//
-// The `/author/graph/*` endpoints build the user's RLS-scoped client from the
-// `@supabase/ssr` cookie. To drive them over HTTP as an actor, write that exact
-// SSR cookie by replaying the actor's session through `@supabase/ssr`'s OWN
-// `createServerClient` against an in-memory cookie jar — guaranteeing the
-// byte-exact name + base64url chunk encoding the proxy reads back.
-
-/** Sign in an actor and return the `@supabase/ssr` auth cookies (name+value). */
-export async function actorSsrAuthCookies(
-  actor: KnowledgeActor
-): Promise<{ name: string; value: string }[]> {
-  // 1. Programmatic sign-in to obtain a session.
-  const signer = createClient(resolveSupabaseUrl(), resolveAnonKey(), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { data, error } = await signer.auth.signInWithPassword({
-    email: actor.email,
-    password: actor.password,
-  });
-  if (error || !data.session) {
-    throw new Error(`actorSsrAuthCookies: ${error?.message ?? 'no session'}`);
-  }
-
-  // 2. Replay the session through @supabase/ssr so it serializes the cookies in
-  //    the exact format the author proxy/endpoints decode (name + base64url).
-  const jar = new Map<string, string>();
-  const ssr = createServerClient(resolveSupabaseUrl(), resolveAnonKey(), {
-    cookies: {
-      getAll() {
-        return [...jar.entries()].map(([name, value]) => ({ name, value }));
-      },
-      setAll(cookiesToSet: { name: string; value: string }[]) {
-        for (const { name, value } of cookiesToSet) {
-          jar.set(name, value);
-        }
-      },
-    },
-  });
-  await ssr.auth.setSession({
-    access_token: data.session.access_token,
-    refresh_token: data.session.refresh_token,
-  });
-
-  if (jar.size === 0) {
-    throw new Error('actorSsrAuthCookies: ssr wrote no cookies');
-  }
-  return [...jar.entries()].map(([name, value]) => ({ name, value }));
-}
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export type KnowledgeActor = {
-  userId: string;
-  email: string;
-  password: string;
-  /** Authenticated client (user JWT) — subject to RLS. */
-  client: SupabaseClient;
+// The runtime tenant/actor/cookie primitives + the projection spec builders now
+// live in `@workspace/seed` (one source of truth shared by the demo seed and the
+// tests). Re-export them under the e2e-facing names the specs already import; the
+// e2e-SPECIFIC scenario seeders below compose them. Migration seeds stay
+// forbidden — every row is created at runtime through the product's RLS path.
+export {
+  actorSsrAuthCookies,
+  bootstrapMemberActor,
+  buildBoardSpec,
+  buildKnowledgeBaseSpec,
 };
 
-export type KnowledgeGraphTenant = {
-  organizationId: string;
-  spaceId: string;
-  /** Actor holding the `admin` space role → has `space.knowledge.*`. */
-  granted: KnowledgeActor;
-  /** Actor holding only `space_admin` → no knowledge verbs. */
-  ungranted: KnowledgeActor;
-  /** Service-role client — bypasses RLS (for setup/assertions). */
-  service: SupabaseClient;
-};
+/**
+ * Course ProjectionSpec — an OUTGOING `prerequisite` walk over the graph. Used ONLY
+ * by the knowledge-graph e2e suites as the generative-core PROOF (a SECOND app type
+ * = pure configuration over the same graph; Invariant #1 / ADR-0004). It is NOT
+ * seed/demo content — there is no Course product surface yet — so it lives HERE, in
+ * the e2e harness, not in the `@workspace/seed` catalog.
+ */
+export const COURSE_SPEC = {
+  schema_version: 1,
+  filter: { field: 'status', op: 'eq', value: 'active' },
+  traversal: {
+    start: { filter: { field: 'kind', op: 'eq', value: 'text' } },
+    relation_types: ['prerequisite'],
+    direction: 'outgoing',
+    max_depth: 16,
+    order_by: 'position',
+  },
+  view: 'course',
+} as const;
+
+/** An authenticated actor (user JWT, subject to RLS). */
+export type KnowledgeActor = SeedActor;
+/** A provisioned org + space + two base actors (granted/admin + ungranted). */
+export type KnowledgeGraphTenant = SeedTenant;
+
+/** Bootstrap an isolated runtime tenant (alias of the shared engine primitive). */
+export const bootstrapKnowledgeGraphTenant = bootstrapEphemeralTenant;
+
+/** Tear down an ephemeral tenant + its actors (alias of the shared primitive). */
+export const teardownKnowledgeGraphTenant = teardownTenant;
 
 /** Stable ids of the demo graph the test seeds over the one tenant. */
 export type DemoGraph = {
@@ -137,269 +126,6 @@ export type ProjectionEngineGraph = {
   knowledgeBaseProjectionId: string;
   courseProjectionId: string;
 };
-
-// ── Shared ProjectionSpec builders (single source of truth) ──────────────────
-//
-// ONE definition of each spec, reused by BOTH the Invariant #1 seeding and the
-// projection-engine seeding, so the saved specs can never drift apart again.
-//
-// Variant B: "has tag T" is an INCOMING `tagged` traversal that starts at the
-// tag node, NOT a `{field:'tag'}` filter leaf (that field was removed from the
-// contract). The projection filter is scalar-only (`kind in (text, link)`).
-
-/** KB ProjectionSpec — tag membership via incoming `tagged` traversal (Variant B). */
-export function buildKnowledgeBaseSpec(tagNodeId: string) {
-  return {
-    schema_version: 1,
-    filter: { field: 'kind', op: 'in', value: ['text', 'link'] },
-    traversal: {
-      start: { ids: [tagNodeId] },
-      relation_types: ['tagged'],
-      direction: 'incoming',
-      max_depth: 1,
-      order_by: 'position',
-    },
-    view: 'grid',
-  } as const;
-}
-
-/** Course ProjectionSpec — outgoing `prerequisite` walk over the SAME graph. */
-export const COURSE_SPEC = {
-  schema_version: 1,
-  filter: { field: 'status', op: 'eq', value: 'active' },
-  traversal: {
-    start: { filter: { field: 'kind', op: 'eq', value: 'text' } },
-    relation_types: ['prerequisite'],
-    direction: 'outgoing',
-    max_depth: 16,
-    order_by: 'position',
-  },
-  view: 'course',
-} as const;
-
-/**
- * Board ProjectionSpec — slice-06 third vertical, landed as PURE configuration.
- * Selects the document nodes (incoming `tagged` traversal from the 'Docs' tag,
- * Variant B — the same mechanism the KB grid uses, not a new filter field) and
- * DECLARES the `requires_state` gating rule: a node is available iff its status
- * is in `{ approved }`. The rule is DISPLAY gating (ADR-0006 §2): every node
- * stays in `items`; only `available` changes.
- */
-export function buildBoardSpec(docsTagNodeId: string) {
-  return {
-    schema_version: 1,
-    filter: { field: 'kind', op: 'in', value: ['text', 'link'] },
-    traversal: {
-      start: { ids: [docsTagNodeId] },
-      relation_types: ['tagged'],
-      direction: 'incoming',
-      max_depth: 1,
-      order_by: 'title',
-    },
-    view: 'board',
-    gating: { rule: 'requires_state', params: { allowed: ['approved'] } },
-  } as const;
-}
-
-// ── Internal helpers ─────────────────────────────────────────────────────────
-
-function serviceSupabase(): SupabaseClient {
-  return createClient(resolveSupabaseUrl(), resolveServiceRoleKey(), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
-
-function slug(): string {
-  return `kg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-async function createActor(
-  service: SupabaseClient,
-  label: string
-): Promise<{ id: string; email: string; password: string }> {
-  const suffix = `${label}-${slug()}`;
-  const email = `e2e-${suffix}@example.test`;
-  const password = `Pw!${suffix}Aa9`;
-  const { data, error } = await service.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-  if (error || !data.user) {
-    throw new Error(`createActor(${label}): ${error?.message ?? 'no user'}`);
-  }
-  return { id: data.user.id, email, password };
-}
-
-async function authenticatedClient(
-  email: string,
-  password: string
-): Promise<SupabaseClient> {
-  const client = createClient(resolveSupabaseUrl(), resolveAnonKey(), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { error } = await client.auth.signInWithPassword({ email, password });
-  if (error) {
-    throw new Error(`authenticatedClient: ${error.message}`);
-  }
-  return client;
-}
-
-async function resolveRoleIds(
-  service: SupabaseClient
-): Promise<{ adminRoleId: string; spaceAdminRoleId: string }> {
-  const { data, error } = await service
-    .from('roles')
-    .select('id,key')
-    .eq('role_kind', 'system')
-    .in('key', ['admin', 'space_admin']);
-  if (error) {
-    throw new Error(`resolveRoleIds: ${error.message}`);
-  }
-  const byKey = new Map((data ?? []).map((r) => [r.key, r.id]));
-  const adminRoleId = byKey.get('admin');
-  const spaceAdminRoleId = byKey.get('space_admin');
-  if (!adminRoleId || !spaceAdminRoleId) {
-    throw new Error(
-      'resolveRoleIds: system roles admin/space_admin not found — knowledge perms unmapped'
-    );
-  }
-  return { adminRoleId, spaceAdminRoleId };
-}
-
-/**
- * Add a `member`-role actor to an existing tenant (ADR-0017 D5-revision: every space
- * member can author their OWN content). `member` holds read + create only — owner-
- * sovereign UPDATE/DELETE policies let it edit/delete its own without the verb, and
- * deny it on others' content. Created through the real RBAC path (service-role
- * membership + `user_role`), never raw inserts.
- */
-export async function bootstrapMemberActor(
-  tenant: KnowledgeGraphTenant
-): Promise<KnowledgeActor> {
-  const { service, organizationId, spaceId } = tenant;
-  const { data: roleRow, error: roleErr } = await service
-    .from('roles')
-    .select('id')
-    .eq('role_kind', 'system')
-    .eq('key', 'member')
-    .maybeSingle();
-  if (roleErr || !roleRow?.id) {
-    throw new Error(
-      `bootstrapMemberActor: member role not found — ${roleErr?.message ?? 'missing'}`
-    );
-  }
-  const u = await createActor(service, 'member');
-  const { error: omErr } = await service
-    .from('organization_memberships')
-    .insert({ organization_id: organizationId, user_id: u.id });
-  if (omErr) throw new Error(`bootstrapMemberActor org: ${omErr.message}`);
-  const { error: smErr } = await service
-    .from('space_memberships')
-    .insert({ space_id: spaceId, user_id: u.id, status: 'active' });
-  if (smErr) throw new Error(`bootstrapMemberActor space: ${smErr.message}`);
-  const { error: urErr } = await service
-    .from('user_role')
-    .insert({ user_id: u.id, space_id: spaceId, role_id: roleRow.id });
-  if (urErr) throw new Error(`bootstrapMemberActor role: ${urErr.message}`);
-  return {
-    userId: u.id,
-    email: u.email,
-    password: u.password,
-    client: await authenticatedClient(u.email, u.password),
-  };
-}
-
-// ── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Create an org + space + two actors. Grants the knowledge `admin` role to the
- * first actor and `space_admin` only to the second. Both are space members.
- */
-export async function bootstrapKnowledgeGraphTenant(): Promise<KnowledgeGraphTenant> {
-  const service = serviceSupabase();
-  const s = slug();
-
-  const grantedUser = await createActor(service, 'granted');
-  const ungrantedUser = await createActor(service, 'ungranted');
-
-  const { data: org, error: orgErr } = await service
-    .from('organizations')
-    .insert({ name: `E2E KG Org ${s}`, slug: s })
-    .select('id')
-    .single();
-  if (orgErr || !org?.id) {
-    throw new Error(`bootstrap org: ${orgErr?.message ?? 'no id'}`);
-  }
-
-  const { data: space, error: spErr } = await service
-    .from('spaces')
-    .insert({
-      organization_id: org.id,
-      name: 'E2E KG Space',
-      slug: `spc-${s}`,
-    })
-    .select('id')
-    .single();
-  if (spErr || !space?.id) {
-    throw new Error(`bootstrap space: ${spErr?.message ?? 'no id'}`);
-  }
-
-  // Both actors are org + space members (audience), then differ by role grant.
-  const { error: omErr } = await service
-    .from('organization_memberships')
-    .insert([
-      { organization_id: org.id, user_id: grantedUser.id },
-      { organization_id: org.id, user_id: ungrantedUser.id },
-    ]);
-  if (omErr) throw new Error(`bootstrap org_membership: ${omErr.message}`);
-
-  const { error: smErr } = await service.from('space_memberships').insert([
-    { space_id: space.id, user_id: grantedUser.id, status: 'active' },
-    { space_id: space.id, user_id: ungrantedUser.id, status: 'active' },
-  ]);
-  if (smErr) throw new Error(`bootstrap space_membership: ${smErr.message}`);
-
-  const { adminRoleId, spaceAdminRoleId } = await resolveRoleIds(service);
-
-  // granted → `admin` (carries space.knowledge.*); ungranted → `space_admin` only.
-  const { error: urErr } = await service.from('user_role').insert([
-    { user_id: grantedUser.id, space_id: space.id, role_id: adminRoleId },
-    {
-      user_id: ungrantedUser.id,
-      space_id: space.id,
-      role_id: spaceAdminRoleId,
-    },
-  ]);
-  if (urErr) throw new Error(`bootstrap user_role: ${urErr.message}`);
-
-  const grantedClient = await authenticatedClient(
-    grantedUser.email,
-    grantedUser.password
-  );
-  const ungrantedClient = await authenticatedClient(
-    ungrantedUser.email,
-    ungrantedUser.password
-  );
-
-  return {
-    organizationId: org.id,
-    spaceId: space.id,
-    granted: {
-      userId: grantedUser.id,
-      email: grantedUser.email,
-      password: grantedUser.password,
-      client: grantedClient,
-    },
-    ungranted: {
-      userId: ungrantedUser.id,
-      email: ungrantedUser.email,
-      password: ungrantedUser.password,
-      client: ungrantedClient,
-    },
-    service,
-  };
-}
 
 /**
  * Seed the Variant-B knowledge graph over the one tenant, AS the granted actor
@@ -1482,21 +1208,64 @@ export async function seedAccessLayerDemo(
   };
 }
 
+// ── Shared Drive client + dictionary materializer (slice: seed dictionary) ───
+//
+// The `/author/graph/*` create-vocabulary now lives in `@workspace/seed`. Specs
+// drive it through a Playwright-backed `SeedFetcher` (TLS-ignoring, cookie-auth),
+// and build their trees from the SAME catalog scenarios the demo seed uses, so the
+// database seed and the tests speak one vocabulary.
+
+const SEED_BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local';
+
+/** Adapt Playwright's `APIRequestContext` to the seed's `SeedFetcher`. */
+async function playwrightFetcher(actor: KnowledgeActor): Promise<SeedFetcher> {
+  const cookie = await actorCookieHeader(actor);
+  const ctx = await request.newContext({
+    baseURL: SEED_BASE,
+    ignoreHTTPSErrors: true,
+    extraHTTPHeaders: { cookie },
+  });
+  const toResp = async (r: {
+    status(): number;
+    json(): Promise<unknown>;
+  }): Promise<{ status: number; body: unknown }> => ({
+    status: r.status(),
+    body: await r.json().catch(() => null),
+  });
+  return {
+    post: async (p, b) => toResp(await ctx.post(p, { data: b })),
+    get: async (p) => toResp(await ctx.get(p)),
+    patch: async (p, b) => toResp(await ctx.patch(p, { data: b })),
+    del: async (p, b) =>
+      toResp(await ctx.delete(p, b === undefined ? undefined : { data: b })),
+    dispose: () => ctx.dispose(),
+  };
+}
+
+/** A shared `/author/graph/*` client driven as `actor` (the create-vocabulary). */
+export async function seedClientFor(
+  actor: KnowledgeActor
+): Promise<SeedClient> {
+  return makeSeedClient(await playwrightFetcher(actor));
+}
+
 /**
- * Cascade-delete the org (→ spaces → resources/edges/projections/memberships/
- * user_role) and both auth users + profiles. `extraUserIds` (slice-05 gating
- * actors added after bootstrap) are cleaned alongside the base actors.
+ * Materialize a catalog scenario over an existing e2e tenant — the bridge that lets
+ * a spec build its tree from the shared dictionary and assert against named `ref`s.
+ * Ephemeral actors (no `stable` reuse); scopes/cohorts are minted on demand.
  */
-export async function teardownKnowledgeGraphTenant(
-  tenant: KnowledgeGraphTenant,
-  extraUserIds: string[] = []
-): Promise<void> {
-  const { service, organizationId, granted, ungranted } = tenant;
-
-  await service.from('organizations').delete().eq('id', organizationId);
-
-  for (const userId of [granted.userId, ungranted.userId, ...extraUserIds]) {
-    await service.from('profiles').delete().eq('user_id', userId);
-    await service.auth.admin.deleteUser(userId);
-  }
+export async function materializeFixture(
+  scenario: SeedScenario,
+  tenant: KnowledgeGraphTenant
+): Promise<MaterializedScenario> {
+  return materializeScenario(scenario, {
+    tenant,
+    clientFor: (a) => seedClientFor(a),
+    mintActor: (ref, roleKey) =>
+      addActor(tenant, {
+        label: `${scenario.id}-${ref}`,
+        roleKey,
+        stable: false,
+      }),
+  });
 }

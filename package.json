@@ -13,12 +13,15 @@
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck",
+    "test": "bun run test:vitest",
     "test:e2e:headed": "turbo test:e2e:headed --filter=@workspace/e2e",
     "test:e2e:smoke": "turbo test:e2e:smoke --filter=@workspace/e2e",
     "test:e2e:smoke:ni": "CI=1 turbo test:e2e:smoke:ni --filter=@workspace/e2e",
     "test:e2e:full": "turbo test:e2e:full --filter=@workspace/e2e",
     "test:e2e:full:ni": "CI=1 turbo test:e2e:full:ni --filter=@workspace/e2e",
     "test:e2e": "turbo test:e2e --filter=@workspace/e2e",
+    "seed": "bun run --cwd seed start --",
+    "seed:list": "bun run --cwd seed start -- --list",
     "test:vitest": "CI=1 turbo run test:vitest",
     "test:full:ni": "bun run test:vitest && bun run test:e2e:full:ni",
     "check": "bun run db:types && bun run format && bun run lint && bun run typecheck",
@@ -44,7 +47,8 @@
       "apps/*",
       "packages/*",
       "services/*",
-      "tests/*"
+      "tests/*",
+      "seed"
     ],
     "catalog": {
       "@playwright/test": "1.61.0-alpha-2026-06-12",

@@ -2,7 +2,8 @@
  * Trash / reference-aware lifecycle acceptance (ADR-0018) — the regression net for
  * the destructive Drive flow. Trash is soft-delete + restore + manual purge; the
  * one-way door (purge) destroys a row, so this is a critical flow proved end-to-end
- * over HTTP as the bootstrapped actors (runtime tenant, never a migration seed).
+ * over HTTP through the SHARED seed client (the cascade shape is the shared
+ * `drive-cascade` catalog fixture). Runtime tenant, never a migration seed.
  *
  * Coverage (ADR-0018 §10.8):
  *  1. trash → hidden from normal browse / visible under the trash filter; restore
@@ -29,80 +30,17 @@
  *
  * Tagged `@full` — needs the running stack (Next author app + Postgres + Payload/Mongo).
  */
-import {
-  expect,
-  request,
-  test,
-  type APIRequestContext,
-} from '@playwright/test';
+import { DRIVE_CASCADE_SCENARIO } from '@workspace/seed';
+import { expect, test } from '@playwright/test';
 
 import {
-  actorSsrAuthCookies,
   bootstrapKnowledgeGraphTenant,
   bootstrapMemberActor,
+  materializeFixture,
+  seedClientFor,
   teardownKnowledgeGraphTenant,
-  type KnowledgeActor,
   type KnowledgeGraphTenant,
 } from './helpers/knowledge-graph-bootstrap.js';
-
-const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local';
-
-async function apiFor(actor: KnowledgeActor): Promise<APIRequestContext> {
-  const cookies = await actorSsrAuthCookies(actor);
-  const cookie = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-  return request.newContext({
-    baseURL: BASE,
-    ignoreHTTPSErrors: true,
-    extraHTTPHeaders: { cookie },
-  });
-}
-
-async function createFolder(
-  api: APIRequestContext,
-  spaceId: string,
-  title: string,
-  parentFolderId?: string
-): Promise<string> {
-  const res = await api.post('/author/graph/resources', {
-    data: {
-      spaceId,
-      kind: 'folder',
-      title,
-      ...(parentFolderId ? { parentFolder: { parentFolderId } } : {}),
-    },
-  });
-  expect(res.status()).toBe(201);
-  return ((await res.json()) as { node_id: string }).node_id;
-}
-
-async function createTextDoc(
-  api: APIRequestContext,
-  spaceId: string,
-  title: string
-): Promise<{ nodeId: string; docId: string }> {
-  const res = await api.post('/author/graph/text-resources', {
-    data: { spaceId, title },
-  });
-  expect(res.status()).toBe(201);
-  const j = (await res.json()) as {
-    node_id: string;
-    body_ref: { doc_id: string };
-  };
-  return { nodeId: j.node_id, docId: j.body_ref.doc_id };
-}
-
-/** Add a `contains` (folderId → childId) edge. */
-async function contain(
-  api: APIRequestContext,
-  spaceId: string,
-  folderId: string,
-  childId: string
-): Promise<void> {
-  const res = await api.post('/author/graph/edges', {
-    data: { action: 'contain', spaceId, folderId, childId },
-  });
-  expect(res.status()).toBe(201);
-}
 
 test.describe('@full knowledge trash lifecycle', () => {
   let tenant: KnowledgeGraphTenant;
@@ -116,35 +54,19 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('trash hides from live, restore round-trips references (shortcut + contains + tagged)', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
     // A folder containing a text doc; a second folder shortcutting the doc; a tag.
-    const folder = await createFolder(api, sid, 'Refs Folder');
-    const { nodeId: doc } = await createTextDoc(api, sid, 'Referenced Doc');
-    await contain(api, sid, folder, doc);
+    const folder = await api.createFolder(sid, 'Refs Folder');
+    const { nodeId: doc } = await api.createDoc(sid, 'Referenced Doc');
+    await api.contain(sid, folder, doc);
 
-    const shortcutFolder = await createFolder(api, sid, 'Shortcut Holder');
+    const shortcutFolder = await api.createFolder(sid, 'Shortcut Holder');
 
     // shortcut (shortcutFolder → doc) and a tagged edge (doc → new tag node).
-    const scRes = await api.post('/author/graph/edges', {
-      data: {
-        action: 'shortcut',
-        spaceId: sid,
-        folderId: shortcutFolder,
-        targetId: doc,
-      },
-    });
-    expect(scRes.status()).toBe(201);
-    const tagRes = await api.post('/author/graph/edges', {
-      data: {
-        action: 'tag',
-        spaceId: sid,
-        resourceId: doc,
-        tagTitle: `Trash Tag ${Date.now()}`,
-      },
-    });
-    expect(tagRes.status()).toBe(201);
+    await api.shortcut(sid, shortcutFolder, doc);
+    await api.tag(sid, doc, { tagTitle: `Trash Tag ${Date.now()}` });
 
     // Snapshot the doc's edges BEFORE trash (the reference set we must round-trip).
     const { data: edgesBefore } = await tenant.service
@@ -155,10 +77,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(beforeCount).toBeGreaterThanOrEqual(3); // contains + shortcut + tagged
 
     // TRASH the doc (DELETE = soft trash now).
-    const delRes = await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: doc },
-    });
-    expect(delRes.status()).toBe(200);
+    await api.trash(sid, doc);
 
     // The node is stamped deleted_at (service-role reads the truth).
     const { data: trashedRow } = await tenant.service
@@ -189,10 +108,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect((visibleEdges ?? []).length).toBe(0);
 
     // RESTORE round-trips: clear deleted_at, every reference re-admits.
-    const restoreRes = await api.patch('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: doc },
-    });
-    expect(restoreRes.status()).toBe(200);
+    await api.restore(sid, doc);
 
     const { data: restoredRow } = await tenant.service
       .from('knowledge_resources')
@@ -218,19 +134,17 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('soft-cascade: folder trash orphans a child but a multi-parent child survives', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
-    const parent = await createFolder(api, sid, 'Cascade Parent');
-    const other = await createFolder(api, sid, 'Cascade Other');
-    const onlyChild = await createFolder(api, sid, 'Cascade Only', parent);
-    const sharedChild = await createFolder(api, sid, 'Cascade Shared', parent);
-    await contain(api, sid, other, sharedChild); // sharedChild also under `other`
+    // Parent → {Only, Shared}, with Shared ALSO under Other — the shared fixture.
+    const { refs } = await materializeFixture(DRIVE_CASCADE_SCENARIO, tenant);
+    const parent = refs.get('cascade/parent')!;
+    const other = refs.get('cascade/other')!;
+    const onlyChild = refs.get('cascade/only')!;
+    const sharedChild = refs.get('cascade/shared')!;
 
-    const delRes = await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: parent },
-    });
-    expect(delRes.status()).toBe(200);
+    await api.trash(sid, parent);
 
     const { data: rows } = await tenant.service
       .from('knowledge_resources')
@@ -248,10 +162,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(byId.get(other)).toBeNull(); // untouched
 
     // Restoring the parent restores the trashed-as-a-unit subtree (same stamp).
-    const restoreRes = await api.patch('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: parent },
-    });
-    expect(restoreRes.status()).toBe(200);
+    await api.restore(sid, parent);
     const { data: after } = await tenant.service
       .from('knowledge_resources')
       .select('id,deleted_at')
@@ -265,15 +176,16 @@ test.describe('@full knowledge trash lifecycle', () => {
 
   test('cross-owner gating: a member cannot trash/restore another owners node', async () => {
     const member = await bootstrapMemberActor(tenant);
-    const memberApi = await apiFor(member);
-    const grantedApi = await apiFor(tenant.granted);
+    const memberApi = await seedClientFor(member);
+    const grantedApi = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
-    const grantedNode = await createFolder(grantedApi, sid, 'Owner Only Trash');
+    const grantedNode = await grantedApi.createFolder(sid, 'Owner Only Trash');
 
     // The member (no space.knowledge.delete, not owner) cannot trash it.
-    await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: grantedNode },
+    await memberApi.del('/author/graph/resources', {
+      spaceId: sid,
+      resourceId: grantedNode,
     });
     const { data: stillLive } = await tenant.service
       .from('knowledge_resources')
@@ -283,14 +195,12 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect((stillLive as { deleted_at: string | null }).deleted_at).toBeNull();
 
     // The owner CAN trash it.
-    const ownerTrash = await grantedApi.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: grantedNode },
-    });
-    expect(ownerTrash.status()).toBe(200);
+    await grantedApi.trash(sid, grantedNode);
 
     // The member cannot restore it either.
     await memberApi.patch('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: grantedNode },
+      spaceId: sid,
+      resourceId: grantedNode,
     });
     const { data: stillTrashed } = await tenant.service
       .from('knowledge_resources')
@@ -306,28 +216,20 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('purge destroys a text node + best-effort body reap (failure is non-fatal)', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
     // A text doc with a real Payload body (the reap target).
-    const { nodeId } = await createTextDoc(api, sid, 'Purge Me');
+    const { nodeId } = await api.createDoc(sid, 'Purge Me');
 
     // Trash first (purge is reached only from the Trash lens).
-    const trashRes = await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: nodeId },
-    });
-    expect(trashRes.status()).toBe(200);
+    await api.trash(sid, nodeId);
 
     // PURGE (real DELETE). The route reaps the Payload body best-effort AFTER the
     // node DELETE commits; a body failure is swallowed (one-directional, never a
     // throw) — so the response is 200 and the node is destroyed regardless.
-    const purgeRes = await api.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: nodeId },
-    });
-    expect(purgeRes.status()).toBe(200);
-    expect(((await purgeRes.json()) as { purged: string[] }).purged).toContain(
-      nodeId
-    );
+    const purged = await api.purge(sid, nodeId);
+    expect(purged.purged).toContain(nodeId);
 
     // The node row is GONE (the one-way door).
     const { data: gone } = await tenant.service
@@ -340,15 +242,13 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('graceful-absence: trashing a child leaves the parent folder forest renderable', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
-    const parent = await createFolder(api, sid, 'Graceful Parent');
-    const child = await createFolder(api, sid, 'Graceful Child', parent);
+    const parent = await api.createFolder(sid, 'Graceful Parent');
+    const child = await api.createFolder(sid, 'Graceful Child', parent);
 
-    await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: child },
-    });
+    await api.trash(sid, child);
 
     // The parent's containment forest, read under the actor's RLS, OMITS the edge
     // to the trashed child (dormant) — no dangling edge to a hidden node reaches
@@ -377,26 +277,18 @@ test.describe('@full knowledge trash lifecycle', () => {
     // cooperative "in use" state. This proves the route signal that drives it: the
     // `assert_purge_not_in_use` guard rejects an unauthorized purge of a resource with
     // LIVING cross-owner references, and the `/author/graph/trash` DELETE tags that
-    // rejection `reason:'in-use'` (422) so the UI can show it WITHOUT throwing. (The
-    // cooperative escalation — a delete-holder completing the purge — is a Phase A
-    // authority concern asserted there; here we pin the render-facing rejection signal.)
+    // rejection `reason:'in-use'` (422) so the UI can show it WITHOUT throwing.
     const member = await bootstrapMemberActor(tenant);
-    const memberApi = await apiFor(member);
-    const grantedApi = await apiFor(tenant.granted);
+    const memberApi = await seedClientFor(member);
+    const grantedApi = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
     // `granted` owns a live folder; `member` owns a doc. The cross-owner `contains`
     // edge (granted's live folder → member's doc) is the living reference the in-use
-    // guard fires on. Cross-owner edge CREATION is itself RLS-restricted (a delete/
-    // update holder cannot freely file another owner's node under their folder), so
-    // the edge is set up via service-role — legitimate TEST SETUP of the precondition,
-    // not the code path under test (the purge guard is what we exercise).
-    const grantedFolder = await createFolder(grantedApi, sid, 'In-Use Holder');
-    const { nodeId: memberDoc } = await createTextDoc(
-      memberApi,
-      sid,
-      'In-Use Doc'
-    );
+    // guard fires on. Cross-owner edge CREATION is itself RLS-restricted, so the edge
+    // is set up via service-role — legitimate TEST SETUP of the precondition.
+    const grantedFolder = await grantedApi.createFolder(sid, 'In-Use Holder');
+    const { nodeId: memberDoc } = await memberApi.createDoc(sid, 'In-Use Doc');
     const { error: edgeErr } = await tenant.service
       .from('knowledge_edges')
       .insert({
@@ -410,21 +302,17 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(edgeErr).toBeNull();
 
     // `member` trashes its OWN doc (owner-sovereign — allowed).
-    const trashRes = await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: memberDoc },
-    });
-    expect(trashRes.status()).toBe(200);
+    await memberApi.trash(sid, memberDoc);
 
     // `member` (no space.knowledge.delete) tries to PURGE it → the in-use guard
     // rejects (living cross-owner reference). The route surfaces `reason:'in-use'`,
     // 422, and NOTHING is destroyed.
-    const memberPurge = await memberApi.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: memberDoc },
+    const memberPurge = await memberApi.del('/author/graph/trash', {
+      spaceId: sid,
+      resourceId: memberDoc,
     });
-    expect(memberPurge.status()).toBe(422);
-    expect(((await memberPurge.json()) as { reason?: string }).reason).toBe(
-      'in-use'
-    );
+    expect(memberPurge.status).toBe(422);
+    expect((memberPurge.body as { reason?: string }).reason).toBe('in-use');
     const { data: stillThere } = await tenant.service
       .from('knowledge_resources')
       .select('id,deleted_at')
@@ -440,44 +328,25 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('cross-owner purge authority (ADR-0018 §8): a delete-holder CAN purge a SHARED member node, but a PRIVATE one is an honest no-op (fail-closed: to act you must SEE)', async () => {
-    // The companion to the in-use rejection above: the COMPLETION half. Under
-    // ADR-0017 fail-closed, a delete-verb holder can only PURGE a cross-owner node it
-    // can SEE — Postgres folds the SELECT policy into DELETE (a row you cannot select,
-    // you cannot delete), so the purge reaches a member node only when the member has
-    // shared it (floor=space). A still-private member node is owner-only-visible, so
-    // the admin's purge legitimately destroys NOTHING and the route reports `purged:[]`
-    // FAITHFULLY (no silent delete-without-report; the row + audit are untouched).
     const member = await bootstrapMemberActor(tenant);
-    const memberApi = await apiFor(member);
-    const grantedApi = await apiFor(tenant.granted); // holds space.knowledge.delete
+    const memberApi = await seedClientFor(member);
+    const grantedApi = await seedClientFor(tenant.granted); // holds space.knowledge.delete
     const sid = tenant.spaceId;
 
     // ── arm 1: a SHARED member node — the delete-holder CAN purge it ────────────
-    const { nodeId: sharedDoc } = await createTextDoc(
-      memberApi,
+    const { nodeId: sharedDoc } = await memberApi.createDoc(
       sid,
       'Member Shared Purge Target'
     );
     // The member publishes its OWN node to the space floor (owner-sovereign), so the
     // admin can SEE it — the precondition for acting on it cross-owner.
-    const pubRes = await memberApi.patch('/author/graph/visibility', {
-      data: { resourceId: sharedDoc, visibility: 'space' },
-    });
-    expect(pubRes.status()).toBe(200);
+    await memberApi.setFloor(sharedDoc, 'space');
     // The member trashes its own node (purge is reached only from the Trash lens).
-    const trashShared = await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: sharedDoc },
-    });
-    expect(trashShared.status()).toBe(200);
+    await memberApi.trash(sid, sharedDoc);
 
     // The admin (delete-holder, NOT the owner) purges the shared, trashed member node.
-    const adminPurge = await grantedApi.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: sharedDoc },
-    });
-    expect(adminPurge.status()).toBe(200);
-    expect(
-      ((await adminPurge.json()) as { purged: string[] }).purged
-    ).toContain(sharedDoc); // FAITHFUL report: the row really was destroyed
+    const adminPurge = await grantedApi.purge(sid, sharedDoc);
+    expect(adminPurge.purged).toContain(sharedDoc); // FAITHFUL report: really destroyed
 
     // The node row is GONE (the one-way door reached it cross-owner).
     const { data: sharedGone } = await tenant.service
@@ -498,29 +367,18 @@ test.describe('@full knowledge trash lifecycle', () => {
     ).toMatchObject({ actor_user_id: tenant.granted.userId });
 
     // ── arm 2: a PRIVATE member node — the delete-holder purge is an honest no-op ─
-    const { nodeId: privateDoc } = await createTextDoc(
-      memberApi,
+    const { nodeId: privateDoc } = await memberApi.createDoc(
       sid,
       'Member Private Purge Target'
     );
-    // No publish: the node stays floor=private (private-by-default, ADR-0017), so it
-    // is invisible to the admin even though the admin holds the delete verb.
-    const trashPrivate = await memberApi.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: privateDoc },
-    });
-    expect(trashPrivate.status()).toBe(200);
+    // No publish: the node stays floor=private (private-by-default, ADR-0017).
+    await memberApi.trash(sid, privateDoc);
 
     // The admin attempts the SAME purge. The DELETE-USING (delete verb) passes, but
     // the SELECT policy hides the private member row, so Postgres deletes NOTHING and
-    // the RETURNING is empty — the route reports a CLEAN, HONEST no-op (not a throw,
-    // not a fabricated success, and crucially NOT a silent destruction).
-    const adminPurgePrivate = await grantedApi.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: privateDoc },
-    });
-    expect(adminPurgePrivate.status()).toBe(200);
-    expect(
-      ((await adminPurgePrivate.json()) as { purged: string[] }).purged
-    ).toHaveLength(0); // honest no-op: nothing reported destroyed
+    // the RETURNING is empty — the route reports a CLEAN, HONEST no-op.
+    const adminPurgePrivate = await grantedApi.purge(sid, privateDoc);
+    expect(adminPurgePrivate.purged).toHaveLength(0); // honest no-op
 
     // The private member node SURVIVES (no silent delete) and stays TRASHED.
     const { data: privateStill } = await tenant.service
@@ -531,8 +389,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(
       (privateStill ?? [])[0] as { deleted_at: string | null }
     ).not.toBeNull();
-    // No purge tombstone was written for the untouched private node (the BEFORE-DELETE
-    // audit trigger never fired — the row was never visited by the DELETE).
+    // No purge tombstone was written for the untouched private node.
     const { data: privateAudit } = await tenant.service
       .from('space_admin_audit_log')
       .select('entity_id')
@@ -540,30 +397,21 @@ test.describe('@full knowledge trash lifecycle', () => {
       .eq('entity_id', privateDoc);
     expect(privateAudit ?? []).toHaveLength(0);
     // The OWNER can still purge their own private node (sovereignty intact).
-    const ownerPurge = await memberApi.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: privateDoc },
-    });
-    expect(ownerPurge.status()).toBe(200);
-    expect(
-      ((await ownerPurge.json()) as { purged: string[] }).purged
-    ).toContain(privateDoc);
+    const ownerPurge = await memberApi.purge(sid, privateDoc);
+    expect(ownerPurge.purged).toContain(privateDoc);
 
     await memberApi.dispose();
     await grantedApi.dispose();
   });
 
   test('lifecycle audit: trash+restore = two immutable kra rows (actor-stamped); purge = durable audit', async () => {
-    const api = await apiFor(tenant.granted);
+    const api = await seedClientFor(tenant.granted);
     const sid = tenant.spaceId;
 
-    const node = await createFolder(api, sid, 'Audited Node');
+    const node = await api.createFolder(sid, 'Audited Node');
 
-    await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: node },
-    });
-    await api.patch('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: node },
-    });
+    await api.trash(sid, node);
+    await api.restore(sid, node);
 
     // Two immutable kra rows: trashed + restored, both carrying the ACTOR.
     const { data: kra } = await tenant.service
@@ -583,8 +431,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(byKind.get('trashed')?.user_id).toBe(tenant.granted.userId);
     expect(byKind.get('restored')?.user_id).toBe(tenant.granted.userId);
 
-    // Append-only: UPDATE / DELETE on a kra row fails (service-role still RLS-free,
-    // so this proves the table grants — no UPDATE/DELETE privilege for anyone).
+    // Append-only: UPDATE / DELETE on a kra row fails (no UPDATE/DELETE privilege).
     const kraId = byKind.get('trashed')?.id;
     const { error: updErr } = await tenant.granted.client
       .schema('kb')
@@ -600,13 +447,8 @@ test.describe('@full knowledge trash lifecycle', () => {
     expect(delErr).not.toBeNull();
 
     // PURGE → a durable space_admin_audit_log row that OUTLIVES the node + kra rows.
-    await api.delete('/author/graph/resources', {
-      data: { spaceId: sid, resourceId: node },
-    });
-    const purgeRes = await api.delete('/author/graph/trash', {
-      data: { spaceId: sid, resourceId: node },
-    });
-    expect(purgeRes.status()).toBe(200);
+    await api.trash(sid, node);
+    await api.purge(sid, node);
 
     // The node + its kra rows are gone (FK cascade).
     const { data: kraGone } = await tenant.service

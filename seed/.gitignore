@@ -1,0 +1,7 @@
+.env
+.turbo/
+node_modules/
+
+# Generated `--manifest` snapshots (ref→id maps) — a runtime artifact, not source.
+manifest.json
+*.manifest.json

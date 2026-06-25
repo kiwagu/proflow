@@ -26,6 +26,7 @@
     "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/knowledge-engine": "workspace:*",
     "@workspace/rbac": "workspace:*",
+    "@workspace/seed": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@types/pg": "catalog:",
     "cross-env": "catalog:",
