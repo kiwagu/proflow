@@ -196,6 +196,16 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       are never placed in the gating registry; a hidden node is ABSENT, never a visible `available=false`
       flag — keeping the authorization ≠ gating boundary intact. Demo data lives in the e2e harness, not
       a migration
+- [x] Third access dimension — PER-PERSON sharing: a `knowledge_resource_user_grants` link (a calque of
+      the cohort link, composite PK `(resource_id, user_id)`, same-space guard) plus one top-level OR in
+      `auth_user_can_access_resource` — "share this node with one identified member". Owner-sovereign OR
+      `space.knowledge.access` to grant/revoke (the audience-management verb); additive + fail-closed
+      (grant widens, revoke narrows; live `security invoker` resolve ⇒ revoke hides, re-grant restores,
+      zero reindex). Surfaced through ONE unified **Share dialog** (folding the broadcast floor + cohort
+      grants + per-user grants into a single surface — the old cohort "Visibility" panel section is
+      folded in, not a sibling), opened from a capability-gated `Share` entry in the node `⋯` menu
+      (`canShare = owned || canAccess`, server-derived, laxer-not-stricter — RLS the sole fence). "Copy
+      link" is pure navigation (grants nothing; RLS re-evaluates at open). Per ADR-0019
 
 ## 6. First projection — validate the invariant
 

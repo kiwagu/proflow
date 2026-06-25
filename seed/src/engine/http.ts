@@ -85,6 +85,33 @@ export type TextResourceResult = {
 export type CopyResult = { nodeId: string; count: number };
 export type PurgeResult = { purged: string[]; reason?: string };
 
+/** One grantable co-member as the Share dialog people-picker reads it (ADR-0019/0020):
+ * `displayName` + `email` resolved via the co-member directory (`email` may be null). */
+export type GrantableMember = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+};
+
+/** One per-user grant row as the "who has access" list reads it (ADR-0019/0020):
+ * the grantee with a directory-resolved `displayName` + `email`. */
+export type UserGrant = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  grantedBy: string;
+};
+
+/** The `/author/graph/visibility` GET projection — the Share dialog's whole audience:
+ * the broadcast floor, the cohort `choices`, the per-user `grants` ("who has access"),
+ * and the searchable, bounded `members` people-picker source (ADR-0020). */
+export type Visibility = {
+  choices: { id: string; name: string; linked: boolean }[];
+  floor: Floor;
+  grants: UserGrant[];
+  members: GrantableMember[];
+};
+
 /**
  * A `SeedFetcher` enriched with one method per `/author/graph/*` write — the
  * shared create-vocabulary. Raw `post/get/patch/del` stay exposed for negative /
@@ -150,7 +177,25 @@ export type SeedClient = SeedFetcher & {
   restore(spaceId: string, resourceId: string): Promise<void>;
   purge(spaceId: string, resourceId: string): Promise<PurgeResult>;
   setFloor(resourceId: string, visibility: Floor): Promise<void>;
+  /** Read a node's Share-dialog audience (ADR-0019/0020): the floor, cohort choices,
+   * the per-user `grants` ("who has access"), and the searchable `members` people-picker
+   * source. `query` narrows the directory server-side (`?q=`); the source is hard-limited
+   * regardless. Driven AS the caller — the co-member directory is fenced to the caller's
+   * own active membership (a non-member gets an empty directory). */
+  visibility(
+    spaceId: string,
+    nodeId: string,
+    query?: string
+  ): Promise<Visibility>;
   linkScope(resourceId: string, scopeId: string): Promise<void>;
+  /** Share a resource to ONE person — a per-user grant that widens that user's
+   * READ access (ADR-0019). Owner-sovereign or `space.knowledge.access`; the
+   * grantee must be an active member of the resource's space. */
+  grantUser(resourceId: string, userId: string): Promise<void>;
+  /** Revoke a per-user grant (ADR-0019) — symmetric to `grantUser`. Narrows that
+   * user's READ access back, non-destructively (the node returns to owner-only when
+   * it was the sole widening disjunct). Owner-sovereign or `space.knowledge.access`. */
+  revokeUser(resourceId: string, userId: string): Promise<void>;
   star(spaceId: string, nodeId: string, starred: boolean): Promise<void>;
 };
 
@@ -328,12 +373,45 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
       expectStatus(res, 200, `setFloor(${resourceId})`);
     },
 
+    async visibility(spaceId, nodeId, query) {
+      const params = new URLSearchParams({
+        space_id: spaceId,
+        node_id: nodeId,
+      });
+      if (query !== undefined) params.set('q', query);
+      const res = await fetcher.get(`/author/graph/visibility?${params}`);
+      const body = expectStatus(
+        res,
+        200,
+        `visibility(${nodeId}${query === undefined ? '' : ` q=${query}`})`
+      );
+      return body as Visibility;
+    },
+
     async linkScope(resourceId, scopeId) {
       const res = await fetcher.post('/author/graph/visibility', {
         resourceId,
         scopeId,
       });
       expectStatus(res, 201, `linkScope(${resourceId})`);
+    },
+
+    async grantUser(resourceId, userId) {
+      const res = await fetcher.post('/author/graph/visibility', {
+        grantType: 'user',
+        resourceId,
+        userId,
+      });
+      expectStatus(res, 201, `grantUser(${resourceId}→${userId})`);
+    },
+
+    async revokeUser(resourceId, userId) {
+      const res = await fetcher.del('/author/graph/visibility', {
+        grantType: 'user',
+        resourceId,
+        userId,
+      });
+      expectStatus(res, 200, `revokeUser(${resourceId}→${userId})`);
     },
 
     async star(spaceId, nodeId, starred) {

@@ -30,11 +30,14 @@ export {
   makeSeedClient,
   type CopyResult,
   type Floor,
+  type GrantableMember,
   type NodeKind,
   type PurgeResult,
   type SeedClient,
   type SeedFetcher,
   type SeedResponse,
   type TextResourceResult,
+  type UserGrant,
+  type Visibility,
 } from './http.js';
 export type { SeedActor, SeedTenant } from './types.js';

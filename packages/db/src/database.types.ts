@@ -218,6 +218,35 @@ export type Database = {
           },
         ]
       }
+      knowledge_resource_user_grants: {
+        Row: {
+          created_at: string
+          granted_by: string
+          resource_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by: string
+          resource_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string
+          resource_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_resource_user_grants_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_resources: {
         Row: {
           body_ref: Json | null
@@ -1256,6 +1285,10 @@ export type Database = {
         Args: { p_resource_id: string }
         Returns: boolean
       }
+      knowledge_resource_user_grant: {
+        Args: { p_resource_id: string }
+        Returns: boolean
+      }
       outbox_queue_name: { Args: { p_channel: string }; Returns: string }
       platform_feature_flag_actor_can_manage_scope: {
         Args: { p_scope: string; p_scope_id?: string }
@@ -1497,6 +1530,14 @@ export type Database = {
       runtime_settings_actor_can_read_scope: {
         Args: { p_is_public?: boolean; p_scope: string; p_scope_id?: string }
         Returns: boolean
+      }
+      space_member_directory: {
+        Args: { p_limit?: number; p_query?: string; p_space_id: string }
+        Returns: {
+          display_name: string
+          email: string
+          user_id: string
+        }[]
       }
       space_member_role_audit_snapshot: {
         Args: { p_space_id: string; p_target_user_id: string }

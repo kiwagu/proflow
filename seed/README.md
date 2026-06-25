@@ -55,9 +55,15 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the scenarios for
-one capability so the seed stays runnable as the catalog grows. A scenario opts into a
-preset via its `presets` field.
+`per-user-share`, `knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the
+scenarios for one capability so the seed stays runnable as the catalog grows. A scenario
+opts into a preset via its `presets` field. `access` is cohort/floor sharing;
+`per-user-share` is per-person sharing (a private doc granted to one named member,
+ADR-0019 — the grantee sees it, a third un-granted member stays blind). Its space is
+multi-member with named co-members, so the SAME scenario also feeds the Share dialog's
+co-member identity directory (ADR-0020): the people-picker + "who has access" rows
+resolve a co-member's `display_name` + `email` (never a bare short-id), search (`?q=`)
+narrows it, and a non-member of the space gets an empty directory (the membership fence).
 
 ## The dictionary
 
@@ -80,6 +86,14 @@ src/
 `@workspace/e2e` depends on `@workspace/seed`. The e2e helper re-exports the engine
 primitives (so existing specs are unchanged) and the Drive specs build their trees
 with the shared HTTP client + catalog fixtures (`drive-cascade`, `drive-copy-chain`).
+The per-person-sharing access-matrix spec
+(`knowledge-per-user-share.e2e.spec.ts`) likewise draws ENTIRELY from the shared
+`per-user-share` scenario via `seedPerUserShareFixture` — the seeded grant, the
+revoke→re-grant arc, and the authority/cross-space negatives all run through the one
+`grantUser` / `revokeUser` vocabulary, never inline create/delete helpers. The same
+spec also drives the co-member directory (ADR-0020) through the shared `visibility`
+wrapper (`GET /author/graph/visibility?q=`): the picker/grant rows resolve the seeded
+co-member `display_name`s, search narrows, and a non-member sees an empty directory.
 
 ## Extending the catalog
 

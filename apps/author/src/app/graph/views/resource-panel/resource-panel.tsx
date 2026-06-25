@@ -25,7 +25,6 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import * as React from 'react';
@@ -40,8 +39,6 @@ import {
 import { RevisionDiff } from '@/app/graph/views/document-reader/revision-diff';
 import type {
   KbAttributes,
-  ResourceFloor,
-  ScopeChoice,
   SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
@@ -52,13 +49,15 @@ import { iconForKind, kindLabel } from '@/app/graph/presentation';
  * not a modal): a fixed-width column that lives in the workbench flex row and
  * shrinks the content beside it (no overlay, the grid stays interactive), closed by
  * the header `✕`. It carries the rich, edit-heavy surface.
- * Quick manipulations (new subfolder / rename / move / delete) do NOT live here —
- * they are one click from the card / toolbar via the shared {@link NodeActionsMenu},
- * which the header re-uses (sans its Details item) so the same actions are reachable
- * from inside the drawer too. Landed sections:
- *   - header (kind + title) + the `⋯` action menu
+ * Quick manipulations (new subfolder / rename / move / delete / SHARE) do NOT live
+ * here — they are one click from the card / toolbar via the shared
+ * {@link NodeActionsMenu}, which the header re-uses (sans its Details item) so the
+ * same actions are reachable from inside the drawer too. Sharing (the broadcast
+ * floor + cohort + per-user grants) is the unified Share dialog (ADR-0019 Fork 6),
+ * opened from that menu's `Share` entry — NOT a separate panel section. Landed
+ * sections:
+ *   - header (kind + title) + the `⋯` action menu (Share lives here now)
  *   - editable, RAG-bound description (kb satellite)
- *   - visibility (cohort scopes)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
  * mocked — Law 3 / poc-no-fallbacks): tags / related / mini-graph (need the
@@ -209,13 +208,6 @@ export function ResourcePanel({
           disabled={busy}
           onSave={onSaveDescription}
         />
-        <VisibilitySection
-          t={t}
-          spaceId={spaceId}
-          nodeId={node.id}
-          disabled={busy}
-          onMutated={onMutated}
-        />
         {node.kind === 'text' ? (
           <VersionsSection
             t={t}
@@ -323,171 +315,6 @@ function EditableDescription({
             aria-hidden
           />
         </Button>
-      )}
-    </section>
-  );
-}
-
-/**
- * Visibility (cohort/scope sharing). An unfenced node is visible to all space
- * readers; linking it to cohort scopes fences it to members-only (RLS). Fetches the
- * space's scopes + this node's current fences on open (write = `space.knowledge.access`,
- * gated by RLS on the link table). No cohorts defined → an honest empty note.
- */
-function VisibilitySection({
-  t,
-  spaceId,
-  nodeId,
-  disabled,
-  onMutated,
-}: {
-  t: ReturnType<typeof createGraphTranslator>;
-  spaceId: string;
-  nodeId: string;
-  disabled: boolean;
-  onMutated: () => void;
-}) {
-  const [choices, setChoices] = React.useState<ScopeChoice[] | null>(null);
-  const [floor, setFloor] = React.useState<ResourceFloor | null>(null);
-  const [working, setWorking] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    const res = await fetch(
-      `/author/graph/visibility?space_id=${encodeURIComponent(spaceId)}&node_id=${encodeURIComponent(nodeId)}`
-    );
-    if (res.ok) {
-      const data = (await res.json()) as {
-        choices: ScopeChoice[];
-        floor: ResourceFloor | null;
-      };
-      setChoices(data.choices);
-      setFloor(data.floor);
-    } else {
-      setChoices([]);
-      setFloor(null);
-    }
-  }, [spaceId, nodeId]);
-
-  React.useEffect(() => {
-    setChoices(null);
-    setFloor(null);
-    void load();
-  }, [load]);
-
-  async function toggle(scopeId: string, linked: boolean) {
-    setWorking(true);
-    await sendJson(
-      '/author/graph/visibility',
-      { resourceId: nodeId, scopeId },
-      linked ? 'DELETE' : 'POST'
-    );
-    await load();
-    setWorking(false);
-    // a cohort grant changes who can see the node → re-resolve the canvas.
-    onMutated();
-  }
-
-  // The broadcast floor (publish private→space, or restrict space→private). Owner-
-  // sovereign (D9): a non-owner/non-admin write is rejected by the DB guard → the
-  // select reverts on the reload.
-  async function changeFloor(next: ResourceFloor) {
-    setWorking(true);
-    await sendJson(
-      '/author/graph/visibility',
-      { resourceId: nodeId, visibility: next },
-      'PATCH'
-    );
-    await load();
-    setWorking(false);
-    onMutated();
-  }
-
-  const linked = (choices ?? []).filter((c) => c.linked);
-  const available = (choices ?? []).filter((c) => !c.linked);
-
-  return (
-    <section className="flex flex-col gap-2">
-      <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
-        <Users className="size-3" aria-hidden />
-        {t('graph.panel.visibility')}
-      </div>
-      {/* broadcast floor — the single per-resource dial (ADR-0017 §1.5). */}
-      {floor != null ? (
-        <div className="flex flex-col gap-1.5">
-          <Select
-            value={floor}
-            disabled={disabled || working}
-            onValueChange={(next) => changeFloor(next as ResourceFloor)}
-          >
-            <SelectTrigger className="h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="private">
-                {t('graph.panel.floorPrivate')}
-              </SelectItem>
-              <SelectItem value="space">
-                {t('graph.panel.floorSpace')}
-              </SelectItem>
-              <SelectItem value="organization">
-                {t('graph.panel.floorOrganization')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            {t('graph.panel.floorHint')}
-          </p>
-        </div>
-      ) : null}
-      {choices === null ? null : choices.length === 0 ? (
-        <p className="text-muted-foreground text-xs">
-          {t('graph.panel.visibilityNoCohorts')}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <p className="text-muted-foreground text-xs">
-            {linked.length === 0
-              ? t('graph.panel.visibilityAll')
-              : t('graph.panel.visibilityFenced')}
-          </p>
-          {linked.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {linked.map((choice) => (
-                <Badge key={choice.id} variant="secondary" className="gap-1">
-                  {choice.name}
-                  <Hint label={t('graph.panel.removeCohort')}>
-                    <button
-                      type="button"
-                      disabled={disabled || working}
-                      onClick={() => toggle(choice.id, true)}
-                      aria-label={t('graph.panel.removeCohort')}
-                    >
-                      <X className="size-3" aria-hidden />
-                    </button>
-                  </Hint>
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-          {available.length > 0 ? (
-            <Select
-              value=""
-              disabled={disabled || working}
-              onValueChange={(scopeId) => toggle(scopeId, false)}
-            >
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder={t('graph.panel.addCohort')} />
-              </SelectTrigger>
-              <SelectContent>
-                {available.map((choice) => (
-                  <SelectItem key={choice.id} value={choice.id}>
-                    {choice.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-        </div>
       )}
     </section>
   );

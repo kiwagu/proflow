@@ -119,12 +119,15 @@ export async function resolveSpaceCapabilities(
     }
     return data === true;
   };
-  const [canUpdate, canDelete, canCreate] = await Promise.all([
+  const [canUpdate, canDelete, canCreate, canAccess] = await Promise.all([
     can('space.knowledge.update'),
     can('space.knowledge.delete'),
     can('space.knowledge.create'),
+    // The audience-management verb (ADR-0019 §4 / ADR-0017 §3 D9) — the non-owner
+    // half of `canShare`. Mirrors the per-user grant & cohort INSERT/DELETE RLS.
+    can('space.knowledge.access'),
   ]);
-  return { canUpdate, canDelete, canCreate };
+  return { canUpdate, canDelete, canCreate, canAccess };
 }
 
 /**

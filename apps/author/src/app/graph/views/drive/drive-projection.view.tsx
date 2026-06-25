@@ -239,6 +239,7 @@ export function DriveProjectionView({
     canUpdate: false,
     canDelete: false,
     canCreate: false,
+    canAccess: false,
   };
   // Per-user "last opened by me" overlay (`resource_id → ISO`); drives the Recent
   // filter (recently VIEWED by me) and its "Viewed" column. Absent key = unopened.

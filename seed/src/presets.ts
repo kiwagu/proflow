@@ -12,6 +12,8 @@ export const PRESET_DESCRIPTIONS: Record<string, string> = {
   drive:
     'The deep Drive resource tree (folders, docs, drafts, versions, shortcut).',
   access: 'Two-user sharing: private / cohort-shared / space-published.',
+  'per-user-share':
+    'Per-person sharing: a private doc granted to one named member (ADR-0019) — grantee sees, third member blind. Named co-members feed the Share people-picker directory (ADR-0020).',
   'knowledge-base': 'A tagged article slice surfaced as a KB grid.',
   board: 'Documents at workflow statuses on a gated review board.',
   shared: 'Cross-shared docs that fill "Shared with me" for both demo users.',

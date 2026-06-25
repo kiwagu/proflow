@@ -6,30 +6,46 @@ import {
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
 import {
+  grantResourceToUser,
   linkResourceScope,
+  listGrantableMembers,
   listScopeChoices,
-  unlinkResourceScope,
+  listUserGrants,
   loadResourceFloor,
+  revokeResourceUserGrant,
   setResourceFloor,
+  unlinkResourceScope,
 } from '@/knowledge/fanout';
 
 /**
- * Resource visibility — broadcast floor + cohort grants for the authoring surface
- * (ADR-0017 Model B).
+ * Resource visibility / sharing — ONE endpoint, ONE Share dialog (ADR-0019 Fork 6).
+ * Serves the whole audience of a node: the broadcast floor + cohort grants + per-user
+ * grants (ADR-0017 Model B + ADR-0019).
  *
- * GET    — the node's current floor (`visibility`) + the space's cohort scopes and
- *          whether this node is granted to each.
+ * GET    — the node's current floor (`visibility`), the space's cohort scopes (with
+ *          whether this node is granted to each), the node's per-user `grants`, and the
+ *          grantable `members` picker source.
  * PATCH  — set the broadcast floor (publish private→space, or restrict space→private).
- * POST   — grant a cohort access (additive; share with members).
- * DELETE — remove a cohort grant.
+ * POST   — grant access: a cohort (`{ resourceId, scopeId }`) OR one person
+ *          (`{ resourceId, userId }`) — discriminated on `grantType`.
+ * DELETE — remove a grant: a cohort OR one person — symmetric to POST.
  *
  * Auth context: the Supabase SESSION under `/author/graph/*`. Postgres RLS is the SOLE
- * authority: cohort link/unlink gate on `space.knowledge.access`; the floor change is
- * owner-sovereign (D9 trigger: owner OR `space.knowledge.access`). `linked_by` comes
- * from the SESSION, never the body. Zero service-role. THIN transport.
+ * authority: cohort link/unlink gate on `space.knowledge.access`; the floor change and
+ * per-user grant/revoke are owner-sovereign (owner OR `space.knowledge.access`).
+ * `linked_by` / `granted_by` come from the SESSION, never the body. Zero service-role.
+ * THIN transport.
  */
 
 export const dynamic = 'force-dynamic';
+
+/** Optional people-picker search term (ADR-0020): trimmed, blank → bounded starter list.
+ * The directory function caps the result server-side regardless of this param. */
+const memberQuerySchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? undefined : value))
+  .optional();
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -41,6 +57,16 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
+  const queryParsed = memberQuerySchema.safeParse(
+    url.searchParams.get('q') ?? undefined
+  );
+  if (!queryParsed.success) {
+    return NextResponse.json(
+      { message: 'Invalid request', issues: queryParsed.error.issues },
+      { status: 400 }
+    );
+  }
+  const memberQuery = queryParsed.data;
 
   const session = await requireRlsSession(request);
   if (isAuthFailure(session)) {
@@ -48,12 +74,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [choices, floor] = await Promise.all([
+    const [choices, floor, grants, members] = await Promise.all([
       listScopeChoices({ spaceId, nodeId }, { db: session.db }),
       loadResourceFloor({ nodeId }, { db: session.db }),
+      listUserGrants({ resourceId: nodeId }, { db: session.db }),
+      listGrantableMembers(
+        { resourceId: nodeId, query: memberQuery },
+        { db: session.db }
+      ),
     ]);
     return NextResponse.json(
-      { choices, floor },
+      { choices, floor, grants, members },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
@@ -96,13 +127,41 @@ export async function PATCH(request: Request) {
   }
 }
 
-const bodySchema = z.object({
+/**
+ * Share body — a discriminated union over `grantType`: a cohort link (landed) or a
+ * per-user grant (ADR-0019). One POST/DELETE transport for both share kinds, schema-first.
+ * `grantType` defaults to `'cohort'` when absent so the landed cohort caller
+ * (`{ resourceId, scopeId }`, no discriminator) keeps parsing unchanged — the per-user
+ * caller passes `grantType: 'user'` explicitly.
+ */
+const cohortShareSchema = z.object({
+  grantType: z.literal('cohort'),
   resourceId: z.string().min(1), // knr_…
   scopeId: z.string().min(1),
 });
 
+const userShareSchema = z.object({
+  grantType: z.literal('user'),
+  resourceId: z.string().min(1), // knr_…
+  userId: z.string().uuid(),
+});
+
+const shareBodySchema = z.preprocess(
+  (value) =>
+    value && typeof value === 'object' && !('grantType' in value)
+      ? { ...value, grantType: 'cohort' }
+      : value,
+  z.discriminatedUnion('grantType', [cohortShareSchema, userShareSchema])
+);
+
+export type CohortShareBody = z.infer<typeof cohortShareSchema>;
+export type UserShareBody = z.infer<typeof userShareSchema>;
+export type ShareBody = z.infer<typeof shareBodySchema>;
+
 export async function POST(request: Request) {
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  const parsed = shareBodySchema.safeParse(
+    await request.json().catch(() => null)
+  );
   if (!parsed.success) {
     return NextResponse.json(
       { message: 'Invalid request', issues: parsed.error.issues },
@@ -117,20 +176,39 @@ export async function POST(request: Request) {
   const { db, userId } = session;
 
   try {
-    const result = await linkResourceScope(parsed.data, { db, userId });
+    if (parsed.data.grantType === 'cohort') {
+      const result = await linkResourceScope(
+        { resourceId: parsed.data.resourceId, scopeId: parsed.data.scopeId },
+        { db, userId }
+      );
+      return NextResponse.json(result, {
+        status: 201,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+    const result = await grantResourceToUser(
+      {
+        resourceId: parsed.data.resourceId,
+        userId: parsed.data.userId,
+        grantedBy: userId,
+      },
+      { db }
+    );
     return NextResponse.json(result, {
       status: 201,
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Share failed.';
-    // RLS rejection (no space.knowledge.access) → clean failure, no fence.
+    // RLS rejection (no authority) / same-space guard → clean failure, no fence.
     return NextResponse.json({ message }, { status: 422 });
   }
 }
 
 export async function DELETE(request: Request) {
-  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  const parsed = shareBodySchema.safeParse(
+    await request.json().catch(() => null)
+  );
   if (!parsed.success) {
     return NextResponse.json(
       { message: 'Invalid request', issues: parsed.error.issues },
@@ -145,7 +223,20 @@ export async function DELETE(request: Request) {
   const { db } = session;
 
   try {
-    const result = await unlinkResourceScope(parsed.data, { db });
+    if (parsed.data.grantType === 'cohort') {
+      const result = await unlinkResourceScope(
+        { resourceId: parsed.data.resourceId, scopeId: parsed.data.scopeId },
+        { db }
+      );
+      return NextResponse.json(result, {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+    const result = await revokeResourceUserGrant(
+      { resourceId: parsed.data.resourceId, userId: parsed.data.userId },
+      { db }
+    );
     return NextResponse.json(result, {
       status: 200,
       headers: { 'Cache-Control': 'no-store' },

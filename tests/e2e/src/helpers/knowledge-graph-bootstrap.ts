@@ -35,6 +35,7 @@ import {
   createActor,
   makeSeedClient,
   materializeScenario,
+  PER_USER_SHARE_SCENARIO,
   resolveRoleIds,
   slug,
   teardownTenant,
@@ -1268,4 +1269,87 @@ export async function materializeFixture(
         stable: false,
       }),
   });
+}
+
+// ── ADR-0019: per-person (per-user) sharing fixture ──────────────────────────
+//
+// The access-matrix spec (grantee sees / third blind / revoke narrows / re-grant
+// restores / authority / cross-space) draws ENTIRELY from the shared
+// `PER_USER_SHARE_SCENARIO` catalog entry — no inline create helpers — so the demo
+// DB and the test build the grant through the one Share transport
+// (`POST /author/graph/visibility`, grantType:'user'). `materializeFixture` already
+// CREATES the per-user grant (the scenario's `userGrants` field is driven via
+// `seedClientFor(owner).grantUser`); this thin wrapper resolves the named refs +
+// actors the matrix asserts against (the grantee logs in to confirm visibility; the
+// un-granted outsider to confirm fail-closed; the plain-member `bystander` to confirm
+// a non-owner non-access-manager cannot grant). The revoke→re-grant arc is driven
+// through the SAME shared vocabulary (`seedClientFor(owner).revokeUser` /
+// `.grantUser`), so the spec never inlines a raw `del('/author/graph/visibility')`.
+
+/** The display names the per-user-share scenario gives its co-members (ADR-0020):
+ * the directory must resolve THESE, never a bare short-id. Kept in sync with the
+ * `displayName` fields on `PER_USER_SHARE_SCENARIO.actors`. */
+export const PER_USER_SHARE_DISPLAY_NAMES = {
+  grantee: 'Grace Granger',
+  outsider: 'Otis Outerly',
+  bystander: 'Bobby Bystand',
+} as const;
+
+/** The per-person-sharing fixture, resolved from the shared catalog scenario. */
+export type PerUserShareFixture = {
+  /** The space the multi-member directory is scoped to (ADR-0020 GET param). */
+  spaceId: string;
+  /** The private folder that contains the shared + control docs. */
+  folderId: string;
+  /** The private doc shared with `grantee` via a per-user grant (visible to grantee). */
+  grantedDocId: string;
+  /** A private sibling with NO grant (control — neither teammate can see it). */
+  unsharedDocId: string;
+  /** The resource OWNER (`admin`) — always sees its own private content. */
+  owner: KnowledgeActor;
+  /** The member the granted doc is shared WITH (sees it via the per-user grant). */
+  grantee: KnowledgeActor;
+  /** A member with NO grant (the granted doc stays invisible — fail-closed). */
+  outsider: KnowledgeActor;
+  /** A plain `member` (no `space.knowledge.access`) — proves a non-owner
+   * non-access-manager cannot grant/revoke (the authority-negative actor). */
+  bystander: KnowledgeActor;
+  /** Display names the co-member directory must resolve for the picker / grant rows. */
+  displayNames: typeof PER_USER_SHARE_DISPLAY_NAMES;
+};
+
+/**
+ * Materialize the per-person-sharing scenario over an existing tenant and project
+ * its refs/actors onto the matrix-spec shape. The grant is already CREATED by
+ * `materializeFixture` through the live Share endpoint; this only names the pieces.
+ */
+export async function seedPerUserShareFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<PerUserShareFixture> {
+  const { refs, actors } = await materializeFixture(
+    PER_USER_SHARE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`per-user-share fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(`per-user-share fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('per-user-share/folder'),
+    grantedDocId: id('per-user-share/granted'),
+    unsharedDocId: id('per-user-share/unshared'),
+    owner: who('admin'),
+    grantee: who('grantee'),
+    outsider: who('outsider'),
+    bystander: who('bystander'),
+    displayNames: PER_USER_SHARE_DISPLAY_NAMES,
+  };
 }

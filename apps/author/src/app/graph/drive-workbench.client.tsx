@@ -654,6 +654,7 @@ export function DriveWorkbench({
                   canUpdate: false,
                   canDelete: false,
                   canCreate: false,
+                  canAccess: false,
                 }
               }
               onClose={() => {
@@ -696,6 +697,7 @@ export function DriveWorkbench({
                 canUpdate: false,
                 canDelete: false,
                 canCreate: false,
+                canAccess: false,
               }
             }
             open={selectedNode != null}

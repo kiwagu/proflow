@@ -28,6 +28,14 @@ export {
   type LinkResourceScopeInput,
 } from './resource-scope.fanout';
 export {
+  grantResourceToUser,
+  listGrantableMembers,
+  listUserGrants,
+  revokeResourceUserGrant,
+  type GrantResourceToUserInput,
+  type RevokeResourceUserGrantInput,
+} from './resource-user-grant.fanout';
+export {
   purgeResource,
   restoreResource,
   trashResource,

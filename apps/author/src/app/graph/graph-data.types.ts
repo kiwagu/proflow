@@ -79,6 +79,14 @@ export type SpaceCapabilities = {
   canUpdate: boolean;
   canDelete: boolean;
   canCreate: boolean;
+  /**
+   * `space.knowledge.access` — the audience-management verb (ADR-0017 §3 D9).
+   * Server-derived, mirrors the §3 RLS share authority EXACTLY: a non-owner who
+   * holds it may share another member's content (cohort link + per-user grant +
+   * floor change). Combined with per-node ownership into the Share entry's
+   * `canShare = owned || canAccess` (ADR-0019 §4) — display courtesy, never the
+   * fence; RLS re-checks every share route. */
+  canAccess: boolean;
 };
 
 /** One cohort scope of the space + whether THIS node is fenced to it. Drives the
@@ -93,3 +101,25 @@ export type ScopeChoice = {
  * per-resource dial: private (owner + supervisory) / space / organization
  * (ADR-0017 §1.5). Cohort grants compose additively on top. */
 export type ResourceFloor = 'private' | 'space' | 'organization';
+
+/** One per-user grant on a node (ADR-0019) — a person this resource is shared with,
+ * with a display label resolved from the co-member directory (ADR-0020). `email` is the
+ * secondary disambiguator line; null only for the vanishingly-rare missing-profile row.
+ * Drives the Share dialog's "who has access" per-person rows. */
+export type UserGrant = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  grantedBy: string;
+};
+
+/** One grantable space member for the Share dialog's people-picker (ADR-0019 Fork 2):
+ * an active member of the resource's space, already filtered of the owner and the
+ * already-granted set. `displayName` + `email` are resolved via the co-member directory
+ * (ADR-0020); `email` is the secondary disambiguator line. The list is a UX convenience,
+ * never the fence. */
+export type GrantableMember = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+};

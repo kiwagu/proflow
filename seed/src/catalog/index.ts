@@ -7,6 +7,7 @@ import {
 } from './drive.js';
 import { HIERARCHY_SCENARIO } from './hierarchy.js';
 import { KNOWLEDGE_BASE_SCENARIO } from './knowledge-base.js';
+import { PER_USER_SHARE_SCENARIO } from './per-user-share.js';
 import { SHARED_SCENARIO } from './shared.js';
 import { TRASH_SCENARIO } from './trash.js';
 import type { SeedScenario } from './types.js';
@@ -26,6 +27,7 @@ export const ALL_SCENARIOS: SeedScenario[] = [
   TRASH_SCENARIO,
   SHARED_SCENARIO,
   HIERARCHY_SCENARIO,
+  PER_USER_SHARE_SCENARIO,
 ];
 
 export {
@@ -36,6 +38,7 @@ export {
   DRIVE_SCENARIO,
   HIERARCHY_SCENARIO,
   KNOWLEDGE_BASE_SCENARIO,
+  PER_USER_SHARE_SCENARIO,
   SHARED_SCENARIO,
   TRASH_SCENARIO,
 };

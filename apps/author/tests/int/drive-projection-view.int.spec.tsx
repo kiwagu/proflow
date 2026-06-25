@@ -25,6 +25,7 @@ const NO_CAPS = {
   canUpdate: false,
   canDelete: false,
   canCreate: false,
+  canAccess: false,
 } as const;
 
 beforeAll(async () => {

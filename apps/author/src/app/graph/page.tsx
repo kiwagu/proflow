@@ -84,7 +84,12 @@ export default async function GraphPage({
       containment: [],
       shortcuts: [],
       currentUserId: null,
-      capabilities: { canUpdate: false, canDelete: false, canCreate: false },
+      capabilities: {
+        canUpdate: false,
+        canDelete: false,
+        canCreate: false,
+        canAccess: false,
+      },
       starredIds: [],
       openedAtById: {},
       trash: { items: [], metaByItem: {} },

@@ -70,6 +70,8 @@ export function validateScenario(s: SeedScenario): string[] {
     }
     for (const a of n.starredBy ?? []) actorOk(a, `node "${n.ref}" starredBy`);
     for (const a of n.openedBy ?? []) actorOk(a, `node "${n.ref}" openedBy`);
+    for (const a of n.userGrants ?? [])
+      actorOk(a, `node "${n.ref}" userGrants`);
     for (const t of n.tags ?? []) {
       if (!t) fail(`node "${n.ref}" has an empty tag title`);
     }
@@ -87,6 +89,14 @@ export function validateScenario(s: SeedScenario): string[] {
   const nodeOk = (ref: string, where: string): void => {
     if (!nodeRefs.has(ref)) fail(`${where}: unknown node ref "${ref}"`);
   };
+
+  // Actor display names (ADR-0020 directory): if declared, must be non-empty so the
+  // co-member directory resolves a real name rather than the email/short-id fallback.
+  for (const a of s.actors ?? []) {
+    if (a.displayName !== undefined && a.displayName.trim() === '') {
+      fail(`actor "${a.ref}" has an empty displayName`);
+    }
+  }
 
   // Scope memberships + reporting lines.
   for (const sc of s.scopes ?? []) {
