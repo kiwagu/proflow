@@ -14,6 +14,7 @@ import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
   ChevronRight,
+  Clipboard,
   ClipboardPaste,
   Clock,
   Columns2,
@@ -230,6 +231,14 @@ export function DriveProjectionView({
   const attributesByItem = kbData?.attributesByItem ?? {};
   const metaByItem = kbData?.metaByItem ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
+  // The viewer's space verbs — combined with each node's owner (from `metaByItem`)
+  // to display-gate its `⋯` menu. Fail-CLOSED default (all false) when no seed: the
+  // standalone/empty case shows only the always-on Copy + Details.
+  const capabilities = kbData?.capabilities ?? {
+    canUpdate: false,
+    canDelete: false,
+    canCreate: false,
+  };
   // Per-user "last opened by me" overlay (`resource_id → ISO`); drives the Recent
   // filter (recently VIEWED by me) and its "Viewed" column. Absent key = unopened.
   const openedAtById = kbData?.openedAtById ?? {};
@@ -539,6 +548,9 @@ export function DriveProjectionView({
         t={t}
         node={node}
         containment={containment}
+        currentUserId={currentUserId}
+        ownerUserId={metaByItem[node.id]?.ownerUserId ?? null}
+        capabilities={capabilities}
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
@@ -562,6 +574,9 @@ export function DriveProjectionView({
         t={t}
         node={node}
         containment={containment}
+        currentUserId={currentUserId}
+        ownerUserId={metaByItem[node.id]?.ownerUserId ?? null}
+        capabilities={capabilities}
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
@@ -786,6 +801,9 @@ export function DriveProjectionView({
               t={t}
               node={folder}
               containment={containment}
+              currentUserId={currentUserId}
+              ownerUserId={metaByItem[folder.id]?.ownerUserId ?? null}
+              capabilities={capabilities}
               onMutated={onMutated}
               onDetails={() => onSelect(folder.id)}
               onCopyToClipboard={onCopyToClipboard}
@@ -794,32 +812,65 @@ export function DriveProjectionView({
         ) : null}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        {/* Paste — appears when a node is on the clipboard (Dolphin model) and this
-            pane browses 'kb'; pastes the source INTO this pane's current folder. The
-            split-pane's payoff: Copy in A, navigate B, Paste here. The ✕ clears the
-            clipboard (also cleared by Escape). */}
-        {canPaste && clipboard ? (
-          <div className="flex items-center overflow-hidden rounded-md border">
-            <button
-              type="button"
-              onClick={handlePaste}
-              title={t(isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste', {
-                title: clipboard.title,
-              })}
-              className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
-            >
-              <ClipboardPaste className="size-[15px]" aria-hidden />
-              <span className="max-w-[120px] truncate">{clipboard.title}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClearClipboard}
-              aria-label={t('graph.drive.pasteClear')}
-              className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
-            >
-              <X className="size-[14px]" aria-hidden />
-            </button>
-          </div>
+        {/* Clipboard indicator (Dolphin model) — two states of the SAME affordance:
+            • ACTIVE (canPaste: clipboard set AND this pane browses 'kb') → the full
+              chip: a clickable Paste (source INTO this pane's current folder) + the ✕
+              clear. The split-pane's payoff: Copy in A, navigate B, Paste here.
+            • READ-ONLY (clipboard set but no paste target — a flat lens like Shared/
+              Starred/Recent/Trash) → a muted "on your clipboard" hint: no Paste
+              (nowhere to paste into here), but the ✕ clear IS present so the buffer
+              can be cleared from ANY lens (not just by navigating back to KB / Escape).
+              Escape still clears globally (the workbench keydown handler is
+              scope-independent). */}
+        {clipboard != null ? (
+          canPaste ? (
+            <div className="flex items-center overflow-hidden rounded-md border">
+              <button
+                type="button"
+                onClick={handlePaste}
+                title={t(
+                  isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
+                  { title: clipboard.title }
+                )}
+                className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+              >
+                <ClipboardPaste className="size-[15px]" aria-hidden />
+                <span className="max-w-[120px] truncate">
+                  {clipboard.title}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={onClearClipboard}
+                aria-label={t('graph.drive.pasteClear')}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+              >
+                <X className="size-[14px]" aria-hidden />
+              </button>
+            </div>
+          ) : (
+            <div className="text-muted-foreground flex items-center overflow-hidden rounded-md border">
+              <div
+                title={t('graph.drive.clipboardHint', {
+                  title: clipboard.title,
+                })}
+                className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
+              >
+                <Clipboard className="size-[15px]" aria-hidden />
+                <span className="max-w-[120px] truncate">
+                  {clipboard.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onClearClipboard}
+                aria-label={t('graph.drive.pasteClear')}
+                className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+              >
+                <X className="size-[14px]" aria-hidden />
+              </button>
+            </div>
+          )
         ) : null}
         {/* Upload creates into the current location — meaningless in the Trash lens
             (a holding state for trashed nodes, not a place to author into). */}
@@ -921,6 +972,9 @@ export function DriveProjectionView({
             t={t}
             node={item}
             containment={containment}
+            currentUserId={currentUserId}
+            ownerUserId={metaByItem[item.id]?.ownerUserId ?? null}
+            capabilities={capabilities}
             onMutated={onMutated}
             onDetails={() => onSelect(item.id)}
             onCopyToClipboard={onCopyToClipboard}
@@ -1080,6 +1134,11 @@ export function DriveProjectionView({
                             t={t}
                             node={sub}
                             containment={containment}
+                            currentUserId={currentUserId}
+                            ownerUserId={
+                              metaByItem[sub.id]?.ownerUserId ?? null
+                            }
+                            capabilities={capabilities}
                             onMutated={onMutated}
                             onDetails={() => onSelect(sub.id)}
                             onCopyToClipboard={onCopyToClipboard}
@@ -1531,28 +1590,47 @@ function TrashCard({
     <>
       {/* A trashed node is NOT clickable (no open/navigate) — so this is a plain
           surface DIV, not the clickable CardTile (which is a <button> and would
-          nest the Restore/Purge buttons). Same card tokens, no hover-to-ring. */}
+          nest the Restore/Purge buttons). Same card tokens, no hover-to-ring.
+
+          List = one horizontal row [icon][title flex-1][actions]. Grid is a fixed
+          264px card: the two TEXT actions + icon would squeeze the flex-1 title to
+          ~zero and hide it, so grid STACKS — [icon + title] on top, the actions on
+          their own justify-end row beneath — keeping the title fully readable. */}
       <div
         className={cn(
-          'bg-card flex items-center border shadow-xs',
+          'bg-card flex border shadow-xs',
           'rounded-lg',
-          list ? 'w-full gap-3 px-3.5 py-2.5' : cn(GRID_CARD, 'gap-2.5 p-4')
+          list
+            ? 'w-full items-center gap-3 px-3.5 py-2.5'
+            : cn(GRID_CARD, 'flex-col gap-2.5 p-4')
         )}
       >
-        {React.createElement(iconForKind(node.kind), {
-          className: cn(
-            'text-muted-foreground',
-            list ? 'size-[18px]' : 'size-[22px]'
-          ),
-          'aria-hidden': true,
-        })}
-        <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-medium">{node.title}</div>
-          <div className="text-muted-foreground truncate text-xs">
-            {metaLine}
+        <div
+          className={cn(
+            'flex min-w-0 items-center',
+            list ? 'flex-1 gap-3' : 'w-full gap-2.5'
+          )}
+        >
+          {React.createElement(iconForKind(node.kind), {
+            className: cn(
+              'text-muted-foreground shrink-0',
+              list ? 'size-[18px]' : 'size-[22px]'
+            ),
+            'aria-hidden': true,
+          })}
+          <div className="min-w-0 flex-1 text-left">
+            <div className="truncate text-sm font-medium">{node.title}</div>
+            <div className="text-muted-foreground truncate text-xs">
+              {metaLine}
+            </div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-1',
+            list ? '' : 'justify-end'
+          )}
+        >
           <Button
             variant="ghost"
             size="sm"

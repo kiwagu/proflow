@@ -56,6 +56,7 @@
   "graph.drive.paste": "Pegar «{title}»",
   "graph.drive.pasteRoot": "Pegar «{title}» en el nivel superior",
   "graph.drive.pasteClear": "Vaciar portapapeles",
+  "graph.drive.clipboardHint": "En el portapapeles: {title}",
   "graph.drive.dragItem": "Mover {title}",
   "graph.drive.dropOnFolder": "Soltar en {title}",
   "graph.drive.dropOnRoot": "Soltar en el nivel superior",

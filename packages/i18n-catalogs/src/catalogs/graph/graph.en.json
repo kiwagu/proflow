@@ -56,6 +56,7 @@
   "graph.drive.paste": "Paste “{title}”",
   "graph.drive.pasteRoot": "Paste “{title}” at top level",
   "graph.drive.pasteClear": "Clear clipboard",
+  "graph.drive.clipboardHint": "On clipboard: {title}",
   "graph.drive.dragItem": "Move {title}",
   "graph.drive.dropOnFolder": "Drop into {title}",
   "graph.drive.dropOnRoot": "Drop at top level",

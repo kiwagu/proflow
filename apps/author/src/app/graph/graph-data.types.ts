@@ -60,6 +60,27 @@ export type NodeMeta = {
   lastModifiedAt: string;
 };
 
+/**
+ * The CURRENT user's space-level knowledge verbs, resolved ONCE per space (the
+ * verdict is constant across every node in the space — `auth_user_can_access_in_space`
+ * is space+verb, never per-node). The `⋯` node-actions menu combines these with
+ * per-node ownership to DISPLAY-GATE its items (ADR-0006: gating = display). This is
+ * fail-SAFE UX, NEVER the security boundary — Postgres RLS remains the sole authority;
+ * hiding an item the user cannot perform only spares them a silent no-op route hit.
+ *
+ * Mirrors the `knowledge_resources` write/delete RLS predicate exactly:
+ *   canModify(node) = node.ownerUserId === me || canUpdate
+ *   canDelete(node) = node.ownerUserId === me || canDelete
+ *   canCreate       = canCreate            (New-subfolder)
+ * (there are NO per-node write grants — cohort/per-user grants only widen the SELECT
+ * visibility fence, never the update/delete USING — so the space verb is the whole
+ * non-owner capability). */
+export type SpaceCapabilities = {
+  canUpdate: boolean;
+  canDelete: boolean;
+  canCreate: boolean;
+};
+
 /** One cohort scope of the space + whether THIS node is fenced to it. Drives the
  * panel's "who can see it" section (cohort/scope visibility). */
 export type ScopeChoice = {

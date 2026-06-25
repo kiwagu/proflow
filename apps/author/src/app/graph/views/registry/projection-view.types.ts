@@ -5,6 +5,7 @@ import type {
   KbAttributes,
   NodeMeta,
   ShortcutEdge,
+  SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 
 /**
@@ -33,6 +34,14 @@ export type KbViewData = {
   containment: ContainmentEdge[];
   shortcuts: ShortcutEdge[];
   currentUserId: string | null;
+  /**
+   * The CURRENT user's space-level knowledge verbs (`update`/`delete`/`create`),
+   * resolved ONCE server-side (constant across the space). The `⋯` node-actions menu
+   * combines these with per-node ownership to DISPLAY-GATE its destructive/edit items
+   * (ADR-0006) — a shared, non-owner viewer without the verbs sees only Copy + Details.
+   * Fail-SAFE UX, never the security boundary (RLS is the sole authority).
+   */
+  capabilities: SpaceCapabilities;
   /**
    * The ids of nodes the CURRENT user has starred in this space (per-user state,
    * own rows under RLS). Drives the Drive sidebar's "Starred" filter and the

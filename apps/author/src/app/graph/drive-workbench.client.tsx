@@ -647,6 +647,15 @@ export function DriveWorkbench({
               title={openDoc.title}
               messages={messages}
               containment={containment}
+              currentUserId={kbData?.currentUserId ?? null}
+              ownerUserId={kbData?.metaByItem[openDoc.id]?.ownerUserId ?? null}
+              capabilities={
+                kbData?.capabilities ?? {
+                  canUpdate: false,
+                  canDelete: false,
+                  canCreate: false,
+                }
+              }
               onClose={() => {
                 // Pop the `?doc=` entry (popstate restores the folder/scope), then
                 // re-resolve so the canvas REBUILDS with current server data — a
@@ -676,6 +685,19 @@ export function DriveWorkbench({
                 : undefined
             }
             containment={containment}
+            currentUserId={kbData?.currentUserId ?? null}
+            ownerUserId={
+              selectedNode
+                ? (kbData?.metaByItem[selectedNode.id]?.ownerUserId ?? null)
+                : null
+            }
+            capabilities={
+              kbData?.capabilities ?? {
+                canUpdate: false,
+                canDelete: false,
+                canCreate: false,
+              }
+            }
             open={selectedNode != null}
             onOpenChange={(isOpen) => {
               if (!isOpen) {

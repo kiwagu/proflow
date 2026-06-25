@@ -18,6 +18,15 @@ import type { ProjectionViewProps } from '@/app/graph/views/registry/projection-
 
 let messages: Record<string, string>;
 
+// Display-gate verbs (ADR-0006): these presentational tests render the shell, not the
+// capability gate, so the fail-closed default (no verbs) keeps each `KbViewData` literal
+// valid. The dedicated capability assertions live in the e2e (real RLS verdicts).
+const NO_CAPS = {
+  canUpdate: false,
+  canDelete: false,
+  canCreate: false,
+} as const;
+
 beforeAll(async () => {
   messages = await loadGraphMessages('en');
 });
@@ -83,6 +92,7 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       currentUserId: null,
       starredIds: [],
       openedAtById: {},
+      capabilities: NO_CAPS,
       trash: { items: [], metaByItem: {} },
     },
   };
@@ -175,6 +185,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_old: '2026-01-01T00:00:00Z',
           knr_new: '2026-06-01T00:00:00Z',
         },
+        capabilities: NO_CAPS,
         trash: { items: [], metaByItem: {} },
       },
     });
@@ -209,6 +220,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             currentUserId: null,
             starredIds: [],
             openedAtById: {},
+            capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
           },
         })}
@@ -239,6 +251,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             currentUserId: null,
             starredIds: [],
             openedAtById: {},
+            capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
           },
         })}
@@ -271,6 +284,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           starredIds: [],
           openedAtById: {},
         },
+        capabilities: NO_CAPS,
         trash: { items, metaByItem: {} },
       },
     };
@@ -363,6 +377,86 @@ describe('DriveProjectionView (forward-port shell)', () => {
     expect(onPurge).toHaveBeenCalledWith('knr_gone');
   });
 
+  // ── Clipboard indicator (active vs read-only) ───────────────────────────
+
+  /** A clipboard set on a node, with the paste wiring the workbench supplies. */
+  const clipboardProps = {
+    clipboard: { sourceId: 'knr_doc', title: 'Welcome' },
+    onPaste: vi.fn(),
+    onClearClipboard: vi.fn(),
+  } as const;
+
+  it('shows the ACTIVE Paste control (clickable) + clear ✕ in the kb scope', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps()}
+        {...clipboardProps}
+        scope="kb"
+        onScopeChange={vi.fn()}
+      />
+    );
+
+    // The active chip: a clickable Paste titled with the (root) paste verb …
+    const paste = screen.getByTitle(
+      messages['graph.drive.pasteRoot']!.replace('{title}', 'Welcome')
+    );
+    expect(paste.tagName).toBe('BUTTON');
+    fireEvent.click(paste);
+    expect(clipboardProps.onPaste).toHaveBeenCalled();
+
+    // … and the clear ✕.
+    expect(
+      screen.getByRole('button', { name: messages['graph.drive.pasteClear']! })
+    ).toBeTruthy();
+
+    // The read-only hint is NOT rendered while the active control is.
+    expect(
+      screen.queryByTitle(
+        messages['graph.drive.clipboardHint']!.replace('{title}', 'Welcome')
+      )
+    ).toBeNull();
+  });
+
+  it('shows the READ-ONLY clipboard chip (clear ✕ present, NO active Paste) in a flat lens', () => {
+    render(
+      <DriveProjectionView
+        {...baseProps()}
+        {...clipboardProps}
+        scope="shared"
+        onScopeChange={vi.fn()}
+      />
+    );
+
+    // The muted hint: an indicator carrying the clipboard title + accessible label.
+    const hint = screen.getByTitle(
+      messages['graph.drive.clipboardHint']!.replace('{title}', 'Welcome')
+    );
+    expect(hint).toBeTruthy();
+    expect(hint.textContent).toContain('Welcome');
+
+    // NO interactive paste affordance in the read-only state (nowhere to paste here).
+    expect(
+      screen.queryByRole('button', {
+        name: messages['graph.drive.paste']!.replace('{title}', 'Welcome'),
+      })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', {
+        name: messages['graph.drive.pasteRoot']!.replace('{title}', 'Welcome'),
+      })
+    ).toBeNull();
+
+    // …but the clear ✕ IS now present, and clicking it fires onClearClipboard — the
+    // buffer can be cleared from EVERY lens, not just KB / Escape.
+    const clear = screen.getByRole('button', {
+      name: messages['graph.drive.pasteClear']!,
+    });
+    expect(clear).toBeTruthy();
+    clipboardProps.onClearClipboard.mockClear();
+    fireEvent.click(clear);
+    expect(clipboardProps.onClearClipboard).toHaveBeenCalled();
+  });
+
   // ── §14 graceful-absence: a referenced-but-absent node never throws ──────
 
   it('renders a parent folder even when a contained child is absent from the item set (TOCTOU)', () => {
@@ -392,6 +486,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             currentUserId: null,
             starredIds: [],
             openedAtById: {},
+            capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
           },
         })}

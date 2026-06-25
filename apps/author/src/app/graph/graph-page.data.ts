@@ -20,6 +20,7 @@ import type {
   KbAttributes,
   NodeMeta,
   ShortcutEdge,
+  SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 
 /**
@@ -59,6 +60,45 @@ export async function resolveCurrentUserId(): Promise<string | null> {
   const db = await createRlsClientFromServerCookies();
   const { data } = await db.auth.getUser();
   return data.user?.id ?? null;
+}
+
+/**
+ * The CURRENT user's space-level knowledge verbs (`update`/`delete`/`create`) for
+ * the active space, resolved ONCE here server-side under the user's RLS client —
+ * the verdict is constant across every node in the space, so the `⋯` menu combines
+ * it with per-node ownership client-side (zero per-node round-trips, zero client-side
+ * access re-derivation). Used PURELY to display-gate the menu (ADR-0006) — RLS stays
+ * the sole authority; this only spares the user silent no-op route hits.
+ *
+ * It calls `auth_user_can_access_in_space(space_id, verb)` — the EXACT predicate the
+ * `knowledge_resources` update/delete and insert RLS policies use (membership AND the
+ * verb), under the user's session (never service-role). The standalone `hasPermission`
+ * helper is deliberately NOT used: it calls `auth_user_has_permission` directly and
+ * omits the `auth_user_active_in_space` half of `auth_user_can_access_in_space`, so it
+ * would NOT mirror the policy exactly. Any RPC error denies (fail-closed).
+ */
+export async function resolveSpaceCapabilities(
+  spaceId: string
+): Promise<SpaceCapabilities> {
+  const db = await createRlsClientFromServerCookies();
+  const can = async (verb: string): Promise<boolean> => {
+    const { data, error } = await db.rpc('auth_user_can_access_in_space', {
+      p_space_id: spaceId,
+      p_permission_key: verb,
+    });
+    if (error) {
+      // Fail-closed: an unresolved verb hides the gated item (the route would
+      // no-op under RLS anyway). RLS is the authority, not this hint.
+      return false;
+    }
+    return data === true;
+  };
+  const [canUpdate, canDelete, canCreate] = await Promise.all([
+    can('space.knowledge.update'),
+    can('space.knowledge.delete'),
+    can('space.knowledge.create'),
+  ]);
+  return { canUpdate, canDelete, canCreate };
 }
 
 /**

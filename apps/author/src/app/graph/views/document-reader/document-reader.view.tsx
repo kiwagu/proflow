@@ -7,6 +7,7 @@ import { ArrowLeft, EyeOff, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { type Containment } from '@/app/graph/containment';
+import type { SpaceCapabilities } from '@/app/graph/graph-data.types';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
 
 import { DocumentBodyView, type SerializedLexical } from './document-body-view';
@@ -47,6 +48,9 @@ export function DocumentReader({
   title,
   messages,
   containment,
+  currentUserId,
+  ownerUserId,
+  capabilities,
   onClose,
   onEdit,
   onMutated,
@@ -58,6 +62,12 @@ export function DocumentReader({
   messages: Record<string, string>;
   /** Containment forest — the `⋯` menu's Move folder picker needs it. */
   containment: Containment;
+  /** The viewer's own id — combined with `ownerUserId` to display-gate the `⋯` menu. */
+  currentUserId: string | null;
+  /** This document's owner (`knowledge_resources.owner_user_id`). */
+  ownerUserId: string | null;
+  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu (ADR-0006). */
+  capabilities: SpaceCapabilities;
   onClose: () => void;
   /** Launch the editor (the workbench's shared seed-choice flow). */
   onEdit: () => void;
@@ -195,6 +205,9 @@ export function DocumentReader({
             t={t}
             node={{ id: nodeId, kind: 'text', title }}
             containment={containment}
+            currentUserId={currentUserId}
+            ownerUserId={ownerUserId}
+            capabilities={capabilities}
             onMutated={onMutated}
             onActed={onClose}
           />

@@ -14,6 +14,7 @@ import {
   resolveCurrentUserId,
   resolveDefaultLensProjection,
   resolveDriveLayout,
+  resolveSpaceCapabilities,
 } from './graph-page.data';
 import type {
   DriveScope,
@@ -83,6 +84,7 @@ export default async function GraphPage({
       containment: [],
       shortcuts: [],
       currentUserId: null,
+      capabilities: { canUpdate: false, canDelete: false, canCreate: false },
       starredIds: [],
       openedAtById: {},
       trash: { items: [], metaByItem: {} },
@@ -120,6 +122,7 @@ export default async function GraphPage({
     starredIds,
     openedAtById,
     trashMetaByItem,
+    capabilities,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -129,6 +132,7 @@ export default async function GraphPage({
     loadStarredIds(spaceId),
     loadOpenedAtForItems(spaceId),
     loadNodeMetaForItems(spaceId, trashIds),
+    resolveSpaceCapabilities(spaceId),
   ]);
 
   const kbData: KbViewData = {
@@ -137,6 +141,7 @@ export default async function GraphPage({
     containment,
     shortcuts,
     currentUserId,
+    capabilities,
     starredIds,
     openedAtById,
     trash: {

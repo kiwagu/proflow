@@ -41,6 +41,7 @@ import type {
   KbAttributes,
   ResourceFloor,
   ScopeChoice,
+  SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
@@ -80,6 +81,12 @@ export type ResourcePanelProps = {
   /** KB satellite attributes of the node (description; media/link as they land). */
   attributes?: KbAttributes;
   containment: Containment;
+  /** The viewer's own id — combined with `ownerUserId` to display-gate the `⋯` menu. */
+  currentUserId: string | null;
+  /** The selected node's owner (`knowledge_resources.owner_user_id`). */
+  ownerUserId: string | null;
+  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu (ADR-0006). */
+  capabilities: SpaceCapabilities;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */
@@ -107,6 +114,9 @@ export function ResourcePanel({
   node,
   attributes,
   containment,
+  currentUserId,
+  ownerUserId,
+  capabilities,
   open,
   onOpenChange,
   onMutated,
@@ -160,6 +170,9 @@ export function ResourcePanel({
           t={t}
           node={node}
           containment={containment}
+          currentUserId={currentUserId}
+          ownerUserId={ownerUserId}
+          capabilities={capabilities}
           onMutated={onMutated}
           onActed={() => onOpenChange(false)}
           onEdit={
