@@ -1,3 +1,4 @@
+import { trashResourceInputSchema } from '@workspace/knowledge-contracts';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
@@ -7,8 +8,8 @@ import {
 } from '@/lib/supabase/require-rls-session';
 import {
   createBodylessResource,
-  deleteResourceCascade,
   renameResource,
+  trashResource,
 } from '@/knowledge/fanout';
 
 /**
@@ -21,8 +22,14 @@ import {
  *          (ADR-0002 §3 / ADR-0015). `text` creation stays on text-resources (the
  *          fan-out with the body).
  * PATCH  — rename a node's title under `space.knowledge.update`.
- * DELETE — delete a node under `space.knowledge.delete`, cascading to descendants
- *          that become containment-orphans (a child with another parent survives).
+ * DELETE — TRASH a node (soft-delete, reference-aware, ADR-0018) under the
+ *          owner-sovereign-or-`space.knowledge.delete` authority guard. References
+ *          (edges, body) are PRESERVED-but-dormant; the soft-cascade trashes
+ *          containment orphans (a child with another LIVING parent survives).
+ *          Reversible — restore via `/author/graph/trash`. Permanent destruction
+ *          is the DISTINCT purge path (`DELETE /author/graph/trash`), reached only
+ *          from the Trash lens. Works for ALL kinds incl. `text` (the old N→1
+ *          reference-severing reason for disabling text delete is gone).
  *
  * Auth context: the Supabase SESSION (cookies), under `/author/graph/*`. Postgres
  * RLS is the SOLE write authority — the verb gate is enforced on the row, never
@@ -159,14 +166,9 @@ export async function PATCH(request: Request) {
   }
 }
 
-const deleteSchema = z.object({
-  spaceId: z.string().min(1),
-  resourceId: z.string().min(1), // knr_… the selected node (always deleted)
-});
-
 export async function DELETE(request: Request) {
   const raw = await request.json().catch(() => null);
-  const parsed = deleteSchema.safeParse(raw);
+  const parsed = trashResourceInputSchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
       { message: 'Invalid request', issues: parsed.error.issues },
@@ -181,14 +183,15 @@ export async function DELETE(request: Request) {
   const { db } = session;
 
   try {
-    const result = await deleteResourceCascade(parsed.data, { db });
+    const result = await trashResource(parsed.data, { db });
     return NextResponse.json(result, {
       status: 200,
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Delete failed.';
-    // RLS rejection (no space.knowledge.delete) → clean failure, nothing deleted.
+    const message = error instanceof Error ? error.message : 'Trash failed.';
+    // RLS rejection (not owner, no space.knowledge.delete) → clean failure,
+    // nothing trashed. The authority guard raises 42501.
     return NextResponse.json({ message }, { status: 422 });
   }
 }

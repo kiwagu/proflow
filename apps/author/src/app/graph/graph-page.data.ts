@@ -100,13 +100,37 @@ export function buildDefaultLensSpec(): ProjectionSpec {
 }
 
 /**
+ * The lifecycle lens selector (ADR-0018 fork #4). Trash is a THIRD axis
+ * (existence), orthogonal to access (RLS) and workflow (status): the same RLS
+ * verdict, the same user, sees a node in ONE lens and not the other. So the
+ * trashed/normal split is a query lens, NOT an access fence — the engine /
+ * `ProjectionSpec` contract stays frozen (`schema_version`=1, Invariant #1), and
+ * this `deleted_at` filter rides as a thin POST-RESOLVE loader filter, never an
+ * engine DDL change. It can never leak: it only ever narrows the user's already-
+ * accessible set (a direct-PostgREST bypass sees exactly their own accessible
+ * trashed rows — which is what the Trash lens shows anyway).
+ *
+ *   - 'live'    — normal browse: `deleted_at IS NULL` (the default everywhere);
+ *   - 'trashed' — the Trash lens: `deleted_at IS NOT NULL`.
+ */
+export type LifecycleScope = 'live' | 'trashed';
+
+/**
  * Resolve the default implicit lens projection for the active space. No
  * `projections` row is read — the spec is built in code and validated at the
  * boundary (zod), then executed under the user's RLS via the landed transport
  * (ADR-0009), never service-role. An ungranted user resolves to `items=[]`.
+ *
+ * The lifecycle `scope` (ADR-0018) is applied as a thin POST-RESOLVE filter over
+ * the resolved items — the engine resolves the RLS-allowed set (trashed or not),
+ * then this narrows to the requested existence lens. Zero engine DDL: the frozen
+ * `ProjectionSpec` cannot express `deleted_at`, so the split lives here, not in
+ * the compiled SQL. Normal browse (`live`) excludes trashed; the Trash lens
+ * (`trashed`) shows only trashed.
  */
 export async function resolveDefaultLensProjection(
-  spaceId: string
+  spaceId: string,
+  scope: LifecycleScope = 'live'
 ): Promise<ProjectionResult> {
   const spec = buildDefaultLensSpec();
   const parsed = parseProjectionSpec(spec);
@@ -117,12 +141,49 @@ export async function resolveDefaultLensProjection(
 
   const db = await createRlsClientFromServerCookies();
   const claims = await resolveJwtClaimsFromSession(db);
-  return resolveProjection(parsed.data, {
+  const result = await resolveProjection(parsed.data, {
     projectionId: DEFAULT_LENS_PROJECTION_ID,
     spaceId,
     db,
     transport: createProjectionResolveTransport(claims),
   });
+
+  // Apply the lifecycle lens. Resolve the deleted_at state of the resolved ids
+  // under the user's RLS (same authority as the resolve), then keep only the ids
+  // matching the requested existence scope.
+  const live = await loadLiveIds(
+    spaceId,
+    result.items.map((item) => item.id)
+  );
+  const items = result.items.filter((item) =>
+    scope === 'live' ? live.has(item.id) : !live.has(item.id)
+  );
+  return { ...result, items };
+}
+
+/**
+ * The subset of `itemIds` that are LIVE (`deleted_at IS NULL`) in this space,
+ * read under the user's RLS. The complement (returned ids minus this set) are the
+ * trashed ones. A thin select used by the lifecycle lens split (ADR-0018 fork #4).
+ */
+async function loadLiveIds(
+  spaceId: string,
+  itemIds: string[]
+): Promise<Set<string>> {
+  if (itemIds.length === 0) {
+    return new Set();
+  }
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('knowledge_resources')
+    .select('id')
+    .eq('space_id', spaceId)
+    .in('id', itemIds)
+    .is('deleted_at', null);
+  if (error) {
+    throw new Error(`loadLiveIds: ${error.message}`);
+  }
+  return new Set((data ?? []).map((row) => (row as { id: string }).id));
 }
 
 /**

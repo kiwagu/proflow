@@ -252,12 +252,12 @@ export function NodeActionsMenu({
       id: 'delete',
       separatorBefore: true,
       variant: 'destructive',
-      // A `text` node is a knowledge-base DOCUMENT — it may be referenced from
-      // elsewhere (folders, shortcuts, other projections; N→1), so hard-deleting
-      // it is deferred to the reference-aware lifecycle (Trash) flow. Disabled for
-      // now rather than risk silently severing those references. Folders/files/
-      // links keep delete; draft VERSIONS are pruned from the Versions list.
-      disabled: node.kind === 'text',
+      // Delete now routes through the reference-aware Trash flow (ADR-0018): a soft,
+      // reversible trash that PRESERVES references (folders, shortcuts, other-folder
+      // containment, the Payload body) as dormant rows — so the N→1 reference-severing
+      // that disabled `text` delete is gone. Enabled for ALL kinds; the destructive
+      // `DELETE` is now a recoverable trash (permanent destruction is the distinct
+      // purge path inside the Trash lens).
       icon: <Trash2 className="size-4" aria-hidden />,
       label: t('graph.panel.delete'),
       onSelect: () => setConfirmDelete(true),

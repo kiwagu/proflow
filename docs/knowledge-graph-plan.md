@@ -249,6 +249,44 @@ the user's RLS.
       the deliberate-open call site POSTs `/author/graph/opened`, optional "Opened by me"
       (render-implementer, §5.5)
 
+## 8. Drive Trash — reference-aware soft-delete lifecycle
+
+A reversible holding state (live → trashed → purged) so a delete no longer severs
+references (shortcuts, cross-folder containment, the Payload body) with no undo.
+Lifecycle is a THIRD axis (`deleted_at`), orthogonal to access (`visibility`) and
+workflow (`status`): the trashed/normal split is a query lens, not an access fence;
+the access fence (`auth_user_can_access_resource`) is unchanged. Trash/restore are
+owner-sovereign OR `space.knowledge.delete` (no new verb); purge is a real DELETE
+guarded for in-use cross-owner references.
+
+- [x] Data layer (Phase A) — `deleted_at` + `trashed_by` columns + the partial
+      `(space_id, deleted_at)` index on `knowledge_resources`; the edge SELECT policy
+      gains a per-endpoint `deleted_at IS NULL` conjunct (a trashed endpoint makes
+      the edge dormant/hidden, preserved-not-pruned); the soft-cascade trigger
+      `kb_cascade_trash_containment_orphans` (orphans trashed with the SAME stamp, a
+      multi-parent child with a LIVING parent survives); the authority guard
+      `assert_trash_change_authorized` (delete-tier, trash+restore) and the in-use
+      purge guard `assert_purge_not_in_use`; the lifecycle audit trail on the EXISTING
+      substrates (`kb.resource_activity` `kind=trashed/restored`, actor-stamped; a
+      durable `space_admin_audit_log` `knowledge.resource.purged` row that outlives
+      the node). No new table, no new verb, no new entity-id prefix, zero engine DDL
+- [x] Fan-out + routes (Phase A) — `trashResource` / `restoreResource` / `purgeResource`
+      application modules; the resource `DELETE` re-pointed to the soft trash path
+      (text delete re-enabled — the N→1 severing reason is gone); a DISTINCT
+      `/author/graph/trash` route (PATCH restore, DELETE purge with best-effort inline
+      `deleteBody` after commit); zod input contracts in `@workspace/knowledge-contracts`
+- [x] Lifecycle lens split (Phase A) — the resolver/loader excludes trashed in normal
+      browse (`deleted_at IS NULL`) via a thin post-resolve filter + the dormant-edge
+      RLS policy; the Trash lens selector is `deleted_at IS NOT NULL`. The frozen
+      `ProjectionSpec`/engine contract (`schema_version=1`) is untouched
+- [x] e2e (Phase A) — trash hides/round-trips references; soft-cascade orphan +
+      multi-parent survival; cross-owner trash/restore gated; purge destroys + body
+      reap (failure non-fatal); graceful-absence (parent renders); immutable kra
+      trail (actor); durable purge audit survives the node + its kra rows
+- [ ] Trash lens UI (Phase B, render-implementer) — `DriveScope += 'trash'`, the
+      `navTrash` sidebar entry (drop `comingSoon`), Restore/Purge per-row affordances
+      ("in use by N" confirm), the tree-builder graceful-absence audit, i18n keys
+
 ## Open items
 
 - [x] Assign entity-id prefixes for per-user state and its satellites — the anchor prefix `rus`

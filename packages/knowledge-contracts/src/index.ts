@@ -70,6 +70,18 @@ export {
 } from './resource-user-state.schema.js';
 
 export {
+  parsePurgeResourceInput,
+  parseRestoreResourceInput,
+  parseTrashResourceInput,
+  purgeResourceInputSchema,
+  restoreResourceInputSchema,
+  trashResourceInputSchema,
+  type PurgeResourceInput,
+  type RestoreResourceInput,
+  type TrashResourceInput,
+} from './resource-trash.schema.js';
+
+export {
   BODY_BRIDGE_EVENTS,
   BODY_BRIDGE_SCHEMA_VERSION,
   bodyBridgeEnvelopeSchema,
