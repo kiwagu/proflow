@@ -169,6 +169,7 @@
   "shell.nav.spaceSettings": "Space settings",
   "shell.nav.organizations": "Organizations",
   "shell.nav.superAdmin": "Super admin",
+  "shell.nav.toggleSidebar": "Toggle sidebar",
   "shell.superAdmin.activeOrganization": "Active org",
   "shell.superAdmin.noActiveOrganization": "No active org",
   "roleCatalog.scope.global": "Global scope",

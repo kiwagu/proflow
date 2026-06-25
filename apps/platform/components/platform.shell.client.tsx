@@ -9,6 +9,7 @@ import { ThemeSwitcher } from '@/components/theme-switcher';
 import { PLATFORM_OPERATOR_CONSOLE_PATH } from '@/lib/platform-routes';
 import { hasEnvVars } from '@/lib/utils';
 import { cn } from '@workspace/ui/lib/utils';
+import { Hint } from '@workspace/ui/components/hint';
 import { pathWithinAppBasePath } from '@workspace/gateway-auth/path-within-base';
 import { getAppBasePath } from '@workspace/gateway-auth/gateway-paths';
 import { ActiveSpaceProvider } from '@/lib/active-space.context.client';
@@ -68,6 +69,7 @@ type PlatformShellLayoutProps = {
     spaceSettings: string;
     organizations: string;
     superAdmin: string;
+    toggleSidebar: string;
     appTitle: string;
     activeOrganization: string;
     noActiveOrganization: string;
@@ -192,7 +194,9 @@ export function PlatformShellLayout({
           <header className="border-border flex h-14 w-full shrink-0 items-center border-b">
             <div className="flex flex-1 items-center justify-between gap-4 px-4 text-sm">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <SidebarTrigger />
+                <Hint label={navLabels.toggleSidebar} side="bottom">
+                  <SidebarTrigger />
+                </Hint>
                 <Link
                   href="/"
                   className={cn('font-semibold hover:underline')}

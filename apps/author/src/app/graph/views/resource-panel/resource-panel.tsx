@@ -4,6 +4,7 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
+import { Hint } from '@workspace/ui/components/hint';
 import { DocumentViewerDialog } from '@workspace/ui/components/platform/document-viewer-dialog';
 import {
   Select,
@@ -179,14 +180,16 @@ export function ResourcePanel({
             node.kind === 'text' && onEdit ? () => onEdit(node.id) : undefined
           }
         />
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={() => onOpenChange(false)}
-          aria-label={t('graph.panel.close')}
-        >
-          <X className="size-4" aria-hidden />
-        </Button>
+        <Hint label={t('graph.panel.close')}>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            aria-label={t('graph.panel.close')}
+          >
+            <X className="size-4" aria-hidden />
+          </Button>
+        </Hint>
       </div>
 
       <div className="flex flex-col gap-5 px-4 py-4">
@@ -452,14 +455,16 @@ function VisibilitySection({
               {linked.map((choice) => (
                 <Badge key={choice.id} variant="secondary" className="gap-1">
                   {choice.name}
-                  <button
-                    type="button"
-                    disabled={disabled || working}
-                    onClick={() => toggle(choice.id, true)}
-                    aria-label={t('graph.panel.removeCohort')}
-                  >
-                    <X className="size-3" aria-hidden />
-                  </button>
+                  <Hint label={t('graph.panel.removeCohort')}>
+                    <button
+                      type="button"
+                      disabled={disabled || working}
+                      onClick={() => toggle(choice.id, true)}
+                      aria-label={t('graph.panel.removeCohort')}
+                    >
+                      <X className="size-3" aria-hidden />
+                    </button>
+                  </Hint>
                 </Badge>
               ))}
             </div>
@@ -767,55 +772,63 @@ function VersionsSection({
               <span className="text-muted-foreground flex-1 truncate">
                 {new Date(v.updatedAt).toLocaleString()}
               </span>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => void viewVersion(v)}
-                aria-label={t('graph.panel.versionView')}
-              >
-                <Eye className="size-3.5" aria-hidden />
-              </Button>
+              <Hint label={t('graph.panel.versionView')}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => void viewVersion(v)}
+                  aria-label={t('graph.panel.versionView')}
+                >
+                  <Eye className="size-3.5" aria-hidden />
+                </Button>
+              </Hint>
               {/* Compare — seeds the diff with previous → this version; both
                   sides are then freely reselectable (any-to-any). Placeholder on
                   the oldest row keeps the column aligned. */}
               {idx < versions.length - 1 ? (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => {
-                    const previous = versions[idx + 1];
-                    if (previous) {
-                      void openDiff(previous.id, v.id);
-                    }
-                  }}
-                  aria-label={t('graph.panel.versionCompare')}
-                >
-                  <GitCompare className="size-3.5" aria-hidden />
-                </Button>
+                <Hint label={t('graph.panel.versionCompare')}>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => {
+                      const previous = versions[idx + 1];
+                      if (previous) {
+                        void openDiff(previous.id, v.id);
+                      }
+                    }}
+                    aria-label={t('graph.panel.versionCompare')}
+                  >
+                    <GitCompare className="size-3.5" aria-hidden />
+                  </Button>
+                </Hint>
               ) : (
                 <span className="size-8 shrink-0" aria-hidden />
               )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => setConfirmId(v.id)}
-                aria-label={t('graph.panel.versionRestore')}
-              >
-                <RotateCcw className="size-3.5" aria-hidden />
-              </Button>
+              <Hint label={t('graph.panel.versionRestore')}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => setConfirmId(v.id)}
+                  aria-label={t('graph.panel.versionRestore')}
+                >
+                  <RotateCcw className="size-3.5" aria-hidden />
+                </Button>
+              </Hint>
               {/* Delete — only DRAFT versions (published history is immutable).
                   A fixed-width placeholder keeps the column aligned on published
                   rows, so each column holds ONE action across the whole list. */}
               {v.status !== 'published' ? (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => setConfirmDeleteId(v.id)}
-                  aria-label={t('graph.panel.versionDelete')}
-                >
-                  <Trash2 className="size-3.5" aria-hidden />
-                </Button>
+                <Hint label={t('graph.panel.versionDelete')}>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setConfirmDeleteId(v.id)}
+                    aria-label={t('graph.panel.versionDelete')}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                </Hint>
               ) : (
                 <span className="size-8 shrink-0" aria-hidden />
               )}

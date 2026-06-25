@@ -1,6 +1,6 @@
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
 import { loadGraphMessages } from '@workspace/i18n-catalogs/graph';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '../test-utils';
 import * as React from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -396,10 +396,10 @@ describe('DriveProjectionView (forward-port shell)', () => {
       />
     );
 
-    // The active chip: a clickable Paste titled with the (root) paste verb …
-    const paste = screen.getByTitle(
-      messages['graph.drive.pasteRoot']!.replace('{title}', 'Welcome')
-    );
+    // The active chip: a clickable Paste labelled with the (root) paste verb …
+    const paste = screen.getByRole('button', {
+      name: messages['graph.drive.pasteRoot']!.replace('{title}', 'Welcome'),
+    });
     expect(paste.tagName).toBe('BUTTON');
     fireEvent.click(paste);
     expect(clipboardProps.onPaste).toHaveBeenCalled();
@@ -411,7 +411,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
 
     // The read-only hint is NOT rendered while the active control is.
     expect(
-      screen.queryByTitle(
+      screen.queryByLabelText(
         messages['graph.drive.clipboardHint']!.replace('{title}', 'Welcome')
       )
     ).toBeNull();
@@ -428,7 +428,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
     );
 
     // The muted hint: an indicator carrying the clipboard title + accessible label.
-    const hint = screen.getByTitle(
+    const hint = screen.getByLabelText(
       messages['graph.drive.clipboardHint']!.replace('{title}', 'Welcome')
     );
     expect(hint).toBeTruthy();

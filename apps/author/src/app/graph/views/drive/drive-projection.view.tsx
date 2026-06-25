@@ -8,6 +8,7 @@ import { CardTile } from '@workspace/ui/components/card-tile';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { Hint } from '@workspace/ui/components/hint';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
@@ -825,50 +826,67 @@ export function DriveProjectionView({
         {clipboard != null ? (
           canPaste ? (
             <div className="flex items-center overflow-hidden rounded-md border">
-              <button
-                type="button"
-                onClick={handlePaste}
-                title={t(
+              <Hint
+                label={t(
                   isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
                   { title: clipboard.title }
                 )}
-                className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
               >
-                <ClipboardPaste className="size-[15px]" aria-hidden />
-                <span className="max-w-[120px] truncate">
-                  {clipboard.title}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={onClearClipboard}
-                aria-label={t('graph.drive.pasteClear')}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
-              >
-                <X className="size-[14px]" aria-hidden />
-              </button>
+                <button
+                  type="button"
+                  onClick={handlePaste}
+                  aria-label={t(
+                    isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
+                    { title: clipboard.title }
+                  )}
+                  className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+                >
+                  <ClipboardPaste className="size-[15px]" aria-hidden />
+                  <span className="max-w-[120px] truncate">
+                    {clipboard.title}
+                  </span>
+                </button>
+              </Hint>
+              <Hint label={t('graph.drive.pasteClear')}>
+                <button
+                  type="button"
+                  onClick={onClearClipboard}
+                  aria-label={t('graph.drive.pasteClear')}
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                >
+                  <X className="size-[14px]" aria-hidden />
+                </button>
+              </Hint>
             </div>
           ) : (
             <div className="text-muted-foreground flex items-center overflow-hidden rounded-md border">
-              <div
-                title={t('graph.drive.clipboardHint', {
+              <Hint
+                label={t('graph.drive.clipboardHint', {
                   title: clipboard.title,
                 })}
-                className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
               >
-                <Clipboard className="size-[15px]" aria-hidden />
-                <span className="max-w-[120px] truncate">
-                  {clipboard.title}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={onClearClipboard}
-                aria-label={t('graph.drive.pasteClear')}
-                className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
-              >
-                <X className="size-[14px]" aria-hidden />
-              </button>
+                <div
+                  aria-label={t('graph.drive.clipboardHint', {
+                    title: clipboard.title,
+                  })}
+                  className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
+                >
+                  <Clipboard className="size-[15px]" aria-hidden />
+                  <span className="max-w-[120px] truncate">
+                    {clipboard.title}
+                  </span>
+                </div>
+              </Hint>
+              <Hint label={t('graph.drive.pasteClear')}>
+                <button
+                  type="button"
+                  onClick={onClearClipboard}
+                  aria-label={t('graph.drive.pasteClear')}
+                  className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                >
+                  <X className="size-[14px]" aria-hidden />
+                </button>
+              </Hint>
             </div>
           )
         ) : null}
@@ -887,50 +905,60 @@ export function DriveProjectionView({
           </Button>
         ) : null}
         <div className="flex overflow-hidden rounded-md border">
-          <button
-            type="button"
-            onClick={() => applyLayout('grid')}
-            aria-label={t('graph.drive.layoutGrid')}
-            aria-pressed={layout === 'grid'}
-            className={cn(
-              'grid h-7 w-[30px] place-items-center',
-              layout === 'grid'
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground'
-            )}
-          >
-            <LayoutGrid className="size-[15px]" aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => applyLayout('list')}
-            aria-label={t('graph.drive.layoutList')}
-            aria-pressed={layout === 'list'}
-            className={cn(
-              'grid h-7 w-[30px] place-items-center',
-              layout === 'list'
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground'
-            )}
-          >
-            <List className="size-[15px]" aria-hidden />
-          </button>
+          <Hint label={t('graph.drive.layoutGrid')}>
+            <button
+              type="button"
+              onClick={() => applyLayout('grid')}
+              aria-label={t('graph.drive.layoutGrid')}
+              aria-pressed={layout === 'grid'}
+              className={cn(
+                'grid h-7 w-[30px] place-items-center',
+                layout === 'grid'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground'
+              )}
+            >
+              <LayoutGrid className="size-[15px]" aria-hidden />
+            </button>
+          </Hint>
+          <Hint label={t('graph.drive.layoutList')}>
+            <button
+              type="button"
+              onClick={() => applyLayout('list')}
+              aria-label={t('graph.drive.layoutList')}
+              aria-pressed={layout === 'list'}
+              className={cn(
+                'grid h-7 w-[30px] place-items-center',
+                layout === 'list'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground'
+              )}
+            >
+              <List className="size-[15px]" aria-hidden />
+            </button>
+          </Hint>
         </div>
         {onToggleSplit && scope === 'kb' ? (
-          <button
-            type="button"
-            onClick={onToggleSplit}
-            aria-label={t(
+          <Hint
+            label={t(
               split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
             )}
-            aria-pressed={split}
-            className={cn(
-              'grid h-7 w-[30px] place-items-center rounded-md border',
-              split ? 'bg-accent text-foreground' : 'text-muted-foreground'
-            )}
           >
-            <Columns2 className="size-[15px]" aria-hidden />
-          </button>
+            <button
+              type="button"
+              onClick={onToggleSplit}
+              aria-label={t(
+                split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
+              )}
+              aria-pressed={split}
+              className={cn(
+                'grid h-7 w-[30px] place-items-center rounded-md border',
+                split ? 'bg-accent text-foreground' : 'text-muted-foreground'
+              )}
+            >
+              <Columns2 className="size-[15px]" aria-hidden />
+            </button>
+          </Hint>
         ) : null}
       </div>
     </div>

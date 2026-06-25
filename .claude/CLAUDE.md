@@ -44,6 +44,7 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/nextjs-blocking-routes-suspense.mdc
 @.cursor/rules/shadcn-patterns-required.mdc
 @.cursor/rules/shadcn-patterns-react-ui.mdc
+@.cursor/rules/ui-hints-tooltips.mdc
 
 ## Payload CMS (Author app)
 

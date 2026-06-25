@@ -169,6 +169,7 @@
   "shell.nav.spaceSettings": "Configuracion del espacio",
   "shell.nav.organizations": "Organizaciones",
   "shell.nav.superAdmin": "Super admin",
+  "shell.nav.toggleSidebar": "Mostrar u ocultar el panel lateral",
   "shell.superAdmin.activeOrganization": "Org activa",
   "shell.superAdmin.noActiveOrganization": "Sin org activa",
   "roleCatalog.scope.global": "Ambito global",

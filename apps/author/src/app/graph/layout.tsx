@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { TooltipProvider } from '@workspace/ui/components/tooltip';
+
 import '../../author-tailwind.css';
 // Load Payload's admin stylesheet on the READ side too, so the workbench and the
 // document-editor route (which renders under Payload's `RootLayout`) share ONE
@@ -23,9 +25,14 @@ export default function GraphLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <main className="bg-background text-foreground min-h-screen">
-          {children}
-        </main>
+        {/* Single TooltipProvider at the workbench root — the canonical Radix
+            shape (the provider "wraps your app"). All `Hint`s below share it,
+            so they get one consistent open delay + skip-delay grouping. */}
+        <TooltipProvider>
+          <main className="bg-background text-foreground min-h-screen">
+            {children}
+          </main>
+        </TooltipProvider>
       </body>
     </html>
   );
