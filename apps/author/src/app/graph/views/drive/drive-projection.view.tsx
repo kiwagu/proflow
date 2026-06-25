@@ -8,6 +8,7 @@ import { CardTile } from '@workspace/ui/components/card-tile';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
@@ -26,11 +27,15 @@ import {
   LayoutGrid,
   List,
   Plus,
+  Radio,
   RotateCcw,
+  Send,
   Star,
   Trash2,
   Upload,
+  UserCheck,
   Users,
+  UsersRound,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -38,7 +43,12 @@ import * as React from 'react';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 
-import type { KbAttributes, NodeMeta } from '@/app/graph/graph-data.types';
+import type {
+  KbAttributes,
+  NodeMeta,
+  ShareMechanism,
+  SharedByMeEntry,
+} from '@/app/graph/graph-data.types';
 import type {
   DriveScope,
   ProjectionViewProps,
@@ -173,6 +183,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     scope: 'shared',
   },
   {
+    icon: Send,
+    key: 'navSharedByMe',
+    label: (t) => t('graph.drive.navSharedByMe'),
+    scope: 'shared-by-me',
+  },
+  {
     icon: Clock,
     key: 'navRecent',
     label: (t) => t('graph.drive.navRecent'),
@@ -193,6 +209,42 @@ const NAV_ITEMS: readonly NavItem[] = [
 ];
 
 type DriveLayout = 'grid' | 'list';
+
+/**
+ * The "Shared with me" mechanism presentation table (ADR-0021 Part C) — maps each
+ * winning mechanism to its badge icon, its short label, and a Hint explaining it. The
+ * order is the precedence order (most deliberate first: personal > cohort > broadcast)
+ * — it drives BOTH the facet chip row sequence and which chips appear (a chip shows
+ * only when its mechanism is present in the shared set). Labels/hints are LITERAL i18n
+ * keys so they stay statically extractable. DISPLAY only — the mechanism is precomputed
+ * server-side under RLS; the view never re-derives access.
+ */
+const SHARE_MECHANISM_ORDER = ['personal', 'cohort', 'broadcast'] as const;
+
+const SHARE_MECHANISM_META: Record<
+  ShareMechanism,
+  {
+    icon: LucideIcon;
+    label: (t: GraphTranslator) => string;
+    hint: (t: GraphTranslator) => string;
+  }
+> = {
+  personal: {
+    icon: UserCheck,
+    label: (t) => t('graph.drive.mechPersonal'),
+    hint: (t) => t('graph.drive.mechPersonalHint'),
+  },
+  cohort: {
+    icon: UsersRound,
+    label: (t) => t('graph.drive.mechCohort'),
+    hint: (t) => t('graph.drive.mechCohortHint'),
+  },
+  broadcast: {
+    icon: Radio,
+    label: (t) => t('graph.drive.mechBroadcast'),
+    hint: (t) => t('graph.drive.mechBroadcastHint'),
+  },
+};
 
 export function DriveProjectionView({
   result,
@@ -231,6 +283,12 @@ export function DriveProjectionView({
   const shortcutEdges = React.useMemo(() => kbData?.shortcuts ?? [], [kbData]);
   const attributesByItem = kbData?.attributesByItem ?? {};
   const metaByItem = kbData?.metaByItem ?? {};
+  // The "Shared with me" mechanism annotation (ADR-0021 Part C): each node in the
+  // 'shared' set → the WINNING mechanism that grants ME access (personal > cohort >
+  // broadcast, precedence applied server-side). Pure DISPLAY enrichment of an
+  // already-RLS-admitted set — drives the per-card badge + the facet chip row, never a
+  // fence. Empty when nothing is shared-with-me.
+  const shareMechanism = kbData?.shareMechanism ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
   // The viewer's space verbs — combined with each node's owner (from `metaByItem`)
   // to display-gate its `⋯` menu. Fail-CLOSED default (all false) when no seed: the
@@ -268,6 +326,19 @@ export function DriveProjectionView({
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
   const isShared = scope === 'shared';
+  // The "Shared with me" facet (ADR-0021 Part C): a client-side filter over the
+  // mechanism annotation — `null` = All. Local to the lens (a UI filter, never a
+  // fence). State is stored raw, but every READER goes through `shareFacet`, which is
+  // forced to `null` (All) outside the 'shared' lens — so the facet always resets when
+  // you leave and re-enter the lens, with no setState-in-effect cascade.
+  const [shareFacetState, setShareFacet] =
+    React.useState<ShareMechanism | null>(null);
+  const shareFacet = isShared ? shareFacetState : null;
+  // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
+  // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
+  // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
+  // list so the cards can show who I shared it with.
+  const isSharedByMe = scope === 'shared-by-me';
   const isHome = scope === 'home';
   // The Trash lens (ADR-0018 fork #4): the trashed set (`deleted_at IS NOT NULL`),
   // resolved server-side under the user's RLS and threaded in `kbData.trash`. It is a
@@ -278,11 +349,22 @@ export function DriveProjectionView({
   // A flat lens (Home / Starred / Recent / Shared / Trash) hides the folder tree,
   // breadcrumb path, and shortcuts — the canvas is a flat digest/list, not a folder
   // you sit in.
-  const isFilterScope = isStarred || isRecent || isShared || isHome || isTrash;
+  const isFilterScope =
+    isStarred || isRecent || isShared || isSharedByMe || isHome || isTrash;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
   );
+  // `resourceId → grantees` for the "Shared by me" lens: the membership test for the
+  // lens (canvas ∩ keys) AND the per-card grantee summary in one map. Grantees arrive
+  // pre-sorted by display name from the data layer (don't re-sort).
+  const sharedByMeByResource = React.useMemo(() => {
+    const map = new Map<string, SharedByMeEntry['grantees']>();
+    for (const entry of kbData?.sharedByMe ?? []) {
+      map.set(entry.resourceId, entry.grantees);
+    }
+    return map;
+  }, [kbData]);
 
   const containment = React.useMemo(
     () => buildContainment(result.items, containmentEdges),
@@ -414,7 +496,9 @@ export function DriveProjectionView({
   // A loader lens over the already-RLS-narrowed canvas (ADR-0017 §2.1) — the owner
   // filter is a DISPLAY path, not a fence (the RLS floor is the authority). At Step 1
   // the floor is still 'space', so this surfaces "space-published by someone else".
-  const sharedNodes = isShared
+  // The full shared-with-me set (owner ≠ me), BEFORE the facet filter — used to derive
+  // which mechanism chips to show (only mechanisms actually present in the set).
+  const sharedAllNodes = isShared
     ? result.items
         .map((item) => containment.byId.get(item.id))
         .filter((node): node is LensNode => {
@@ -422,6 +506,33 @@ export function DriveProjectionView({
           const owner = metaByItem[node.id]?.ownerUserId;
           return owner != null && owner !== currentUserId;
         })
+    : [];
+  // The mechanisms present in the current shared set (de-duped, in precedence order) —
+  // drives the facet chip row: a chip is shown only when at least one shared node uses
+  // that mechanism (no empty "cohort" chip when nothing is cohort-shared).
+  const presentMechanisms = SHARE_MECHANISM_ORDER.filter((mech) =>
+    sharedAllNodes.some((node) => shareMechanism[node.id] === mech)
+  );
+  // The facet view of the shared set: All (`shareFacet === null`) shows everything;
+  // a selected mechanism narrows to nodes whose WINNING mechanism matches. A pure
+  // client display filter over the precomputed annotation — never recomputes access.
+  const sharedNodes =
+    isShared && shareFacet != null
+      ? sharedAllNodes.filter((node) => shareMechanism[node.id] === shareFacet)
+      : sharedAllNodes;
+
+  // Shared by me = the resolved canvas ∩ the resourceIds I have granted OUT
+  // (ADR-0021 Part B). The data layer already fail-closed it (a resource I can no
+  // longer see, or whose only grant I revoked, is absent from `sharedByMe`); a
+  // granted id that somehow isn't on the canvas simply doesn't resolve and drops out.
+  // Folders + content split exactly like the 'shared' lens, reusing every card path.
+  const sharedByMeNodes = isSharedByMe
+    ? result.items
+        .map((item) => containment.byId.get(item.id))
+        .filter(
+          (node): node is LensNode =>
+            node != null && sharedByMeByResource.has(node.id)
+        )
     : [];
 
   // "For you" home (ADR-0017 §4): a personal DIGEST over the now-personal visible set,
@@ -474,13 +585,15 @@ export function DriveProjectionView({
       ? starredNodes.filter((node) => node.kind === 'folder')
       : isShared
         ? sharedNodes.filter((node) => node.kind === 'folder')
-        : isFilterScope // 'recent' lists no folders
-          ? []
-          : isRoot
-            ? roots
-            : folder
-              ? childFolders(containment, folder.id)
-              : []
+        : isSharedByMe
+          ? sharedByMeNodes.filter((node) => node.kind === 'folder')
+          : isFilterScope // 'recent' lists no folders
+            ? []
+            : isRoot
+              ? roots
+              : folder
+                ? childFolders(containment, folder.id)
+                : []
   )
     .slice()
     .sort(byTitle);
@@ -494,13 +607,15 @@ export function DriveProjectionView({
       ? starredNodes.filter((node) => node.kind !== 'folder')
       : isShared
         ? sharedNodes.filter((node) => node.kind !== 'folder')
-        : isRecent
-          ? recentNodes
-          : isRoot
-            ? rootContent(containment) // loose top-level content (no parent folder)
-            : folder
-              ? childContent(containment, folder.id)
-              : []
+        : isSharedByMe
+          ? sharedByMeNodes.filter((node) => node.kind !== 'folder')
+          : isRecent
+            ? recentNodes
+            : isRoot
+              ? rootContent(containment) // loose top-level content (no parent folder)
+              : folder
+                ? childContent(containment, folder.id)
+                : []
   )
     .slice()
     .sort(isRecent ? byRecency : byTitle);
@@ -714,6 +829,8 @@ export function DriveProjectionView({
               <Star className="size-3.5" aria-hidden />
             ) : isShared ? (
               <Users className="size-3.5" aria-hidden />
+            ) : isSharedByMe ? (
+              <Send className="size-3.5" aria-hidden />
             ) : isTrash ? (
               <Trash2 className="size-3.5" aria-hidden />
             ) : (
@@ -725,9 +842,11 @@ export function DriveProjectionView({
                 ? t('graph.drive.navStarred')
                 : isShared
                   ? t('graph.drive.navShared')
-                  : isTrash
-                    ? t('graph.drive.navTrash')
-                    : t('graph.drive.navRecent')}
+                  : isSharedByMe
+                    ? t('graph.drive.navSharedByMe')
+                    : isTrash
+                      ? t('graph.drive.navTrash')
+                      : t('graph.drive.navRecent')}
           </span>
         ) : dndEnabled ? (
           // The root crumb is also a drop target: dropping a node here re-parents it
@@ -984,6 +1103,16 @@ export function DriveProjectionView({
             : onSelect(item.id)
         }
         onDetails={() => onSelect(item.id)}
+        footer={
+          isSharedByMe ? (
+            <GranteeSummary
+              t={t}
+              grantees={sharedByMeByResource.get(item.id) ?? []}
+            />
+          ) : isShared && shareMechanism[item.id] ? (
+            <ShareMechanismBadge t={t} mechanism={shareMechanism[item.id]!} />
+          ) : undefined
+        }
         star={
           <StarButton
             starred={starredSet.has(item.id)}
@@ -1093,6 +1222,19 @@ export function DriveProjectionView({
             </div>
           ) : null}
 
+          {/* "Shared with me" mechanism facet (ADR-0021 Part C) — a chip row that
+              filters the shared set by mechanism. Only rendered in the 'shared' lens,
+              and only when ≥2 mechanisms are present (a single-mechanism set has
+              nothing to filter). Display over the precomputed annotation. */}
+          {isShared && presentMechanisms.length > 1 ? (
+            <ShareFacetChips
+              t={t}
+              mechanisms={presentMechanisms}
+              active={shareFacet}
+              onChange={setShareFacet}
+            />
+          ) : null}
+
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
           {layout === 'list' ? (
             driveRows.length > 0 ? (
@@ -1144,6 +1286,17 @@ export function DriveProjectionView({
                         layout,
                         onOpen: () => navigate(sub.id),
                         onDetails: () => onSelect(sub.id),
+                        footer: isSharedByMe ? (
+                          <GranteeSummary
+                            t={t}
+                            grantees={sharedByMeByResource.get(sub.id) ?? []}
+                          />
+                        ) : isShared && shareMechanism[sub.id] ? (
+                          <ShareMechanismBadge
+                            t={t}
+                            mechanism={shareMechanism[sub.id]!}
+                          />
+                        ) : undefined,
                         star: (
                           <StarButton
                             starred={starredSet.has(sub.id)}
@@ -1231,7 +1384,16 @@ export function DriveProjectionView({
             <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
           ) : null}
           {isShared && folders.length === 0 && items.length === 0 ? (
-            <EmptyState>{t('graph.drive.sharedEmpty')}</EmptyState>
+            <EmptyState>
+              {/* A facet filtered the set to nothing → "nothing shared this way";
+                  an empty lens with no facet → the generic shared-empty copy. */}
+              {shareFacet != null
+                ? t('graph.drive.facetFilteredEmpty')
+                : t('graph.drive.sharedEmpty')}
+            </EmptyState>
+          ) : null}
+          {isSharedByMe && folders.length === 0 && items.length === 0 ? (
+            <EmptyState>{t('graph.drive.sharedByMeEmpty')}</EmptyState>
           ) : null}
           {!isFilterScope &&
           isRoot &&
@@ -1347,6 +1509,155 @@ function StarButton({
   );
 }
 
+/**
+ * GranteeSummary — the "who I shared this with" line on a "Shared by me" card
+ * (ADR-0021 Part B). A compact avatar cluster + a label: "Shared with {name}" for
+ * one grantee, "Shared with {name} +{n}" for a few, or "Shared with {n} people" once
+ * the cluster would overflow. Each avatar carries a Hint tooltip with the person's
+ * name + email (the same EntityAvatar + Hint pattern the Share dialog uses for the
+ * per-person grant rows). Grantees arrive pre-sorted by display name from the data
+ * layer (don't re-sort).
+ */
+const GRANTEE_AVATAR_CAP = 3;
+
+function GranteeSummary({
+  t,
+  grantees,
+}: {
+  t: GraphTranslator;
+  grantees: SharedByMeEntry['grantees'];
+}) {
+  if (grantees.length === 0) {
+    return null;
+  }
+  const shown = grantees.slice(0, GRANTEE_AVATAR_CAP);
+  const overflow = grantees.length - shown.length;
+  // One → name the person; a few → name the first + "+n"; many → just the count.
+  const label =
+    grantees.length === 1
+      ? t('graph.drive.sharedWithOne', { name: grantees[0]!.displayName })
+      : grantees.length <= GRANTEE_AVATAR_CAP
+        ? t('graph.drive.sharedWithMany', {
+            name: grantees[0]!.displayName,
+            count: grantees.length - 1,
+          })
+        : t('graph.drive.sharedWithCount', { count: grantees.length });
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex -space-x-1.5">
+        {shown.map((g) => (
+          <Hint key={g.userId} label={g.email ?? g.displayName}>
+            <span className="inline-flex">
+              <EntityAvatar
+                name={g.displayName}
+                className="ring-card size-5 ring-2"
+                fallbackClassName="text-[9px]"
+              />
+            </span>
+          </Hint>
+        ))}
+        {overflow > 0 ? (
+          <span className="bg-muted text-muted-foreground ring-card grid size-5 place-items-center rounded-full text-[9px] font-semibold ring-2">
+            +{overflow}
+          </span>
+        ) : null}
+      </div>
+      <span className="text-muted-foreground truncate text-xs">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * ShareMechanismBadge — the per-card "why is this shared with me" badge in the
+ * 'shared' (incoming) lens ONLY (ADR-0021 Part C). A compact shadcn `Badge` (the same
+ * chip primitive the cards already use) + a small lucide icon + the mechanism label,
+ * wrapped in a `Hint` that explains the mechanism (the label alone is terse). The
+ * mechanism is the precomputed WINNING one (personal > cohort > broadcast) — DISPLAY
+ * over an already-resolved, already-fenced set, never a recomputed access decision.
+ */
+function ShareMechanismBadge({
+  t,
+  mechanism,
+}: {
+  t: GraphTranslator;
+  mechanism: ShareMechanism;
+}) {
+  const meta = SHARE_MECHANISM_META[mechanism];
+  const Icon = meta.icon;
+  const label = meta.label(t);
+  return (
+    <Hint label={meta.hint(t)}>
+      <Badge
+        variant="secondary"
+        className="gap-1 font-normal"
+        aria-label={label}
+      >
+        <Icon className="size-3" aria-hidden />
+        <span className="truncate">{label}</span>
+      </Badge>
+    </Hint>
+  );
+}
+
+/**
+ * ShareFacetChips — the facet/chip row above the 'shared' lens (ADR-0021 Part C). One
+ * "All" chip + one chip per mechanism PRESENT in the shared set (absent mechanisms are
+ * never shown). Clicking a mechanism narrows the rendered shared nodes to it; "All"
+ * clears the filter. A client display filter over the precomputed annotation — facet
+ * state is local to the lens and resets on leaving it. Built from the `Button` toggle
+ * pattern the toolbar already uses (`aria-pressed`, rounded chips, accent-on-active),
+ * NOT a new primitive (shadcn-patterns-required).
+ */
+function ShareFacetChips({
+  t,
+  mechanisms,
+  active,
+  onChange,
+}: {
+  t: GraphTranslator;
+  mechanisms: readonly ShareMechanism[];
+  active: ShareMechanism | null;
+  onChange: (next: ShareMechanism | null) => void;
+}) {
+  const chip = (
+    selected: boolean,
+    label: string,
+    onClick: () => void,
+    icon?: LucideIcon
+  ) => {
+    const Icon = icon;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className={cn(
+          'inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
+          selected
+            ? 'bg-accent text-foreground border-transparent'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        )}
+      >
+        {Icon ? <Icon className="size-3" aria-hidden /> : null}
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      {chip(active == null, t('graph.drive.facetAll'), () => onChange(null))}
+      {mechanisms.map((mech) =>
+        chip(
+          active === mech,
+          SHARE_MECHANISM_META[mech].label(t),
+          () => onChange(mech),
+          SHARE_MECHANISM_META[mech].icon
+        )
+      )}
+    </div>
+  );
+}
+
 /** Drag/drop wiring a card applies to its outer wrapper (the workbench owns the
  * DndContext; the cards just mark themselves draggable / droppable). */
 type CardDnd = {
@@ -1372,6 +1683,7 @@ function FolderCard({
   onDetails,
   star,
   actions,
+  footer,
   dnd,
 }: {
   title: string;
@@ -1388,6 +1700,8 @@ function FolderCard({
    * need a separate affordance — a deliberate delta from the prototype (which
    * navigated folders with no action surface). Omitted for shortcut cards. */
   actions?: React.ReactNode;
+  /** Extra line under the subtitle (the "Shared by me" grantee summary). */
+  footer?: React.ReactNode;
   /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
   dnd?: CardDnd;
 }) {
@@ -1432,6 +1746,7 @@ function FolderCard({
         <div className="min-w-0 flex-1 text-left">
           <div className="truncate text-sm font-medium">{title}</div>
           <div className="text-muted-foreground text-xs">{subtitle}</div>
+          {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
         {shortcut ? (
           <ArrowUpRight
@@ -1462,6 +1777,7 @@ function ItemCard({
   onDetails,
   star,
   actions,
+  footer,
   dnd,
 }: {
   t: GraphTranslator;
@@ -1479,6 +1795,8 @@ function ItemCard({
   star?: React.ReactNode;
   /** Hover `⋯` action menu for this node (Details opens the panel). */
   actions?: React.ReactNode;
+  /** Extra line under the meta line (the "Shared by me" grantee summary). */
+  footer?: React.ReactNode;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;
 }) {
@@ -1535,6 +1853,7 @@ function ItemCard({
           <div className="text-muted-foreground truncate text-xs">
             {metaLine}
           </div>
+          {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
       </CardTile>
       {star || actions ? (

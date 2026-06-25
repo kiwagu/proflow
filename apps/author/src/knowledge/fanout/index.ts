@@ -35,6 +35,8 @@ export {
   type GrantResourceToUserInput,
   type RevokeResourceUserGrantInput,
 } from './resource-user-grant.fanout';
+export { listResourcesSharedByMe } from './shared-by-me.fanout';
+export { annotateShareMechanism } from './share-mechanism.fanout';
 export {
   purgeResource,
   restoreResource,

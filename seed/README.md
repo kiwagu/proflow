@@ -58,12 +58,32 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 `per-user-share`, `knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the
 scenarios for one capability so the seed stays runnable as the catalog grows. A scenario
 opts into a preset via its `presets` field. `access` is cohort/floor sharing;
+`shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
+mechanism-distinction fixture (ADR-0021 Part C): one non-owner `viewer` sees four nodes
+owned by another member, one per access MECHANISM — a per-user grant (→ `personal`), a
+cohort grant to a cohort the viewer belongs to (→ `cohort`), a space-floor publish
+(→ `broadcast`), and a both-granted node that must win as `personal` (precedence
+`personal > cohort > broadcast`). The Wave 3b render/badge e2e draws it via
+`seedShareMechanismFixture`.
 `per-user-share` is per-person sharing (a private doc granted to one named member,
-ADR-0019 — the grantee sees it, a third un-granted member stays blind). Its space is
-multi-member with named co-members, so the SAME scenario also feeds the Share dialog's
-co-member identity directory (ADR-0020): the people-picker + "who has access" rows
-resolve a co-member's `display_name` + `email` (never a bare short-id), search (`?q=`)
+ADR-0019 — the grantee sees it, a third un-granted member stays blind). That ONE grant is
+read from BOTH ends of the grant graph (ADR-0021 Part B): the grantee sees the doc in the
+"Shared with me" lens (DriveScope `shared`), while the OWNER sees the same grant in the
+"Shared by me" lens (DriveScope `shared-by-me`) — a read-only projection over
+`knowledge_resource_user_grants WHERE granted_by = me`, surfaced as a `SharedByMeEntry`
+(`{ resourceId, grantees }`). The catalog adds no second grant for the opposite direction;
+both lenses read the one `per-user-share/granted` row, and the un-granted sibling appears in
+neither. (Wave 2 a landed only the `shared-by-me` DATA slice; the lens render + its e2e
+assertion are the Wave 2 b close-out — the scenario already carries the data they will draw
+from.) Its space is multi-member with named co-members, so the SAME scenario also feeds the
+Share dialog's co-member identity directory (ADR-0020): the people-picker + "who has access"
+rows resolve a co-member's `display_name` + `email` (never a bare short-id), search (`?q=`)
 narrows it, and a non-member of the space gets an empty directory (the membership fence).
+The `per-user-share` preset ALSO carries the `directory-picker` scenario — a ten-member
+grantable cohort sharing one space with a private share target — that exercises the
+paginated directory-v2 picker (ADR-0021 Part A): a page of 5 + "+N more", a keyset
+"Show more" next page with no overlap, and `p_exclude` dropping the owner + the
+already-granted member from BOTH the page and the `total_count`.
 
 ## The dictionary
 
@@ -94,6 +114,13 @@ revoke→re-grant arc, and the authority/cross-space negatives all run through t
 spec also drives the co-member directory (ADR-0020) through the shared `visibility`
 wrapper (`GET /author/graph/visibility?q=`): the picker/grant rows resolve the seeded
 co-member `display_name`s, search narrows, and a non-member sees an empty directory.
+A second describe-block in the same spec draws the `directory-picker` scenario's
+ten-member space via `seedDirectoryPickerFixture` and exercises the PAGINATED picker
+(ADR-0021): the `visibility` wrapper now returns `members` as a keyset PAGE
+(`{ items, nextCursor, total }`) and accepts `{ cursor, limit }`, so the spec asserts a
+page of 5 + an accurate "+N more" `total`, a "Show more" (`cursor`) next page with no
+overlap, search narrowing the `total` below a page, and `p_exclude` dropping the owner +
+already-granted (and a just-granted member) from BOTH the page and the count.
 
 ## Extending the catalog
 

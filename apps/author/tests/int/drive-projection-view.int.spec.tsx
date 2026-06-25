@@ -95,6 +95,8 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       openedAtById: {},
       capabilities: NO_CAPS,
       trash: { items: [], metaByItem: {} },
+      sharedByMe: [],
+      shareMechanism: {},
     },
   };
 }
@@ -188,6 +190,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
         },
         capabilities: NO_CAPS,
         trash: { items: [], metaByItem: {} },
+        sharedByMe: [],
+        shareMechanism: {},
       },
     });
     render(<DriveProjectionView {...props} />);
@@ -223,6 +227,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
             openedAtById: {},
             capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />
@@ -254,6 +260,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
             openedAtById: {},
             capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />
@@ -489,6 +497,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
             openedAtById: {},
             capabilities: NO_CAPS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />

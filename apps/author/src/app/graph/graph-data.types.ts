@@ -123,3 +123,86 @@ export type GrantableMember = {
   displayName: string;
   email: string | null;
 };
+
+/**
+ * One entry of the "Shared by me" lens (ADR-0021 Part B) — ONE resource the CURRENT
+ * user has shared OUT, paired with the people they granted it to. A read-only
+ * projection over `knowledge_resource_user_grants WHERE granted_by = me`, joined to the
+ * resources I can still SEE (RLS the fence): a resource I can no longer see — or whose
+ * only grant I revoked — never appears (fail-closed by construction). v1 = per-user
+ * grants I created only; cohort-by-me (`linked_by`) is a DEFERRED additive layer.
+ *
+ * - `resourceId` — the shared resource's `knr_…` id. The render agent INTERSECTS the
+ *   set of these ids with the resolved canvas (lens = canvas ∩ {ids I granted}).
+ * - `grantees` — the people I granted it to, each labelled via the co-member directory
+ *   (ADR-0020), sorted by display name (canonical `@workspace/std` text sort). `email`
+ *   is the secondary disambiguator line.
+ */
+export type SharedByMeEntry = {
+  resourceId: string;
+  grantees: {
+    userId: string;
+    displayName: string;
+    email: string | null;
+  }[];
+};
+
+/**
+ * The mechanism that grants the CURRENT user access to a node in the "Shared with me"
+ * lens (ADR-0021 Part C). The `'shared'` lens is "visible nodes I do NOT own" — but the
+ * resolver (frozen, `security invoker`, ADR-0003) returns visible nodes WITHOUT saying
+ * WHICH additive grant admits me. This re-derives the reason from the already-visible
+ * set, purely as DISPLAY ENRICHMENT (never a fence — the node is already visible; we
+ * only label why). The three mechanisms, in precedence order (most deliberate first):
+ *
+ *   - `personal`  — a per-user grant TO me (`knowledge_resource_user_grants`, ADR-0019):
+ *                   someone chose me specifically. The strongest signal.
+ *   - `cohort`    — a cohort grant (`knowledge_resource_scopes`, ADR-0017 §1.5) to a
+ *                   cohort I belong to: shared with a group I'm in.
+ *   - `broadcast` — the residual: visible via the space/org floor OR supervisory
+ *                   hierarchy (`auth_user_manages_owner`). For v1, supervisory FOLDS
+ *                   into broadcast (a subordinate's content I can see is not a
+ *                   deliberate share TO me either — ADR-0021 §7 DEFERRED note); a later
+ *                   layer MAY split a "Via your team" mechanism.
+ *
+ * Precedence is `personal > cohort > broadcast` — a node admitted by several mechanisms
+ * (e.g. granted to me personally AND space-published) reports the most deliberate one as
+ * its WINNING mechanism.
+ */
+export type ShareMechanism = 'personal' | 'cohort' | 'broadcast';
+
+/**
+ * The "Shared with me" mechanism annotation (ADR-0021 Part C) — a map from a shared
+ * node id to the WINNING mechanism that grants the current user access (precedence
+ * `personal > cohort > broadcast`). Computed by ONE batched fanout
+ * (`annotateShareMechanism`) over the shared-set node ids: three IN-list reads
+ * (per-user grant / cohort membership / residual), NEVER per-node and NEVER N+1.
+ *
+ * This is enrichment over an ALREADY-RLS-admitted set: a node not visible to the user
+ * is never in the input, so it can never be annotated — the annotation can only
+ * describe access the user already has, never grant or narrow it (Invariant #1: a
+ * read-only projection, no new table, no resolver change, no new access dimension).
+ *
+ * Every node in the shared set HAS an entry: if a node is matched by neither a personal
+ * grant nor a cohort I belong to, it is `broadcast` by construction (it is visible, so
+ * SOME mechanism admits it; the residual is the floor/supervisory branch).
+ */
+export type ShareMechanismByItem = Record<string, ShareMechanism>;
+
+/**
+ * ONE page of the grantable-member picker (ADR-0021 Part A). The directory function pages
+ * a keyset cursor over the stable order and reports the TOTAL of grantable matches for the
+ * query (owner + already-granted already removed server-side), so the picker can show a
+ * small page of REAL candidates plus a "+N more" remaining-count.
+ *
+ * - `items` — this page's grantable members, in the directory's own (stable) order.
+ * - `nextCursor` — an OPAQUE token to fetch the next page; `null` when this is the last
+ *   page (no more rows). The client treats it as opaque and re-sends it as `cursor`.
+ * - `total` — the total count of grantable matches for the current query (across all
+ *   pages), so the picker shows `total − shown` remaining.
+ */
+export type GrantableMembersPage = {
+  items: GrantableMember[];
+  nextCursor: string | null;
+  total: number;
+};

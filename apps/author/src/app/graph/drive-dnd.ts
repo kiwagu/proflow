@@ -8,16 +8,27 @@ import {
 import * as React from 'react';
 
 /**
- * Is the pointer-down target an interactive control (or inside one)? Pressing the
- * card/row's ⋯ menu, star, a link, or an input must NOT begin a drag — otherwise the
- * press starts a micro-drag whose pointer-up is swallowed when the menu/dialog opens,
- * leaving a STUCK drag (dnd-kit keeps `user-select:none` on the body) that then blocks
- * text selection everywhere, including the portaled Rename dialog.
+ * Is the pointer-down target an interactive control, or inside a portaled overlay
+ * (dialog / menu / select) — either of which must NOT begin a card drag?
+ *
+ * Two reasons a press here must not drag:
+ *  - Pressing the card/row's ⋯ menu, star, a link, or an input would start a
+ *    micro-drag whose pointer-up is swallowed when the menu/dialog opens, leaving a
+ *    STUCK drag (dnd-kit keeps `user-select:none` on the body) that blocks text
+ *    selection everywhere.
+ *  - A dialog/menu/select opened FROM a card is a React child of that card's
+ *    draggable, so even though Radix DOM-portals it to <body>, its pointer events
+ *    bubble up the REACT tree to the card's `onPointerDown` activator. Selecting
+ *    text in the Share dialog would otherwise start a drag of the card behind it.
+ *    The DOM walk from a portaled overlay reaches its `role="dialog"|"menu"|
+ *    "listbox"` container (and stops at <body>, never the card), so matching those
+ *    roles catches the portal case without needing the card in the DOM chain.
  */
 function fromInteractive(target: EventTarget | null): boolean {
   let node = target as HTMLElement | null;
   while (node) {
     const tag = node.tagName;
+    const role = node.getAttribute?.('role');
     if (
       tag === 'BUTTON' ||
       tag === 'INPUT' ||
@@ -25,7 +36,11 @@ function fromInteractive(target: EventTarget | null): boolean {
       tag === 'SELECT' ||
       tag === 'A' ||
       tag === 'LABEL' ||
-      node.getAttribute?.('role') === 'menuitem' ||
+      role === 'menuitem' ||
+      role === 'dialog' ||
+      role === 'alertdialog' ||
+      role === 'menu' ||
+      role === 'listbox' ||
       node.isContentEditable
     ) {
       return true;

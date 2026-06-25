@@ -2,7 +2,15 @@ import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { byText } from '@workspace/ui/lib/sort';
 
-import type { GrantableMember, UserGrant } from '@/app/graph/graph-data.types';
+import type {
+  GrantableMember,
+  GrantableMembersPage,
+  UserGrant,
+} from '@/app/graph/graph-data.types';
+import {
+  decodeDirectoryCursor,
+  encodeDirectoryCursor,
+} from '@/knowledge/fanout/directory-cursor';
 
 /**
  * Per-user (per-person) sharing — the THIRD additive grant dimension (ADR-0019).
@@ -29,6 +37,10 @@ import type { GrantableMember, UserGrant } from '@/app/graph/graph-data.types';
 /** Hard cap mirrored from the directory function (`least(…, 50)`); the default the RPC
  * uses when `p_limit` is omitted. */
 const DIRECTORY_LIMIT = 50;
+
+/** The picker's default page size (ADR-0021 A3): a small page of 5 + "+N more". The
+ * caller may override; the directory function clamps to ≤50 regardless. */
+const GRANTABLE_PAGE_SIZE = 5;
 
 type DirectoryLabel = { displayName: string | null; email: string | null };
 
@@ -130,23 +142,37 @@ export async function listUserGrants(
 }
 
 /**
- * The GRANTABLE picker source (Fork 2): the bounded, searchable co-member directory of the
- * resource's space (ADR-0020), MINUS the owner, MINUS those already granted. The directory
- * RPC is searchable (`query`) + hard-limited at the source (Defect 2 — never load-all); the
- * owner + already-granted subtraction stays caller-side (the directory is generic, ADR-0020
- * §5). The list is a UX convenience — the same-space guard + RLS are the fence, so a stale
- * list can only ever produce a clean no-op insert, never a leak.
+ * The GRANTABLE picker source (ADR-0021 Part A): ONE keyset page of the bounded, searchable
+ * co-member directory of the resource's space (ADR-0020), with the owner + already-granted
+ * EXCLUDED at the source (passed as `p_exclude`, applied BEFORE the limit AND before the
+ * count). So the page is `limit` REAL grantable candidates and `total` is the count of
+ * grantable matches for the query — the picker shows a small page + an accurate "+N more".
  *
- * Order: preserved from the directory's own `display_name` SQL ordering (the bounded fetch);
- * the UI applies its canonical text sorter to the final shown set (ADR-0020 §4). The owner +
- * granted subtraction happens AFTER the limit, so the result may carry fewer than `limit`
- * rows — accepted for v1 (ADR-0020 §5).
+ * Paging (A1): the opaque `cursor` decodes into the directory's `(p_after_key, p_after_user)`
+ * keyset seek — a drift-free resume of the stable `(sort_key, user_id)` order. `cursor=null`
+ * (or a new query) is page 1. `nextCursor` is built from the LAST returned row when a full
+ * page came back AND more matches remain; `null` otherwise (no more pages).
+ *
+ * The list is a UX convenience — the same-space guard + grant RLS are the fence, so a stale
+ * page can only ever produce a clean no-op insert, never a leak (the directory itself is
+ * membership-fenced: a non-member gets ∅ + total 0). Order is preserved from the directory's
+ * own stable SQL ordering; the UI applies its canonical text sorter to the shown set
+ * (ADR-0020 §4 / ADR-0021 §8).
  */
 export async function listGrantableMembers(
-  input: { resourceId: string; query?: string },
+  input: {
+    resourceId: string;
+    query?: string;
+    cursor?: string;
+    limit?: number;
+  },
   deps: { db: SupabaseClient<Database> }
-): Promise<GrantableMember[]> {
+): Promise<GrantableMembersPage> {
   const { db } = deps;
+  const limit = Math.min(
+    Math.max(input.limit ?? GRANTABLE_PAGE_SIZE, 1),
+    DIRECTORY_LIMIT
+  );
 
   // The resource's space + owner (RLS mirrors node read). Absent → not visible.
   const { data: resourceRow, error: resourceErr } = await db
@@ -162,49 +188,69 @@ export async function listGrantableMembers(
     owner_user_id: string | null;
   } | null;
   if (!resource) {
-    return [];
+    return { items: [], nextCursor: null, total: 0 };
   }
 
-  const [directoryResult, grantsResult] = await Promise.all([
-    db.rpc('space_member_directory', {
-      p_space_id: resource.space_id,
-      p_query: input.query,
-      p_limit: DIRECTORY_LIMIT,
-    }),
-    db
-      .from('knowledge_resource_user_grants')
-      .select('user_id')
-      .eq('resource_id', input.resourceId),
-  ]);
-  if (directoryResult.error) {
-    throw new Error(
-      `listGrantableMembers directory: ${directoryResult.error.message}`
-    );
+  // Read the already-granted set FIRST so it joins the owner in the server-side exclusion
+  // (A5: exclude before the limit + count, never a caller-side post-limit subtraction).
+  const { data: grantRows, error: grantsErr } = await db
+    .from('knowledge_resource_user_grants')
+    .select('user_id')
+    .eq('resource_id', input.resourceId);
+  if (grantsErr) {
+    throw new Error(`listGrantableMembers grants: ${grantsErr.message}`);
   }
-  if (grantsResult.error) {
-    throw new Error(
-      `listGrantableMembers grants: ${grantsResult.error.message}`
-    );
+  const exclude = new Set<string>();
+  if (resource.owner_user_id) {
+    exclude.add(resource.owner_user_id);
+  }
+  for (const row of grantRows ?? []) {
+    exclude.add((row as { user_id: string }).user_id);
   }
 
-  const granted = new Set(
-    (grantsResult.data ?? []).map((row) => (row as { user_id: string }).user_id)
-  );
-  // Preserve the directory's display_name order; subtract owner + already-granted.
-  return (directoryResult.data ?? [])
-    .filter(
-      (row) =>
-        row.user_id !== resource.owner_user_id && !granted.has(row.user_id)
-    )
-    .map((row) => ({
+  const cursor = decodeDirectoryCursor(input.cursor);
+  // Over-fetch by ONE row to detect a next page honestly: if a (limit+1)-th match exists,
+  // there IS a next page; otherwise this is the last page — regardless of whether `total`
+  // is an exact multiple of the page size. (`total_count` is a pre-LIMIT window count, so
+  // the extra row never perturbs it.) Probe is clamped to the function's own hard cap.
+  const probeLimit = Math.min(limit + 1, DIRECTORY_LIMIT);
+  const { data, error } = await db.rpc('space_member_directory', {
+    p_space_id: resource.space_id,
+    p_query: input.query,
+    p_limit: probeLimit,
+    p_after_key: cursor?.k,
+    p_after_user: cursor?.u,
+    p_exclude: Array.from(exclude),
+  });
+  if (error) {
+    throw new Error(`listGrantableMembers directory: ${error.message}`);
+  }
+
+  const rows = data ?? [];
+  // total_count repeats on every row (window); 0 when the page is empty.
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  // A next page exists iff the probe row came back; the page is the first `limit` rows.
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const items: GrantableMember[] = pageRows.map((row) => ({
+    userId: row.user_id,
+    displayName: memberLabel({
       userId: row.user_id,
-      displayName: memberLabel({
-        userId: row.user_id,
-        displayName: row.display_name,
-        email: row.email,
-      }),
+      displayName: row.display_name,
       email: row.email,
-    }));
+    }),
+    email: row.email,
+  }));
+
+  // Build the cursor from the LAST shown row's stable position (sort_key = display_name||email).
+  let nextCursor: string | null = null;
+  if (hasMore) {
+    const last = pageRows[pageRows.length - 1];
+    const sortKey = last.display_name?.trim() || last.email || '';
+    nextCursor = encodeDirectoryCursor({ k: sortKey, u: last.user_id });
+  }
+
+  return { items, nextCursor, total };
 }
 
 export type GrantResourceToUserInput = {

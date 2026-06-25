@@ -1,5 +1,6 @@
 import { ACCESS_SCENARIO } from './access.js';
 import { BOARD_SCENARIO } from './board.js';
+import { DIRECTORY_PICKER_SCENARIO } from './directory-picker.js';
 import {
   DRIVE_CASCADE_SCENARIO,
   DRIVE_COPY_CHAIN_SCENARIO,
@@ -8,6 +9,7 @@ import {
 import { HIERARCHY_SCENARIO } from './hierarchy.js';
 import { KNOWLEDGE_BASE_SCENARIO } from './knowledge-base.js';
 import { PER_USER_SHARE_SCENARIO } from './per-user-share.js';
+import { SHARE_MECHANISM_SCENARIO } from './share-mechanism.js';
 import { SHARED_SCENARIO } from './shared.js';
 import { TRASH_SCENARIO } from './trash.js';
 import type { SeedScenario } from './types.js';
@@ -26,22 +28,27 @@ export const ALL_SCENARIOS: SeedScenario[] = [
   BOARD_SCENARIO,
   TRASH_SCENARIO,
   SHARED_SCENARIO,
+  SHARE_MECHANISM_SCENARIO,
   HIERARCHY_SCENARIO,
   PER_USER_SHARE_SCENARIO,
+  DIRECTORY_PICKER_SCENARIO,
 ];
 
 export {
   ACCESS_SCENARIO,
   BOARD_SCENARIO,
+  DIRECTORY_PICKER_SCENARIO,
   DRIVE_CASCADE_SCENARIO,
   DRIVE_COPY_CHAIN_SCENARIO,
   DRIVE_SCENARIO,
   HIERARCHY_SCENARIO,
   KNOWLEDGE_BASE_SCENARIO,
   PER_USER_SHARE_SCENARIO,
+  SHARE_MECHANISM_SCENARIO,
   SHARED_SCENARIO,
   TRASH_SCENARIO,
 };
+export { DIRECTORY_PICKER_DISPLAY_NAMES } from './directory-picker.js';
 export { buildKnowledgeBaseSpec } from './knowledge-base.js';
 export { buildBoardSpec } from './board.js';
 export { lexicalDoc, prose, type LexicalBlock } from './lexical.js';

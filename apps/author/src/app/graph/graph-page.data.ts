@@ -9,6 +9,10 @@ import { resolveProjection } from '@workspace/knowledge-engine';
 import { cookies } from 'next/headers';
 
 import {
+  annotateShareMechanism,
+  listResourcesSharedByMe,
+} from '@/knowledge/fanout';
+import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
 } from '@/knowledge/resolve';
@@ -19,6 +23,8 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  SharedByMeEntry,
+  ShareMechanismByItem,
   ShortcutEdge,
   SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
@@ -435,4 +441,46 @@ export async function loadStarredIds(spaceId: string): Promise<string[]> {
   return (data ?? []).map(
     (row) => (row as { resource_id: string }).resource_id
   );
+}
+
+/**
+ * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user has
+ * shared OUT in a space, each with the grantee(s) they granted it to. A thin RLS-scoped
+ * wrapper over the `listResourcesSharedByMe` fanout: it reads the per-user grant table
+ * (`granted_by = me`) joined to the resources I can still SEE under the node SELECT RLS
+ * (the fail-closed fence), grantees labelled via the co-member directory (ADR-0020).
+ *
+ * Rides alongside the live canvas (parity with `trash`/`starredIds`): the view filters
+ * the resolved canvas to these ids client-side, so the 'shared-by-me' scope switch needs
+ * no server re-navigation. Empty when nothing visible is shared — never an error.
+ */
+export async function loadSharedByMe(
+  spaceId: string
+): Promise<SharedByMeEntry[]> {
+  const db = await createRlsClientFromServerCookies();
+  return listResourcesSharedByMe({ spaceId }, { db });
+}
+
+/**
+ * The "Shared with me" mechanism annotation seed (ADR-0021 Part C) — a map from each
+ * node in the shared set (visible nodes I do NOT own) to the WINNING mechanism that
+ * grants ME access: `personal > cohort > broadcast`. A thin RLS-scoped wrapper over the
+ * `annotateShareMechanism` fanout (three batched reads, never per-node), seeded
+ * server-side alongside the live canvas exactly as `sharedByMe` / `starredIds` are.
+ *
+ * The input is the SHARED SUBSET, not the whole resolved set — the page already has the
+ * resolved item meta (`ownerUserId`) and the current user id, so it computes
+ * "visible AND owner ≠ me" here and annotates only those ids (the precise `'shared'`
+ * lens input, smaller). The annotation is PURE DISPLAY ENRICHMENT over an already-
+ * RLS-admitted set; it never decides visibility. Empty when nothing is shared-with-me.
+ */
+export async function loadShareMechanism(
+  spaceId: string,
+  sharedNodeIds: string[]
+): Promise<ShareMechanismByItem> {
+  if (sharedNodeIds.length === 0) {
+    return {};
+  }
+  const db = await createRlsClientFromServerCookies();
+  return annotateShareMechanism({ spaceId, nodeIds: sharedNodeIds }, { db });
 }

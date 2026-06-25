@@ -47,6 +47,19 @@ const memberQuerySchema = z
   .transform((value) => (value === '' ? undefined : value))
   .optional();
 
+/** Optional opaque keyset cursor (ADR-0021 A1): the directory's `p_after` position of the
+ * last seen row. Trimmed; blank → first page. Opaque to this layer — the fanout decodes it;
+ * a malformed token fails soft to first page (the membership fence is the authority). */
+const memberCursorSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? undefined : value))
+  .optional();
+
+/** Optional page-size hint (ADR-0021 A3): the picker pages 5 by default. Clamped to ≤50
+ * defensively here; the directory function clamps server-side regardless. */
+const memberLimitSchema = z.coerce.number().int().min(1).max(50).optional();
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const spaceId = url.searchParams.get('space_id')?.trim();
@@ -60,13 +73,26 @@ export async function GET(request: Request) {
   const queryParsed = memberQuerySchema.safeParse(
     url.searchParams.get('q') ?? undefined
   );
-  if (!queryParsed.success) {
+  const cursorParsed = memberCursorSchema.safeParse(
+    url.searchParams.get('cursor') ?? undefined
+  );
+  const limitParsed = memberLimitSchema.safeParse(
+    url.searchParams.get('limit') ?? undefined
+  );
+  if (!queryParsed.success || !cursorParsed.success || !limitParsed.success) {
+    const issues = [
+      ...(queryParsed.success ? [] : queryParsed.error.issues),
+      ...(cursorParsed.success ? [] : cursorParsed.error.issues),
+      ...(limitParsed.success ? [] : limitParsed.error.issues),
+    ];
     return NextResponse.json(
-      { message: 'Invalid request', issues: queryParsed.error.issues },
+      { message: 'Invalid request', issues },
       { status: 400 }
     );
   }
   const memberQuery = queryParsed.data;
+  const memberCursor = cursorParsed.data;
+  const memberLimit = limitParsed.data;
 
   const session = await requireRlsSession(request);
   if (isAuthFailure(session)) {
@@ -79,7 +105,12 @@ export async function GET(request: Request) {
       loadResourceFloor({ nodeId }, { db: session.db }),
       listUserGrants({ resourceId: nodeId }, { db: session.db }),
       listGrantableMembers(
-        { resourceId: nodeId, query: memberQuery },
+        {
+          resourceId: nodeId,
+          query: memberQuery,
+          cursor: memberCursor,
+          limit: memberLimit,
+        },
         { db: session.db }
       ),
     ]);

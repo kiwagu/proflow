@@ -31,6 +31,7 @@ export {
   type CopyResult,
   type Floor,
   type GrantableMember,
+  type GrantableMembersPage,
   type NodeKind,
   type PurgeResult,
   type SeedClient,

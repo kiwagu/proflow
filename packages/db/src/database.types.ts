@@ -1289,6 +1289,7 @@ export type Database = {
         Args: { p_resource_id: string }
         Returns: boolean
       }
+      knowledge_user_scope_ids: { Args: never; Returns: string[] }
       outbox_queue_name: { Args: { p_channel: string }; Returns: string }
       platform_feature_flag_actor_can_manage_scope: {
         Args: { p_scope: string; p_scope_id?: string }
@@ -1532,10 +1533,18 @@ export type Database = {
         Returns: boolean
       }
       space_member_directory: {
-        Args: { p_limit?: number; p_query?: string; p_space_id: string }
+        Args: {
+          p_after_key?: string
+          p_after_user?: string
+          p_exclude?: string[]
+          p_limit?: number
+          p_query?: string
+          p_space_id: string
+        }
         Returns: {
           display_name: string
           email: string
+          total_count: number
           user_id: string
         }[]
       }

@@ -4,6 +4,8 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  SharedByMeEntry,
+  ShareMechanismByItem,
   ShortcutEdge,
   SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
@@ -69,6 +71,30 @@ export type KbViewData = {
    * is its own "trashed root") — there is no containment tree inside Trash.
    */
   trash: TrashLensData;
+  /**
+   * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user
+   * has shared OUT, each with the people they granted it to. A read-only projection
+   * over `knowledge_resource_user_grants WHERE granted_by = me` joined to the resources
+   * I can still SEE (RLS the fence, fail-closed): a resource I revoked the only grant on
+   * — or can no longer see — never appears. Rides alongside the live canvas exactly as
+   * the flat 'shared' lens does; the view INTERSECTS these `resourceId`s with the
+   * resolved canvas (lens = canvas ∩ {ids I granted}) and reads `grantees` for the
+   * grantee summary. Empty when I've shared nothing visible. v1 = per-user grants only
+   * (cohort-by-me is a DEFERRED additive layer).
+   */
+  sharedByMe: SharedByMeEntry[];
+  /**
+   * The "Shared with me" mechanism annotation (ADR-0021 Part C) — a map from each node
+   * in the shared set (visible nodes I do NOT own — the same set the `'shared'` lens
+   * filters to) to the WINNING mechanism that grants ME access: `personal` (a per-user
+   * grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the floor/supervisory
+   * residual). Resolved server-side under the user's RLS by ONE batched fanout
+   * (`annotateShareMechanism`) — pure DISPLAY ENRICHMENT of an already-visible set,
+   * never a fence (a node not visible to me is never in the input, so it can never be
+   * annotated). The render agent reads it to badge each shared card by mechanism and to
+   * drive the facet chip row. Empty when nothing is shared-with-me.
+   */
+  shareMechanism: ShareMechanismByItem;
 };
 
 /**
@@ -86,11 +112,14 @@ export type TrashLensData = {
 /**
  * The active Drive sidebar filter, owned by the workbench and mirrored in the URL
  * (`?scope=`) so the lenses are shareable + survive refresh. 'kb' browses the
- * containment tree; 'home'/'starred'/'recent'/'shared' are flat cross-cutting lenses.
- * 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader lens on top of the
- * already-personal RLS floor, NOT a security boundary (ADR-0017 §2.1). 'home' = the
- * personalized "For you" digest (recently opened + recently updated) over the
- * now-personal visible set (ADR-0017 §4, personalization on the activity spine).
+ * containment tree; 'home'/'starred'/'recent'/'shared'/'shared-by-me' are flat
+ * cross-cutting lenses. 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader
+ * lens on top of the already-personal RLS floor, NOT a security boundary (ADR-0017
+ * §2.1). 'shared-by-me' = the resources I have shared OUT (owner-direction sibling of
+ * 'shared'): the canvas ∩ the `kbData.sharedByMe` resourceId set, the read-only
+ * projection over my per-user grants (ADR-0021 Part B). 'home' = the personalized
+ * "For you" digest (recently opened + recently updated) over the now-personal visible
+ * set (ADR-0017 §4, personalization on the activity spine).
  */
 export type DriveScope =
   | 'kb'
@@ -98,6 +127,7 @@ export type DriveScope =
   | 'starred'
   | 'recent'
   | 'shared'
+  | 'shared-by-me'
   | 'trash';
 
 export type ProjectionViewProps = {

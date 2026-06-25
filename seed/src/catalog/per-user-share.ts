@@ -33,12 +33,29 @@ import type { SeedScenario } from './types.js';
  * narrows the picker by a name/email fragment, and a non-member of the space gets an
  * empty directory (the membership fence). The display names are authored through each
  * actor's OWN profile (own-row RLS), exactly as a member would set theirs.
+ *
+ * BOTH directions of the grant graph from ONE create-vocabulary (ADR-0021 Part B).
+ * The SAME `per-user-share/granted` grant — created exactly once, as the owner (`admin`)
+ * sharing OUT to `grantee` — is read from two opposite ends:
+ *  - the GRANTER (`admin`) sees the doc in the "Shared by me" lens (`'shared-by-me'`
+ *    DriveScope): the resources I have shared OUT, a READ-ONLY projection over
+ *    `knowledge_resource_user_grants WHERE granted_by = me`, returned as `SharedByMeEntry`
+ *    (`{ resourceId, grantees }`) — here `resourceId` = `per-user-share/granted`, with
+ *    `grantee` (Grace Granger) as the sole grantee, labelled via the co-member directory.
+ *  - the GRANTEE (`grantee`) sees the SAME doc in the "Shared with me" lens (`'shared'`
+ *    DriveScope): the resources shared INTO my visibility.
+ * The sibling `per-user-share/unshared` (no grant) appears in NEITHER lens — fail-closed
+ * by construction: no grant row means no "Shared by me" entry and no "Shared with me"
+ * visibility. So this one fixture is the worked example for BOTH owner- and grantee-side
+ * sharing lenses. (Wave 2 a landed only the `'shared-by-me'` DATA slice — the SSR-seeded
+ * `KbViewData.sharedByMe`; the lens render/switcher and its e2e assertion are the Wave 2 b
+ * close-out, so this scenario already carries the data those assertions will draw from.)
  */
 export const PER_USER_SHARE_SCENARIO: SeedScenario = {
   id: 'per-user-share',
   title: 'Per-person sharing',
   summary:
-    'A private doc shared with ONE named member (a per-user grant): the grantee sees it, a third un-granted member stays blind — additive, fail-closed (ADR-0019). Named co-members feed the Share people-picker directory (ADR-0020).',
+    'A private doc shared with ONE named member (a per-user grant): the grantee sees it in "Shared with me" (DriveScope `shared`), the owner sees it in "Shared by me" (DriveScope `shared-by-me`, a SharedByMeEntry over the same grant), a third un-granted member stays blind — additive, fail-closed (ADR-0019, ADR-0021 Part B). Named co-members feed the Share people-picker directory (ADR-0020).',
   presets: ['per-user-share'],
   actors: [
     // Distinct display names so the co-member directory (ADR-0020) resolves a real
@@ -64,11 +81,16 @@ export const PER_USER_SHARE_SCENARIO: SeedScenario = {
           title: 'Shared with one person (per-user grant)',
           // floor=private (default) + ONE additive per-user grant to `grantee`.
           // No cohort, no space publish — the grant is the SOLE widening disjunct.
+          // This ONE grant is the worked example for BOTH sharing lenses (ADR-0021 Part B):
+          //  - owner (`admin`) reads it via "Shared by me" (DriveScope `shared-by-me`) — the
+          //    `SharedByMeEntry` for THIS resourceId, with `grantee` as the sole grantee;
+          //  - `grantee` reads the SAME doc via "Shared with me" (DriveScope `shared`).
+          // Do NOT add a parallel grant for the opposite direction — both lenses read this row.
           userGrants: ['grantee'],
           body: prose(
             'This note is private, then shared with exactly one teammate by name.',
-            'The grantee sees it through the per-user grant — a direct, additive act on top of the private floor. A third member with no grant cannot see it at all (fail-closed).',
-            'Revoking the grant narrows access back to the owner alone, non-destructively. Only the owner (or a space access-manager) may grant or revoke.'
+            'The grantee sees it through the per-user grant — a direct, additive act on top of the private floor. A third member with no grant cannot see it at all (fail-closed). The owner sees this same grant from the other side, in the "Shared by me" lens.',
+            'Revoking the grant narrows access back to the owner alone, non-destructively — and the doc drops out of BOTH lenses at once. Only the owner (or a space access-manager) may grant or revoke.'
           ),
         },
         {

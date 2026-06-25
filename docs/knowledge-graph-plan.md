@@ -206,6 +206,56 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       folded in, not a sibling), opened from a capability-gated `Share` entry in the node `⋯` menu
       (`canShare = owned || canAccess`, server-derived, laxer-not-stricter — RLS the sole fence). "Copy
       link" is pure navigation (grants nothing; RLS re-evaluates at open). Per ADR-0019
+- [x] Co-member identity directory — a `space_member_directory` SECURITY-DEFINER RPC resolves
+      `display_name` + `email` for co-members (the own-row `profiles` posture untouched), gated by the
+      caller's own active membership (the fence — non-member → ∅, zero service-role), searchable +
+      hard-limited (≤50). Powers the Share dialog people-picker; reusable for @mentions / assignment.
+      Per ADR-0020
+- [x] Directory v2 (data/route — picker scalability): keyset cursor (`p_after_key`,`p_after_user` over the
+      stable `(sort_key, user_id)` order — drift-free, not offset) + a windowed `total_count` (the count of
+      grantable matches, one round-trip) + `p_exclude uuid[]` (owner + already-granted removed BEFORE the
+      limit AND the count, so a small page is full of real candidates and "+N more" is accurate). The fanout
+      builds the exclusion set server-side + encodes the opaque cursor; the GET `members` slice becomes one
+      `{ items, nextCursor, total }` page. The reusable picker UI + lenses/badges are later waves. Per ADR-0021
+- [x] Directory v2 (reusable picker UI — Wave 1b): a generic, props-driven `AsyncSearchPicker<T>` in
+      `@workspace/ui` `components/platform/` (the "типовая функция" — `fetchPage(query,cursor)→{items,
+      nextCursor,total}` + `getKey`/`renderItem`/`onPick`/`labels`, NO i18n inside, render-prop rows). It
+      owns the debounce + the cursor "load more" append + the "+N more" count footer, with a stale-response
+      guard. The Share dialog people-picker is refit as a thin caller (fixed page of 5 + "+N more — keep
+      typing to narrow" + "Show more"; granting drops the person out via server-side `p_exclude`). Per ADR-0021 §A4
+- [x] "Shared by me" lens (Wave 2): the owner-direction sibling of "Shared with me". Data (Wave 2a) — a
+      `listResourcesSharedByMe` fanout over `knowledge_resource_user_grants WHERE granted_by = me` joined to
+      the resources I can still SEE (RLS the fence, fail-closed: a resource I revoked the only grant on, or
+      can no longer see, never appears), SSR-seeded into `KbViewData.sharedByMe` (parity with Trash, no
+      re-navigation). Render (Wave 2b) — a flat `'shared-by-me'` `DriveScope` + a sidebar nav item beside
+      "Shared with me" (a send/outgoing `Send` icon vs the incoming `Users`); the lens is the resolved canvas
+      ∩ the granted resourceId set, and each card shows a compact grantee summary (avatar cluster + "Shared
+      with {name}" / "+{n}", per-avatar `Hint` name+email tooltip via `EntityAvatar`). v1 = per-user grants
+      only (cohort-by-me deferred). Per ADR-0021 Part B
+- [x] "Shared with me" mechanism distinction — DATA (Wave 3a): the `'shared'` lens (visible nodes I do
+      NOT own) mixed three reasons a node is visible to me; this annotates each with the single WINNING
+      mechanism — `personal` (a per-user grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the
+      space/org floor, with supervisory folded in for v1). A batched read-only fanout
+      (`annotateShareMechanism({ spaceId, nodeIds })` → `Record<nodeId, ShareMechanism>`) — NOT per-node,
+      NOT a resolver change: a constant cohort-membership read (via the `knowledge_user_scope_ids`
+      security-definer RPC — the batched twin of the cohort predicate, needed because `scope_memberships`
+      SELECT RLS gates on the legacy `space.content.read` a plain `member` lacks) plus two node-keyed
+      IN-list reads (personal grants + cohort links), `broadcast` the in-memory residual. Seeded SSR as
+      `KbViewData.shareMechanism` over the visible-not-owned set (parity with `sharedByMe`). Pure display
+      enrichment over an already-RLS-admitted set — never a fence, Invariant #1 holds (no new table, no
+      resolver change, no new access dimension). The per-card badges + facet chip-row are the Wave 3b
+      render agent. Per ADR-0021 Part C
+- [x] "Shared with me" mechanism distinction — RENDER (Wave 3b): the `'shared'` (incoming) lens now makes
+      each node's WINNING mechanism LEGIBLE. A compact per-card mechanism badge (shadcn `Badge` + a lucide
+      icon + a `Hint`): `personal` → "Shared with you" (UserCheck), `cohort` → "Via a group" (UsersRound),
+      `broadcast` → "Whole space" (Radio) — threaded through the SAME card `footer` slot Wave 2b's grantee
+      summary uses (no new card surface). Plus a facet chip row above the lens ("All" + one chip per
+      mechanism PRESENT in the shared set — absent-mechanism chips hidden, the row appears only with ≥2
+      mechanisms) that filters the rendered set client-side over the precomputed annotation; the facet is
+      local lens state (reset on leave) with a "nothing shared this way" filtered-empty message. Badges +
+      facet are scoped to the `'shared'` lens ONLY (not shared-by-me/home/trash). Pure DISPLAY over the
+      already-fenced, already-resolved Wave 3a annotation — never recomputes access. en+es i18n in lockstep.
+      Per ADR-0021 Part C
 
 ## 6. First projection — validate the invariant
 

@@ -16,6 +16,10 @@ import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
 import { Input } from '@workspace/ui/components/input';
 import {
+  AsyncSearchPicker,
+  type AsyncSearchPage,
+} from '@workspace/ui/components/platform/async-search-picker';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -28,6 +32,7 @@ import * as React from 'react';
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 import type {
   GrantableMember,
+  GrantableMembersPage,
   ResourceFloor,
   ScopeChoice,
   UserGrant,
@@ -63,14 +68,28 @@ type ShareData = {
   floor: ResourceFloor | null;
   choices: ScopeChoice[];
   grants: UserGrant[];
-  members: GrantableMember[];
+  // The route's `members` is ONE keyset page (ADR-0021 Part A): { items, nextCursor,
+  // total }. The reusable `AsyncSearchPicker` (Wave 1b) consumes the full page —
+  // cursor-paged, with a "+N more" count + "Show more". The floor/cohort load reads
+  // `members` for nothing now (the picker fetches its own pages); it rides along.
+  members: GrantableMembersPage;
+};
+
+/** Page size for the people-picker (ADR-0021 §A3 — a small fixed page of 5 that
+ * invites narrowing by typing; the server hard-caps at 50). */
+const MEMBERS_PAGE_SIZE = 5;
+
+const EMPTY_PAGE: GrantableMembersPage = {
+  items: [],
+  nextCursor: null,
+  total: 0,
 };
 
 const EMPTY_DATA: ShareData = {
   floor: null,
   choices: [],
   grants: [],
-  members: [],
+  members: EMPTY_PAGE,
 };
 
 async function send(
@@ -112,44 +131,59 @@ export function ShareDialog({
   const [loadFailed, setLoadFailed] = React.useState(false);
   const [working, setWorking] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
-
-  // People-picker search (ADR-0020 §7b): the directory drives search SERVER-side
-  // and is hard-bounded (≤50). `query` is the raw input; `members`/`searching`
-  // track the debounced fetch keyed on it — we never filter a full client list.
-  const [query, setQuery] = React.useState('');
-  const [members, setMembers] = React.useState<GrantableMember[]>([]);
-  const [searching, setSearching] = React.useState(false);
+  // Bumped after every grant/revoke to REMOUNT the picker (`key`), forcing it back
+  // to page 1 for a fresh blank-query starter list — the just-granted person drops
+  // out (the directory already excludes them server-side via p_exclude, ADR-0021 A5).
+  const [pickerEpoch, setPickerEpoch] = React.useState(0);
+  // Local client-side filter over the ASSIGNED list (grants + cohorts) — surfaced only
+  // when the assigned set is large (>10) so a long audience stays scannable, no server
+  // round-trip (the owner row is always kept).
+  const [assignedQuery, setAssignedQuery] = React.useState('');
+  // A share mutation re-resolves the canvas (and `router.refresh()`es), which would
+  // re-mount this dialog and close it mid-task. Defer that refresh to dialog CLOSE so
+  // several people can be assigned in one sitting; the dialog's own `reload()` still
+  // reflects each grant immediately.
+  const mutatedRef = React.useRef(false);
 
   const buildUrl = React.useCallback(
-    (q?: string) => {
-      const params = new URLSearchParams({
+    (params: { q?: string; cursor?: string | null } = {}) => {
+      const search = new URLSearchParams({
         space_id: spaceId,
         node_id: node.id,
       });
-      const trimmed = q?.trim();
+      const trimmed = params.q?.trim();
       if (trimmed) {
-        params.set('q', trimmed);
+        search.set('q', trimmed);
       }
-      return `/author/graph/visibility?${params.toString()}`;
+      if (params.cursor) {
+        search.set('cursor', params.cursor);
+      }
+      search.set('limit', String(MEMBERS_PAGE_SIZE));
+      return `/author/graph/visibility?${search.toString()}`;
     },
     [spaceId, node.id]
   );
 
-  // Members-only fetch keyed on the search term. The route returns the bounded
-  // directory result (empty/blank `q` → the starter list); we replace ONLY the
-  // members slice so floor/cohorts/grants stay put while the user types.
-  const fetchMembers = React.useCallback(
-    async (q: string) => {
-      setSearching(true);
-      try {
-        const res = await fetch(buildUrl(q));
-        if (res.ok) {
-          const next = (await res.json()) as ShareData;
-          setMembers(next.members ?? []);
-        }
-      } finally {
-        setSearching(false);
+  // One page of grantable members for the AsyncSearchPicker. The route returns the
+  // full Share payload; we extract ONLY the `members` keyset page (the floor/cohort/
+  // grant slices are untouched by paging — they are reloaded by `reload()` after a
+  // mutation, never by the picker). A failed fetch yields an empty page (no leak).
+  const fetchMembersPage = React.useCallback(
+    async (
+      q: string,
+      cursor: string | null
+    ): Promise<AsyncSearchPage<GrantableMember>> => {
+      const res = await fetch(buildUrl({ q, cursor }));
+      if (!res.ok) {
+        return { items: [], nextCursor: null, total: 0 };
       }
+      const payload = (await res.json()) as ShareData;
+      const page: GrantableMembersPage = payload.members ?? EMPTY_PAGE;
+      return {
+        items: page.items,
+        nextCursor: page.nextCursor,
+        total: page.total,
+      };
     },
     [buildUrl]
   );
@@ -159,42 +193,27 @@ export function ShareDialog({
     if (res.ok) {
       const next = (await res.json()) as ShareData;
       setData(next);
-      setMembers(next.members ?? []);
       setLoadFailed(false);
     } else {
       setData(EMPTY_DATA);
-      setMembers([]);
       setLoadFailed(true);
     }
   }, [buildUrl]);
 
   // (Re)load every time the dialog opens for a node, so a stale audience never
-  // shows after a grant elsewhere. Reset the search to the starter list.
+  // shows after a grant elsewhere. Remount the picker to its starter list.
   React.useEffect(() => {
     if (!open) {
       return;
     }
     setData(null);
-    setMembers([]);
-    setQuery('');
     setLoadFailed(false);
     setCopied(false);
+    setAssignedQuery('');
+    mutatedRef.current = false;
+    setPickerEpoch((e) => e + 1);
     void reload();
   }, [open, reload]);
-
-  // Debounced server-side search: refetch the bounded members list ~280ms after
-  // the user stops typing. Skipped before the initial load (data == null); a
-  // blank query refetches the bounded starter list (clearing the box restores
-  // it). Search is always server-driven — never a client filter of a full list.
-  React.useEffect(() => {
-    if (!open || data === null) {
-      return;
-    }
-    const handle = window.setTimeout(() => {
-      void fetchMembers(query);
-    }, 280);
-    return () => window.clearTimeout(handle);
-  }, [query, open, data, fetchMembers]);
 
   // Each mutation goes through the landed route, then reloads the audience AND
   // re-resolves the canvas (a grant changes who can see the node). A failed
@@ -206,15 +225,24 @@ export function ShareDialog({
   ): Promise<void> {
     setWorking(true);
     await send(body, method);
-    // Reload the full audience (floor/cohorts/grants), then re-run the members
-    // fetch under the ACTIVE query so a grant made mid-search keeps the user's
-    // current result set (the granted person drops out of the picker, caller-side).
+    // Reload the full audience (floor/cohorts/grants), then remount the picker so it
+    // refetches page 1 — the granted person drops out (the directory excludes them
+    // server-side via p_exclude, ADR-0021 A5).
     await reload();
-    if (query.trim() !== '') {
-      await fetchMembers(query);
-    }
+    setPickerEpoch((e) => e + 1);
     setWorking(false);
-    onMutated();
+    // Mark dirty; the canvas refresh is flushed once on close (handleOpenChange) so the
+    // dialog stays open across multiple assignments.
+    mutatedRef.current = true;
+  }
+
+  // Flush the deferred canvas refresh exactly once, when the dialog actually closes.
+  function handleOpenChange(next: boolean): void {
+    if (!next && mutatedRef.current) {
+      mutatedRef.current = false;
+      onMutated();
+    }
+    onOpenChange(next);
   }
 
   function changeFloor(next: ResourceFloor): void {
@@ -276,9 +304,29 @@ export function ShareDialog({
   const availableCohorts = (data?.choices ?? []).filter((c) => !c.linked);
   const grants = data?.grants ?? [];
 
+  // Local filter over the assigned list — only offered past 10 assignees. The owner row
+  // is never filtered (it is the anchor, not an "assignee").
+  const assignedCount = grants.length + linkedCohorts.length;
+  const showAssignedSearch = assignedCount > 10;
+  const aq = assignedQuery.trim().toLowerCase();
+  const shownGrants = aq
+    ? grants.filter(
+        (g) =>
+          g.displayName.toLowerCase().includes(aq) ||
+          (g.email?.toLowerCase().includes(aq) ?? false)
+      )
+    : grants;
+  const shownCohorts = aq
+    ? linkedCohorts.filter((c) => c.name.toLowerCase().includes(aq))
+    : linkedCohorts;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {/* Fixed height (no jiggle); the audience + add-access share ONE inner scroll
+          region (below) so a long list never clips the search input. `select-text`
+          forces text-selectability even if a stuck Drive drag left `user-select:none`
+          on <body> (it is inherited by this portaled dialog — see drive-dnd.ts). */}
+      <DialogContent className="flex h-[48rem] max-h-[85vh] flex-col select-text sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('graph.share.title')}</DialogTitle>
           <DialogDescription>
@@ -292,14 +340,14 @@ export function ShareDialog({
           </p>
         ) : null}
 
-        <div className="flex flex-col gap-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-5">
           {/* (1) Broadcast floor — the single per-resource dial (ADR-0017 §1.5). */}
           <section className="flex flex-col gap-2">
             <SectionLabel icon={<Users className="size-3" aria-hidden />}>
               {t('graph.share.floorSection')}
             </SectionLabel>
             <Select
-              value={floor ?? undefined}
+              value={floor ?? ''}
               disabled={working || floor == null}
               onValueChange={(next) => changeFloor(next as ResourceFloor)}
             >
@@ -323,90 +371,147 @@ export function ShareDialog({
             </p>
           </section>
 
-          {/* (2) Who has access — owner (read-only) + cohorts + per-user grants. */}
-          <section className="flex flex-col gap-2">
-            <SectionLabel icon={<UserRound className="size-3" aria-hidden />}>
-              {t('graph.share.peopleSection')}
-            </SectionLabel>
-            <ul className="flex flex-col gap-1">
-              {/* Owner — always present, never revocable (intrinsic, ADR-0019 §2). */}
-              <OwnerRow
-                t={t}
-                ownerUserId={ownerUserId}
-                currentUserId={currentUserId}
-              />
-              {/* Per-user grants. */}
-              {grants.map((grant) => (
-                <PersonRow
-                  key={grant.userId}
-                  name={grant.displayName}
-                  email={grant.email}
-                  subtitle={
-                    grant.grantedBy === currentUserId
-                      ? t('graph.share.grantedByYou')
-                      : t('graph.share.grantedByOther')
-                  }
-                  onRevoke={() => revokeUser(grant.userId)}
-                  revokeLabel={t('graph.share.revoke')}
-                  disabled={working}
+          {/* Who has access + Add access — each list owns its OWN scroll (assigned vs
+              candidates) so neither pushes the other or the search input out of view;
+              the floor above and the cohort/footer below stay pinned. */}
+          <div className="flex min-h-0 flex-1 flex-col gap-5">
+            {/* (2) Who has access — owner (read-only) + cohorts + per-user grants. The
+                ASSIGNED list scrolls within its own cap. */}
+            <section className="flex min-h-0 flex-col gap-2">
+              <SectionLabel icon={<UserRound className="size-3" aria-hidden />}>
+                {t('graph.share.peopleSection')}
+              </SectionLabel>
+              {/* Local filter over the assigned list — appears only past 10 assignees
+                  (client-side, no fetch). */}
+              {showAssignedSearch ? (
+                <div className="relative">
+                  <Search
+                    className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    className="h-8 pl-8"
+                    value={assignedQuery}
+                    placeholder={t('graph.share.filterAssigned')}
+                    aria-label={t('graph.share.filterAssigned')}
+                    onChange={(event) => setAssignedQuery(event.target.value)}
+                  />
+                </div>
+              ) : null}
+              {/* The ASSIGNED list — FIXED height so adding/removing people never jumps
+                  the layout; it scrolls within. */}
+              <ul className="flex h-40 flex-col gap-1 overflow-y-auto">
+                {/* Owner — always present, never revocable (intrinsic, ADR-0019 §2). */}
+                <OwnerRow
+                  t={t}
+                  ownerUserId={ownerUserId}
+                  currentUserId={currentUserId}
                 />
-              ))}
-              {/* Cohort grants — folded in from the old Visibility section. */}
-              {linkedCohorts.map((cohort) => (
-                <CohortRow
-                  key={cohort.id}
-                  name={cohort.name}
-                  badge={t('graph.share.cohortBadge')}
-                  onRevoke={() => unlinkCohort(cohort.id)}
-                  revokeLabel={t('graph.share.removeCohort')}
-                  disabled={working}
-                />
-              ))}
-            </ul>
-          </section>
+                {/* Per-user grants. */}
+                {shownGrants.map((grant) => (
+                  <PersonRow
+                    key={grant.userId}
+                    name={grant.displayName}
+                    email={grant.email}
+                    subtitle={
+                      grant.grantedBy === currentUserId
+                        ? t('graph.share.grantedByYou')
+                        : t('graph.share.grantedByOther')
+                    }
+                    onRevoke={() => revokeUser(grant.userId)}
+                    revokeLabel={t('graph.share.revoke')}
+                    disabled={working}
+                  />
+                ))}
+                {/* Cohort grants — folded in from the old Visibility section. */}
+                {shownCohorts.map((cohort) => (
+                  <CohortRow
+                    key={cohort.id}
+                    name={cohort.name}
+                    badge={t('graph.share.cohortBadge')}
+                    onRevoke={() => unlinkCohort(cohort.id)}
+                    revokeLabel={t('graph.share.removeCohort')}
+                    disabled={working}
+                  />
+                ))}
+              </ul>
+            </section>
 
-          {/* (3) Add access — cohort picker + people-picker (per-user grant). */}
-          <section className="flex flex-col gap-2">
-            <SectionLabel icon={<Check className="size-3" aria-hidden />}>
-              {t('graph.share.addSection')}
-            </SectionLabel>
-            {/* People-picker — a searchable, debounced directory combobox over
-                grantable members (ADR-0020 §7b). Search is SERVER-driven and
-                hard-bounded (≤50); selecting a row POSTs a per-user grant. */}
-            <PeoplePicker
-              t={t}
-              query={query}
-              onQueryChange={setQuery}
-              members={members}
-              searching={searching}
-              loaded={data !== null}
-              disabled={working}
-              onPick={(userId) => grantUser(userId)}
-            />
-            {/* Cohort-picker — existing add-control, folded in. */}
-            {availableCohorts.length > 0 ? (
-              <Select
-                value=""
+            {/* (3) Add access — the candidate people-picker (per-user grant). Fills the
+                remaining height; its results list owns the CANDIDATES scroll. */}
+            <section className="flex min-h-0 flex-1 flex-col gap-2">
+              <SectionLabel icon={<Check className="size-3" aria-hidden />}>
+                {t('graph.share.addSection')}
+              </SectionLabel>
+              {/* People-picker — the reusable AsyncSearchPicker (ADR-0021 §A4) over the
+                grantable-member directory: a debounced, cursor-paged search (page of 5
+                + "+N more" + "Show more"), SERVER-driven and hard-bounded (≤50).
+                Selecting a row POSTs a per-user grant; the `key` remounts it to page 1
+                after each grant so the granted person drops out (p_exclude, A5). */}
+              <AsyncSearchPicker<GrantableMember>
+                key={pickerEpoch}
+                fetchPage={fetchMembersPage}
+                getKey={(member) => member.userId}
+                onPick={(member) => grantUser(member.userId)}
                 disabled={working}
-                onValueChange={(scopeId) => linkCohort(scopeId)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder={t('graph.panel.addCohort')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCohorts.map((cohort) => (
-                    <SelectItem key={cohort.id} value={cohort.id}>
-                      {cohort.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : data !== null && linkedCohorts.length === 0 ? (
-              <p className="text-muted-foreground text-xs">
-                {t('graph.share.noCohorts')}
-              </p>
-            ) : null}
-          </section>
+                className="min-h-0 flex-1"
+                listClassName="min-h-0 flex-1 overflow-y-auto"
+                labels={{
+                  searchPlaceholder: t('graph.share.searchPeople'),
+                  searching: t('graph.share.searching'),
+                  empty: t('graph.share.noMatchesAny'),
+                  emptyQuery: t('graph.share.noMembers'),
+                  showMore: t('graph.share.showMore'),
+                  moreCount: (remaining) =>
+                    t('graph.share.moreCount', { count: remaining }),
+                }}
+                renderItem={(member) => (
+                  <>
+                    <EntityAvatar
+                      name={member.displayName}
+                      className="size-7"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-medium">
+                        {member.displayName}
+                      </span>
+                      {member.email ? (
+                        <span className="text-muted-foreground truncate text-xs">
+                          {member.email}
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              />
+            </section>
+          </div>
+
+          {/* Share with a cohort — pinned BELOW the scroll region so it stays
+              reachable no matter how long the audience list grows. */}
+          {availableCohorts.length > 0 ? (
+            <Select
+              value=""
+              disabled={working}
+              onValueChange={(scopeId) => linkCohort(scopeId)}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder={t('graph.panel.addCohort')} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableCohorts.map((cohort) => (
+                  <SelectItem key={cohort.id} value={cohort.id}>
+                    {cohort.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : data !== null && linkedCohorts.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {t('graph.share.noCohorts')}
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter className="sm:justify-between">
@@ -445,98 +550,6 @@ function SectionLabel({
     <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
       {icon}
       {children}
-    </div>
-  );
-}
-
-/**
- * Searchable people-picker (ADR-0020 §7b). A debounced search Input over the
- * co-member directory: typing refetches the bounded (≤50) members list
- * server-side (never a client filter); each result is a two-line row
- * (display_name primary + email secondary). Selecting a row grants the user.
- * Empty query shows the bounded starter list; a query with no hits shows a
- * "no matches" state; an in-flight search shows a loading line.
- *
- * Built on the repo's existing shadcn primitives (Input + a results list inside
- * the dialog) rather than a new `cmdk`/Popover dependency — there is no Command
- * combobox primitive in @workspace/ui, and the list lives inline in the dialog,
- * so this matches the surrounding composition (shadcn-patterns-required).
- */
-function PeoplePicker({
-  t,
-  query,
-  onQueryChange,
-  members,
-  searching,
-  loaded,
-  disabled,
-  onPick,
-}: {
-  t: GraphTranslator;
-  query: string;
-  onQueryChange: (next: string) => void;
-  members: GrantableMember[];
-  searching: boolean;
-  loaded: boolean;
-  disabled: boolean;
-  onPick: (userId: string) => void;
-}) {
-  const trimmed = query.trim();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="relative">
-        <Search
-          className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
-          aria-hidden
-        />
-        <Input
-          type="search"
-          className="pl-8"
-          value={query}
-          disabled={disabled}
-          placeholder={t('graph.share.searchPeople')}
-          aria-label={t('graph.share.searchPeople')}
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-      </div>
-      {searching ? (
-        <p className="text-muted-foreground px-1 text-xs" role="status">
-          {t('graph.share.searching')}
-        </p>
-      ) : members.length > 0 ? (
-        <ul className="flex max-h-56 flex-col gap-0.5 overflow-y-auto">
-          {members.map((member) => (
-            <li key={member.userId}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onPick(member.userId)}
-                className="hover:bg-muted/60 focus-visible:ring-ring/50 flex w-full items-center gap-2.5 rounded-md px-1 py-1.5 text-left outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50"
-              >
-                <EntityAvatar name={member.displayName} className="size-7" />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium">
-                    {member.displayName}
-                  </span>
-                  {member.email ? (
-                    <span className="text-muted-foreground truncate text-xs">
-                      {member.email}
-                    </span>
-                  ) : null}
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : !loaded ? null : trimmed !== '' ? (
-        <p className="text-muted-foreground px-1 text-xs">
-          {t('graph.share.noMatches', { query: trimmed })}
-        </p>
-      ) : (
-        <p className="text-muted-foreground px-1 text-xs">
-          {t('graph.share.noMembers')}
-        </p>
-      )}
     </div>
   );
 }

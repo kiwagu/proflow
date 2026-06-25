@@ -8,6 +8,8 @@ import {
   loadKbAttributesForItems,
   loadNodeMetaForItems,
   loadOpenedAtForItems,
+  loadShareMechanism,
+  loadSharedByMe,
   loadShortcutForest,
   loadStarredIds,
   resolveActiveSpaceId,
@@ -55,6 +57,7 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
       scope === 'starred' ||
       scope === 'recent' ||
       scope === 'shared' ||
+      scope === 'shared-by-me' ||
       scope === 'trash'
         ? scope
         : 'kb',
@@ -93,6 +96,8 @@ export default async function GraphPage({
       starredIds: [],
       openedAtById: {},
       trash: { items: [], metaByItem: {} },
+      sharedByMe: [],
+      shareMechanism: {},
     };
     return (
       <DriveWorkbench
@@ -128,6 +133,7 @@ export default async function GraphPage({
     openedAtById,
     trashMetaByItem,
     capabilities,
+    sharedByMe,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -138,7 +144,19 @@ export default async function GraphPage({
     loadOpenedAtForItems(spaceId),
     loadNodeMetaForItems(spaceId, trashIds),
     resolveSpaceCapabilities(spaceId),
+    loadSharedByMe(spaceId),
   ]);
+
+  // The "Shared with me" set = visible nodes I do NOT own (the same predicate the
+  // `'shared'` lens filters to, drive-projection.view.tsx). Computed server-side from
+  // the resolved meta + the current user id, so the Part C annotation runs over the
+  // PRECISE shared subset (smaller than the whole canvas). When the owner is unknown
+  // (no meta) the node is conservatively treated as not-mine and annotated — the
+  // annotation never decides visibility, so this only affects which badge shows.
+  const sharedNodeIds = currentUserId
+    ? itemIds.filter((id) => metaByItem[id]?.ownerUserId !== currentUserId)
+    : itemIds;
+  const shareMechanism = await loadShareMechanism(spaceId, sharedNodeIds);
 
   const kbData: KbViewData = {
     attributesByItem,
@@ -157,6 +175,8 @@ export default async function GraphPage({
       })),
       metaByItem: trashMetaByItem,
     },
+    sharedByMe,
+    shareMechanism,
   };
 
   return (
