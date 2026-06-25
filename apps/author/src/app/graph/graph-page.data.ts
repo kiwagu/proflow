@@ -30,6 +30,32 @@ import type {
  * user without `space.knowledge.read` resolves to an empty editor, never an error.
  */
 
+/**
+ * Run an `.in(column, ids)` ride-alongside select in fixed-size batches, merging
+ * the per-batch rows. PostgREST encodes `.in(col, ids)` as a GET query string
+ * (`col=in.(id1,id2,…)`); a large resolved set overflows the Supabase REST gateway
+ * (Kong/nginx) URL/buffer limit (~4 KB) and the gateway returns an HTML 502 Bad
+ * Gateway (not a Postgres error), which surfaces as a thrown error and crashes the
+ * whole RSC page. Chunking at 50 ids (≈ ≤2 KB URL with these ~25–30-char entity
+ * ids) keeps every request URL comfortably under that limit, with margin.
+ *
+ * `runBatch` receives one slice of `ids` and returns its rows; the caller's single
+ * RLS client (created once, reused across chunks) is closed over by `runBatch`.
+ */
+const IN_CHUNK_SIZE = 50;
+
+async function inChunks<Row>(
+  ids: string[],
+  runBatch: (chunk: string[]) => Promise<Row[]>
+): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + IN_CHUNK_SIZE);
+    rows.push(...(await runBatch(chunk)));
+  }
+  return rows;
+}
+
 /** Resolve the active space from the canonical cookie the proxy maintains. */
 export async function resolveActiveSpaceId(): Promise<string | undefined> {
   const cookieStore = await cookies();
@@ -214,16 +240,21 @@ async function loadLiveIds(
     return new Set();
   }
   const db = await createRlsClientFromServerCookies();
-  const { data, error } = await db
-    .from('knowledge_resources')
-    .select('id')
-    .eq('space_id', spaceId)
-    .in('id', itemIds)
-    .is('deleted_at', null);
-  if (error) {
-    throw new Error(`loadLiveIds: ${error.message}`);
-  }
-  return new Set((data ?? []).map((row) => (row as { id: string }).id));
+  // Chunked to keep each `.in('id', …)` request URL under the REST gateway limit
+  // (see `inChunks` — prevents the 502 Bad Gateway on large spaces).
+  const rows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await db
+      .from('knowledge_resources')
+      .select('id')
+      .eq('space_id', spaceId)
+      .in('id', chunk)
+      .is('deleted_at', null);
+    if (error) {
+      throw new Error(`loadLiveIds: ${error.message}`);
+    }
+    return data ?? [];
+  });
+  return new Set(rows.map((row) => (row as { id: string }).id));
 }
 
 /**
@@ -295,15 +326,20 @@ export async function loadKbAttributesForItems(
     return map;
   }
   const db = await createRlsClientFromServerCookies();
-  const { data, error } = await kbSchema(db)
-    .from('resource_description')
-    .select('node_id,body')
-    .eq('space_id', spaceId)
-    .in('node_id', itemIds);
-  if (error) {
-    throw new Error(`loadKbAttributesForItems: ${error.message}`);
-  }
-  for (const row of data ?? []) {
+  // Chunked to keep each `.in('node_id', …)` request URL under the REST gateway
+  // limit (see `inChunks` — prevents the 502 Bad Gateway on large spaces).
+  const rows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await kbSchema(db)
+      .from('resource_description')
+      .select('node_id,body')
+      .eq('space_id', spaceId)
+      .in('node_id', chunk);
+    if (error) {
+      throw new Error(`loadKbAttributesForItems: ${error.message}`);
+    }
+    return data ?? [];
+  });
+  for (const row of rows) {
     (map[row.node_id] ??= {}).description = row.body;
   }
   return map;
@@ -326,15 +362,20 @@ export async function loadNodeMetaForItems(
     return map;
   }
   const db = await createRlsClientFromServerCookies();
-  const { data, error } = await db
-    .from('knowledge_resources')
-    .select('id,owner_user_id,last_modified_at')
-    .eq('space_id', spaceId)
-    .in('id', itemIds);
-  if (error) {
-    throw new Error(`loadNodeMetaForItems: ${error.message}`);
-  }
-  for (const row of data ?? []) {
+  // Chunked to keep each `.in('id', …)` request URL under the REST gateway limit
+  // (see `inChunks` — prevents the 502 Bad Gateway on large spaces).
+  const rows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await db
+      .from('knowledge_resources')
+      .select('id,owner_user_id,last_modified_at')
+      .eq('space_id', spaceId)
+      .in('id', chunk);
+    if (error) {
+      throw new Error(`loadNodeMetaForItems: ${error.message}`);
+    }
+    return data ?? [];
+  });
+  for (const row of rows) {
     map[(row as { id: string }).id] = {
       ownerUserId: (row as { owner_user_id: string | null }).owner_user_id,
       lastModifiedAt: (row as { last_modified_at: string }).last_modified_at,
