@@ -107,14 +107,17 @@ function SourceOption({
   subtitle?: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
       className={cn(
-        'flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors',
-        selected ? 'border-ring ring-ring/35 ring-[3px]' : 'hover:bg-accent'
+        'border-border flex h-auto items-center justify-start gap-3 rounded-md border px-3 py-2.5 text-left font-normal transition-colors',
+        selected
+          ? 'border-ring ring-ring/35 ring-[3px] hover:bg-transparent'
+          : 'hover:bg-accent'
       )}
     >
       <span
@@ -135,6 +138,6 @@ function SourceOption({
           </span>
         ) : null}
       </span>
-    </button>
+    </Button>
   );
 }

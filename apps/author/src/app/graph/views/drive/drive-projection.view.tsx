@@ -977,14 +977,16 @@ export function DriveProjectionView({
             // Drilled into an advanced lens tree → the lens label is a button back to the
             // lens root (keeps the lens scope). Otherwise an inert label.
             return isLensAdvanced && !isRoot ? (
-              <button
+              <Button
                 type="button"
+                variant="crumb"
+                size={null}
                 onClick={() => navigate(null)}
-                className="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1.5 font-semibold"
+                className="flex shrink-0 items-center gap-1.5 font-semibold"
               >
                 {lensIcon}
                 {lensLabel}
-              </button>
+              </Button>
             ) : (
               <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
                 {lensIcon}
@@ -997,35 +999,35 @@ export function DriveProjectionView({
           // to the top level (drop the current contains edge, add no new one).
           <RootDropZone>
             {(over) => (
-              <button
+              <Button
                 type="button"
+                variant="crumb"
+                size={null}
                 onClick={() => navigate(null)}
                 title={t('graph.drive.dropOnRoot')}
                 className={cn(
                   'shrink-0 rounded px-1',
-                  isRoot
-                    ? 'text-foreground font-semibold'
-                    : 'text-muted-foreground hover:text-foreground',
+                  isRoot && 'text-foreground font-semibold',
                   over && 'bg-accent text-foreground ring-ring/50 ring-1'
                 )}
               >
                 {t('graph.lens.knowledgeBase')}
-              </button>
+              </Button>
             )}
           </RootDropZone>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="crumb"
+            size={null}
             onClick={() => navigate(null)}
             className={cn(
               'shrink-0',
-              isRoot
-                ? 'text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
+              isRoot && 'text-foreground font-semibold'
             )}
           >
             {t('graph.lens.knowledgeBase')}
-          </button>
+          </Button>
         )}
         {/* Full ancestry path (deliberate delta: the prototype showed only the
             immediate folder). Each ancestor is a clickable crumb; the current one
@@ -1047,13 +1049,15 @@ export function DriveProjectionView({
                       {crumb.title}
                     </span>
                   ) : (
-                    <button
+                    <Button
                       type="button"
+                      variant="crumb"
+                      size={null}
                       onClick={() => navigate(crumb.id)}
-                      className="text-muted-foreground hover:text-foreground truncate"
+                      className="truncate"
                     >
                       {crumb.title}
-                    </button>
+                    </Button>
                   )}
                 </React.Fragment>
               );
@@ -1099,30 +1103,32 @@ export function DriveProjectionView({
                   { title: clipboard.title }
                 )}
               >
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={handlePaste}
                   aria-label={t(
                     isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
                     { title: clipboard.title }
                   )}
-                  className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+                  className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-none px-2 text-sm font-normal"
                 >
                   <ClipboardPaste className="size-[15px]" aria-hidden />
                   <span className="max-w-[120px] truncate">
                     {clipboard.title}
                   </span>
-                </button>
+                </Button>
               </Hint>
               <Hint label={t('graph.drive.pasteClear')}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={onClearClipboard}
                   aria-label={t('graph.drive.pasteClear')}
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
                 >
                   <X className="size-[14px]" aria-hidden />
-                </button>
+                </Button>
               </Hint>
             </div>
           ) : (
@@ -1145,14 +1151,15 @@ export function DriveProjectionView({
                 </div>
               </Hint>
               <Hint label={t('graph.drive.pasteClear')}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={onClearClipboard}
                   aria-label={t('graph.drive.pasteClear')}
-                  className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                  className="hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
                 >
                   <X className="size-[14px]" aria-hidden />
-                </button>
+                </Button>
               </Hint>
             </div>
           )
@@ -1191,73 +1198,61 @@ export function DriveProjectionView({
               className="flex overflow-hidden rounded-md border"
               aria-disabled={!advancedStructuralEntitled}
             >
-              <button
+              <Button
                 type="button"
+                variant="segmented"
                 onClick={() => onLensViewChange('flat')}
                 disabled={!advancedStructuralEntitled}
                 aria-label={t('graph.drive.lensViewFlat')}
                 aria-pressed={lensView === 'flat'}
                 className={cn(
-                  'h-7 px-2 text-xs font-medium',
-                  lensView === 'flat'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground',
+                  'h-7 px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
                   !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
                 )}
               >
                 {t('graph.drive.lensViewFlat')}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="segmented"
                 onClick={() => onLensViewChange('advanced')}
                 disabled={!advancedStructuralEntitled}
                 aria-label={t('graph.drive.lensViewAdvanced')}
                 aria-pressed={lensView === 'advanced'}
                 className={cn(
-                  'h-7 border-l px-2 text-xs font-medium',
-                  lensView === 'advanced'
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground',
+                  'border-l-border h-7 border-l px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
                   !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
                 )}
               >
                 {t('graph.drive.lensViewAdvanced')}
-              </button>
+              </Button>
             </div>
           </Hint>
         ) : null}
         <div className="flex overflow-hidden rounded-md border">
           <Hint label={t('graph.drive.layoutGrid')}>
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={() => applyLayout('grid')}
               aria-label={t('graph.drive.layoutGrid')}
               aria-pressed={layout === 'grid'}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center',
-                layout === 'grid'
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground'
-              )}
+              className="grid h-7 w-[30px] place-items-center p-0"
             >
               <LayoutGrid className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
           <Hint label={t('graph.drive.layoutList')}>
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={() => applyLayout('list')}
               aria-label={t('graph.drive.layoutList')}
               aria-pressed={layout === 'list'}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center',
-                layout === 'list'
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground'
-              )}
+              className="grid h-7 w-[30px] place-items-center p-0"
             >
               <List className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
         </div>
         {onToggleSplit && scope === 'kb' ? (
@@ -1266,20 +1261,18 @@ export function DriveProjectionView({
               split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
             )}
           >
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={onToggleSplit}
               aria-label={t(
                 split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
               )}
               aria-pressed={split}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center rounded-md border',
-                split ? 'bg-accent text-foreground' : 'text-muted-foreground'
-              )}
+              className="border-border grid h-7 w-[30px] place-items-center rounded-md border p-0"
             >
               <Columns2 className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
         ) : null}
       </div>
@@ -1694,8 +1687,9 @@ function StarButton({
   alwaysShow?: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       aria-label={label}
       aria-pressed={starred}
       onClick={(event) => {
@@ -1703,7 +1697,7 @@ function StarButton({
         onToggle();
       }}
       className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md',
+        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
         starred || alwaysShow ? 'opacity-100' : CARD_ACTION_TRIGGER
       )}
     >
@@ -1714,7 +1708,7 @@ function StarButton({
         )}
         aria-hidden
       />
-    </button>
+    </Button>
   );
 }
 
@@ -1829,6 +1823,7 @@ function ShareFacetChips({
   onChange: (next: ShareMechanism | null) => void;
 }) {
   const chip = (
+    key: string,
     selected: boolean,
     label: string,
     onClick: () => void,
@@ -1836,27 +1831,33 @@ function ShareFacetChips({
   ) => {
     const Icon = icon;
     return (
-      <button
+      <Button
+        key={key}
         type="button"
+        variant="ghost"
+        size="pill"
         onClick={onClick}
         aria-pressed={selected}
         className={cn(
-          'inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
+          'border',
           selected
             ? 'bg-accent text-foreground border-transparent'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            : 'text-muted-foreground border-border hover:bg-accent hover:text-foreground'
         )}
       >
         {Icon ? <Icon className="size-3" aria-hidden /> : null}
         {label}
-      </button>
+      </Button>
     );
   };
   return (
     <div className="mb-3 flex flex-wrap items-center gap-1.5">
-      {chip(active == null, t('graph.drive.facetAll'), () => onChange(null))}
+      {chip('all', active == null, t('graph.drive.facetAll'), () =>
+        onChange(null)
+      )}
       {mechanisms.map((mech) =>
         chip(
+          mech,
           active === mech,
           SHARE_MECHANISM_META[mech].label(t),
           () => onChange(mech),
@@ -2582,13 +2583,14 @@ function DriveListTable({
             >
               {tree ? (
                 row.getCanExpand() ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
                       row.getToggleExpandedHandler()();
                     }}
-                    className="text-muted-foreground hover:text-foreground -ml-1 shrink-0 rounded p-0.5"
+                    className="text-muted-foreground hover:text-foreground -ml-1 h-auto shrink-0 rounded p-0.5 hover:bg-transparent"
                     aria-label={t(
                       row.getIsExpanded()
                         ? 'graph.tree.collapse'
@@ -2602,7 +2604,7 @@ function DriveListTable({
                       )}
                       aria-hidden
                     />
-                  </button>
+                  </Button>
                 ) : (
                   // Align leaf rows with the chevron of expandable siblings.
                   <span className="size-3.5 shrink-0" aria-hidden />
