@@ -52,6 +52,7 @@
     "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/knowledge-engine": "workspace:*",
     "@workspace/payload-plugins": "workspace:*",
+    "@workspace/settings-runtime": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@workspace/ui": "workspace:*",
     "cross-env": "catalog:",

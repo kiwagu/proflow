@@ -22,11 +22,13 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { request } from '@playwright/test';
+import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
 
 import {
   actorCookieHeader,
   actorSsrAuthCookies,
   addActor,
+  ADVANCED_SHARED_SCENARIO,
   authenticatedClient,
   bootstrapEphemeralTenant,
   bootstrapMemberActor,
@@ -1272,6 +1274,135 @@ export async function materializeFixture(
         stable: false,
       }),
   });
+}
+
+// ── ADR-0022 Addendum A: tariff-gated advanced STRUCTURAL-view entitlement (config seed) ──
+//
+// The advanced (structural) display of the STRUCTURAL lenses (the two Shared lenses +
+// Starred + Trash) is gated by the COMMERCIAL `advanced_structural_view` entitlement — a
+// scoped `runtime_settings` row resolved global→org→space with org∧space AND-composition
+// (a space's plan can never exceed its org's). Wave 1's `rpc_resolve_platform_flag` reads
+// it; here we SET it for the test by writing the scoped rows directly via the service-role
+// client (a control-plane config write, NOT a knowledge-resource seed — the forbidden path
+// is migration-seeding DOMAIN content, not setup-time config). The entitlement is a DISPLAY
+// gate, never an access fence: the SAME RLS-visible node-set renders in both modes, so
+// toggling it changes pixels, not rows.
+
+const ADVANCED_STRUCTURAL_VIEW_SETTING_KEY =
+  PLATFORM_ENTITLEMENT_SETTING_KEYS.advanced_structural_view;
+
+/** Upsert ONE scoped `runtime_settings` boolean row (org or space scope) for the
+ * advanced-structural-view entitlement, via service-role (setup only). */
+async function upsertEntitlementRow(
+  service: SupabaseClient,
+  scope: 'organization' | 'space',
+  scopeId: string,
+  enabled: boolean
+): Promise<void> {
+  const { error } = await service.from('runtime_settings').upsert(
+    {
+      scope,
+      scope_id: scopeId,
+      key: ADVANCED_STRUCTURAL_VIEW_SETTING_KEY,
+      value: enabled,
+      value_type: 'boolean',
+      is_public: false,
+    },
+    { onConflict: 'scope,key,scope_target' }
+  );
+  if (error) {
+    throw new Error(`upsertEntitlementRow(${scope}): ${error.message}`);
+  }
+}
+
+/**
+ * Set the advanced-structural-view entitlement for a tenant's space (ADR-0022 Addendum A).
+ * The resolver AND-composes org∧space, so an ENTITLED space needs BOTH rows true; a
+ * "locked" space = either row false/absent. Common cases:
+ *   - entitle a space:  setAdvancedStructuralEntitlement(t, { org: true,  space: true })
+ *   - lock a space:     (don't call it — absent rows resolve false) OR { org/space:false }
+ *   - org-off override: setAdvancedStructuralEntitlement(t, { org: false, space: true })
+ */
+export async function setAdvancedStructuralEntitlement(
+  tenant: KnowledgeGraphTenant,
+  opts: { org: boolean; space: boolean }
+): Promise<void> {
+  await upsertEntitlementRow(
+    tenant.service,
+    'organization',
+    tenant.organizationId,
+    opts.org
+  );
+  await upsertEntitlementRow(
+    tenant.service,
+    'space',
+    tenant.spaceId,
+    opts.space
+  );
+}
+
+// ── ADR-0022: the advanced-shared CONTENT fixture (the shared node-set) ──────
+//
+// The advanced (structural) view renders the SAME RLS-visible shared node-set as the
+// flat digest. That node-set is now a CATALOG scenario (`ADVANCED_SHARED_SCENARIO`) so
+// the demo DB and this e2e build the worked-example tree the SAME way, through the one
+// `/author/graph/*` create-vocabulary — never an inline `createFolder`/`createDoc` tree.
+// `materializeFixture` CREATES it (folders/docs via the live routes, the floor publish via
+// `setFloor`, the containment via `contain`); this thin wrapper resolves the named refs +
+// the titles the DOM assertions key on. The COMMERCIAL entitlement is control-plane config,
+// out of scope for a content scenario — set it separately via `setAdvancedStructuralEntitlement`.
+
+/** The shared-fixture titles the advanced-shared spec's DOM assertions key on — the SAME
+ * set must appear in both display modes. Kept in sync with `ADVANCED_SHARED_SCENARIO`. */
+export const ADVANCED_SHARED_TITLES = {
+  /** The shared folder (published) — gains an expand control in the advanced tree. */
+  folder: 'Shared Folder',
+  /** Lives inside the shared folder → nests under it in the advanced tree. */
+  nested: 'Nested Shared Doc',
+  /** Parent folder is NOT shared → roots in the advanced tree (orphan-at-root). */
+  orphan: 'Orphan Shared Doc',
+} as const;
+
+/** The advanced-shared structural-view fixture, resolved from the shared catalog scenario:
+ * a shared folder ⊃ a shared doc (nests) + an orphan doc whose private parent is invisible
+ * (roots). `materializeFixture` has already CREATED + published the tree through the runtime
+ * RLS path; this only names the pieces the spec asserts against. */
+export type AdvancedSharedFixture = {
+  /** The space the shared lens is scoped to. */
+  spaceId: string;
+  /** The published shared folder (the shared container) — `knr_…`. */
+  folderId: string;
+  /** The published doc inside the shared folder → nests under it in the tree — `knr_…`. */
+  nestedDocId: string;
+  /** The published doc whose parent folder is private → roots in the tree — `knr_…`. */
+  orphanDocId: string;
+  /** The titles the DOM assertions key on (folder / nested / orphan). */
+  titles: typeof ADVANCED_SHARED_TITLES;
+};
+
+/**
+ * Materialize the advanced-shared structural-view scenario over an existing tenant and
+ * project its refs onto the spec shape. Owned by the tenant's `granted` (`admin`) actor; a
+ * non-owning member (see `bootstrapMemberActor`) sees the three published nodes as its
+ * whole "Shared with me" set, which both display modes render (flat digest ↔ advanced tree).
+ */
+export async function seedAdvancedSharedFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<AdvancedSharedFixture> {
+  const { refs } = await materializeFixture(ADVANCED_SHARED_SCENARIO, tenant);
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`advanced-shared fixture: missing ref "${ref}"`);
+    return value;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('advanced-shared/folder'),
+    nestedDocId: id('advanced-shared/nested'),
+    orphanDocId: id('advanced-shared/orphan'),
+    titles: ADVANCED_SHARED_TITLES,
+  };
 }
 
 // ── ADR-0019: per-person (per-user) sharing fixture ──────────────────────────

@@ -41,8 +41,10 @@ async function insertIgnoreDuplicate(
  * Create an org + space + two actors through the SAME runtime path the product
  * uses (service-role inserts into organizations/spaces/memberships + an RBAC
  * `user_role` grant). `granted` → the `admin` space role (all `space.knowledge.*`
- * verbs); `ungranted` → `space_admin` only (no knowledge verbs). Both are active
- * space members. Random identity; pair with `teardownTenant`.
+ * verbs); `ungranted` → `space_admin` only (no knowledge verbs); `member` → the
+ * `member` role (read + create — authors its OWN content) which backs the catalog
+ * `viewer` ref. All three are active space members. Random identity; pair with
+ * `teardownTenant`.
  */
 export async function bootstrapEphemeralTenant(): Promise<SeedTenant> {
   const service = serviceSupabase();
@@ -89,13 +91,23 @@ export async function bootstrapEphemeralTenant(): Promise<SeedTenant> {
   ]);
   if (urErr) throw new Error(`bootstrap user_role: ${urErr.message}`);
 
-  return {
+  const tenant: SeedTenant = {
     organizationId: org.id,
     spaceId: space.id,
     granted: await actorWithClient(grantedUser),
     ungranted: await actorWithClient(ungrantedUser),
+    // Placeholder; replaced below by a real `member`-role actor. (`member` is the
+    // catalog `viewer` ref's backing actor — minted through the same RBAC path as
+    // every other member, active in this org+space.)
+    member: undefined as unknown as SeedActor,
     service,
   };
+  // A read+create `member` actor backing the catalog `viewer` ref. Distinct from the
+  // verb-less `ungranted` negative actor: this one CAN author its own content, so a
+  // scenario's `owner: 'viewer'` node materializes in the ephemeral tenant exactly as
+  // it does in the demo tenant (where the demo-viewer is already a member).
+  tenant.member = await bootstrapMemberActor(tenant);
+  return tenant;
 }
 
 async function actorWithClient(u: {
@@ -207,9 +219,15 @@ export async function teardownTenant(
   tenant: SeedTenant,
   extraUserIds: string[] = []
 ): Promise<void> {
-  const { service, organizationId, granted, ungranted } = tenant;
+  const { service, organizationId, granted, ungranted, member } = tenant;
   await service.from('organizations').delete().eq('id', organizationId);
-  for (const userId of [granted.userId, ungranted.userId, ...extraUserIds]) {
+  for (const userId of [
+    granted.userId,
+    ungranted.userId,
+    // `member` may be absent on a hand-built tenant; guard the field.
+    ...(member ? [member.userId] : []),
+    ...extraUserIds,
+  ]) {
     await service.from('profiles').delete().eq('user_id', userId);
     await service.auth.admin.deleteUser(userId);
   }
@@ -311,11 +329,18 @@ export async function provisionDemoTenant(): Promise<SeedTenant> {
     memberRoleId
   );
 
+  // In the demo tenant the demo-viewer is ALREADY a `member` (read + create), so it
+  // backs BOTH the `ungranted` field (the demo has no separate verb-less actor — the
+  // demo seed never asserts the negative case) AND the catalog `viewer` ref (`member`).
+  // The materializer resolves the `viewer` ref to `tenant.member`, so a `owner: 'viewer'`
+  // node authors as the demo-viewer in both modes.
+  const viewerActor = await actorWithClient(viewerUser);
   return {
     organizationId,
     spaceId,
     granted: await actorWithClient(adminUser),
-    ungranted: await actorWithClient(viewerUser),
+    ungranted: viewerActor,
+    member: viewerActor,
     service,
   };
 }

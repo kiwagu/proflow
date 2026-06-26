@@ -28,6 +28,10 @@ const NO_CAPS = {
   canAccess: false,
 } as const;
 
+// The commercial entitlement (ADR-0022) — fail-closed off for these presentational
+// tests; the Flat/Advanced toggle's entitled/locked behaviour is covered by the e2e.
+const NO_ENTITLEMENTS = { advancedStructuralView: false } as const;
+
 beforeAll(async () => {
   messages = await loadGraphMessages('en');
 });
@@ -94,6 +98,7 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       starredIds: [],
       openedAtById: {},
       capabilities: NO_CAPS,
+      entitlements: NO_ENTITLEMENTS,
       trash: { items: [], metaByItem: {} },
       sharedByMe: [],
       shareMechanism: {},
@@ -189,6 +194,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_new: '2026-06-01T00:00:00Z',
         },
         capabilities: NO_CAPS,
+        entitlements: NO_ENTITLEMENTS,
         trash: { items: [], metaByItem: {} },
         sharedByMe: [],
         shareMechanism: {},
@@ -226,6 +232,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},
@@ -259,6 +266,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},
@@ -294,6 +302,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           openedAtById: {},
         },
         capabilities: NO_CAPS,
+        entitlements: NO_ENTITLEMENTS,
         trash: { items, metaByItem: {} },
       },
     };
@@ -496,6 +505,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},

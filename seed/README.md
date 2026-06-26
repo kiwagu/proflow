@@ -64,7 +64,18 @@ owned by another member, one per access MECHANISM — a per-user grant (→ `per
 cohort grant to a cohort the viewer belongs to (→ `cohort`), a space-floor publish
 (→ `broadcast`), and a both-granted node that must win as `personal` (precedence
 `personal > cohort > broadcast`). The Wave 3b render/badge e2e draws it via
-`seedShareMechanismFixture`.
+`seedShareMechanismFixture`. The `shared` preset ALSO carries the `advanced-shared`
+fixture (ADR-0022): the worked example for the tariff-gated ADVANCED (structural) display
+of the Shared lenses, which renders the SAME RLS-visible shared node-set as the KB
+containment TREE (vs the flat digest), gated by the COMMERCIAL `advanced_shared_view`
+entitlement. The minimal tree — a shared FOLDER ⊃ a shared DOC (so the doc NESTS under the
+folder in the tree) plus a published doc whose containing folder stays PRIVATE (so the doc
+appears at the ROOT — graceful-absence, no synthetic ancestor). It is view-only: the advanced
+tree just reuses `buildContainment` over the shared subset (no resolver change, Invariant #1),
+so the SAME three nodes the flat digest lists are re-arranged structurally. The ADR-0022
+e2e draws the tree via `seedAdvancedSharedFixture`; the COMMERCIAL entitlement rows are
+control-plane config (a service-role `runtime_settings` upsert via `setAdvancedSharedEntitlement`),
+out of scope for a content scenario.
 `per-user-share` is per-person sharing (a private doc granted to one named member,
 ADR-0019 — the grantee sees it, a third un-granted member stays blind). That ONE grant is
 read from BOTH ends of the grant graph (ADR-0021 Part B): the grantee sees the doc in the
@@ -96,7 +107,8 @@ src/
   engine/      tenant bootstrap (ephemeral + demo), actors, SSR cookies,
                the /author/graph/* HTTP wrappers (the create-vocabulary)
   catalog/     the dictionary: drive, access, knowledge-base, board, shared,
-               hierarchy, trash + the projection spec builders + the materializer
+               share-mechanism, advanced-shared, hierarchy, per-user-share,
+               directory-picker, trash + the projection spec builders + the materializer
   presets.ts   preset → scenario selection
   cli.ts       the `bun run seed` entrypoint
 ```

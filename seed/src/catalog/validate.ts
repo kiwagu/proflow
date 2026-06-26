@@ -8,7 +8,10 @@ import type { SeedNode, SeedScenario } from './types.js';
  * `ALL_SCENARIOS`, and as a fast fail-first gate in the CLI before any endpoint call.
  */
 
-/** Actor refs the materializer always provides (tenant.granted / tenant.ungranted). */
+/** Actor refs the materializer always provides: `admin` → tenant.granted (the `admin`
+ * role, all knowledge verbs) and `viewer` → tenant.member (the `member` role, read +
+ * create — authors its OWN content). NOTE: `viewer` is the member actor, NOT the
+ * verb-less `tenant.ungranted` negative actor (which has no catalog ref). */
 export const BUILTIN_ACTOR_REFS = ['admin', 'viewer'] as const;
 
 function collectNodes(nodes: SeedNode[]): SeedNode[] {

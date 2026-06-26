@@ -17,7 +17,7 @@ export const PRESET_DESCRIPTIONS: Record<string, string> = {
   'knowledge-base': 'A tagged article slice surfaced as a KB grid.',
   board: 'Documents at workflow statuses on a gated review board.',
   shared:
-    'Cross-shared docs that fill "Shared with me" for both demo users, plus the mechanism-distinction fixture — one viewer sees four nodes one per access mechanism (personal / cohort / broadcast + a both-granted precedence winner, ADR-0021 Part C).',
+    'Cross-shared docs that fill "Shared with me" for both demo users, plus the mechanism-distinction fixture — one viewer sees four nodes one per access mechanism (personal / cohort / broadcast + a both-granted precedence winner, ADR-0021 Part C) — plus the advanced-shared structural-view fixture: a shared folder ⊃ a shared doc (nests in the tree) + a doc whose parent is private (orphan-at-root), the same set the tariff-gated ADVANCED (tree) layout renders over the flat digest (ADR-0022).',
   hierarchy:
     'A reporting line: the manager sees a report’s private content (ADR-0008).',
   trash: 'The soft-delete lifecycle as standing demo content.',

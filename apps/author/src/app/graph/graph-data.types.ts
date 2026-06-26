@@ -89,6 +89,33 @@ export type SpaceCapabilities = {
   canAccess: boolean;
 };
 
+/**
+ * The CURRENT space's COMMERCIAL entitlements (ADR-0022) — a plan-derived signal,
+ * resolved ONCE per space server-side from the platform `runtime_settings` registry
+ * (global→org→space, org∧space AND-composition), NOT from RLS verbs. An entitlement
+ * answers "does this space's PLAN include the capability"; a `SpaceCapabilities` verb
+ * answers "is this user PERMITTED to act". They are DIFFERENT authorities (commercial
+ * plan vs RLS) — kept ORTHOGONAL: `entitlements` rides as a SIBLING of `capabilities`
+ * on `KbViewData`, never merged into the verb namespace (Fork 1).
+ *
+ * This is a DISPLAY gate, never a security boundary (ADR-0022 Fork 2): the advanced
+ * (structural) view renders EXACTLY the same RLS-visible node-set as the flat view —
+ * only the layout differs. A forged `advancedStructuralView` leaks nothing (RLS is
+ * untouched); the worst case is a cosmetic upsell-bypass. Fail-CLOSED `false` on any
+ * resolve error (fail-to-cheapest-plan).
+ */
+export type SpaceEntitlements = {
+  /**
+   * `platform.entitlement.advanced_structural_view` — the advanced (structural /
+   * KB-containment-tree) display of the STRUCTURAL lenses (the two Shared lenses +
+   * Starred + Trash; ADR-0022 Addendum A) is included in this space's plan. ONE generic
+   * commercial unit, lens-agnostic. `false` = the cheaper plan: the Flat/Advanced toggle
+   * renders DISABLED + upsell hint, and the server forces the lens flat even if
+   * `?view=advanced` is hand-edited.
+   */
+  advancedStructuralView: boolean;
+};
+
 /** One cohort scope of the space + whether THIS node is fenced to it. Drives the
  * panel's "who can see it" section (cohort/scope visibility). */
 export type ScopeChoice = {

@@ -1,4 +1,5 @@
 import { ACCESS_SCENARIO } from './access.js';
+import { ADVANCED_SHARED_SCENARIO } from './advanced-shared.js';
 import { BOARD_SCENARIO } from './board.js';
 import { DIRECTORY_PICKER_SCENARIO } from './directory-picker.js';
 import {
@@ -29,6 +30,7 @@ export const ALL_SCENARIOS: SeedScenario[] = [
   TRASH_SCENARIO,
   SHARED_SCENARIO,
   SHARE_MECHANISM_SCENARIO,
+  ADVANCED_SHARED_SCENARIO,
   HIERARCHY_SCENARIO,
   PER_USER_SHARE_SCENARIO,
   DIRECTORY_PICKER_SCENARIO,
@@ -36,6 +38,7 @@ export const ALL_SCENARIOS: SeedScenario[] = [
 
 export {
   ACCESS_SCENARIO,
+  ADVANCED_SHARED_SCENARIO,
   BOARD_SCENARIO,
   DIRECTORY_PICKER_SCENARIO,
   DRIVE_CASCADE_SCENARIO,

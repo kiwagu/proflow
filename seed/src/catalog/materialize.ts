@@ -38,9 +38,13 @@ export async function materializeScenario(
   const refs = new Map<string, string>();
 
   // ── actors ─────────────────────────────────────────────────────────────────
+  // The catalog `viewer` ref maps to the tenant's `member` actor (read + create), NOT
+  // the verb-less `ungranted` negative actor — so a scenario's `owner: 'viewer'` node
+  // authors in BOTH the ephemeral and the demo tenant. (`ungranted` is reserved for the
+  // e2e specs that read `tenant.ungranted` directly to assert RLS denial.)
   const actors = new Map<string, SeedActor>([
     ['admin', tenant.granted],
-    ['viewer', tenant.ungranted],
+    ['viewer', tenant.member],
   ]);
   for (const spec of scenario.actors ?? []) {
     const minted = await deps.mintActor(spec.ref, spec.role ?? 'admin');

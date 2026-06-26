@@ -256,6 +256,33 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       facet are scoped to the `'shared'` lens ONLY (not shared-by-me/home/trash). Pure DISPLAY over the
       already-fenced, already-resolved Wave 3a annotation — never recomputes access. en+es i18n in lockstep.
       Per ADR-0021 Part C
+- [x] Tariff-gated ADVANCED (structural) view of the STRUCTURAL lenses — a commercial, VIEW-ONLY display
+      mode that renders the SAME RLS-visible lens node-set as the KB containment TREE instead of a flat
+      digest, gated by ONE generic platform ENTITLEMENT (`platform.entitlement.advanced_structural_view`,
+      resolved global→org→space with org∧space AND-composition; zero service-role on the read path). Platform
+      entitlement substrate landed first (Wave 1, re-keyed generic in Addendum A1); the author render threads
+      it as `entitlements.advancedStructuralView` — a SIBLING of the RLS-verb `capabilities`, kept orthogonal
+      (commercial plan ≠ permission) — into `KbViewData`. The display axis is lens-agnostic (`lensView`), gated
+      by a render-side opt-in set `STRUCTURAL_LENS_SCOPES = {shared, shared-by-me, starred}`: a Flat/Advanced
+      toolbar toggle appears ONLY on those lenses (NEVER Recent/Home), default Flat; the choice is an explicit
+      `?view=` deep-link override AND a REMEMBERED preference (a server-read `lens-view` cookie, mirroring the
+      grid/list `drive-layout` cookie, written only on the entitled Pro plan) — precedence `?view=` › cookie ›
+      flat, then server-clamped to flat when not entitled (a forged URL or a stale cookie on a locked plan stays
+      flat). A locked plan shows the toggle DISABLED + an upsell `Hint` (never hidden — the locked control IS the
+      upsell). Advanced reuses the EXISTING `buildContainment` over the lens subset + the already-loaded LIVE
+      `contains` forest — no new data model, no resolver change, no new load (Invariant #1); the advanced tree is
+      folder-NAVIGABLE WITHIN the lens (drilling narrows to the folder's subtree in the lens set and STAYS on the
+      lens scope, never breaking out to kb-browse), and a node whose parent is not in the lens set roots
+      gracefully (no synthetic ancestors, ADR-0018 §14). RLS untouched: the same node-set renders in both modes.
+      en+es i18n. Proven by `tests/e2e/src/knowledge-advanced-shared-view.e2e.spec.ts` (Shared: toggles flat↔tree
+      over the same set, orphan-at-root, folder-drill stays + crumb returns, cookie-persist Pro-only, locked =
+      disabled+hint + `?view=advanced`/stale-cookie still flat, org-off forces space-off; Starred: the same
+      structural toggle renders the starred set as a tree + drill stays on Starred; negative: no toggle on
+      Recent/Home). Per ADR-0022 + Addendum A (A1 platform re-key + A2 generic axis + A3 Starred).
+      TRASH (Addendum A4) is DEFERRED pending a backend decision: its structural tree needs the dormant
+      `contains` edges among trashed nodes, which the edge SELECT RLS hides (both-endpoints-trashed → not
+      selectable under the user's RLS), so it cannot be built from a thin RLS select without a SECURITY DEFINER
+      dormant-edge read or an edge-policy change — surfaced, not silently shipped flat-rooted.
 
 ## 6. First projection — validate the invariant
 

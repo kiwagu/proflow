@@ -49,8 +49,10 @@ import type {
   ShareMechanism,
   SharedByMeEntry,
 } from '@/app/graph/graph-data.types';
+import { STRUCTURAL_LENS_SCOPES } from '@/app/graph/views/registry/projection-view.types';
 import type {
   DriveScope,
+  LensView,
   ProjectionViewProps,
 } from '@/app/graph/views/registry/projection-view.types';
 import {
@@ -257,6 +259,8 @@ export function DriveProjectionView({
   onNavigate,
   scope: scopeProp,
   onScopeChange,
+  lensView: lensViewProp,
+  onLensViewChange,
   initialLayout,
   onMutated,
   refreshKey,
@@ -346,11 +350,31 @@ export function DriveProjectionView({
   // by the edge SELECT policy), so every trashed node is its own "trashed root". No
   // tree, no shortcuts, no breadcrumb, no DnD, no create/upload — only Restore + Purge.
   const isTrash = scope === 'trash';
-  // A flat lens (Home / Starred / Recent / Shared / Trash) hides the folder tree,
-  // breadcrumb path, and shortcuts — the canvas is a flat digest/list, not a folder
-  // you sit in.
+  // The STRUCTURAL lenses (ADR-0022 Addendum A) — the lenses that can render their
+  // node-set as a containment TREE (the two Shared lenses + Starred). The toggle shows
+  // ONLY here (never Recent/Home). Single source of truth: `STRUCTURAL_LENS_SCOPES`.
+  const isStructuralLens = STRUCTURAL_LENS_SCOPES.has(scope);
+  // The COMMERCIAL entitlement (ADR-0022 Fork 1) — a plan-derived signal, resolved
+  // server-side from a DIFFERENT authority than the RLS verbs (`capabilities`). Fail-
+  // CLOSED default `false` (cheapest plan / no seed). ONE generic unit across all
+  // structural lenses (lens-agnostic).
+  const advancedStructuralEntitled =
+    kbData?.entitlements?.advancedStructuralView ?? false;
+  // The lens DISPLAY MODE (ADR-0022 Fork 5 + Addendum A) — the workbench's server-clamped
+  // `?view=`; CONTROLLED when threaded (`lensViewProp`), else 'flat' (standalone).
+  const lensView: LensView = lensViewProp ?? 'flat';
+  // The advanced (TREE) render is ON only when: a STRUCTURAL lens is active, the mode is
+  // 'advanced', AND the space is entitled. Otherwise the lens stays a flat digest (the
+  // default, and the forced render on a locked plan). This is the ONLY thing the
+  // entitlement changes — the SAME RLS-visible node-set renders either way (Fork 2).
+  const isLensAdvanced =
+    isStructuralLens && lensView === 'advanced' && advancedStructuralEntitled;
+  // A flat lens (Home / Recent / Trash / any structural lens in FLAT mode) hides the
+  // folder tree, breadcrumb path, and shortcuts — the canvas is a flat digest/list, not
+  // a folder you sit in. A structural lens in ADVANCED mode is EXCLUDED here (it renders
+  // the containment tree over its node-set instead, Fork 3/5 + Addendum A).
   const isFilterScope =
-    isStarred || isRecent || isShared || isSharedByMe || isHome || isTrash;
+    (isStructuralLens && !isLensAdvanced) || isRecent || isHome || isTrash;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
@@ -370,6 +394,72 @@ export function DriveProjectionView({
     () => buildContainment(result.items, containmentEdges),
     [result.items, containmentEdges]
   );
+
+  // The lens node-set ids (ADR-0022 Fork 3 + Addendum A) for the ACTIVE structural lens
+  // — the SAME set the flat lens computes (the advanced tree shows EXACTLY the flat
+  // lens's nodes, only arranged structurally). `'shared'` = visible nodes I do NOT own;
+  // `'shared-by-me'` = the canvas ∩ the ids I have granted OUT; `'starred'` = the canvas
+  // ∩ my starred ids. Empty for any non-structural scope. Computed from the resolved
+  // canvas + the already-loaded overlays — no new data, no new load (Invariant #1).
+  const lensSetIds = React.useMemo(() => {
+    if (isShared) {
+      return new Set(
+        result.items
+          .filter((item) => {
+            const owner = metaByItem[item.id]?.ownerUserId;
+            return owner != null && owner !== currentUserId;
+          })
+          .map((item) => item.id)
+      );
+    }
+    if (isSharedByMe) {
+      return new Set(
+        result.items
+          .filter((item) => sharedByMeByResource.has(item.id))
+          .map((item) => item.id)
+      );
+    }
+    if (isStarred) {
+      const starred = new Set(kbData?.starredIds ?? []);
+      return new Set(
+        result.items
+          .filter((item) => starred.has(item.id))
+          .map((item) => item.id)
+      );
+    }
+    return new Set<string>();
+  }, [
+    isShared,
+    isSharedByMe,
+    isStarred,
+    result.items,
+    metaByItem,
+    currentUserId,
+    sharedByMeByResource,
+    kbData,
+  ]);
+
+  // The advanced lens TREE's containment (ADR-0022 Fork 3 + Addendum A) — the EXISTING
+  // `buildContainment` fed the lens SUBSET of the resolved items + the already-loaded
+  // LIVE `contains` forest. No new data model, no resolver change, no new load
+  // (Invariant #1). The forest builder drops any `contains` edge whose endpoint is NOT
+  // in the subset, so a node whose containing folder is NOT in the lens set has no
+  // parent → it appears at the ROOT of the lens tree — NO synthetic invisible ancestors
+  // (graceful-absence, ADR-0018 §14). Built only when the advanced lens view is active.
+  const lensContainment = React.useMemo(
+    () =>
+      buildContainment(
+        result.items.filter((item) => lensSetIds.has(item.id)),
+        containmentEdges
+      ),
+    [result.items, lensSetIds, containmentEdges]
+  );
+
+  // The containment the TREE traversal walks: the lens subset's forest in the advanced
+  // lens view, else the full graph's forest (kb browse). Display-only — the ⋯ menu /
+  // Move picker / ResourcePanel keep the FULL `containment` (their targets are the whole
+  // graph, never the lens sub-tree).
+  const treeContainment = isLensAdvanced ? lensContainment : containment;
 
   // Shortcuts grouped by source folder (Drive-only symlinks, not containment).
   const shortcutsByFolder = React.useMemo(() => {
@@ -464,9 +554,24 @@ export function DriveProjectionView({
   // lexicographically = chronologically.
   const byRecency = (a: LensNode, b: LensNode) =>
     (openedAtById[b.id] ?? '').localeCompare(openedAtById[a.id] ?? '');
-  const roots = rootFolders(containment);
-  const isRoot = folderId == null;
-  const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
+  // An advanced structural lens TREE (ADR-0022 + Addendum A) is folder-NAVIGABLE within
+  // its lens: drilling a folder stays on the lens (`?scope=<lens>&folder=…&view=advanced`)
+  // and NARROWS the canvas to that folder's subtree WITHIN the lens subset — it never
+  // leaves the lens for kb-browse, and never widens beyond the lens node-set (the tree
+  // walks `treeContainment`, the lens subset's forest). A `folderId` that is NOT in the
+  // lens subset (e.g. a stale kb-browse location) resolves to null → the lens root, so
+  // the drill can only ever land on a lens folder. The roots/folder below therefore walk
+  // `treeContainment` (the lens subset's forest when advanced, else the full graph). Flat
+  // lenses ignore `folderId` (they are not folder locations).
+  const roots = rootFolders(treeContainment);
+  const drilledFolder =
+    folderId != null ? (treeContainment.byId.get(folderId) ?? null) : null;
+  const isRoot = isLensAdvanced ? drilledFolder == null : folderId == null;
+  const folder = isLensAdvanced
+    ? drilledFolder
+    : isRoot
+      ? null
+      : (treeContainment.byId.get(folderId as string) ?? null);
 
   // The starred set as resolved nodes — `starredIds` mapped through the canvas,
   // dropping ids RLS hid or that no longer resolve. Folders and content split the
@@ -580,41 +685,50 @@ export function DriveProjectionView({
     : [];
   const trashMetaByItem = kbData?.trash.metaByItem ?? {};
 
+  // A FLAT structural lens lists its whole set as cards; the ADVANCED lens view
+  // (`isLensAdvanced`) instead falls through to the TREE branch below, which walks
+  // `treeContainment` (the lens subset's forest) — roots + root-loose content, with
+  // folders expanding their lens children inline (Fork 3/5 + Addendum A).
   const folders = (
-    isStarred
+    isStarred && !isLensAdvanced
       ? starredNodes.filter((node) => node.kind === 'folder')
-      : isShared
+      : isShared && !isLensAdvanced
         ? sharedNodes.filter((node) => node.kind === 'folder')
-        : isSharedByMe
+        : isSharedByMe && !isLensAdvanced
           ? sharedByMeNodes.filter((node) => node.kind === 'folder')
           : isFilterScope // 'recent' lists no folders
             ? []
             : isRoot
               ? roots
               : folder
-                ? childFolders(containment, folder.id)
+                ? childFolders(treeContainment, folder.id)
                 : []
   )
     .slice()
     .sort(byTitle);
-  const shortcuts = (
-    isFilterScope || isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
-  )
-    .slice()
-    .sort(byTitle);
+  const shortcuts =
+    // Shortcuts are OFF in an advanced lens tree for v1 (Fork 3) — it is a containment
+    // projection of the lens set, not the full Drive home.
+    (
+      isFilterScope || isRoot || isLensAdvanced
+        ? []
+        : (shortcutsByFolder.get(folderId ?? '') ?? [])
+    )
+      .slice()
+      .sort(byTitle);
   const items = (
-    isStarred
+    isStarred && !isLensAdvanced
       ? starredNodes.filter((node) => node.kind !== 'folder')
-      : isShared
+      : isShared && !isLensAdvanced
         ? sharedNodes.filter((node) => node.kind !== 'folder')
-        : isSharedByMe
+        : isSharedByMe && !isLensAdvanced
           ? sharedByMeNodes.filter((node) => node.kind !== 'folder')
           : isRecent
             ? recentNodes
             : isRoot
-              ? rootContent(containment) // loose top-level content (no parent folder)
+              ? rootContent(treeContainment) // loose top-level content (no parent folder)
               : folder
-                ? childContent(containment, folder.id)
+                ? childContent(treeContainment, folder.id)
                 : []
   )
     .slice()
@@ -702,10 +816,10 @@ export function DriveProjectionView({
     subRows:
       isTree && !ancestors.has(node.id)
         ? [
-            ...childFolders(containment, node.id).map((f) =>
+            ...childFolders(treeContainment, node.id).map((f) =>
               folderRow(f, new Set(ancestors).add(node.id))
             ),
-            ...childContent(containment, node.id).map(itemRow),
+            ...childContent(treeContainment, node.id).map(itemRow),
           ]
         : undefined,
   });
@@ -764,13 +878,22 @@ export function DriveProjectionView({
           <Button
             key={item.key}
             variant="ghost"
-            onClick={() =>
-              // 'kb' returns to the tree root (which also resets the scope); any flat
-              // lens ('starred'/'recent'/'shared') switches to that scope.
-              item.scope && item.scope !== 'kb'
-                ? applyScope(item.scope)
-                : navigate(null)
-            }
+            onClick={() => {
+              // Every wired lens switches via the scope owner (the workbench roots the
+              // folder on a lens switch). The KB lens must NOT use `navigate(null)`: in
+              // the advanced Shared tree (ADR-0022) `goFolder(null)` deliberately STAYS
+              // on the Shared lens, so routing 'kb' through it would trap the user there.
+              if (!item.scope) {
+                navigate(null);
+                return;
+              }
+              applyScope(item.scope);
+              // Uncontrolled fallback: the workbench isn't owning the scope, so reset the
+              // local folder to root here (controlled mode roots in `goScope`).
+              if (!controlled && item.scope === 'kb') {
+                navigate(null);
+              }
+            }}
             data-active={active}
             className={cn(
               'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
@@ -808,8 +931,8 @@ export function DriveProjectionView({
           <Folder className="text-muted-foreground size-4" aria-hidden />
           <span className="flex-1 truncate">{root.title}</span>
           <span className="text-muted-foreground text-[11px]">
-            {childFolders(containment, root.id).length +
-              childContent(containment, root.id).length}
+            {childFolders(treeContainment, root.id).length +
+              childContent(treeContainment, root.id).length}
           </span>
         </Button>
       ))}
@@ -819,11 +942,15 @@ export function DriveProjectionView({
   const toolbar = (
     <div className="flex items-center gap-2.5 border-b px-5 py-3">
       <div className="flex min-w-0 items-center gap-1 text-sm">
-        {isFilterScope ? (
-          // A flat filter lens (Starred / Recent) is not a tree location — a single
-          // inert crumb stands in for the folder path.
-          <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
-            {isHome ? (
+        {isFilterScope || isStructuralLens ? (
+          // A flat filter lens (Recent) is not a tree location — a single inert crumb
+          // stands in for the folder path. A structural lens (flat OR advanced) keeps its
+          // lens label as the ROOT crumb — the advanced tree is still a projection of the
+          // LENS set, not the Knowledge-base root. In an advanced lens tree the crumb is
+          // CLICKABLE (returns to the lens root) once drilled, exactly as the kb-browse
+          // root crumb is — same scope, just a narrowed tree.
+          (() => {
+            const lensIcon = isHome ? (
               <House className="size-3.5" aria-hidden />
             ) : isStarred ? (
               <Star className="size-3.5" aria-hidden />
@@ -835,8 +962,8 @@ export function DriveProjectionView({
               <Trash2 className="size-3.5" aria-hidden />
             ) : (
               <Clock className="size-3.5" aria-hidden />
-            )}
-            {isHome
+            );
+            const lensLabel = isHome
               ? t('graph.drive.navHome')
               : isStarred
                 ? t('graph.drive.navStarred')
@@ -846,8 +973,25 @@ export function DriveProjectionView({
                     ? t('graph.drive.navSharedByMe')
                     : isTrash
                       ? t('graph.drive.navTrash')
-                      : t('graph.drive.navRecent')}
-          </span>
+                      : t('graph.drive.navRecent');
+            // Drilled into an advanced lens tree → the lens label is a button back to the
+            // lens root (keeps the lens scope). Otherwise an inert label.
+            return isLensAdvanced && !isRoot ? (
+              <button
+                type="button"
+                onClick={() => navigate(null)}
+                className="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1.5 font-semibold"
+              >
+                {lensIcon}
+                {lensLabel}
+              </button>
+            ) : (
+              <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
+                {lensIcon}
+                {lensLabel}
+              </span>
+            );
+          })()
         ) : dndEnabled ? (
           // The root crumb is also a drop target: dropping a node here re-parents it
           // to the top level (drop the current contains edge, add no new one).
@@ -887,7 +1031,10 @@ export function DriveProjectionView({
             immediate folder). Each ancestor is a clickable crumb; the current one
             is bold and inert. */}
         {!isFilterScope && !isRoot && folder
-          ? pathTo(containment, folder.id).map((crumb, index, crumbs) => {
+          ? // In the advanced Shared tree the path walks the SHARED subset's forest
+            // (`treeContainment`) so the breadcrumb never reaches a non-shared ancestor;
+            // kb-browse walks the full graph forest.
+            pathTo(treeContainment, folder.id).map((crumb, index, crumbs) => {
               const isCurrent = index === crumbs.length - 1;
               return (
                 <React.Fragment key={crumb.id}>
@@ -1023,6 +1170,61 @@ export function DriveProjectionView({
             <Upload className="size-[15px]" aria-hidden />
             {t('graph.drive.upload')}
           </Button>
+        ) : null}
+        {/* The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced,
+            shown ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on
+            Recent/Home. When the space is NOT entitled it renders DISABLED, wrapped in a
+            Hint with the upsell copy — NEVER hidden (the locked control IS the upsell,
+            Fork 2). The server clamps `?view=` to 'flat' on a locked plan, so even a
+            forged URL stays flat. */}
+        {isStructuralLens && onLensViewChange ? (
+          <Hint
+            label={
+              advancedStructuralEntitled
+                ? undefined
+                : t('graph.drive.advancedStructuralLocked', {
+                    tariff: t('graph.drive.advancedStructuralTariff'),
+                  })
+            }
+          >
+            <div
+              className="flex overflow-hidden rounded-md border"
+              aria-disabled={!advancedStructuralEntitled}
+            >
+              <button
+                type="button"
+                onClick={() => onLensViewChange('flat')}
+                disabled={!advancedStructuralEntitled}
+                aria-label={t('graph.drive.lensViewFlat')}
+                aria-pressed={lensView === 'flat'}
+                className={cn(
+                  'h-7 px-2 text-xs font-medium',
+                  lensView === 'flat'
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground',
+                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                {t('graph.drive.lensViewFlat')}
+              </button>
+              <button
+                type="button"
+                onClick={() => onLensViewChange('advanced')}
+                disabled={!advancedStructuralEntitled}
+                aria-label={t('graph.drive.lensViewAdvanced')}
+                aria-pressed={lensView === 'advanced'}
+                className={cn(
+                  'h-7 border-l px-2 text-xs font-medium',
+                  lensView === 'advanced'
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground',
+                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                {t('graph.drive.lensViewAdvanced')}
+              </button>
+            </div>
+          </Hint>
         ) : null}
         <div className="flex overflow-hidden rounded-md border">
           <Hint label={t('graph.drive.layoutGrid')}>
@@ -1243,7 +1445,14 @@ export function DriveProjectionView({
                 // "Modified" column elsewhere): the table's sort state is seeded once at
                 // mount, so without this it keeps a stale `{id:'viewed'}` sort after
                 // leaving Recent and TanStack throws "Column 'viewed' does not exist".
-                key={isRecent ? 'recent' : 'browse'}
+                // ALSO remount when the structural mode flips (flat ↔ tree) — a Shared
+                // lens toggling Flat↔Advanced (ADR-0022) changes `tree` in place; without
+                // a fresh mount TanStack's expanded-row model leaves a stale expand
+                // control behind (a detached duplicate). The mode is part of the table's
+                // identity, so it keys the remount.
+                key={
+                  isRecent ? 'recent' : isTree ? 'browse-tree' : 'browse-flat'
+                }
                 rows={driveRows}
                 tree={isTree}
                 t={t}
@@ -1280,8 +1489,8 @@ export function DriveProjectionView({
                         title: sub.title,
                         subtitle: t('graph.drive.itemsCount', {
                           count:
-                            childFolders(containment, sub.id).length +
-                            childContent(containment, sub.id).length,
+                            childFolders(treeContainment, sub.id).length +
+                            childContent(treeContainment, sub.id).length,
                         }),
                         layout,
                         onOpen: () => navigate(sub.id),
