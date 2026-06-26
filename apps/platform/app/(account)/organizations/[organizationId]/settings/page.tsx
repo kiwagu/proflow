@@ -5,7 +5,9 @@ import { Suspense } from 'react';
 import {
   PLATFORM_LOCALE_COOKIE,
   defaultPlatformFeatureFlags,
+  defaultPlatformEntitlements,
   PLATFORM_FEATURE_FLAG_KEYS,
+  PLATFORM_ENTITLEMENT_KEYS,
   RUNTIME_SETTING_KEYS,
 } from '@workspace/settings-runtime';
 import { Badge } from '@workspace/ui/components/badge';
@@ -73,6 +75,7 @@ async function OrganizationSettingsContent({
     locale,
     scopedLocale,
     organizationFeatureValue,
+    advancedStructuralViewValue,
     spacesResult,
   ] = await Promise.all([
     getIsSuperAdminForUser(supabase, uid),
@@ -96,6 +99,12 @@ async function OrganizationSettingsContent({
       organizationId,
       RUNTIME_SETTING_KEYS.platformFeatureFlagOrganizationSettings
     ),
+    getScopedRuntimeSettingValue(
+      supabase,
+      'organization',
+      organizationId,
+      RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView
+    ),
     supabase
       .from('spaces')
       .select('id,name,slug')
@@ -114,6 +123,12 @@ async function OrganizationSettingsContent({
       ? organizationFeatureValue
       : defaultPlatformFeatureFlags[
           PLATFORM_FEATURE_FLAG_KEYS.organizationSettings
+        ];
+  const advancedStructuralViewEnabled =
+    typeof advancedStructuralViewValue === 'boolean'
+      ? advancedStructuralViewValue
+      : defaultPlatformEntitlements[
+          PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView
         ];
   const spaces = spacesResult.data ?? [];
   const spaceIds = spaces.map((space) => space.id);
@@ -134,6 +149,26 @@ async function OrganizationSettingsContent({
   for (const row of spaceFeatureSettings.data ?? []) {
     if (typeof row.scope_id === 'string' && typeof row.value === 'boolean') {
       spaceFeatureValues.set(row.scope_id, row.value);
+    }
+  }
+
+  const spaceAdvancedStructuralViewSettings =
+    spaceIds.length > 0
+      ? await supabase
+          .from('runtime_settings')
+          .select('scope_id,value')
+          .eq('scope', 'space')
+          .eq(
+            'key',
+            RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView
+          )
+          .in('scope_id', spaceIds)
+      : { data: [], error: null };
+
+  const spaceAdvancedStructuralViewValues = new Map<string, boolean>();
+  for (const row of spaceAdvancedStructuralViewSettings.data ?? []) {
+    if (typeof row.scope_id === 'string' && typeof row.value === 'boolean') {
+      spaceAdvancedStructuralViewValues.set(row.scope_id, row.value);
     }
   }
 
@@ -286,6 +321,116 @@ async function OrganizationSettingsContent({
                       submitLabel={t('runtimeSettings.actions.save')}
                       successMessage={t('runtimeSettings.messages.saved')}
                       testId={`organization-feature-flag-space-${space.id}`}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('organizationSettings.entitlements.title')}</CardTitle>
+          <CardDescription>
+            {t('organizationSettings.entitlements.description')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={advancedStructuralViewEnabled ? 'default' : 'secondary'}
+            >
+              {advancedStructuralViewEnabled
+                ? t('organizationSettings.featureRollout.status.enabled')
+                : t('organizationSettings.featureRollout.status.disabled')}
+            </Badge>
+          </div>
+
+          <FeatureFlagCheckboxForm
+            currentValue={advancedStructuralViewEnabled}
+            description={t(
+              'organizationSettings.entitlements.advancedStructuralView.description'
+            )}
+            fieldLabel={t(
+              'organizationSettings.entitlements.advancedStructuralView.label'
+            )}
+            featureKey={
+              RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView
+            }
+            revalidatePath={`/organizations/${organizationId}/settings`}
+            scope="organization"
+            scopeId={organizationId}
+            submitLabel={t('runtimeSettings.actions.save')}
+            successMessage={t('runtimeSettings.messages.saved')}
+            testId="organization-entitlement-advanced-structural-view"
+          />
+
+          <div className="flex flex-col gap-4">
+            <p className="text-sm font-medium">
+              {t('organizationSettings.featureRollout.spaceListTitle')}
+            </p>
+
+            {spaces.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {t('organizations.emptySpaces')}
+              </p>
+            ) : (
+              spaces.map((space) => {
+                const spaceEntitled =
+                  spaceAdvancedStructuralViewValues.get(space.id) ?? false;
+                const statusLabel = advancedStructuralViewEnabled
+                  ? spaceEntitled
+                    ? t('organizationSettings.featureRollout.status.enabled')
+                    : t('organizationSettings.featureRollout.status.disabled')
+                  : t(
+                      'organizationSettings.featureRollout.status.disabledByOrganization'
+                    );
+
+                return (
+                  <div
+                    key={space.id}
+                    className="border-border flex flex-col gap-4 rounded-md border p-4"
+                    data-testid={`organization-entitlement-advanced-structural-view-space-card-${space.id}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">{space.name}</p>
+                        <p className="text-muted-foreground text-sm">
+                          {space.slug}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          advancedStructuralViewEnabled && spaceEntitled
+                            ? 'default'
+                            : 'secondary'
+                        }
+                      >
+                        {statusLabel}
+                      </Badge>
+                    </div>
+
+                    <FeatureFlagCheckboxForm
+                      currentValue={spaceEntitled}
+                      description={t(
+                        'organizationSettings.featureRollout.spaceDescription',
+                        {
+                          slug: space.slug,
+                          status: statusLabel,
+                        }
+                      )}
+                      fieldLabel={space.name}
+                      featureKey={
+                        RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView
+                      }
+                      revalidatePath={`/organizations/${organizationId}/settings`}
+                      scope="space"
+                      scopeId={space.id}
+                      submitLabel={t('runtimeSettings.actions.save')}
+                      successMessage={t('runtimeSettings.messages.saved')}
+                      testId={`organization-entitlement-advanced-structural-view-space-${space.id}`}
                     />
                   </div>
                 );

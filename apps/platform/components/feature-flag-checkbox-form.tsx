@@ -2,7 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
-import type { PlatformFeatureFlagRuntimeSettingKey } from '@workspace/settings-runtime';
+import type {
+  PlatformEntitlementRuntimeSettingKey,
+  PlatformFeatureFlagRuntimeSettingKey,
+} from '@workspace/settings-runtime';
 import { Button } from '@workspace/ui/components/button';
 import { Checkbox } from '@workspace/ui/components/checkbox';
 import {
@@ -21,7 +24,9 @@ type FeatureFlagCheckboxFormProps = {
   currentValue: boolean;
   description?: string;
   fieldLabel: string;
-  featureKey: PlatformFeatureFlagRuntimeSettingKey;
+  featureKey:
+    | PlatformFeatureFlagRuntimeSettingKey
+    | PlatformEntitlementRuntimeSettingKey;
   revalidatePath: string;
   scope: 'global' | 'organization' | 'space';
   scopeId: string | null;
