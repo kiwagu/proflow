@@ -33,6 +33,7 @@ import {
   Pencil,
   Share2,
   SquarePen,
+  Target,
   Trash2,
 } from 'lucide-react';
 import * as React from 'react';
@@ -81,6 +82,7 @@ export function NodeActionsMenu({
   onDetails,
   onEdit,
   onCopyToClipboard,
+  onOpenInKb,
   triggerClassName,
 }: {
   spaceId: string;
@@ -114,6 +116,9 @@ export function NodeActionsMenu({
    * offers a Paste affordance in each pane's toolbar. When omitted (standalone /
    * tests), "Copy" falls back to the legacy immediate duplicate-in-place. */
   onCopyToClipboard?: (nodeId: string, title: string) => void;
+  /** Reveal this node in the KB containment tree (jump to the 'kb' lens at its parent
+   * folder so its position among siblings is visible). Omit to hide the item. */
+  onOpenInKb?: (nodeId: string) => void;
   /** Extra classes for the `⋯` trigger (e.g. hover-reveal on a card). */
   triggerClassName?: string;
 }) {
@@ -306,6 +311,16 @@ export function NodeActionsMenu({
             icon: <Info className="size-4" aria-hidden />,
             label: t('graph.panel.details'),
             onSelect: onDetails,
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(onOpenInKb
+      ? [
+          {
+            id: 'open-in-kb',
+            icon: <Target className="size-4" aria-hidden />,
+            label: t('graph.panel.openInKb'),
+            onSelect: () => onOpenInKb(node.id),
           } satisfies ActionMenuItem,
         ]
       : []),

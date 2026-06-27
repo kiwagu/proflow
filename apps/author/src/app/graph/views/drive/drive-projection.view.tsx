@@ -34,6 +34,7 @@ import {
   RotateCcw,
   Send,
   Star,
+  Target,
   Trash2,
   Upload,
   UserCheck,
@@ -261,6 +262,7 @@ export function DriveProjectionView({
   onSelect,
   onOpenDocument,
   onEditNode,
+  onRevealInKb,
   folderId = null,
   onNavigate,
   scope: scopeProp,
@@ -339,6 +341,11 @@ export function DriveProjectionView({
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
   const isShared = scope === 'shared';
+  // "Open in KB" is pointless in the KB lens itself (a CANONICAL card is already at its
+  // position) — so the card target button + ⋯ item are suppressed there. Every other lens
+  // (flat or an advanced tree of a DIFFERENT set) loses the containment context, so it is
+  // offered. (Shortcut cards, which point elsewhere, keep their own affordance.)
+  const onRevealInKbAction = scope === 'kb' ? undefined : onRevealInKb;
   // The "Shared with me" facet (ADR-0021 Part C): a client-side filter over the
   // mechanism annotation — `null` = All. Local to the lens (a UI filter, never a
   // fence). State is stored raw, but every READER goes through `shareFacet`, which is
@@ -871,6 +878,7 @@ export function DriveProjectionView({
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
+        onOpenInKb={onRevealInKbAction}
         onEdit={
           node.kind === 'text' && onEditNode
             ? () => onEditNode(node.id)
@@ -897,6 +905,7 @@ export function DriveProjectionView({
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
+        onOpenInKb={onRevealInKbAction}
       />
     ),
     subRows:
@@ -1165,6 +1174,7 @@ export function DriveProjectionView({
               onMutated={onMutated}
               onDetails={() => onSelect(folder.id)}
               onCopyToClipboard={onCopyToClipboard}
+              onOpenInKb={onRevealInKbAction}
             />
           </span>
         ) : null}
@@ -1396,15 +1406,23 @@ export function DriveProjectionView({
           ) : undefined
         }
         star={
-          <StarButton
-            starred={starredSet.has(item.id)}
-            onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
-            label={t(
-              starredSet.has(item.id)
-                ? 'graph.drive.unstar'
-                : 'graph.drive.star'
-            )}
-          />
+          <>
+            <StarButton
+              starred={starredSet.has(item.id)}
+              onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
+              label={t(
+                starredSet.has(item.id)
+                  ? 'graph.drive.unstar'
+                  : 'graph.drive.star'
+              )}
+            />
+            {onRevealInKbAction ? (
+              <RevealInKbButton
+                onReveal={() => onRevealInKbAction(item.id)}
+                label={t('graph.panel.openInKb')}
+              />
+            ) : null}
+          </>
         }
         actions={
           <NodeActionsMenu
@@ -1418,6 +1436,7 @@ export function DriveProjectionView({
             onMutated={onMutated}
             onDetails={() => onSelect(item.id)}
             onCopyToClipboard={onCopyToClipboard}
+            onOpenInKb={onRevealInKbAction}
             onEdit={
               item.kind === 'text' && onEditNode
                 ? () => onEditNode(item.id)
@@ -1640,6 +1659,7 @@ export function DriveProjectionView({
                             onMutated={onMutated}
                             onDetails={() => onSelect(sub.id)}
                             onCopyToClipboard={onCopyToClipboard}
+                            onOpenInKb={onRevealInKbAction}
                             triggerClassName={CARD_ACTION_TRIGGER}
                           />
                         ),
@@ -1672,6 +1692,16 @@ export function DriveProjectionView({
                             : onSelect(target.id)
                         }
                         onDetails={() => onSelect(target.id)}
+                        actions={
+                          // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
+                          // the KB lens — it jumps to the target's CANONICAL home (target.id).
+                          onRevealInKb ? (
+                            <RevealInKbButton
+                              onReveal={() => onRevealInKb(target.id)}
+                              label={t('graph.panel.openInKb')}
+                            />
+                          ) : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -1822,6 +1852,38 @@ function StarButton({
         )}
         aria-hidden
       />
+    </Button>
+  );
+}
+
+/**
+ * RevealInKbButton — a small inline action that sits next to the star and jumps to this
+ * resource's position in the KB containment tree (the 'kb' lens at its parent folder).
+ * Hover-revealed like the other card actions; the same affordance lives in the `⋯` menu
+ * ("Open in KB") for surfaces without a star.
+ */
+function RevealInKbButton({
+  onReveal,
+  label,
+}: {
+  onReveal: () => void;
+  label: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        onReveal();
+      }}
+      className={cn(
+        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
+        CARD_ACTION_TRIGGER
+      )}
+    >
+      <Target className="text-muted-foreground size-4" aria-hidden />
     </Button>
   );
 }

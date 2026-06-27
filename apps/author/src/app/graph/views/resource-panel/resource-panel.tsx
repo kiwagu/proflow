@@ -136,6 +136,10 @@ export type ResourcePanelProps = {
   onMutated: () => void;
   /** Edit a text node directly (the workbench's edit launcher). */
   onEdit?: (nodeId: string) => void;
+  /** Reveal this node in the KB containment tree — jump to the 'kb' lens at the node's
+   * parent folder so its position among siblings is visible. Optional; only the workbench
+   * (which owns navigation) provides it. */
+  onOpenInKb?: (nodeId: string) => void;
 };
 
 async function sendJson(
@@ -168,6 +172,7 @@ export function ResourcePanel({
   onOpenChange,
   onMutated,
   onEdit,
+  onOpenInKb,
 }: ResourcePanelProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
   const [busy, setBusy] = React.useState(false);
@@ -231,6 +236,7 @@ export function ResourcePanel({
           onEdit={
             node.kind === 'text' && onEdit ? () => onEdit(node.id) : undefined
           }
+          onOpenInKb={onOpenInKb}
         />
         <Hint label={t('graph.panel.close')}>
           <Button

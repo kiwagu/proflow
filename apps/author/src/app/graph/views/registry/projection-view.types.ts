@@ -209,6 +209,12 @@ export type ProjectionViewProps = {
    */
   onEditNode?: (nodeId: string) => void;
   /**
+   * Reveal a node in the KB containment tree — jump to the default 'kb' lens at the node's
+   * PARENT folder so its position among siblings is visible. Wired by the workbench (which
+   * owns navigation) to the card `⋯` menu's "Open in KB" item and the inline target button.
+   */
+  onRevealInKb?: (nodeId: string) => void;
+  /**
    * The current folder location (a `kind=folder` node id, or null for the root),
    * owned by the workbench in the URL so it survives refresh / browser history.
    * Drive-navigation props — views without a folder tree simply omit them and

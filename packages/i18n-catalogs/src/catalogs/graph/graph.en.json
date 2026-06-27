@@ -352,5 +352,6 @@
   "graph.panel.accessInheritedHeader": "Inherited access",
   "graph.panel.accessBroadcastViaFolder": "Broadcast to {scope} via {folder}",
   "graph.panel.accessPrivateOnly": "Only you and supervisors can see this.",
+  "graph.panel.openInKb": "Open in KB",
   "graph.panel.manageAccess": "Manage access"
 }

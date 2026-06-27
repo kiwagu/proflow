@@ -114,6 +114,11 @@ export function DriveWorkbench({
   // (they follow the pane you last acted in — both call the same `selectNode`/
   // `openDocument`).
   const [split, setSplit] = React.useState(false);
+  // A node id to reveal in the KB tree once the NEXT re-resolve lands (used by restore-from-
+  // trash, whose `contains` edge only becomes active after the refresh). The effect below
+  // fires on the first `containment` change after this is set. A ref so setting it never
+  // re-renders and it survives the refresh.
+  const pendingRevealRef = React.useRef<string | null>(null);
   const [folderId2, setFolderId2] = React.useState<string | null>(null);
 
   // The Dolphin-style clipboard — a node MARKED for copy by the `⋯` "Copy" action.
@@ -195,6 +200,15 @@ export function DriveWorkbench({
         body: JSON.stringify({ spaceId, resourceId: nodeId }),
       });
       if (res.ok) {
+        // Jump to the restored node's position in the KB tree — the SAME reveal as the
+        // panel / ⋯ "Open in KB". Switch to the kb lens now; the deferred effect performs
+        // the actual reveal once the re-resolved containment knows the node's now-active
+        // parent (the `contains` edge is dormant while trashed).
+        pendingRevealRef.current = nodeId;
+        setScope('kb');
+        setFolderId(null);
+        setDocId(null);
+        setSelectedId(undefined);
         refresh();
         return true;
       }
@@ -438,6 +452,38 @@ export function DriveWorkbench({
     [result.items, kbData]
   );
 
+  // Reveal a node in the KB containment tree (the panel's "Open in KB" action). FORCES the
+  // default 'kb' lens at the node's PARENT folder so the resource shows among its siblings
+  // (its position in the tree), and keeps it selected so it is highlighted. Works from any
+  // flat cross-cutting lens or the advanced tree, where the containment context is lost.
+  const revealInKb = React.useCallback(
+    (nodeId: string) => {
+      const parent = containment.parentOf.get(nodeId) ?? null;
+      setDocId(null);
+      setSplit(false);
+      setFolderId(parent);
+      setScope('kb');
+      setSelectedId(nodeId);
+      pushLocation({ folder: parent, doc: null, scope: 'kb', view: lensView });
+      if (parent) {
+        recordOpen(parent);
+      }
+    },
+    [containment, pushLocation, lensView, recordOpen]
+  );
+
+  // Deferred reveal for restore-from-trash: a restored node's `contains` edge is only active
+  // AFTER the re-resolve, so `restoreNode` sets `pendingRevealRef` + refreshes and we wait
+  // for the first `containment` change (the new data landing), then jump to its KB position.
+  React.useEffect(() => {
+    if (!pendingRevealRef.current) {
+      return;
+    }
+    const id = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+    revealInKb(id);
+  }, [containment, revealInKb]);
+
   // The "shared by me" overlay reshaped for the ResourcePanel's Access summary (ADR-0023
   // §7b): a per-resource grantee map (the node's explicit grantees) + the SET of ids the
   // owner shared OUT (the membership test for the access-mirror ancestor walk). SAME source
@@ -668,6 +714,7 @@ export function DriveWorkbench({
       selectedId={selectedId}
       onSelect={selectNode}
       onEditNode={spaceId ? requestEdit : undefined}
+      onRevealInKb={revealInKb}
       onOpenDocument={openDocument}
       folderId={paneFolderId}
       onNavigate={onNav}
@@ -832,6 +879,7 @@ export function DriveWorkbench({
             }}
             onMutated={refresh}
             onEdit={requestEdit}
+            onOpenInKb={revealInKb}
           />
         ) : null}
       </div>
