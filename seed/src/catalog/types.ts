@@ -101,7 +101,15 @@ export type BodylessNode = NodeBase & {
 
 export type SeedNode = FolderNode | TextNode | BodylessNode;
 
-export type ContainEdge = { folder: NodeRef; child: NodeRef };
+export type ContainEdge = {
+  folder: NodeRef;
+  child: NodeRef;
+  /** Actor that AUTHORS the containment edge; defaults to `admin`. Set this for a
+   * CROSS-OWNER filing where `admin` cannot see both endpoints (the edge RETURNING
+   * read needs the filer to see the folder AND the child): the filer must own/see the
+   * folder and see the child (e.g. via a per-user grant the child owner authored). */
+  by?: ActorRef;
+};
 export type ShortcutEdge = { folder: NodeRef; target: NodeRef };
 
 /**

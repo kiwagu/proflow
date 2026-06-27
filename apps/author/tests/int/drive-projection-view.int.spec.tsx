@@ -177,10 +177,12 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_old: {
             ownerUserId: null,
             lastModifiedAt: '2026-01-01T00:00:00Z',
+            visibility: 'private',
           },
           knr_new: {
             ownerUserId: null,
             lastModifiedAt: '2026-06-01T00:00:00Z',
+            visibility: 'private',
           },
         },
         containment: [],

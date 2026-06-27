@@ -115,6 +115,7 @@ export function validateScenario(s: SeedScenario): string[] {
   for (const c of s.contains ?? []) {
     nodeOk(c.folder, 'contains.folder');
     nodeOk(c.child, 'contains.child');
+    if (c.by) actorOk(c.by, 'contains.by');
   }
   for (const sh of s.shortcuts ?? []) {
     nodeOk(sh.folder, 'shortcut.folder');

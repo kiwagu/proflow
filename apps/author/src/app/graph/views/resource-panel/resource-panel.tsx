@@ -1,11 +1,14 @@
 'use client';
 
+import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
+import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
 import { DocumentViewerDialog } from '@workspace/ui/components/platform/document-viewer-dialog';
+import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import {
   Select,
   SelectContent,
@@ -19,19 +22,29 @@ import {
   Check,
   Eye,
   FilePlus,
+  FolderInput,
   GitCompare,
+  Globe,
   History,
+  Lock,
   Pencil,
   RotateCcw,
+  Share2,
   Sparkles,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
 import * as React from 'react';
 
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
-import { type Containment } from '@/app/graph/containment';
+import {
+  broadcastOut,
+  sharedOut,
+  type Containment,
+} from '@/app/graph/containment';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
+import { ShareDialog } from '@/app/graph/views/resource-panel/share-dialog';
 import {
   DocumentBodyView,
   type SerializedLexical,
@@ -39,6 +52,8 @@ import {
 import { RevisionDiff } from '@/app/graph/views/document-reader/revision-diff';
 import type {
   KbAttributes,
+  ResourceFloor,
+  SharedByMeEntry,
   SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel } from '@/app/graph/presentation';
@@ -87,6 +102,32 @@ export type ResourcePanelProps = {
   ownerUserId: string | null;
   /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu (ADR-0006). */
   capabilities: SpaceCapabilities;
+  /**
+   * The node's BROADCAST FLOOR (`knowledge_resources.visibility`) — drives the read-only
+   * "Access" section's visibility line (ADR-0023 §7b). Null when unknown (no meta loaded).
+   */
+  visibility?: ResourceFloor | null;
+  /**
+   * The DIRECT per-user grantees of THIS node (from `kbData.sharedByMe`, already labelled
+   * via the co-member directory, ADR-0020) — the "Shared with N people" list. Empty when
+   * the node has no direct grant.
+   */
+  grantees?: SharedByMeEntry['grantees'];
+  /**
+   * The ids the owner has shared OUT (the keys of `kbData.sharedByMe`) — the membership
+   * test for the access-mirror ancestor walk (ADR-0023 §7b): a node is visible via an
+   * "Inherited from {folder}" line when a granted ANCESTOR is in this set. SAME source as
+   * the card badge, so the panel summary can never diverge from it.
+   */
+  sharedByMeIds?: Set<string>;
+  /**
+   * Each node's broadcast FLOOR (`knowledge_resources.visibility`) keyed by id — the
+   * read-side lookup for the access-mirror BROADCAST walk (ADR-0023 §7b). The panel runs
+   * `broadcastOut` over it + `containment` to name an INHERITED broadcast ("Broadcast via
+   * folder {X}"), the exact mirror of the card globe badge. SAME source as the card, so
+   * the panel and badge can never diverge. Empty map → no inherited-broadcast detection.
+   */
+  visibilityById?: Map<string, ResourceFloor>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */
@@ -117,6 +158,10 @@ export function ResourcePanel({
   currentUserId,
   ownerUserId,
   capabilities,
+  visibility,
+  grantees,
+  sharedByMeIds,
+  visibilityById,
   open,
   onOpenChange,
   onMutated,
@@ -129,6 +174,11 @@ export function ResourcePanel({
     return null;
   }
   const KindIcon = iconForKind(node.kind);
+  // Share = audience management (ADR-0019 §4): owner-sovereign OR the space access verb —
+  // mirrors the per-user-grant/cohort RLS authority. The "Manage access" affordance is
+  // shown on the same gate the ⋯ Share item uses (display courtesy; RLS re-checks).
+  const owned = ownerUserId != null && ownerUserId === currentUserId;
+  const canShare = owned || capabilities.canAccess;
 
   // Description save refreshes WITHOUT closing — the panel stays open with the
   // updated text (the user may keep editing).
@@ -208,6 +258,21 @@ export function ResourcePanel({
           disabled={busy}
           onSave={onSaveDescription}
         />
+
+        <AccessSection
+          t={t}
+          spaceId={spaceId}
+          node={node}
+          containment={containment}
+          currentUserId={currentUserId}
+          ownerUserId={ownerUserId}
+          canShare={canShare}
+          visibility={visibility ?? null}
+          grantees={grantees ?? []}
+          sharedByMeIds={sharedByMeIds ?? new Set()}
+          visibilityById={visibilityById ?? new Map()}
+          onMutated={onMutated}
+        />
         {node.kind === 'text' ? (
           <VersionsSection
             t={t}
@@ -218,6 +283,239 @@ export function ResourcePanel({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+/**
+ * PanelSectionLabel — the uppercase, icon-led header shared by every ResourcePanel
+ * section (Access / Description / Versions). It is the `text-muted-foreground flex
+ * items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase` cluster that
+ * each section re-declared inline; promoting it keeps the rendered header IDENTICAL
+ * while removing the triplicated className (ui-primitive-hygiene). Icon + label are the
+ * caller's (passed as children) — mechanism only.
+ */
+function PanelSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * AccessMetaLine — the muted, small icon-led detail line in the Access summary (the
+ * grantee count header and the "Inherited from {folder}" line both share the exact
+ * `text-muted-foreground flex items-center gap-1.5 text-xs` shell). Lifting the repeated
+ * cluster into one local component keeps the look IDENTICAL (ui-primitive-hygiene). Icon
+ * + text are the caller's.
+ */
+function AccessMetaLine({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+      {children}
+    </div>
+  );
+}
+
+/** Floor icon + short label for the read-only Access summary (ADR-0023 §7b). */
+const FLOOR_META: Record<
+  ResourceFloor,
+  { icon: typeof Lock; label: (t: GraphTranslator) => string }
+> = {
+  private: { icon: Lock, label: (t) => t('graph.panel.accessFloorPrivate') },
+  space: { icon: Users, label: (t) => t('graph.panel.accessFloorSpace') },
+  organization: {
+    icon: Globe,
+    label: (t) => t('graph.panel.accessFloorOrganization'),
+  },
+};
+
+// Cap before the grantee / inherited lists scroll within a bounded max-height (ADR-0023
+// §7b — a count header + a ScrollArea, the read-side analogue of ADR-0021's paged picker).
+const ACCESS_LIST_MAX_H = 'max-h-40';
+
+/**
+ * AccessSection — the READ-ONLY "Access" summary in the ResourcePanel (ADR-0023 §7b,
+ * Tier 2). It MIRRORS the access predicate; it never mutates. It shows:
+ *   - the broadcast FLOOR (Private / Space / Organization), from the node's `visibility`;
+ *   - the explicit GRANTEES by name (from `kbData.sharedByMe`, co-member-labelled);
+ *   - an "Inherited from {folder}" line when the node is visible via a granted ANCESTOR,
+ *     computed by the SAME client ancestor walk (`sharedOut`) that drives the card badge;
+ *   - a "Manage access" affordance opening the EXISTING ShareDialog (the ONLY editor —
+ *     unchanged; ADR-0019 holds for MANAGEMENT, this is a distinct read-only tier, §7c).
+ *
+ * The grantee list (and, in principle, a multi-ancestor inherited list) is a count header
+ * + a bounded `ScrollArea` so a large audience never grows the panel unbounded. DISPLAY
+ * only — owner-sovereignty + RLS untouched; data is already client-side (no new load).
+ */
+function AccessSection({
+  t,
+  spaceId,
+  node,
+  containment,
+  currentUserId,
+  ownerUserId,
+  canShare,
+  visibility,
+  grantees,
+  sharedByMeIds,
+  visibilityById,
+  onMutated,
+}: {
+  t: GraphTranslator;
+  spaceId: string;
+  node: SelectedNode;
+  containment: Containment;
+  currentUserId: string | null;
+  ownerUserId: string | null;
+  canShare: boolean;
+  visibility: ResourceFloor | null;
+  grantees: SharedByMeEntry['grantees'];
+  sharedByMeIds: Set<string>;
+  visibilityById: Map<string, ResourceFloor>;
+  onMutated: () => void;
+}) {
+  const [shareOpen, setShareOpen] = React.useState(false);
+
+  // The access-mirror walk (ADR-0023 §7b) — the SAME `sharedOut` the card badge uses, so
+  // the panel's "Inherited from" line can never diverge from the badge. `inheritedFrom` is
+  // the nearest granted ancestor folder (null when the node is granted directly or not at
+  // all). A node carrying its OWN direct grant lists its grantees; a purely-inherited node
+  // shows the inherited line instead.
+  const shared = sharedOut(containment, node.id, (id) => sharedByMeIds.has(id));
+
+  // The BROADCAST half of the mirror (ADR-0023 §7b, the globe state) — the SAME
+  // `broadcastOut` the card globe badge runs, so the panel's broadcast line can never
+  // diverge from the badge. `broadcastVia` is the nearest broadcast-floor ANCESTOR folder
+  // when the node is broadcast purely by floor inheritance (null when its OWN floor
+  // broadcasts, or it is not broadcast at all) — the parallel of `sharedOut`'s
+  // `inheritedFrom`.
+  const broadcast = broadcastOut(containment, node.id, (id) =>
+    visibilityById.get(id)
+  );
+
+  const floor = visibility ?? 'private';
+  const FloorIcon = FLOOR_META[floor].icon;
+  const floorLabel = FLOOR_META[floor].label(t);
+
+  return (
+    <section className="flex flex-col gap-2.5">
+      <PanelSectionLabel>
+        <Share2 className="size-3" aria-hidden />
+        {t('graph.panel.accessSection')}
+      </PanelSectionLabel>
+
+      {/* Floor — the single broadcast dial, read-only (the node's OWN visibility). */}
+      <div className="flex items-center gap-2 text-sm">
+        <FloorIcon
+          className="text-muted-foreground size-4 shrink-0"
+          aria-hidden
+        />
+        <span className="font-medium">{floorLabel}</span>
+      </div>
+
+      {/* Inherited broadcast — the node's own floor is private but a broadcast-floor
+          ANCESTOR folder auto-broadcasts it to the whole scope (floor inheritance). The
+          parallel of the per-user "Inherited from {folder}" line; the read-side mirror of
+          the card globe badge. Only when broadcast is PURELY inherited (`broadcastVia`
+          set — an own-floor broadcast is already named by the floor line above). */}
+      {broadcast.broadcastVia != null ? (
+        <AccessMetaLine>
+          <Globe className="size-3.5 shrink-0" aria-hidden />
+          {t('graph.panel.accessBroadcastViaFolder', {
+            scope:
+              broadcast.scope === 'organization'
+                ? t('graph.panel.accessFloorOrganization')
+                : t('graph.panel.accessFloorSpace'),
+            folder: broadcast.broadcastVia.title,
+          })}
+        </AccessMetaLine>
+      ) : null}
+
+      {/* Explicit grantees — a count header + a bounded scroll list of names. */}
+      {grantees.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <AccessMetaLine>
+            <Users className="size-3.5 shrink-0" aria-hidden />
+            {grantees.length === 1
+              ? t('graph.panel.accessSharedWithOne')
+              : t('graph.panel.accessSharedWithCount', {
+                  count: grantees.length,
+                })}
+          </AccessMetaLine>
+          <ScrollArea className={ACCESS_LIST_MAX_H}>
+            <ul className="flex flex-col gap-1 pr-2.5">
+              {grantees.map((g) => (
+                <li
+                  key={g.userId}
+                  className="flex items-center gap-2 rounded-md px-1 py-1"
+                >
+                  <EntityAvatar name={g.displayName} className="size-6" />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm">{g.displayName}</span>
+                    {g.email ? (
+                      <span className="text-muted-foreground truncate text-xs">
+                        {g.email}
+                      </span>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
+        </div>
+      ) : null}
+
+      {/* Inherited access — the named expression of the ancestor chain the badge mirrors
+          silently (only when the node is NOT directly granted but reachable via a granted
+          ancestor — additive to a direct grant or floor). */}
+      {shared.inheritedFrom != null ? (
+        <AccessMetaLine>
+          <FolderInput className="size-3.5 shrink-0" aria-hidden />
+          {t('graph.panel.accessInheritedFrom', {
+            folder: shared.inheritedFrom.title,
+          })}
+        </AccessMetaLine>
+      ) : null}
+
+      {/* Nothing shared, not broadcast, and private → say so plainly (the access summary
+          is never blank). An inherited broadcast or any grant suppresses the line. */}
+      {floor === 'private' &&
+      grantees.length === 0 &&
+      shared.inheritedFrom == null &&
+      broadcast.broadcastVia == null ? (
+        <p className="text-muted-foreground text-xs">
+          {t('graph.panel.accessPrivateOnly')}
+        </p>
+      ) : null}
+
+      {/* Manage access — opens the EXISTING ShareDialog (the editor, unchanged). The panel
+          never mutates; this is the one bridge from read-status to the management surface. */}
+      {canShare ? (
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShareOpen(true)}
+            className="mt-0.5"
+          >
+            <Share2 className="size-4" aria-hidden />
+            {t('graph.panel.manageAccess')}
+          </Button>
+        </div>
+      ) : null}
+
+      <ShareDialog
+        t={t}
+        spaceId={spaceId}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        node={{ id: node.id, title: node.title }}
+        currentUserId={currentUserId}
+        ownerUserId={ownerUserId}
+        onMutated={onMutated}
+      />
+    </section>
   );
 }
 
@@ -249,10 +547,10 @@ function EditableDescription({
 
   return (
     <section className="flex flex-col gap-2">
-      <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+      <PanelSectionLabel>
         <Sparkles className="size-3" aria-hidden />
         {t('graph.panel.description')}
-      </div>
+      </PanelSectionLabel>
       {editing ? (
         <div className="flex flex-col gap-2">
           <Textarea
@@ -577,10 +875,10 @@ function VersionsSection({
 
   return (
     <section className="flex flex-col gap-2">
-      <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+      <PanelSectionLabel>
         <History className="size-3" aria-hidden />
         {t('graph.panel.versions')}
-      </div>
+      </PanelSectionLabel>
       {versions === null ? null : versions.length === 0 ? (
         <p className="text-muted-foreground text-xs">
           {t('graph.panel.versionsEmpty')}

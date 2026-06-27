@@ -22,8 +22,10 @@ import {
   Columns2,
   Database,
   Folder,
+  Globe,
   House,
   FolderSymlink,
+  Info,
   LayoutGrid,
   List,
   Plus,
@@ -46,6 +48,7 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type {
   KbAttributes,
   NodeMeta,
+  ResourceFloor,
   ShareMechanism,
   SharedByMeEntry,
 } from '@/app/graph/graph-data.types';
@@ -56,12 +59,14 @@ import type {
   ProjectionViewProps,
 } from '@/app/graph/views/registry/projection-view.types';
 import {
+  broadcastOut,
   buildContainment,
   childContent,
   childFolders,
   pathTo,
   rootContent,
   rootFolders,
+  sharedOut,
   type LensNode,
 } from '@/app/graph/containment';
 import {
@@ -393,6 +398,75 @@ export function DriveProjectionView({
   const containment = React.useMemo(
     () => buildContainment(result.items, containmentEdges),
     [result.items, containmentEdges]
+  );
+
+  // The access-mirror predicate (ADR-0023 §7a) — `granted(id)` = the owner authored a
+  // DIRECT per-user grant on the node (`id ∈ sharedByMe`). The card badge marks a node
+  // shown-as-shared IFF it OR a granted ANCESTOR folder is shared — `sharedOut` walks the
+  // loaded `contains` forest for the nearest granted ancestor. This is the SAME source the
+  // panel's Access summary reads, so badge ≡ panel ≡ access predicate (never divergent).
+  // ALL browse scopes use it, not just 'shared-by-me' (a node shared via an ancestor must
+  // badge wherever it is rendered). Pure display over the RLS-seeded `sharedByMe` + forest.
+  const isGranted = React.useCallback(
+    (id: string) => sharedByMeByResource.has(id),
+    [sharedByMeByResource]
+  );
+
+  // The BROADCAST half of the access-mirror (ADR-0023 §7, the globe state) — `floorOf(id)`
+  // = a node's broadcast floor from the already-loaded `metaByItem` (the node row's
+  // `visibility`, Wave 2). `broadcastOut` walks the SAME `contains` forest as `sharedOut`
+  // for the nearest broadcast-floor ANCESTOR, so a node under a space/org folder badges
+  // GLOBE (floor inheritance). Pure display over the RLS-seeded node meta + forest; the
+  // resolved default lens carries every folder, so every ancestor's floor is present.
+  const floorOf = React.useCallback(
+    (id: string): ResourceFloor | undefined => metaByItem[id]?.visibility,
+    [metaByItem]
+  );
+  // The access STATUS of a node (ADR-0023 §7, owner browse): GLOBE (broadcast) outranks
+  // PEOPLE (targeted) outranks NONE (private). One source for BOTH the grid card and the
+  // list row, so they can never diverge — globe precedence applied HERE, once. Returns the
+  // resolved `sharedOut`/`broadcastOut` verdicts so each badge can name its audience.
+  const accessStatus = React.useCallback(
+    (id: string) => {
+      const broadcast = broadcastOut(containment, id, floorOf);
+      const shared = sharedOut(containment, id, isGranted);
+      const state: 'broadcast' | 'targeted' | 'private' = broadcast.isBroadcast
+        ? 'broadcast'
+        : shared.isShared
+          ? 'targeted'
+          : 'private';
+      return { state, broadcast, shared } as const;
+    },
+    [containment, floorOf, isGranted]
+  );
+  // The per-card / per-row access STATUS badge (ADR-0023 §7a): GLOBE (broadcast) XOR
+  // PEOPLE (targeted), globe winning; NONE for private (`null` — the absence is the
+  // signal). One render path for the grid + the list so the two surfaces are identical.
+  const renderAccessBadge = React.useCallback(
+    (id: string): React.ReactNode => {
+      const { state, broadcast, shared } = accessStatus(id);
+      if (state === 'broadcast') {
+        return (
+          <BroadcastBadge
+            t={t}
+            scope={broadcast.scope ?? 'space'}
+            broadcastViaTitle={broadcast.broadcastVia?.title ?? null}
+          />
+        );
+      }
+      if (state === 'targeted') {
+        return (
+          <SharedOutBadge
+            t={t}
+            direct={shared.direct}
+            grantees={sharedByMeByResource.get(id) ?? []}
+            inheritedFromTitle={shared.inheritedFrom?.title ?? null}
+          />
+        );
+      }
+      return undefined;
+    },
+    [accessStatus, sharedByMeByResource, t]
   );
 
   // The lens node-set ids (ADR-0022 Fork 3 + Addendum A) for the ACTIVE structural lens
@@ -1292,6 +1366,7 @@ export function DriveProjectionView({
         currentUserId={currentUserId}
         layout={layout}
         selected={item.id === selectedId}
+        sharedBadge={renderAccessBadge(item.id)}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
@@ -1466,6 +1541,9 @@ export function DriveProjectionView({
                     : [{ id: 'name', desc: false }]
                 }
                 dndEnabled={dndEnabled}
+                // The access-status badge per row (ADR-0023 §7a) — the SAME globe-XOR-people
+                // taxonomy the cards use (globe precedence), so the list mirrors the grid.
+                sharedBadgeFor={(node) => renderAccessBadge(node.id) ?? null}
               />
             ) : null
           ) : (
@@ -1478,6 +1556,13 @@ export function DriveProjectionView({
                   ) : null}
                   <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
                     {folders.map((sub) => {
+                      const folderShared = sharedOut(
+                        containment,
+                        sub.id,
+                        isGranted
+                      );
+                      const folderGrantees =
+                        sharedByMeByResource.get(sub.id) ?? [];
                       const folderCardProps = {
                         title: sub.title,
                         subtitle: t('graph.drive.itemsCount', {
@@ -1488,6 +1573,23 @@ export function DriveProjectionView({
                         layout,
                         onOpen: () => navigate(sub.id),
                         onDetails: () => onSelect(sub.id),
+                        sharedBadge: renderAccessBadge(sub.id),
+                        // The "placement = sharing" hint shows only when THIS folder
+                        // itself confers access (a direct grant or a broadcast floor) —
+                        // dropping a node here would share it. A folder that is shared
+                        // only via a granted ANCESTOR gets the badge (above) but not the
+                        // hint (the hint is about what placing INTO this folder does, and
+                        // the ancestor already covers that one level up).
+                        folderHint:
+                          folderShared.direct ||
+                          metaByItem[sub.id]?.visibility === 'space' ||
+                          metaByItem[sub.id]?.visibility === 'organization' ? (
+                            <SharedFolderHint
+                              t={t}
+                              visibility={metaByItem[sub.id]?.visibility}
+                              grantees={folderGrantees}
+                            />
+                          ) : undefined,
                         footer: isSharedByMe ? (
                           <GranteeSummary
                             t={t}
@@ -1771,6 +1873,162 @@ function GranteeSummary({
 }
 
 /**
+ * SharedOutBadge — the per-card "this is shared out" people-icon badge (ADR-0023 §7a,
+ * Tier 1). It marks a node shown-as-shared per the access-mirror invariant: the node OR
+ * a granted ancestor folder is shared (computed by `sharedOut` over the loaded forest).
+ * It renders in ALL browse scopes (not only 'shared-by-me') so a node shared via an
+ * ancestor badges wherever it appears. The Hint names the audience: the grantee count/
+ * names for a direct grant, or "Shared via {folder}" when access is purely inherited —
+ * so the badge can never silently imply a node is shared without saying by whom. Pure
+ * DISPLAY mirror of the already-resolved `sharedByMe` + forest; never a fence.
+ */
+function SharedOutBadge({
+  t,
+  direct,
+  grantees,
+  inheritedFromTitle,
+}: {
+  t: GraphTranslator;
+  /** The node carries its OWN direct grant (vs purely inherited from an ancestor). */
+  direct: boolean;
+  /** Grantees of the DIRECT grant (empty when access is purely inherited). */
+  grantees: SharedByMeEntry['grantees'];
+  /** Title of the nearest granted ancestor when access is (also) inherited. */
+  inheritedFromTitle: string | null;
+}) {
+  // The tooltip names WHO can read it: the direct grantees (count/names) when granted
+  // directly, else the inheriting folder. A direct grant takes precedence in the copy.
+  const label =
+    direct && grantees.length > 0
+      ? grantees.length === 1
+        ? t('graph.drive.sharedWithOne', { name: grantees[0]!.displayName })
+        : grantees.length <= GRANTEE_AVATAR_CAP
+          ? t('graph.drive.sharedWithMany', {
+              name: grantees[0]!.displayName,
+              count: grantees.length - 1,
+            })
+          : t('graph.drive.sharedWithCount', { count: grantees.length })
+      : inheritedFromTitle != null
+        ? t('graph.drive.sharedOutInherited', { folder: inheritedFromTitle })
+        : t('graph.drive.sharedOutBadge');
+  return (
+    <AccessBadgeChip label={label}>
+      <Users className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * AccessBadgeChip — the shared round icon-chip shell for the access-status badges
+ * (ADR-0023 §7a): the people-icon `SharedOutBadge` and the globe `BroadcastBadge` are the
+ * SAME `size-5` muted round chip wrapped in a `Hint`, differing only in the icon + the
+ * tooltip copy. Lifting the shell keeps the two badges pixel-identical and gives the
+ * globe-XOR-people taxonomy one visual vocabulary (ui-primitive-hygiene). The Hint label
+ * doubles as the `aria-label`, so the badge always names its audience (never a silent mark).
+ */
+function AccessBadgeChip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Hint label={label}>
+      <span
+        aria-label={label}
+        className="text-muted-foreground bg-muted grid size-5 shrink-0 place-items-center rounded-full"
+      >
+        {children}
+      </span>
+    </Hint>
+  );
+}
+
+/**
+ * BroadcastBadge — the per-card GLOBE badge (ADR-0023 §7a, the broadcast state): the node's
+ * EFFECTIVE floor is `space`/`organization`, either its OWN `visibility` or — via floor
+ * inheritance — an owner-scoped ancestor folder on a broadcast floor (`broadcastOut`). It
+ * OUTRANKS the people badge (a broadcast node is "for everyone in the scope", the widest
+ * audience). The Hint NAMES the scope ("Visible to everyone in {Space|Organization}") and,
+ * when inherited, the broadcasting folder — so the globe can never silently imply a blast
+ * radius. Pure DISPLAY mirror of the RLS-seeded node `visibility` + forest; never a fence.
+ */
+function BroadcastBadge({
+  t,
+  scope,
+  broadcastViaTitle,
+}: {
+  t: GraphTranslator;
+  /** The broadcast scope — the node's own floor, else the inheriting folder's. */
+  scope: 'space' | 'organization';
+  /** Title of the broadcasting ANCESTOR folder when broadcast is inherited, else null. */
+  broadcastViaTitle: string | null;
+}) {
+  const scopeLabel =
+    scope === 'organization'
+      ? t('graph.drive.broadcastScopeOrganization')
+      : t('graph.drive.broadcastScopeSpace');
+  // Inherited → name BOTH the scope and the broadcasting folder; own floor → the scope only.
+  const label =
+    broadcastViaTitle != null
+      ? t('graph.drive.broadcastViaFolder', {
+          scope: scopeLabel,
+          folder: broadcastViaTitle,
+        })
+      : t('graph.drive.broadcastBadge', { scope: scopeLabel });
+  return (
+    <AccessBadgeChip label={label}>
+      <Globe className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * SharedFolderHint — the load-bearing "placement = sharing" warning on a folder that
+ * confers access (ADR-0023 §5 + §7a). Because there is NO subtractive detach, dropping
+ * a node into a shared folder auto-shares it; for a `space`/`organization`-FLOOR folder
+ * that is an AUTO-BROADCAST to everyone in the scope. The copy MUST name the actual
+ * audience — and for a floor folder the SCOPE explicitly — never collapse a floor into a
+ * generic "shared with N people" (the only guardrail against an accidental broadcast).
+ * Precedence: a broadcast floor (the widest blast radius) is named even when the folder
+ * ALSO has per-person grants. Pure display over the node's `visibility` + `sharedByMe`.
+ */
+function SharedFolderHint({
+  t,
+  visibility,
+  grantees,
+}: {
+  t: GraphTranslator;
+  visibility: ResourceFloor | undefined;
+  grantees: SharedByMeEntry['grantees'];
+}) {
+  const text =
+    visibility === 'organization'
+      ? t('graph.drive.sharedFolderHintOrganization')
+      : visibility === 'space'
+        ? t('graph.drive.sharedFolderHintSpace')
+        : grantees.length === 1
+          ? t('graph.drive.sharedFolderHintPeople', {
+              name: grantees[0]!.displayName,
+            })
+          : grantees.length > 1
+            ? t('graph.drive.sharedFolderHintPeopleCount', {
+                count: grantees.length,
+              })
+            : null;
+  if (text == null) {
+    return null;
+  }
+  return (
+    <div className="text-muted-foreground mt-1 flex items-start gap-1.5 text-[11px]">
+      <Info className="mt-px size-3 shrink-0" aria-hidden />
+      <span className="whitespace-normal">{text}</span>
+    </div>
+  );
+}
+
+/**
  * ShareMechanismBadge — the per-card "why is this shared with me" badge in the
  * 'shared' (incoming) lens ONLY (ADR-0021 Part C). A compact shadcn `Badge` (the same
  * chip primitive the cards already use) + a small lucide icon + the mechanism label,
@@ -1894,6 +2152,8 @@ function FolderCard({
   star,
   actions,
   footer,
+  sharedBadge,
+  folderHint,
   dnd,
 }: {
   title: string;
@@ -1912,6 +2172,12 @@ function FolderCard({
   actions?: React.ReactNode;
   /** Extra line under the subtitle (the "Shared by me" grantee summary). */
   footer?: React.ReactNode;
+  /** The access-mirror people-icon badge, shown when the folder is shared out
+   * (ADR-0023 §7a) — direct OR via a granted ancestor. Inline beside the title. */
+  sharedBadge?: React.ReactNode;
+  /** The "placement = sharing" hint on a folder that confers access (ADR-0023 §7a) —
+   * names the audience / floor scope. Rendered under the subtitle. */
+  folderHint?: React.ReactNode;
   /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
   dnd?: CardDnd;
 }) {
@@ -1954,8 +2220,12 @@ function FolderCard({
           />
         )}
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-medium">{title}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{title}</span>
+            {sharedBadge}
+          </div>
           <div className="text-muted-foreground text-xs">{subtitle}</div>
+          {folderHint}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
         {shortcut ? (
@@ -1988,6 +2258,7 @@ function ItemCard({
   star,
   actions,
   footer,
+  sharedBadge,
   dnd,
 }: {
   t: GraphTranslator;
@@ -2007,6 +2278,9 @@ function ItemCard({
   actions?: React.ReactNode;
   /** Extra line under the meta line (the "Shared by me" grantee summary). */
   footer?: React.ReactNode;
+  /** The access-mirror people-icon badge, shown when the node is shared out (ADR-0023
+   * §7a) — direct OR via a granted ancestor. Rendered inline beside the title. */
+  sharedBadge?: React.ReactNode;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;
 }) {
@@ -2059,7 +2333,10 @@ function ItemCard({
           'aria-hidden': true,
         })}
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-medium">{node.title}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{node.title}</span>
+            {sharedBadge}
+          </div>
           <div className="text-muted-foreground truncate text-xs">
             {metaLine}
           </div>
@@ -2501,6 +2778,7 @@ function DriveListTable({
   defaultSorting,
   tree = false,
   dndEnabled = false,
+  sharedBadgeFor,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -2520,6 +2798,9 @@ function DriveListTable({
   /** Wire rows as drag sources / folder rows as drop targets (move = re-parent).
    * Only in 'kb' browse — flat lenses are read-only digests. */
   dndEnabled?: boolean;
+  /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
+   * out — rendered in the name cell so the list mirrors the grid cards. */
+  sharedBadgeFor?: (node: LensNode) => React.ReactNode;
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
@@ -2620,7 +2901,9 @@ function DriveListTable({
                   className="text-muted-foreground size-3.5 shrink-0"
                   aria-hidden
                 />
-              ) : null}
+              ) : (
+                (sharedBadgeFor?.(r.node) ?? null)
+              )}
             </div>
           );
         },
@@ -2693,6 +2976,7 @@ function DriveListTable({
       onToggleStar,
       recentOpenedAt,
       tree,
+      sharedBadgeFor,
     ]
   );
 

@@ -58,6 +58,13 @@ export type NodeMeta = {
    * column — distinct from the node row's raw `updated_at`, which misses body/satellite
    * edits, and from `last_activity_at`, which also counts opens. */
   lastModifiedAt: string;
+  /**
+   * The node's BROADCAST FLOOR (`knowledge_resources.visibility`, ADR-0017 §1.5) — the
+   * single per-resource dial: private / space / organization. Read alongside the rest of
+   * the node row (no extra query). Drives the ResourcePanel's read-only "Access" floor
+   * line (ADR-0023 §7b) — the read-side mirror of the ShareDialog's floor selector. A
+   * DISPLAY read of an already-RLS-admitted row, never a fence. */
+  visibility: ResourceFloor;
 };
 
 /**
@@ -152,26 +159,48 @@ export type GrantableMember = {
 };
 
 /**
- * One entry of the "Shared by me" lens (ADR-0021 Part B) — ONE resource the CURRENT
- * user has shared OUT, paired with the people they granted it to. A read-only
- * projection over `knowledge_resource_user_grants WHERE granted_by = me`, joined to the
- * resources I can still SEE (RLS the fence): a resource I can no longer see — or whose
- * only grant I revoked — never appears (fail-closed by construction). v1 = per-user
- * grants I created only; cohort-by-me (`linked_by`) is a DEFERRED additive layer.
+ * One audience entry of a "Shared by me" resource (ADR-0021 Part B / ADR-0023 §7) — a
+ * single party the CURRENT user has shared the resource OUT to. Two `kind`s, merged into
+ * one ordered list so the people-badge + the panel grantee list cover BOTH dimensions:
+ *  - `'user'`   — a per-user grant (`knowledge_resource_user_grants`): one co-member,
+ *                 labelled via the co-member directory (ADR-0020); `userId` is their id.
+ *  - `'cohort'` — a cohort grant (`knowledge_resource_scopes`): a group, labelled by the
+ *                 scope name; `userId` holds the `scope_id` (a stable unique React key in
+ *                 the merged list) and `email` is null (a group has no single address).
+ *
+ * `email` is the secondary disambiguator line for a person; null for a cohort.
+ */
+export type ShareAudience = {
+  /** Discriminator — a single co-member (`user`) or a whole cohort/group (`cohort`). */
+  kind: 'user' | 'cohort';
+  /** The grantee's user_id (`user`) OR the scope_id (`cohort`) — unique within the list. */
+  userId: string;
+  /** Member display name (`user`) OR the cohort/group name (`cohort`). */
+  displayName: string;
+  /** Member email (`user`) — the secondary line; null for a cohort. */
+  email: string | null;
+};
+
+/**
+ * One entry of the "Shared by me" lens (ADR-0021 Part B, extended for cohort-by-me per
+ * ADR-0023 §7) — ONE resource the CURRENT user has shared OUT, paired with the AUDIENCE
+ * they granted it to. A read-only projection over the outbound grants I created — both
+ * per-user (`knowledge_resource_user_grants WHERE granted_by = me`) AND cohort
+ * (`knowledge_resource_scopes WHERE linked_by = me`) — joined to the resources I can
+ * still SEE (RLS the fence): a resource I can no longer see — or whose only grant I
+ * revoked — never appears (fail-closed by construction). `granted_by`/`linked_by = me`
+ * are FILTERS (which grants I created), never the fence.
  *
  * - `resourceId` — the shared resource's `knr_…` id. The render agent INTERSECTS the
  *   set of these ids with the resolved canvas (lens = canvas ∩ {ids I granted}).
- * - `grantees` — the people I granted it to, each labelled via the co-member directory
- *   (ADR-0020), sorted by display name (canonical `@workspace/std` text sort). `email`
- *   is the secondary disambiguator line.
+ * - `grantees` — the audience (per-user grantees + cohorts) I granted it to, sorted by
+ *   display name (canonical `@workspace/std` text sort). Each carries a `kind` so the
+ *   panel can render a person vs a group; people via the co-member directory (ADR-0020),
+ *   cohorts by scope name.
  */
 export type SharedByMeEntry = {
   resourceId: string;
-  grantees: {
-    userId: string;
-    displayName: string;
-    email: string | null;
-  }[];
+  grantees: ShareAudience[];
 };
 
 /**

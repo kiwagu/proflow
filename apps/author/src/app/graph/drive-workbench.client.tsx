@@ -36,6 +36,7 @@ import {
   type SelectedNode,
 } from './views/resource-panel/resource-panel';
 import { STRUCTURAL_LENS_SCOPES } from './views/registry/projection-view.types';
+import type { ResourceFloor, SharedByMeEntry } from './graph-data.types';
 import type {
   DriveScope,
   KbViewData,
@@ -437,6 +438,33 @@ export function DriveWorkbench({
     [result.items, kbData]
   );
 
+  // The "shared by me" overlay reshaped for the ResourcePanel's Access summary (ADR-0023
+  // §7b): a per-resource grantee map (the node's explicit grantees) + the SET of ids the
+  // owner shared OUT (the membership test for the access-mirror ancestor walk). SAME source
+  // as the Drive card badge, so the panel summary and the badge can never diverge.
+  const sharedByMeGranteesById = React.useMemo(() => {
+    const map = new Map<string, SharedByMeEntry['grantees']>();
+    for (const entry of kbData?.sharedByMe ?? []) {
+      map.set(entry.resourceId, entry.grantees);
+    }
+    return map;
+  }, [kbData]);
+  const sharedByMeIds = React.useMemo(
+    () => new Set(sharedByMeGranteesById.keys()),
+    [sharedByMeGranteesById]
+  );
+  // The broadcast-floor lookup for the panel's access-mirror walk (ADR-0023 §7b): each
+  // node's `visibility` floor from the already-loaded `metaByItem` (no new load). The
+  // panel runs `broadcastOut` over it + the containment forest to name an INHERITED
+  // broadcast ("Broadcast via folder {X}"), the exact mirror of the card globe badge.
+  const visibilityById = React.useMemo(() => {
+    const map = new Map<string, ResourceFloor>();
+    for (const [id, meta] of Object.entries(kbData?.metaByItem ?? {})) {
+      map.set(id, meta.visibility);
+    }
+    return map;
+  }, [kbData]);
+
   // ── Drag & drop (move = re-parent; Alt-held = copy) ───────────────────────
   // ONE DndContext spans both split panes (declared in JSX below), so a drag from
   // pane A can drop onto a folder in pane B. Folder/root targets are ABSOLUTE (a
@@ -784,6 +812,18 @@ export function DriveWorkbench({
                 canAccess: false,
               }
             }
+            visibility={
+              selectedNode
+                ? (kbData?.metaByItem[selectedNode.id]?.visibility ?? null)
+                : null
+            }
+            grantees={
+              selectedNode
+                ? (sharedByMeGranteesById.get(selectedNode.id) ?? [])
+                : []
+            }
+            sharedByMeIds={sharedByMeIds}
+            visibilityById={visibilityById}
             open={selectedNode != null}
             onOpenChange={(isOpen) => {
               if (!isOpen) {

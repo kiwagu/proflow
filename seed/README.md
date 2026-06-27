@@ -76,6 +76,19 @@ so the SAME three nodes the flat digest lists are re-arranged structurally. The 
 e2e draws the tree via `seedAdvancedSharedFixture`; the COMMERCIAL entitlement rows are
 control-plane config (a service-role `runtime_settings` upsert via `setAdvancedSharedEntitlement`),
 out of scope for a content scenario.
+The `shared` preset ALSO carries the `containment-inheritance` fixture (ADR-0023): the
+worked example for owner-scoped, LIVE containment access inheritance — sharing a folder
+makes its OWNER-SCOPED descendants readable to the grantee (a new child auto-appears, a
+revoke removes the subtree), additive-OR (a self-granted child survives the folder revoke),
+across the per-user / cohort / space-floor conferring dimensions — but NEVER cross-owner
+(a third party's node merely FILED into the folder, even an admin's folder-share, stays
+private; only that owner's OWN explicit grant exposes it). The MINIMAL multi-owner tree —
+a shared folder ⊃ A's own child / deep own subfolder+grandchild / a self-granted child,
+an admin's curator-folder, a space-floor folder, and a cohort-folder — with three
+ownerB-owned nested nodes (the owner-scope negatives) FILED via the `contains` `by`
+cross-owner filer. It is a pure RLS-predicate widening (no new endpoint, no resolver
+change): the ADR-0023 access-matrix e2e draws the tree via `seedContainmentInheritanceFixture`
+and drives the live arcs (new-child / revoke / re-grant) through the same create-vocabulary.
 `per-user-share` is per-person sharing (a private doc granted to one named member,
 ADR-0019 — the grantee sees it, a third un-granted member stays blind). That ONE grant is
 read from BOTH ends of the grant graph (ADR-0021 Part B): the grantee sees the doc in the
@@ -108,7 +121,8 @@ src/
                the /author/graph/* HTTP wrappers (the create-vocabulary)
   catalog/     the dictionary: drive, access, knowledge-base, board, shared,
                share-mechanism, advanced-shared, hierarchy, per-user-share,
-               directory-picker, trash + the projection spec builders + the materializer
+               directory-picker, containment-inheritance, trash + the projection
+               spec builders + the materializer
   presets.ts   preset → scenario selection
   cli.ts       the `bun run seed` entrypoint
 ```
@@ -133,6 +147,17 @@ ten-member space via `seedDirectoryPickerFixture` and exercises the PAGINATED pi
 page of 5 + an accurate "+N more" `total`, a "Show more" (`cursor`) next page with no
 overlap, search narrowing the `total` below a page, and `p_exclude` dropping the owner +
 already-granted (and a just-granted member) from BOTH the page and the count.
+
+The containment-inheritance access-matrix spec
+(`knowledge-containment-inheritance.e2e.spec.ts`, ADR-0023) likewise draws its whole
+multi-owner tree from the shared `containment-inheritance` scenario via
+`seedContainmentInheritanceFixture` — the folder grant (`grantUser`), the cross-owner
+filing (`contain`, with the catalog's `contains.by` filer), the floor (`setFloor`) and
+the cohort link (`linkScope`) are all created the product's way. The LIVE arcs (a NEW
+child auto-appearing, a folder REVOKE removing the inherited subtree, a RE-GRANT, and a
+`contains` cycle that must not hang or over-grant) run through the SAME
+`seedClientFor(actor)` create-vocabulary, never inline create/delete helpers — so the
+demo DB and the test exercise one owner-scoped inheritance predicate identically.
 
 ## Extending the catalog
 

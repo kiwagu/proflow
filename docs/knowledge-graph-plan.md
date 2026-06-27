@@ -283,6 +283,31 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       `contains` edges among trashed nodes, which the edge SELECT RLS hides (both-endpoints-trashed → not
       selectable under the user's RLS), so it cannot be built from a thin RLS select without a SECURITY DEFINER
       dormant-edge read or an edge-policy change — surfaced, not silently shipped flat-rooted.
+- [x] Owner-scoped, live containment access INHERITANCE — a node is readable if it OR an ancestor folder
+      (up the forward `contains` forest) is granted to the viewer, owner-scoped (same-owner spine, no admin
+      cross-owner cascade), live (new child auto-appears, revoke removes the subtree), additive across the
+      per-user / cohort / broadcast-floor dimensions. Wave 1 = ONE new `knowledge_resource_inherited_grant`
+      recursive sub-function + one top-level OR in `auth_user_can_access_resource` (depth-32 + `union` cycle
+      guard); the 9-case access matrix is the merge gate. Wave 2 = the three-tier access-mirror RENDER
+      (`badge ≡ panel-summary ≡ access predicate`, one client `pathTo`/`sharedOut` walk over the loaded
+      forest, no new server load): Tier 1 — the Drive card people-icon "Shared" badge (direct OR
+      inherited-via-granted-ancestor, in ALL scopes) + the load-bearing shared-folder hint that NAMES the
+      audience and, for a space/org-floor folder, the floor SCOPE explicitly (the only guardrail against an
+      accidental broadcast, since there is no detach); Tier 2 — a read-only "Access" section in the
+      ResourcePanel (floor + grantees-by-name in a bounded `ScrollArea` + "Inherited from {folder}" + a
+      "Manage access" affordance opening the EXISTING ShareDialog, unchanged); Tier 3 — the ShareDialog is
+      the sole EDIT surface (untouched). en+es. Per ADR-0023 (refines ADR-0019 §7c: management = ShareDialog,
+      read-only status = badge + panel summary).
+  - [x] Access-STATUS taxonomy (ADR-0023 §7 refinement) — the single people-badge becomes three
+        mutually-exclusive states so the owner can tell at a glance which resources are "for others" vs
+        "only mine": GLOBE = broadcast (effective floor space/org, own OR via a broadcast-floor ancestor —
+        `broadcastOut`, the floor sibling of `sharedOut`), PEOPLE = targeted (per-user OR cohort, direct OR
+        inherited), NONE = private (the absence is the signal); globe outranks people. Closes the cohort-by-me
+        gap: `sharedByMe` now also reads my outbound cohort links (`knowledge_resource_scopes WHERE
+        linked_by = me`, under RLS, a FILTER never a fence — display-only), so a cohort-shared node gets the
+        people badge AND a cohort grantee row in the panel; the panel floor line now also names an inherited
+        broadcast ("Broadcast … via {folder}"). Same `badge ≡ panel ≡ predicate` mirror; grid + list, all
+        scopes; en+es. e2e proves all three states direct + inherited.
 
 ## 6. First projection — validate the invariant
 

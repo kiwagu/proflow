@@ -240,7 +240,10 @@ export async function materializeScenario(
 
   // ── extra containment / shortcuts / typed edges ─────────────────────────────
   for (const e of scenario.contains ?? []) {
-    await adminClient.contain(spaceId, idOf(e.folder), idOf(e.child));
+    // The filer defaults to `admin`; a cross-owner filing names a `by` actor that can
+    // see BOTH endpoints (the edge RETURNING needs the folder AND the child visible).
+    const filer = e.by ? await client(e.by) : adminClient;
+    await filer.contain(spaceId, idOf(e.folder), idOf(e.child));
   }
   for (const e of scenario.shortcuts ?? []) {
     await adminClient.shortcut(spaceId, idOf(e.folder), idOf(e.target));

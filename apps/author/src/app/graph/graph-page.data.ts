@@ -25,6 +25,7 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  ResourceFloor,
   SharedByMeEntry,
   ShareMechanismByItem,
   ShortcutEdge,
@@ -450,7 +451,7 @@ export async function loadNodeMetaForItems(
   const rows = await inChunks(itemIds, async (chunk) => {
     const { data, error } = await db
       .from('knowledge_resources')
-      .select('id,owner_user_id,last_modified_at')
+      .select('id,owner_user_id,last_modified_at,visibility')
       .eq('space_id', spaceId)
       .in('id', chunk);
     if (error) {
@@ -462,6 +463,7 @@ export async function loadNodeMetaForItems(
     map[(row as { id: string }).id] = {
       ownerUserId: (row as { owner_user_id: string | null }).owner_user_id,
       lastModifiedAt: (row as { last_modified_at: string }).last_modified_at,
+      visibility: (row as { visibility: ResourceFloor }).visibility,
     };
   }
   return map;

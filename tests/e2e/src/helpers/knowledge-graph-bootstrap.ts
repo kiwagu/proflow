@@ -34,6 +34,7 @@ import {
   bootstrapMemberActor,
   buildBoardSpec,
   buildKnowledgeBaseSpec,
+  CONTAINMENT_INHERITANCE_SCENARIO,
   createActor,
   DIRECTORY_PICKER_SCENARIO,
   DIRECTORY_PICKER_DISPLAY_NAMES,
@@ -1669,5 +1670,118 @@ export async function seedDirectoryPickerFixture(
     grantedMember: who('picker-member-03'),
     members: memberRefs.map(who),
     displayNames: DIRECTORY_PICKER_DISPLAY_NAMES,
+  };
+}
+
+// ── ADR-0023: owner-scoped, live containment inheritance fixture ─────────────
+//
+// The access-matrix spec (granted folder exposes the owner's OWN descendants; owner-scope
+// holds against a third party's nested node, even under an admin's folder-share; new child
+// auto-appears; revoke removes the subtree; a self-granted child survives; floor + cohort
+// folders inherit owner-scoped) draws its multi-owner tree ENTIRELY from the shared
+// `CONTAINMENT_INHERITANCE_SCENARIO` catalog entry — no inline create helpers — so the demo
+// DB and the test build the folders / containment / grants the SAME way, through the one
+// `/author/graph/*` create-vocabulary. `materializeFixture` has already CREATED the tree (the
+// folder grant via `grantUser`, the containment via `contain`, the floor via `setFloor`, the
+// cohort link via `linkScope`); this wrapper names the refs + actors the matrix asserts, and
+// the spec drives the LIVE arcs (new-child / revoke / re-grant) through the same vocabulary
+// (`seedClientFor(owner).createDoc/contain/revokeUser/grantUser`).
+
+/** The containment-inheritance fixture, resolved from the shared catalog scenario. */
+export type ContainmentInheritanceFixture = {
+  /** The space the multi-owner tree is scoped to. */
+  spaceId: string;
+  /** Folder A shares with `grantee` (private + per-user grant) — its OWN contents inherit. */
+  sharedFolderId: string;
+  /** A's own doc directly in the shared folder (inherits via the folder grant). */
+  ownChildId: string;
+  /** A's deeper subfolder under the shared folder (the >1-level walk). */
+  ownSubfolderId: string;
+  /** A's own grandchild two levels under the shared folder (recursive walk reaches it). */
+  ownGrandchildId: string;
+  /** A's child shared BOTH via the folder AND a direct grant → survives the folder revoke. */
+  selfGrantedChildId: string;
+  /** ownerB's node filed into A's shared folder (must NOT reach `grantee` — owner-scope). */
+  foreignChildId: string;
+  /** Folder owned by the ADMIN `adminC` (holds access), shared with `grantee`. */
+  curatorFolderId: string;
+  /** ownerB's node inside the admin's folder (no admin cascade — stays private to grantee). */
+  curatorForeignChildId: string;
+  /** A's space-floor folder. */
+  floorFolderId: string;
+  /** A's own doc under the floor folder (broadcast to the whole space). */
+  floorOwnChildId: string;
+  /** ownerB's node under A's floor folder (NOT broadcast — owner-scope). */
+  floorForeignChildId: string;
+  /** A's cohort-shared folder (scope → Cohort A). */
+  cohortFolderId: string;
+  /** A's own doc inside the cohort folder (inherits to Cohort A members). */
+  cohortOwnChildId: string;
+  /** A top-level PRIVATE, UN-SHARED A-owned doc (no grant/scope/floor, no folder ancestor) —
+   * the render NEGATIVE: the Access section must show NO "shared out" badge nor inherited summary. */
+  privateUnsharedId: string;
+  /** Owner A (`admin`) — owns the folders + most descendants; authors the live arcs. */
+  owner: KnowledgeActor;
+  /** The person A shares the folder WITH — sees the owner's descendants via inheritance. */
+  grantee: KnowledgeActor;
+  /** A SECOND owner — its nodes filed into A's folders must NOT inherit (owner-scope). */
+  ownerB: KnowledgeActor;
+  /** An ADMIN (holds `space.knowledge.access`) — its folder-share does NOT cascade cross-owner. */
+  adminC: KnowledgeActor;
+  /** A member of Cohort A — sees A's own cohort-folder descendants via inheritance. */
+  cohortMember: KnowledgeActor;
+  /** NOT a member of Cohort A — the cohort-folder descendants stay hidden (fail-closed). */
+  cohortStranger: KnowledgeActor;
+};
+
+/**
+ * Materialize the containment-inheritance scenario over an existing tenant and project
+ * its refs/actors onto the matrix-spec shape. The folder grants, the cross-owner
+ * containment, the floor, and the cohort link are already CREATED by `materializeFixture`
+ * through the runtime RLS path + the live endpoints; this only names the pieces.
+ */
+export async function seedContainmentInheritanceFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<ContainmentInheritanceFixture> {
+  const { refs, actors } = await materializeFixture(
+    CONTAINMENT_INHERITANCE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`containment-inheritance fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(
+        `containment-inheritance fixture: missing actor "${ref}"`
+      );
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    sharedFolderId: id('containment-inheritance/shared-folder'),
+    ownChildId: id('containment-inheritance/own-child'),
+    ownSubfolderId: id('containment-inheritance/own-subfolder'),
+    ownGrandchildId: id('containment-inheritance/own-grandchild'),
+    selfGrantedChildId: id('containment-inheritance/self-granted-child'),
+    foreignChildId: id('containment-inheritance/foreign-child'),
+    curatorFolderId: id('containment-inheritance/curator-folder'),
+    curatorForeignChildId: id('containment-inheritance/curator-foreign-child'),
+    floorFolderId: id('containment-inheritance/floor-folder'),
+    floorOwnChildId: id('containment-inheritance/floor-own-child'),
+    floorForeignChildId: id('containment-inheritance/floor-foreign-child'),
+    cohortFolderId: id('containment-inheritance/cohort-folder'),
+    cohortOwnChildId: id('containment-inheritance/cohort-own-child'),
+    privateUnsharedId: id('containment-inheritance/private-unshared'),
+    owner: who('admin'),
+    grantee: who('grantee'),
+    ownerB: who('ownerB'),
+    adminC: who('adminC'),
+    cohortMember: who('cohortMember'),
+    cohortStranger: who('cohortStranger'),
   };
 }
