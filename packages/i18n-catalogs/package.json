@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint . && bun src/validate.ts",
+    "lint:strict": "eslint . --max-warnings 0 && bun src/validate.ts",
     "format": "bunx prettier --write .",
     "typecheck": "tsc --noEmit",
     "validate": "bun src/validate.ts",

@@ -205,3 +205,16 @@ merged by hand, never blanket-overwritten.
   report rather than silently rewriting feature code.
 - One logical upgrade per branch/PR when possible (e.g. "Payload 3.83→3.84 + Next
   sync" as one unit), so a regression is easy to bisect and revert.
+
+## Security review (mandatory close-out)
+
+A dependency bump is a supply-chain surface, so the review matters here too. A
+vulnerability/security review is a mandatory feature close-out (the always-on
+`security-review-before-commit` rule): the coordinator runs the `/security-review` skill over
+the full diff BEFORE committing. You cannot invoke that skill (skills run in the main
+conversation), so before you report done:
+
+- **Self-review the upgrade**: flag any bumped package with a known advisory, a changed
+  transitive that touches auth/crypto/serialization, or a postinstall/script change.
+- **FLAG the dependency changes** in your report (the manifests + lockfile diff) so the
+  coordinator runs `/security-review` over it before the commit.

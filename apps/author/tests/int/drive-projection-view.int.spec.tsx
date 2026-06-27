@@ -25,7 +25,12 @@ const NO_CAPS = {
   canUpdate: false,
   canDelete: false,
   canCreate: false,
+  canAccess: false,
 } as const;
+
+// The commercial entitlement (ADR-0022) — fail-closed off for these presentational
+// tests; the Flat/Advanced toggle's entitled/locked behaviour is covered by the e2e.
+const NO_ENTITLEMENTS = { advancedStructuralView: false } as const;
 
 beforeAll(async () => {
   messages = await loadGraphMessages('en');
@@ -93,7 +98,10 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       starredIds: [],
       openedAtById: {},
       capabilities: NO_CAPS,
+      entitlements: NO_ENTITLEMENTS,
       trash: { items: [], metaByItem: {} },
+      sharedByMe: [],
+      shareMechanism: {},
     },
   };
 }
@@ -169,10 +177,12 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_old: {
             ownerUserId: null,
             lastModifiedAt: '2026-01-01T00:00:00Z',
+            visibility: 'private',
           },
           knr_new: {
             ownerUserId: null,
             lastModifiedAt: '2026-06-01T00:00:00Z',
+            visibility: 'private',
           },
         },
         containment: [],
@@ -186,7 +196,10 @@ describe('DriveProjectionView (forward-port shell)', () => {
           knr_new: '2026-06-01T00:00:00Z',
         },
         capabilities: NO_CAPS,
+        entitlements: NO_ENTITLEMENTS,
         trash: { items: [], metaByItem: {} },
+        sharedByMe: [],
+        shareMechanism: {},
       },
     });
     render(<DriveProjectionView {...props} />);
@@ -221,7 +234,10 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />
@@ -252,7 +268,10 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />
@@ -285,6 +304,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
           openedAtById: {},
         },
         capabilities: NO_CAPS,
+        entitlements: NO_ENTITLEMENTS,
         trash: { items, metaByItem: {} },
       },
     };
@@ -487,7 +507,10 @@ describe('DriveProjectionView (forward-port shell)', () => {
             starredIds: [],
             openedAtById: {},
             capabilities: NO_CAPS,
+            entitlements: NO_ENTITLEMENTS,
             trash: { items: [], metaByItem: {} },
+            sharedByMe: [],
+            shareMechanism: {},
           },
         })}
       />

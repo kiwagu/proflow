@@ -21,18 +21,6 @@ function createOrderedQuery<T>(result: { data: T; error: unknown }) {
   };
 }
 
-function createMembershipQuery<T>(result: { data: T; error: unknown }) {
-  const query = {
-    eq: vi.fn(() => query),
-  };
-
-  return {
-    select: vi.fn(() => query),
-    query,
-    resolve: vi.fn(async () => result),
-  };
-}
-
 describe('listAccessibleSpacesForUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();

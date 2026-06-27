@@ -385,9 +385,18 @@ async function OperatorConsoleContent() {
                 const orgSpaces = spacesByOrg.get(organization.id) ?? [];
                 return (
                   <Card key={organization.id} size="sm">
-                    <CardHeader>
-                      <CardTitle>{organization.name}</CardTitle>
-                      <CardDescription>{organization.slug}</CardDescription>
+                    <CardHeader className="flex flex-row items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-col gap-1.5">
+                        <CardTitle>{organization.name}</CardTitle>
+                        <CardDescription>{organization.slug}</CardDescription>
+                      </div>
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          href={`/organizations/${organization.id}/settings`}
+                        >
+                          {t('superAdmin.support.openOrganizationSettings')}
+                        </Link>
+                      </Button>
                     </CardHeader>
                     <CardContent>
                       {orgSpaces.length === 0 ? (

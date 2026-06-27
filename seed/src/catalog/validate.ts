@@ -8,7 +8,10 @@ import type { SeedNode, SeedScenario } from './types.js';
  * `ALL_SCENARIOS`, and as a fast fail-first gate in the CLI before any endpoint call.
  */
 
-/** Actor refs the materializer always provides (tenant.granted / tenant.ungranted). */
+/** Actor refs the materializer always provides: `admin` → tenant.granted (the `admin`
+ * role, all knowledge verbs) and `viewer` → tenant.member (the `member` role, read +
+ * create — authors its OWN content). NOTE: `viewer` is the member actor, NOT the
+ * verb-less `tenant.ungranted` negative actor (which has no catalog ref). */
 export const BUILTIN_ACTOR_REFS = ['admin', 'viewer'] as const;
 
 function collectNodes(nodes: SeedNode[]): SeedNode[] {
@@ -70,6 +73,8 @@ export function validateScenario(s: SeedScenario): string[] {
     }
     for (const a of n.starredBy ?? []) actorOk(a, `node "${n.ref}" starredBy`);
     for (const a of n.openedBy ?? []) actorOk(a, `node "${n.ref}" openedBy`);
+    for (const a of n.userGrants ?? [])
+      actorOk(a, `node "${n.ref}" userGrants`);
     for (const t of n.tags ?? []) {
       if (!t) fail(`node "${n.ref}" has an empty tag title`);
     }
@@ -88,6 +93,14 @@ export function validateScenario(s: SeedScenario): string[] {
     if (!nodeRefs.has(ref)) fail(`${where}: unknown node ref "${ref}"`);
   };
 
+  // Actor display names (ADR-0020 directory): if declared, must be non-empty so the
+  // co-member directory resolves a real name rather than the email/short-id fallback.
+  for (const a of s.actors ?? []) {
+    if (a.displayName !== undefined && a.displayName.trim() === '') {
+      fail(`actor "${a.ref}" has an empty displayName`);
+    }
+  }
+
   // Scope memberships + reporting lines.
   for (const sc of s.scopes ?? []) {
     if (!sc.ref) fail('a scope has an empty ref');
@@ -102,6 +115,7 @@ export function validateScenario(s: SeedScenario): string[] {
   for (const c of s.contains ?? []) {
     nodeOk(c.folder, 'contains.folder');
     nodeOk(c.child, 'contains.child');
+    if (c.by) actorOk(c.by, 'contains.by');
   }
   for (const sh of s.shortcuts ?? []) {
     nodeOk(sh.folder, 'shortcut.folder');

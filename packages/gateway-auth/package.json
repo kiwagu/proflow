@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
     "format": "bunx prettier --write .",
     "typecheck": "tsc --noEmit",
     "test:vitest": "bunx vitest run",

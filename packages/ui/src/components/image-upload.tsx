@@ -8,6 +8,7 @@ import {
   AvatarImage,
 } from '@workspace/ui/components/avatar';
 import { Button } from '@workspace/ui/components/button';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { cn } from '@workspace/ui/lib/utils';
 
 export interface ImageUploadProps {
@@ -32,9 +33,12 @@ export function ImageUpload({
   const [previewUrl, setPreviewUrl] = React.useState<string | undefined>(value);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  React.useEffect(() => {
+  // The preview is locally overridable (an in-flight upload shows an object URL),
+  // but a NEW controlled `value` wins — adjust it during render rather than in an
+  // effect ("you might not need an effect").
+  if (useValueChanged(value)) {
     setPreviewUrl(value);
-  }, [value]);
+  }
 
   const handleFile = async (file: File) => {
     if (disabled || isUploading) return;

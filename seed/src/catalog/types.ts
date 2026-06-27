@@ -22,6 +22,13 @@ export type ActorSpec = {
   ref: ActorRef;
   /** Defaults to `admin` (base read holds; the access DIMENSION is the subject). */
   role?: ActorRole;
+  /** A human display name for the actor's own profile. Seeded actors are born with
+   * a NULL `profiles.display_name` (only their email is set), so the co-member
+   * directory (ADR-0020) — the Share dialog people-picker + "who has access" rows —
+   * would render them as a bare short-id. Setting this authors the name through the
+   * actor's OWN RLS client (the own-row profile update), exactly as a member would,
+   * so the directory resolves a real `display_name` for the people-picker demo. */
+  displayName?: string;
 };
 
 export type ScopeSpec = {
@@ -47,6 +54,11 @@ type NodeBase = {
   visibility?: Floor;
   /** Cohort refs this node is shared into (additive grants). */
   scopes?: ScopeRef[];
+  /** Actor refs this node is shared with PER-PERSON (additive per-user grants,
+   * ADR-0019): each named member's READ visibility is widened on top of the floor
+   * + cohort grants. Authored via the owner's (or an access-manager's) Share call;
+   * the grantee must be an active member of the node's space. */
+  userGrants?: ActorRef[];
   /** Tag titles to attach via `tagged` edges (tag nodes are deduped by title). */
   tags?: string[];
   /** Pin the node in the OWNER's "Starred" lens (per-user; the owner needs the
@@ -89,7 +101,15 @@ export type BodylessNode = NodeBase & {
 
 export type SeedNode = FolderNode | TextNode | BodylessNode;
 
-export type ContainEdge = { folder: NodeRef; child: NodeRef };
+export type ContainEdge = {
+  folder: NodeRef;
+  child: NodeRef;
+  /** Actor that AUTHORS the containment edge; defaults to `admin`. Set this for a
+   * CROSS-OWNER filing where `admin` cannot see both endpoints (the edge RETURNING
+   * read needs the filer to see the folder AND the child): the filer must own/see the
+   * folder and see the child (e.g. via a per-user grant the child owner authored). */
+  by?: ActorRef;
+};
 export type ShortcutEdge = { folder: NodeRef; target: NodeRef };
 
 /**

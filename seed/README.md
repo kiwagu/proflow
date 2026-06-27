@@ -55,9 +55,59 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the scenarios for
-one capability so the seed stays runnable as the catalog grows. A scenario opts into a
-preset via its `presets` field.
+`per-user-share`, `knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the
+scenarios for one capability so the seed stays runnable as the catalog grows. A scenario
+opts into a preset via its `presets` field. `access` is cohort/floor sharing;
+`shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
+mechanism-distinction fixture (ADR-0021 Part C): one non-owner `viewer` sees four nodes
+owned by another member, one per access MECHANISM — a per-user grant (→ `personal`), a
+cohort grant to a cohort the viewer belongs to (→ `cohort`), a space-floor publish
+(→ `broadcast`), and a both-granted node that must win as `personal` (precedence
+`personal > cohort > broadcast`). The Wave 3b render/badge e2e draws it via
+`seedShareMechanismFixture`. The `shared` preset ALSO carries the `advanced-shared`
+fixture (ADR-0022): the worked example for the tariff-gated ADVANCED (structural) display
+of the Shared lenses, which renders the SAME RLS-visible shared node-set as the KB
+containment TREE (vs the flat digest), gated by the COMMERCIAL `advanced_shared_view`
+entitlement. The minimal tree — a shared FOLDER ⊃ a shared DOC (so the doc NESTS under the
+folder in the tree) plus a published doc whose containing folder stays PRIVATE (so the doc
+appears at the ROOT — graceful-absence, no synthetic ancestor). It is view-only: the advanced
+tree just reuses `buildContainment` over the shared subset (no resolver change, Invariant #1),
+so the SAME three nodes the flat digest lists are re-arranged structurally. The ADR-0022
+e2e draws the tree via `seedAdvancedSharedFixture`; the COMMERCIAL entitlement rows are
+control-plane config (a service-role `runtime_settings` upsert via `setAdvancedSharedEntitlement`),
+out of scope for a content scenario.
+The `shared` preset ALSO carries the `containment-inheritance` fixture (ADR-0023): the
+worked example for owner-scoped, LIVE containment access inheritance — sharing a folder
+makes its OWNER-SCOPED descendants readable to the grantee (a new child auto-appears, a
+revoke removes the subtree), additive-OR (a self-granted child survives the folder revoke),
+across the per-user / cohort / space-floor conferring dimensions — but NEVER cross-owner
+(a third party's node merely FILED into the folder, even an admin's folder-share, stays
+private; only that owner's OWN explicit grant exposes it). The MINIMAL multi-owner tree —
+a shared folder ⊃ A's own child / deep own subfolder+grandchild / a self-granted child,
+an admin's curator-folder, a space-floor folder, and a cohort-folder — with three
+ownerB-owned nested nodes (the owner-scope negatives) FILED via the `contains` `by`
+cross-owner filer. It is a pure RLS-predicate widening (no new endpoint, no resolver
+change): the ADR-0023 access-matrix e2e draws the tree via `seedContainmentInheritanceFixture`
+and drives the live arcs (new-child / revoke / re-grant) through the same create-vocabulary.
+`per-user-share` is per-person sharing (a private doc granted to one named member,
+ADR-0019 — the grantee sees it, a third un-granted member stays blind). That ONE grant is
+read from BOTH ends of the grant graph (ADR-0021 Part B): the grantee sees the doc in the
+"Shared with me" lens (DriveScope `shared`), while the OWNER sees the same grant in the
+"Shared by me" lens (DriveScope `shared-by-me`) — a read-only projection over
+`knowledge_resource_user_grants WHERE granted_by = me`, surfaced as a `SharedByMeEntry`
+(`{ resourceId, grantees }`). The catalog adds no second grant for the opposite direction;
+both lenses read the one `per-user-share/granted` row, and the un-granted sibling appears in
+neither. (Wave 2 a landed only the `shared-by-me` DATA slice; the lens render + its e2e
+assertion are the Wave 2 b close-out — the scenario already carries the data they will draw
+from.) Its space is multi-member with named co-members, so the SAME scenario also feeds the
+Share dialog's co-member identity directory (ADR-0020): the people-picker + "who has access"
+rows resolve a co-member's `display_name` + `email` (never a bare short-id), search (`?q=`)
+narrows it, and a non-member of the space gets an empty directory (the membership fence).
+The `per-user-share` preset ALSO carries the `directory-picker` scenario — a ten-member
+grantable cohort sharing one space with a private share target — that exercises the
+paginated directory-v2 picker (ADR-0021 Part A): a page of 5 + "+N more", a keyset
+"Show more" next page with no overlap, and `p_exclude` dropping the owner + the
+already-granted member from BOTH the page and the `total_count`.
 
 ## The dictionary
 
@@ -70,7 +120,9 @@ src/
   engine/      tenant bootstrap (ephemeral + demo), actors, SSR cookies,
                the /author/graph/* HTTP wrappers (the create-vocabulary)
   catalog/     the dictionary: drive, access, knowledge-base, board, shared,
-               hierarchy, trash + the projection spec builders + the materializer
+               share-mechanism, advanced-shared, hierarchy, per-user-share,
+               directory-picker, containment-inheritance, trash + the projection
+               spec builders + the materializer
   presets.ts   preset → scenario selection
   cli.ts       the `bun run seed` entrypoint
 ```
@@ -80,6 +132,32 @@ src/
 `@workspace/e2e` depends on `@workspace/seed`. The e2e helper re-exports the engine
 primitives (so existing specs are unchanged) and the Drive specs build their trees
 with the shared HTTP client + catalog fixtures (`drive-cascade`, `drive-copy-chain`).
+The per-person-sharing access-matrix spec
+(`knowledge-per-user-share.e2e.spec.ts`) likewise draws ENTIRELY from the shared
+`per-user-share` scenario via `seedPerUserShareFixture` — the seeded grant, the
+revoke→re-grant arc, and the authority/cross-space negatives all run through the one
+`grantUser` / `revokeUser` vocabulary, never inline create/delete helpers. The same
+spec also drives the co-member directory (ADR-0020) through the shared `visibility`
+wrapper (`GET /author/graph/visibility?q=`): the picker/grant rows resolve the seeded
+co-member `display_name`s, search narrows, and a non-member sees an empty directory.
+A second describe-block in the same spec draws the `directory-picker` scenario's
+ten-member space via `seedDirectoryPickerFixture` and exercises the PAGINATED picker
+(ADR-0021): the `visibility` wrapper now returns `members` as a keyset PAGE
+(`{ items, nextCursor, total }`) and accepts `{ cursor, limit }`, so the spec asserts a
+page of 5 + an accurate "+N more" `total`, a "Show more" (`cursor`) next page with no
+overlap, search narrowing the `total` below a page, and `p_exclude` dropping the owner +
+already-granted (and a just-granted member) from BOTH the page and the count.
+
+The containment-inheritance access-matrix spec
+(`knowledge-containment-inheritance.e2e.spec.ts`, ADR-0023) likewise draws its whole
+multi-owner tree from the shared `containment-inheritance` scenario via
+`seedContainmentInheritanceFixture` — the folder grant (`grantUser`), the cross-owner
+filing (`contain`, with the catalog's `contains.by` filer), the floor (`setFloor`) and
+the cohort link (`linkScope`) are all created the product's way. The LIVE arcs (a NEW
+child auto-appearing, a folder REVOKE removing the inherited subtree, a RE-GRANT, and a
+`contains` cycle that must not hang or over-grant) run through the SAME
+`seedClientFor(actor)` create-vocabulary, never inline create/delete helpers — so the
+demo DB and the test exercise one owner-scoped inheritance predicate identically.
 
 ## Extending the catalog
 

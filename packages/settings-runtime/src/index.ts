@@ -211,12 +211,69 @@ export function isPlatformFeatureFlagRuntimeSettingKey(
   );
 }
 
+// --- Entitlements -----------------------------------------------------------
+// Commercial, plan-gated capabilities. Same scope-aware runtime-settings
+// machinery as feature flags, but a distinct `platform.entitlement.*` key
+// namespace so a commercial dimension never reads as an internal rollout
+// toggle. Source of truth is a scoped runtime_settings row (global/org/space),
+// resolved global→org→space with org∧space AND-composition (a space's plan can
+// never exceed its org's). See ADR-0022 (+ Addendum A).
+//
+// `advancedStructuralView` is ONE generic commercial unit — the structural
+// (KB-containment tree) display of the membership lenses. WHICH lenses it
+// unlocks (Shared with/by me, Starred, Trash — never the Recent log) is a
+// render-side opt-in constant, not a billing dimension.
+
+export const PLATFORM_ENTITLEMENT_KEYS = {
+  advancedStructuralView: 'advanced_structural_view',
+} as const;
+
+export type PlatformEntitlementKey =
+  (typeof PLATFORM_ENTITLEMENT_KEYS)[keyof typeof PLATFORM_ENTITLEMENT_KEYS];
+
+export const PLATFORM_ENTITLEMENT_SETTING_KEYS = {
+  [PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView]:
+    'platform.entitlement.advanced_structural_view',
+} as const;
+
+export type PlatformEntitlementRuntimeSettingKey =
+  (typeof PLATFORM_ENTITLEMENT_SETTING_KEYS)[PlatformEntitlementKey];
+
+const platformEntitlementRuntimeSettingKeyValues = Object.values(
+  PLATFORM_ENTITLEMENT_SETTING_KEYS
+) as PlatformEntitlementRuntimeSettingKey[];
+
+export const defaultPlatformEntitlements: Record<
+  PlatformEntitlementKey,
+  boolean
+> = {
+  [PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView]: false,
+};
+
+export function getPlatformEntitlementRuntimeSettingKey(
+  key: PlatformEntitlementKey
+): PlatformEntitlementRuntimeSettingKey {
+  return PLATFORM_ENTITLEMENT_SETTING_KEYS[key];
+}
+
+export function isPlatformEntitlementRuntimeSettingKey(
+  key: string
+): key is PlatformEntitlementRuntimeSettingKey {
+  return platformEntitlementRuntimeSettingKeyValues.includes(
+    key as PlatformEntitlementRuntimeSettingKey
+  );
+}
+
 export const RUNTIME_SETTING_KEYS = {
   platformLocale: 'platform.locale',
   runtimeLogLevel: 'runtime.log_level',
   platformFeatureFlagOrganizationSettings:
     PLATFORM_FEATURE_FLAG_SETTING_KEYS[
       PLATFORM_FEATURE_FLAG_KEYS.organizationSettings
+    ],
+  platformEntitlementAdvancedStructuralView:
+    PLATFORM_ENTITLEMENT_SETTING_KEYS[
+      PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView
     ],
 } as const;
 
@@ -251,6 +308,17 @@ const runtimeSettingDefinitions: Record<
     defaultValue:
       defaultPlatformFeatureFlags[
         PLATFORM_FEATURE_FLAG_KEYS.organizationSettings
+      ],
+    schema: platformFeatureFlagBooleanSchema,
+  },
+  [RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView]: {
+    key: RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView,
+    valueType: 'boolean',
+    allowedScopes: ['global', 'organization', 'space'],
+    isPublic: false,
+    defaultValue:
+      defaultPlatformEntitlements[
+        PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView
       ],
     schema: platformFeatureFlagBooleanSchema,
   },

@@ -218,6 +218,35 @@ export type Database = {
           },
         ]
       }
+      knowledge_resource_user_grants: {
+        Row: {
+          created_at: string
+          granted_by: string
+          resource_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by: string
+          resource_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string
+          resource_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_resource_user_grants_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_resources: {
         Row: {
           body_ref: Json | null
@@ -1252,10 +1281,23 @@ export type Database = {
       entity_id_encode_rand_16: { Args: { bytes: string }; Returns: string }
       entity_id_encode_ts_10: { Args: { ms: number }; Returns: string }
       entity_id_generate: { Args: { prefix: string }; Returns: string }
+      knowledge_resource_inherited_grant: {
+        Args: {
+          p_owner_user_id: string
+          p_resource_id: string
+          p_space_id: string
+        }
+        Returns: boolean
+      }
       knowledge_resource_scope_member: {
         Args: { p_resource_id: string }
         Returns: boolean
       }
+      knowledge_resource_user_grant: {
+        Args: { p_resource_id: string }
+        Returns: boolean
+      }
+      knowledge_user_scope_ids: { Args: never; Returns: string[] }
       outbox_queue_name: { Args: { p_channel: string }; Returns: string }
       platform_feature_flag_actor_can_manage_scope: {
         Args: { p_scope: string; p_scope_id?: string }
@@ -1414,6 +1456,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      rpc_resolve_platform_flag: {
+        Args: { p_key: string; p_space_id?: string }
+        Returns: boolean
+      }
       rpc_revoke_platform_super_admin: {
         Args: { p_reason: string; p_target_user_id: string }
         Returns: Json
@@ -1497,6 +1543,22 @@ export type Database = {
       runtime_settings_actor_can_read_scope: {
         Args: { p_is_public?: boolean; p_scope: string; p_scope_id?: string }
         Returns: boolean
+      }
+      space_member_directory: {
+        Args: {
+          p_after_key?: string
+          p_after_user?: string
+          p_exclude?: string[]
+          p_limit?: number
+          p_query?: string
+          p_space_id: string
+        }
+        Returns: {
+          display_name: string
+          email: string
+          total_count: number
+          user_id: string
+        }[]
       }
       space_member_role_audit_snapshot: {
         Args: { p_space_id: string; p_target_user_id: string }

@@ -31,13 +31,16 @@ import {
   FolderPlus,
   Info,
   Pencil,
+  Share2,
   SquarePen,
+  Target,
   Trash2,
 } from 'lucide-react';
 import * as React from 'react';
 
 import { allFolders, type Containment } from '@/app/graph/containment';
 import type { SpaceCapabilities } from '@/app/graph/graph-data.types';
+import { ShareDialog } from '@/app/graph/views/resource-panel/share-dialog';
 
 /**
  * NodeActionsMenu — the graph node's `⋯` action set. A thin DOMAIN composition over
@@ -79,6 +82,7 @@ export function NodeActionsMenu({
   onDetails,
   onEdit,
   onCopyToClipboard,
+  onOpenInKb,
   triggerClassName,
 }: {
   spaceId: string;
@@ -112,6 +116,9 @@ export function NodeActionsMenu({
    * offers a Paste affordance in each pane's toolbar. When omitted (standalone /
    * tests), "Copy" falls back to the legacy immediate duplicate-in-place. */
   onCopyToClipboard?: (nodeId: string, title: string) => void;
+  /** Reveal this node in the KB containment tree (jump to the 'kb' lens at its parent
+   * folder so its position among siblings is visible). Omit to hide the item. */
+  onOpenInKb?: (nodeId: string) => void;
   /** Extra classes for the `⋯` trigger (e.g. hover-reveal on a card). */
   triggerClassName?: string;
 }) {
@@ -121,6 +128,7 @@ export function NodeActionsMenu({
   const [moveTarget, setMoveTarget] = React.useState('top');
   const [subfolderOpen, setSubfolderOpen] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [shareOpen, setShareOpen] = React.useState(false);
 
   const folders = React.useMemo(
     () => allFolders(containment).filter((f) => f.id !== node.id),
@@ -135,6 +143,11 @@ export function NodeActionsMenu({
   const owned = ownerUserId != null && ownerUserId === currentUserId;
   const canModify = owned || capabilities.canUpdate;
   const canDelete = owned || capabilities.canDelete;
+  // Share = audience management (ADR-0019 §4): owner-sovereign OR the space
+  // access verb — the EXACT per-user-grant / cohort INSERT-DELETE RLS authority
+  // (owner OR `space.knowledge.access`). Laxer-not-stricter (ADR-0006 §2.1): a
+  // shown Share the user cannot perform simply no-ops under RLS on the route.
+  const canShare = owned || capabilities.canAccess;
   // New-subfolder INSERTs a folder node (needs the create verb) AND wires a `contains`
   // edge; it is offered only on a folder the viewer can modify and create within.
   const canCreate = capabilities.canCreate;
@@ -280,6 +293,16 @@ export function NodeActionsMenu({
       label: t('graph.panel.copy'),
       onSelect: onCopy,
     },
+    {
+      id: 'share',
+      hidden: !canShare,
+      // Groups with Details under one separator (the "share / inspect" section).
+      // Details supplies the section break; if Details is omitted (e.g. inside the
+      // drawer) Share simply trails Copy — acceptable, never a stray separator.
+      icon: <Share2 className="size-4" aria-hidden />,
+      label: t('graph.share.menuItem'),
+      onSelect: () => setShareOpen(true),
+    },
     ...(onDetails
       ? [
           {
@@ -288,6 +311,16 @@ export function NodeActionsMenu({
             icon: <Info className="size-4" aria-hidden />,
             label: t('graph.panel.details'),
             onSelect: onDetails,
+          } satisfies ActionMenuItem,
+        ]
+      : []),
+    ...(onOpenInKb
+      ? [
+          {
+            id: 'open-in-kb',
+            icon: <Target className="size-4" aria-hidden />,
+            label: t('graph.panel.openInKb'),
+            onSelect: () => onOpenInKb(node.id),
           } satisfies ActionMenuItem,
         ]
       : []),
@@ -338,6 +371,17 @@ export function NodeActionsMenu({
         onSubmit={onCreateSubfolder}
         busy={busy}
         submitIcon={<FolderPlus className="size-4" aria-hidden />}
+      />
+
+      <ShareDialog
+        t={t}
+        spaceId={spaceId}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        node={{ id: node.id, title: node.title }}
+        currentUserId={currentUserId}
+        ownerUserId={ownerUserId}
+        onMutated={onMutated}
       />
 
       <ConfirmDialog

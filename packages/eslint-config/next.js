@@ -50,6 +50,10 @@ export const nextJsConfig = [
       // React scope no longer necessary with new JSX transform.
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
+      // Informational React-Compiler diagnostic (incompatible 3rd-party lib, e.g. TanStack
+      // Table) — not an actionable code smell; off so `lint:strict` stays honest. Every
+      // other React-Compiler rule (set-state-in-effect, etc.) stays ON.
+      'react-hooks/incompatible-library': 'off',
     },
   },
   {

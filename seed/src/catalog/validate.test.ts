@@ -37,7 +37,7 @@ describe('seed catalog integrity', () => {
           children: [{ ref: 'a', kind: 'text', title: 'dup ref' }],
         },
       ],
-      contains: [{ folder: 'a', child: 'missing' }],
+      contains: [{ folder: 'a', child: 'missing', by: 'ghost-filer' }],
     } as unknown as SeedScenario;
 
     const errors = validateScenario(bad);
@@ -49,5 +49,12 @@ describe('seed catalog integrity', () => {
     expect(errors.some((e) => e.includes('unknown node ref "missing"'))).toBe(
       true
     );
+    // The ADR-0023 `contains.by` cross-owner filer must resolve to a known actor.
+    expect(
+      errors.some(
+        (e) =>
+          e.includes('contains.by') && e.includes('unknown actor "ghost-filer"')
+      )
+    ).toBe(true);
   });
 });

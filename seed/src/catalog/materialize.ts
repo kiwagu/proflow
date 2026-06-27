@@ -19,6 +19,10 @@ export type MaterializedScenario = {
   /** Every addressable handle → its concrete id: node refs, `tag:<title>`,
    * `scope:<ref>`, `projection:<ref>`. */
   refs: Map<string, string>;
+  /** The resolved scenario actors by ref (built-ins `admin`/`viewer` + declared) —
+   * so a consuming spec can authenticate AS a participant (e.g. a per-user grantee /
+   * outsider) and assert the access matrix the seeded grants set up. */
+  actors: Map<string, SeedActor>;
 };
 
 /**
@@ -34,12 +38,42 @@ export async function materializeScenario(
   const refs = new Map<string, string>();
 
   // ── actors ─────────────────────────────────────────────────────────────────
+  // The catalog `viewer` ref maps to the tenant's `member` actor (read + create), NOT
+  // the verb-less `ungranted` negative actor — so a scenario's `owner: 'viewer'` node
+  // authors in BOTH the ephemeral and the demo tenant. (`ungranted` is reserved for the
+  // e2e specs that read `tenant.ungranted` directly to assert RLS denial.)
   const actors = new Map<string, SeedActor>([
     ['admin', tenant.granted],
-    ['viewer', tenant.ungranted],
+    ['viewer', tenant.member],
   ]);
   for (const spec of scenario.actors ?? []) {
-    actors.set(spec.ref, await deps.mintActor(spec.ref, spec.role ?? 'admin'));
+    const minted = await deps.mintActor(spec.ref, spec.role ?? 'admin');
+    actors.set(spec.ref, minted);
+    // Set the actor's own profile display name (own-row RLS update) so the co-member
+    // directory (ADR-0020) resolves a real name in the Share people-picker, not a
+    // short-id. Authored AS the actor — exactly the path a member would take. The
+    // `profiles` row is born WITH the auth user (a synchronous AFTER-INSERT trigger on
+    // auth.users seeds user_id + email), so this update reliably hits an existing row —
+    // and `email` (the directory's secondary line) is already populated. We assert a row
+    // was actually returned (RETURNING via `.select()`): an own-row update that matched
+    // NOTHING would otherwise pass silently and regress the directory to a bare short-id.
+    if (spec.displayName) {
+      const { data, error } = await minted.client
+        .from('profiles')
+        .update({ display_name: spec.displayName })
+        .eq('user_id', minted.userId)
+        .select('user_id');
+      if (error) {
+        throw new Error(
+          `${scenario.id} display name "${spec.ref}": ${error.message}`
+        );
+      }
+      if (!data || data.length === 0) {
+        throw new Error(
+          `${scenario.id} display name "${spec.ref}": profiles row not found for ${minted.userId} — display_name was not set (the co-member directory would render a short-id)`
+        );
+      }
+    }
   }
   const clients = new Map<string, SeedClient>();
   const actor = (ref = 'admin'): SeedActor => {
@@ -180,6 +214,12 @@ export async function materializeScenario(
       if (!tagId) throw new Error(`${scenario.id}: tag "${tagTitle}" missing`);
       await c.tag(spaceId, nodeId, { tagId });
     }
+    // Per-user grants — share the node with one named member (ADR-0019). The grant
+    // is authored by the node's OWNER (owner-sovereign) and widens that actor's read
+    // visibility; the grantee must be an active space member (a DB same-space guard).
+    for (const granteeRef of node.userGrants ?? []) {
+      await c.grantUser(nodeId, actor(granteeRef).userId);
+    }
     // Star is per-user — pin it in the OWNER's Starred lens (owner needs progress).
     if (node.starred) await c.star(spaceId, nodeId, true);
     // …and for any explicit actors (e.g. star a doc that another user shared with you).
@@ -200,7 +240,10 @@ export async function materializeScenario(
 
   // ── extra containment / shortcuts / typed edges ─────────────────────────────
   for (const e of scenario.contains ?? []) {
-    await adminClient.contain(spaceId, idOf(e.folder), idOf(e.child));
+    // The filer defaults to `admin`; a cross-owner filing names a `by` actor that can
+    // see BOTH endpoints (the edge RETURNING needs the folder AND the child visible).
+    const filer = e.by ? await client(e.by) : adminClient;
+    await filer.contain(spaceId, idOf(e.folder), idOf(e.child));
   }
   for (const e of scenario.shortcuts ?? []) {
     await adminClient.shortcut(spaceId, idOf(e.folder), idOf(e.target));
@@ -258,7 +301,7 @@ export async function materializeScenario(
     return id;
   }
 
-  return { scenarioId: scenario.id, refs };
+  return { scenarioId: scenario.id, refs, actors };
 }
 
 function collectTagTitles(nodes: SeedNode[]): string[] {

@@ -8,17 +8,22 @@ import {
   loadKbAttributesForItems,
   loadNodeMetaForItems,
   loadOpenedAtForItems,
+  loadShareMechanism,
+  loadSharedByMe,
   loadShortcutForest,
   loadStarredIds,
   resolveActiveSpaceId,
   resolveCurrentUserId,
   resolveDefaultLensProjection,
   resolveDriveLayout,
+  resolveLensView,
   resolveSpaceCapabilities,
+  resolveSpaceEntitlements,
 } from './graph-page.data';
 import type {
   DriveScope,
   KbViewData,
+  LensView,
 } from './views/registry/projection-view.types';
 
 /**
@@ -43,6 +48,7 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
   folder: string | null;
   doc: string | null;
   scope: DriveScope;
+  requestedView: LensView | null;
 } {
   const one = (v: string | string[] | undefined): string | null =>
     typeof v === 'string' && v.length > 0 ? v : null;
@@ -55,9 +61,17 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
       scope === 'starred' ||
       scope === 'recent' ||
       scope === 'shared' ||
+      scope === 'shared-by-me' ||
       scope === 'trash'
         ? scope
         : 'kb',
+    // The EXPLICITLY-REQUESTED lens display mode (ADR-0022 + Addendum A). `null` = `?view=`
+    // absent → fall back to the persisted cookie (Fork 4 amended). An explicit `?view=`
+    // WINS over the cookie (a shareable deep-link override). The entitlement clamps the
+    // final effective mode below, so a hand-edited `?view=advanced` on a locked plan
+    // still renders flat.
+    requestedView:
+      sp.view === 'advanced' ? 'advanced' : sp.view === 'flat' ? 'flat' : null,
   };
 }
 
@@ -70,6 +84,12 @@ export default async function GraphPage({
   const spaceId = await resolveActiveSpaceId();
   const location = readLocation(await searchParams);
   const initialLayout = await resolveDriveLayout();
+  // The persisted Shared-lens display mode (ADR-0022 amended Fork 4). Precedence on
+  // initial render: an explicit `?view=` WINS (a shareable deep-link); else the
+  // remembered cookie; else 'flat'. The entitlement clamps the final mode below.
+  const persistedLensView = await resolveLensView();
+  const requestedLensView: LensView =
+    location.requestedView ?? persistedLensView;
 
   const emptyResult: ProjectionResult = {
     projection_id: DEFAULT_LENS_PROJECTION_ID,
@@ -84,10 +104,20 @@ export default async function GraphPage({
       containment: [],
       shortcuts: [],
       currentUserId: null,
-      capabilities: { canUpdate: false, canDelete: false, canCreate: false },
+      capabilities: {
+        canUpdate: false,
+        canDelete: false,
+        canCreate: false,
+        canAccess: false,
+      },
+      // No active space → the cheapest plan (ADR-0022): the advanced Shared view is
+      // off, so the toggle (which never shows without a space anyway) would lock.
+      entitlements: { advancedStructuralView: false },
       starredIds: [],
       openedAtById: {},
       trash: { items: [], metaByItem: {} },
+      sharedByMe: [],
+      shareMechanism: {},
     };
     return (
       <DriveWorkbench
@@ -97,6 +127,7 @@ export default async function GraphPage({
         initialFolder={location.folder}
         initialDoc={location.doc}
         initialScope={location.scope}
+        initialLensView="flat"
         initialLayout={initialLayout}
       />
     );
@@ -123,6 +154,8 @@ export default async function GraphPage({
     openedAtById,
     trashMetaByItem,
     capabilities,
+    sharedByMe,
+    entitlements,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -133,7 +166,33 @@ export default async function GraphPage({
     loadOpenedAtForItems(spaceId),
     loadNodeMetaForItems(spaceId, trashIds),
     resolveSpaceCapabilities(spaceId),
+    loadSharedByMe(spaceId),
+    // The COMMERCIAL entitlement (ADR-0022) — resolved under the SAME RLS client as
+    // the verb capabilities, but from a DIFFERENT authority (the platform plan
+    // registry, not RLS). Kept ORTHOGONAL: packed as a SIBLING of `capabilities`.
+    resolveSpaceEntitlements(spaceId),
   ]);
+
+  // The "Shared with me" set = visible nodes I do NOT own (the same predicate the
+  // `'shared'` lens filters to, drive-projection.view.tsx). Computed server-side from
+  // the resolved meta + the current user id, so the Part C annotation runs over the
+  // PRECISE shared subset (smaller than the whole canvas). When the owner is unknown
+  // (no meta) the node is conservatively treated as not-mine and annotated — the
+  // annotation never decides visibility, so this only affects which badge shows.
+  const sharedNodeIds = currentUserId
+    ? itemIds.filter((id) => metaByItem[id]?.ownerUserId !== currentUserId)
+    : itemIds;
+  const shareMechanism = await loadShareMechanism(spaceId, sharedNodeIds);
+
+  // The EFFECTIVE lens display mode (ADR-0022 amended Fork 4 + Addendum A): the server clamps
+  // the REQUESTED mode (explicit `?view=` ELSE the persisted cookie ELSE 'flat') to
+  // 'flat' unless the space is entitled, so a hand-edited `?view=advanced` OR a stale
+  // 'advanced' cookie on a locked plan still renders flat (the gate is honest without
+  // being a security boundary — the same RLS-visible set renders either way). SSR-stable:
+  // the workbench seeds its state from this, so the first client render agrees.
+  const effectiveLensView: LensView = entitlements.advancedStructuralView
+    ? requestedLensView
+    : 'flat';
 
   const kbData: KbViewData = {
     attributesByItem,
@@ -142,6 +201,7 @@ export default async function GraphPage({
     shortcuts,
     currentUserId,
     capabilities,
+    entitlements,
     starredIds,
     openedAtById,
     trash: {
@@ -152,6 +212,8 @@ export default async function GraphPage({
       })),
       metaByItem: trashMetaByItem,
     },
+    sharedByMe,
+    shareMechanism,
   };
 
   return (
@@ -163,6 +225,7 @@ export default async function GraphPage({
       initialFolder={location.folder}
       initialDoc={location.doc}
       initialScope={location.scope}
+      initialLensView={effectiveLensView}
       initialLayout={initialLayout}
     />
   );

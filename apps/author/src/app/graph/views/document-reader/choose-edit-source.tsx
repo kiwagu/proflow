@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { cn } from '@workspace/ui/lib/utils';
 import { BookCheck, FilePen } from 'lucide-react';
 import * as React from 'react';
@@ -40,12 +41,11 @@ export function ChooseEditSourceDialog({
   onConfirm: (source: EditSource) => void;
 }) {
   const [selected, setSelected] = React.useState<EditSource>('published');
-  // Default back to "from published" each time the chooser opens.
-  React.useEffect(() => {
-    if (open) {
-      setSelected('published');
-    }
-  }, [open]);
+  // Default back to "from published" each time the chooser opens — adjust state
+  // during render on the closed→open transition ("you might not need an effect").
+  if (useValueChanged(open) && open) {
+    setSelected('published');
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,14 +107,17 @@ function SourceOption({
   subtitle?: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
       className={cn(
-        'flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors',
-        selected ? 'border-ring ring-ring/35 ring-[3px]' : 'hover:bg-accent'
+        'border-border flex h-auto items-center justify-start gap-3 rounded-md border px-3 py-2.5 text-left font-normal transition-colors',
+        selected
+          ? 'border-ring ring-ring/35 ring-[3px] hover:bg-transparent'
+          : 'hover:bg-accent'
       )}
     >
       <span
@@ -135,6 +138,6 @@ function SourceOption({
           </span>
         ) : null}
       </span>
-    </button>
+    </Button>
   );
 }

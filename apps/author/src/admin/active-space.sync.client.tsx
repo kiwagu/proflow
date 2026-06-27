@@ -2,7 +2,7 @@
 
 import { ACTIVE_SPACE_COOKIE } from '@workspace/gateway-auth/active-space.constants';
 import { useTenantSelection } from '@payloadcms/plugin-multi-tenant/client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { authorApiPath } from '@/lib/platform-login';
 
@@ -57,6 +57,26 @@ function readBrowserCookie(name: string): string | null {
   return null;
 }
 
+// The active-space cookie is an external (DOM) store read as a last-resort display
+// fallback. Cookies emit no change event, so `subscribe` is a no-op; the snapshot is
+// re-read on every render (React polls it), which mirrors the prior effect that
+// re-read on each sync-state change. `getServerSnapshot` returns null to match SSR
+// (useSyncExternalStore re-syncs to the real value after hydration — no mismatch).
+function subscribeToCookie(): () => void {
+  return () => {};
+}
+
+function readActiveSpaceCookieSnapshot(): string | null {
+  return (
+    readBrowserCookie(PAYLOAD_TENANT_COOKIE) ??
+    readBrowserCookie(ACTIVE_SPACE_COOKIE)
+  );
+}
+
+function readActiveSpaceCookieServerSnapshot(): string | null {
+  return null;
+}
+
 async function readAuthoritativeActiveSpace(): Promise<string | null> {
   const response = await fetch(authorApiPath('/api/auth/active-space'), {
     cache: 'no-store',
@@ -97,7 +117,11 @@ export function AuthorActiveSpaceSyncClient() {
   const [authoritativeActiveSpaceId, setAuthoritativeActiveSpaceId] = useState<
     string | null
   >(null);
-  const [cookieSpaceId, setCookieSpaceId] = useState<string | null>(null);
+  const cookieSpaceId = useSyncExternalStore(
+    subscribeToCookie,
+    readActiveSpaceCookieSnapshot,
+    readActiveSpaceCookieServerSnapshot
+  );
   const initialServerSyncDoneRef = useRef(false);
   const initialSelectionAppliedRef = useRef(false);
   const persistedSelectionRef = useRef<string | null>(null);
@@ -108,12 +132,15 @@ export function AuthorActiveSpaceSyncClient() {
   const optionIdsKey = optionIds.join('|');
   const selectedTenant = normalizeTenantId(selectedTenantID);
 
+  // The one-shot server sync below must run EXACTLY once (after options appear), so
+  // it must NOT list `selectedTenant` as a dep — that would re-fire it on every
+  // selection change. It still needs the LATEST selection at the moment it resolves,
+  // so we read it through a ref kept current each render (preserving the run-once
+  // intent while satisfying exhaustive-deps).
+  const selectedTenantRef = useRef(selectedTenant);
   useEffect(() => {
-    setCookieSpaceId(
-      readBrowserCookie(PAYLOAD_TENANT_COOKIE) ??
-        readBrowserCookie(ACTIVE_SPACE_COOKIE)
-    );
-  }, [authoritativeActiveSpaceId, selectedTenant]);
+    selectedTenantRef.current = selectedTenant;
+  });
 
   useEffect(() => {
     if (initialServerSyncDoneRef.current) {
@@ -144,7 +171,7 @@ export function AuthorActiveSpaceSyncClient() {
             return;
           }
 
-          if (!nextAuthoritativeSpaceId && !selectedTenant) {
+          if (!nextAuthoritativeSpaceId && !selectedTenantRef.current) {
             continue;
           }
 
@@ -153,7 +180,9 @@ export function AuthorActiveSpaceSyncClient() {
           return;
         }
 
-        setAuthoritativeActiveSpaceId((current) => current ?? selectedTenant);
+        setAuthoritativeActiveSpaceId(
+          (current) => current ?? selectedTenantRef.current
+        );
       } catch {
         if (cancelled) {
           return;

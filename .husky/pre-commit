@@ -2,7 +2,10 @@
 set -e
 . "$(dirname -- "$0")/ensure-path.sh"
 bun run typecheck
-bun run lint
+# Strict: lint warnings BLOCK the commit (the `onlyWarn` plugin makes plain `lint`
+# always exit 0, so warnings silently accumulated). `lint:strict` runs eslint with
+# `--max-warnings 0` per package — touch a file, it must be warning-clean.
+bun run lint:strict
 bun run format
 
 # Re-stage paths that were already part of this commit so formatter output is included.

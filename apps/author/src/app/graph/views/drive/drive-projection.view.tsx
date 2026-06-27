@@ -8,6 +8,7 @@ import { CardTile } from '@workspace/ui/components/card-tile';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
@@ -21,16 +22,24 @@ import {
   Columns2,
   Database,
   Folder,
+  Globe,
   House,
   FolderSymlink,
+  Info,
   LayoutGrid,
   List,
+  Lock,
   Plus,
+  Radio,
   RotateCcw,
+  Send,
   Star,
+  Target,
   Trash2,
   Upload,
+  UserCheck,
   Users,
+  UsersRound,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -38,18 +47,28 @@ import * as React from 'react';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 
-import type { KbAttributes, NodeMeta } from '@/app/graph/graph-data.types';
+import type {
+  KbAttributes,
+  NodeMeta,
+  ResourceFloor,
+  ShareMechanism,
+  SharedByMeEntry,
+} from '@/app/graph/graph-data.types';
+import { STRUCTURAL_LENS_SCOPES } from '@/app/graph/views/registry/projection-view.types';
 import type {
   DriveScope,
+  LensView,
   ProjectionViewProps,
 } from '@/app/graph/views/registry/projection-view.types';
 import {
+  broadcastOut,
   buildContainment,
   childContent,
   childFolders,
   pathTo,
   rootContent,
   rootFolders,
+  sharedOut,
   type LensNode,
 } from '@/app/graph/containment';
 import {
@@ -173,6 +192,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     scope: 'shared',
   },
   {
+    icon: Send,
+    key: 'navSharedByMe',
+    label: (t) => t('graph.drive.navSharedByMe'),
+    scope: 'shared-by-me',
+  },
+  {
     icon: Clock,
     key: 'navRecent',
     label: (t) => t('graph.drive.navRecent'),
@@ -194,6 +219,42 @@ const NAV_ITEMS: readonly NavItem[] = [
 
 type DriveLayout = 'grid' | 'list';
 
+/**
+ * The "Shared with me" mechanism presentation table (ADR-0021 Part C) — maps each
+ * winning mechanism to its badge icon, its short label, and a Hint explaining it. The
+ * order is the precedence order (most deliberate first: personal > cohort > broadcast)
+ * — it drives BOTH the facet chip row sequence and which chips appear (a chip shows
+ * only when its mechanism is present in the shared set). Labels/hints are LITERAL i18n
+ * keys so they stay statically extractable. DISPLAY only — the mechanism is precomputed
+ * server-side under RLS; the view never re-derives access.
+ */
+const SHARE_MECHANISM_ORDER = ['personal', 'cohort', 'broadcast'] as const;
+
+const SHARE_MECHANISM_META: Record<
+  ShareMechanism,
+  {
+    icon: LucideIcon;
+    label: (t: GraphTranslator) => string;
+    hint: (t: GraphTranslator) => string;
+  }
+> = {
+  personal: {
+    icon: UserCheck,
+    label: (t) => t('graph.drive.mechPersonal'),
+    hint: (t) => t('graph.drive.mechPersonalHint'),
+  },
+  cohort: {
+    icon: UsersRound,
+    label: (t) => t('graph.drive.mechCohort'),
+    hint: (t) => t('graph.drive.mechCohortHint'),
+  },
+  broadcast: {
+    icon: Radio,
+    label: (t) => t('graph.drive.mechBroadcast'),
+    hint: (t) => t('graph.drive.mechBroadcastHint'),
+  },
+};
+
 export function DriveProjectionView({
   result,
   messages,
@@ -201,10 +262,13 @@ export function DriveProjectionView({
   onSelect,
   onOpenDocument,
   onEditNode,
+  onRevealInKb,
   folderId = null,
   onNavigate,
   scope: scopeProp,
   onScopeChange,
+  lensView: lensViewProp,
+  onLensViewChange,
   initialLayout,
   onMutated,
   refreshKey,
@@ -230,7 +294,16 @@ export function DriveProjectionView({
   );
   const shortcutEdges = React.useMemo(() => kbData?.shortcuts ?? [], [kbData]);
   const attributesByItem = kbData?.attributesByItem ?? {};
-  const metaByItem = kbData?.metaByItem ?? {};
+  // Memoized so the `?? {}` default is a STABLE reference — `metaByItem` feeds
+  // `floorOf` (the broadcast badge) which is a `useCallback`/`useMemo` dependency;
+  // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
+  const metaByItem = React.useMemo(() => kbData?.metaByItem ?? {}, [kbData]);
+  // The "Shared with me" mechanism annotation (ADR-0021 Part C): each node in the
+  // 'shared' set → the WINNING mechanism that grants ME access (personal > cohort >
+  // broadcast, precedence applied server-side). Pure DISPLAY enrichment of an
+  // already-RLS-admitted set — drives the per-card badge + the facet chip row, never a
+  // fence. Empty when nothing is shared-with-me.
+  const shareMechanism = kbData?.shareMechanism ?? {};
   const currentUserId = kbData?.currentUserId ?? null;
   // The viewer's space verbs — combined with each node's owner (from `metaByItem`)
   // to display-gate its `⋯` menu. Fail-CLOSED default (all false) when no seed: the
@@ -239,6 +312,7 @@ export function DriveProjectionView({
     canUpdate: false,
     canDelete: false,
     canCreate: false,
+    canAccess: false,
   };
   // Per-user "last opened by me" overlay (`resource_id → ISO`); drives the Recent
   // filter (recently VIEWED by me) and its "Viewed" column. Absent key = unopened.
@@ -267,6 +341,24 @@ export function DriveProjectionView({
   const isStarred = scope === 'starred';
   const isRecent = scope === 'recent';
   const isShared = scope === 'shared';
+  // "Open in KB" is pointless in the KB lens itself (a CANONICAL card is already at its
+  // position) — so the card target button + ⋯ item are suppressed there. Every other lens
+  // (flat or an advanced tree of a DIFFERENT set) loses the containment context, so it is
+  // offered. (Shortcut cards, which point elsewhere, keep their own affordance.)
+  const onRevealInKbAction = scope === 'kb' ? undefined : onRevealInKb;
+  // The "Shared with me" facet (ADR-0021 Part C): a client-side filter over the
+  // mechanism annotation — `null` = All. Local to the lens (a UI filter, never a
+  // fence). State is stored raw, but every READER goes through `shareFacet`, which is
+  // forced to `null` (All) outside the 'shared' lens — so the facet always resets when
+  // you leave and re-enter the lens, with no setState-in-effect cascade.
+  const [shareFacetState, setShareFacet] =
+    React.useState<ShareMechanism | null>(null);
+  const shareFacet = isShared ? shareFacetState : null;
+  // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
+  // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
+  // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
+  // list so the cards can show who I shared it with.
+  const isSharedByMe = scope === 'shared-by-me';
   const isHome = scope === 'home';
   // The Trash lens (ADR-0018 fork #4): the trashed set (`deleted_at IS NOT NULL`),
   // resolved server-side under the user's RLS and threaded in `kbData.trash`. It is a
@@ -274,19 +366,193 @@ export function DriveProjectionView({
   // by the edge SELECT policy), so every trashed node is its own "trashed root". No
   // tree, no shortcuts, no breadcrumb, no DnD, no create/upload — only Restore + Purge.
   const isTrash = scope === 'trash';
-  // A flat lens (Home / Starred / Recent / Shared / Trash) hides the folder tree,
-  // breadcrumb path, and shortcuts — the canvas is a flat digest/list, not a folder
-  // you sit in.
-  const isFilterScope = isStarred || isRecent || isShared || isHome || isTrash;
+  // The STRUCTURAL lenses (ADR-0022 Addendum A) — the lenses that can render their
+  // node-set as a containment TREE (the two Shared lenses + Starred). The toggle shows
+  // ONLY here (never Recent/Home). Single source of truth: `STRUCTURAL_LENS_SCOPES`.
+  const isStructuralLens = STRUCTURAL_LENS_SCOPES.has(scope);
+  // The COMMERCIAL entitlement (ADR-0022 Fork 1) — a plan-derived signal, resolved
+  // server-side from a DIFFERENT authority than the RLS verbs (`capabilities`). Fail-
+  // CLOSED default `false` (cheapest plan / no seed). ONE generic unit across all
+  // structural lenses (lens-agnostic).
+  const advancedStructuralEntitled =
+    kbData?.entitlements?.advancedStructuralView ?? false;
+  // The lens DISPLAY MODE (ADR-0022 Fork 5 + Addendum A) — the workbench's server-clamped
+  // `?view=`; CONTROLLED when threaded (`lensViewProp`), else 'flat' (standalone).
+  const lensView: LensView = lensViewProp ?? 'flat';
+  // The advanced (TREE) render is ON only when: a STRUCTURAL lens is active, the mode is
+  // 'advanced', AND the space is entitled. Otherwise the lens stays a flat digest (the
+  // default, and the forced render on a locked plan). This is the ONLY thing the
+  // entitlement changes — the SAME RLS-visible node-set renders either way (Fork 2).
+  const isLensAdvanced =
+    isStructuralLens && lensView === 'advanced' && advancedStructuralEntitled;
+  // A flat lens (Home / Recent / Trash / any structural lens in FLAT mode) hides the
+  // folder tree, breadcrumb path, and shortcuts — the canvas is a flat digest/list, not
+  // a folder you sit in. A structural lens in ADVANCED mode is EXCLUDED here (it renders
+  // the containment tree over its node-set instead, Fork 3/5 + Addendum A).
+  const isFilterScope =
+    (isStructuralLens && !isLensAdvanced) || isRecent || isHome || isTrash;
   const starredSet = React.useMemo(
     () => new Set(kbData?.starredIds ?? []),
     [kbData]
   );
+  // `resourceId → grantees` for the "Shared by me" lens: the membership test for the
+  // lens (canvas ∩ keys) AND the per-card grantee summary in one map. Grantees arrive
+  // pre-sorted by display name from the data layer (don't re-sort).
+  const sharedByMeByResource = React.useMemo(() => {
+    const map = new Map<string, SharedByMeEntry['grantees']>();
+    for (const entry of kbData?.sharedByMe ?? []) {
+      map.set(entry.resourceId, entry.grantees);
+    }
+    return map;
+  }, [kbData]);
 
   const containment = React.useMemo(
     () => buildContainment(result.items, containmentEdges),
     [result.items, containmentEdges]
   );
+
+  // The access-mirror predicate (ADR-0023 §7a) — `granted(id)` = the owner authored a
+  // DIRECT per-user grant on the node (`id ∈ sharedByMe`). The card badge marks a node
+  // shown-as-shared IFF it OR a granted ANCESTOR folder is shared — `sharedOut` walks the
+  // loaded `contains` forest for the nearest granted ancestor. This is the SAME source the
+  // panel's Access summary reads, so badge ≡ panel ≡ access predicate (never divergent).
+  // ALL browse scopes use it, not just 'shared-by-me' (a node shared via an ancestor must
+  // badge wherever it is rendered). Pure display over the RLS-seeded `sharedByMe` + forest.
+  const isGranted = React.useCallback(
+    (id: string) => sharedByMeByResource.has(id),
+    [sharedByMeByResource]
+  );
+
+  // The BROADCAST half of the access-mirror (ADR-0023 §7, the globe state) — `floorOf(id)`
+  // = a node's broadcast floor from the already-loaded `metaByItem` (the node row's
+  // `visibility`, Wave 2). `broadcastOut` walks the SAME `contains` forest as `sharedOut`
+  // for the nearest broadcast-floor ANCESTOR, so a node under a space/org folder badges
+  // GLOBE (floor inheritance). Pure display over the RLS-seeded node meta + forest; the
+  // resolved default lens carries every folder, so every ancestor's floor is present.
+  const floorOf = React.useCallback(
+    (id: string): ResourceFloor | undefined => metaByItem[id]?.visibility,
+    [metaByItem]
+  );
+  // The access STATUS of a node (ADR-0023 §7, owner browse): GLOBE (broadcast) outranks
+  // PEOPLE (targeted) outranks NONE (private). One source for BOTH the grid card and the
+  // list row, so they can never diverge — globe precedence applied HERE, once. Returns the
+  // resolved `sharedOut`/`broadcastOut` verdicts so each badge can name its audience.
+  const accessStatus = React.useCallback(
+    (id: string) => {
+      const broadcast = broadcastOut(containment, id, floorOf);
+      const shared = sharedOut(containment, id, isGranted);
+      const state: 'broadcast' | 'targeted' | 'private' = broadcast.isBroadcast
+        ? 'broadcast'
+        : shared.isShared
+          ? 'targeted'
+          : 'private';
+      return { state, broadcast, shared } as const;
+    },
+    [containment, floorOf, isGranted]
+  );
+  // The per-card / per-row access STATUS badge (ADR-0023 §7a). KB is SPACE-FIRST: a
+  // space-wide broadcast is the TYPICAL audience, so it shows NO badge — a clean card
+  // reads as "shared with the space". Only the EXCEPTIONS are flagged: organization-wide
+  // broadcast (wider, GLOBE), targeted PEOPLE, and PRIVATE (a freshly created node's
+  // personal default — a LOCK, so an un-shared/personal resource stands out). One render
+  // path for the grid + the list so the two surfaces are identical.
+  const renderAccessBadge = React.useCallback(
+    (id: string): React.ReactNode => {
+      const { state, broadcast, shared } = accessStatus(id);
+      if (state === 'broadcast') {
+        // Space-wide broadcast = the typical KB default → no badge. Only org-wide flags.
+        if (broadcast.scope === 'organization') {
+          return (
+            <BroadcastBadge
+              t={t}
+              scope="organization"
+              broadcastViaTitle={broadcast.broadcastVia?.title ?? null}
+            />
+          );
+        }
+        return undefined;
+      }
+      if (state === 'targeted') {
+        return (
+          <SharedOutBadge
+            t={t}
+            direct={shared.direct}
+            grantees={sharedByMeByResource.get(id) ?? []}
+            inheritedFromTitle={shared.inheritedFrom?.title ?? null}
+          />
+        );
+      }
+      // private — personal, not shared (the default at creation); flag it with the lock.
+      return <PrivateBadge t={t} />;
+    },
+    [accessStatus, sharedByMeByResource, t]
+  );
+
+  // The lens node-set ids (ADR-0022 Fork 3 + Addendum A) for the ACTIVE structural lens
+  // — the SAME set the flat lens computes (the advanced tree shows EXACTLY the flat
+  // lens's nodes, only arranged structurally). `'shared'` = visible nodes I do NOT own;
+  // `'shared-by-me'` = the canvas ∩ the ids I have granted OUT; `'starred'` = the canvas
+  // ∩ my starred ids. Empty for any non-structural scope. Computed from the resolved
+  // canvas + the already-loaded overlays — no new data, no new load (Invariant #1).
+  const lensSetIds = React.useMemo(() => {
+    if (isShared) {
+      return new Set(
+        result.items
+          .filter((item) => {
+            const owner = metaByItem[item.id]?.ownerUserId;
+            return owner != null && owner !== currentUserId;
+          })
+          .map((item) => item.id)
+      );
+    }
+    if (isSharedByMe) {
+      return new Set(
+        result.items
+          .filter((item) => sharedByMeByResource.has(item.id))
+          .map((item) => item.id)
+      );
+    }
+    if (isStarred) {
+      const starred = new Set(kbData?.starredIds ?? []);
+      return new Set(
+        result.items
+          .filter((item) => starred.has(item.id))
+          .map((item) => item.id)
+      );
+    }
+    return new Set<string>();
+  }, [
+    isShared,
+    isSharedByMe,
+    isStarred,
+    result.items,
+    metaByItem,
+    currentUserId,
+    sharedByMeByResource,
+    kbData,
+  ]);
+
+  // The advanced lens TREE's containment (ADR-0022 Fork 3 + Addendum A) — the EXISTING
+  // `buildContainment` fed the lens SUBSET of the resolved items + the already-loaded
+  // LIVE `contains` forest. No new data model, no resolver change, no new load
+  // (Invariant #1). The forest builder drops any `contains` edge whose endpoint is NOT
+  // in the subset, so a node whose containing folder is NOT in the lens set has no
+  // parent → it appears at the ROOT of the lens tree — NO synthetic invisible ancestors
+  // (graceful-absence, ADR-0018 §14). Built only when the advanced lens view is active.
+  const lensContainment = React.useMemo(
+    () =>
+      buildContainment(
+        result.items.filter((item) => lensSetIds.has(item.id)),
+        containmentEdges
+      ),
+    [result.items, lensSetIds, containmentEdges]
+  );
+
+  // The containment the TREE traversal walks: the lens subset's forest in the advanced
+  // lens view, else the full graph's forest (kb browse). Display-only — the ⋯ menu /
+  // Move picker / ResourcePanel keep the FULL `containment` (their targets are the whole
+  // graph, never the lens sub-tree).
+  const treeContainment = isLensAdvanced ? lensContainment : containment;
 
   // Shortcuts grouped by source folder (Drive-only symlinks, not containment).
   const shortcutsByFolder = React.useMemo(() => {
@@ -381,9 +647,24 @@ export function DriveProjectionView({
   // lexicographically = chronologically.
   const byRecency = (a: LensNode, b: LensNode) =>
     (openedAtById[b.id] ?? '').localeCompare(openedAtById[a.id] ?? '');
-  const roots = rootFolders(containment);
-  const isRoot = folderId == null;
-  const folder = isRoot ? null : (containment.byId.get(folderId) ?? null);
+  // An advanced structural lens TREE (ADR-0022 + Addendum A) is folder-NAVIGABLE within
+  // its lens: drilling a folder stays on the lens (`?scope=<lens>&folder=…&view=advanced`)
+  // and NARROWS the canvas to that folder's subtree WITHIN the lens subset — it never
+  // leaves the lens for kb-browse, and never widens beyond the lens node-set (the tree
+  // walks `treeContainment`, the lens subset's forest). A `folderId` that is NOT in the
+  // lens subset (e.g. a stale kb-browse location) resolves to null → the lens root, so
+  // the drill can only ever land on a lens folder. The roots/folder below therefore walk
+  // `treeContainment` (the lens subset's forest when advanced, else the full graph). Flat
+  // lenses ignore `folderId` (they are not folder locations).
+  const roots = rootFolders(treeContainment);
+  const drilledFolder =
+    folderId != null ? (treeContainment.byId.get(folderId) ?? null) : null;
+  const isRoot = isLensAdvanced ? drilledFolder == null : folderId == null;
+  const folder = isLensAdvanced
+    ? drilledFolder
+    : isRoot
+      ? null
+      : (treeContainment.byId.get(folderId as string) ?? null);
 
   // The starred set as resolved nodes — `starredIds` mapped through the canvas,
   // dropping ids RLS hid or that no longer resolve. Folders and content split the
@@ -413,7 +694,9 @@ export function DriveProjectionView({
   // A loader lens over the already-RLS-narrowed canvas (ADR-0017 §2.1) — the owner
   // filter is a DISPLAY path, not a fence (the RLS floor is the authority). At Step 1
   // the floor is still 'space', so this surfaces "space-published by someone else".
-  const sharedNodes = isShared
+  // The full shared-with-me set (owner ≠ me), BEFORE the facet filter — used to derive
+  // which mechanism chips to show (only mechanisms actually present in the set).
+  const sharedAllNodes = isShared
     ? result.items
         .map((item) => containment.byId.get(item.id))
         .filter((node): node is LensNode => {
@@ -421,6 +704,33 @@ export function DriveProjectionView({
           const owner = metaByItem[node.id]?.ownerUserId;
           return owner != null && owner !== currentUserId;
         })
+    : [];
+  // The mechanisms present in the current shared set (de-duped, in precedence order) —
+  // drives the facet chip row: a chip is shown only when at least one shared node uses
+  // that mechanism (no empty "cohort" chip when nothing is cohort-shared).
+  const presentMechanisms = SHARE_MECHANISM_ORDER.filter((mech) =>
+    sharedAllNodes.some((node) => shareMechanism[node.id] === mech)
+  );
+  // The facet view of the shared set: All (`shareFacet === null`) shows everything;
+  // a selected mechanism narrows to nodes whose WINNING mechanism matches. A pure
+  // client display filter over the precomputed annotation — never recomputes access.
+  const sharedNodes =
+    isShared && shareFacet != null
+      ? sharedAllNodes.filter((node) => shareMechanism[node.id] === shareFacet)
+      : sharedAllNodes;
+
+  // Shared by me = the resolved canvas ∩ the resourceIds I have granted OUT
+  // (ADR-0021 Part B). The data layer already fail-closed it (a resource I can no
+  // longer see, or whose only grant I revoked, is absent from `sharedByMe`); a
+  // granted id that somehow isn't on the canvas simply doesn't resolve and drops out.
+  // Folders + content split exactly like the 'shared' lens, reusing every card path.
+  const sharedByMeNodes = isSharedByMe
+    ? result.items
+        .map((item) => containment.byId.get(item.id))
+        .filter(
+          (node): node is LensNode =>
+            node != null && sharedByMeByResource.has(node.id)
+        )
     : [];
 
   // "For you" home (ADR-0017 §4): a personal DIGEST over the now-personal visible set,
@@ -468,38 +778,51 @@ export function DriveProjectionView({
     : [];
   const trashMetaByItem = kbData?.trash.metaByItem ?? {};
 
+  // A FLAT structural lens lists its whole set as cards; the ADVANCED lens view
+  // (`isLensAdvanced`) instead falls through to the TREE branch below, which walks
+  // `treeContainment` (the lens subset's forest) — roots + root-loose content, with
+  // folders expanding their lens children inline (Fork 3/5 + Addendum A).
   const folders = (
-    isStarred
+    isStarred && !isLensAdvanced
       ? starredNodes.filter((node) => node.kind === 'folder')
-      : isShared
+      : isShared && !isLensAdvanced
         ? sharedNodes.filter((node) => node.kind === 'folder')
-        : isFilterScope // 'recent' lists no folders
-          ? []
-          : isRoot
-            ? roots
-            : folder
-              ? childFolders(containment, folder.id)
-              : []
+        : isSharedByMe && !isLensAdvanced
+          ? sharedByMeNodes.filter((node) => node.kind === 'folder')
+          : isFilterScope // 'recent' lists no folders
+            ? []
+            : isRoot
+              ? roots
+              : folder
+                ? childFolders(treeContainment, folder.id)
+                : []
   )
     .slice()
     .sort(byTitle);
-  const shortcuts = (
-    isFilterScope || isRoot ? [] : (shortcutsByFolder.get(folderId ?? '') ?? [])
-  )
-    .slice()
-    .sort(byTitle);
+  const shortcuts =
+    // Shortcuts are OFF in an advanced lens tree for v1 (Fork 3) — it is a containment
+    // projection of the lens set, not the full Drive home.
+    (
+      isFilterScope || isRoot || isLensAdvanced
+        ? []
+        : (shortcutsByFolder.get(folderId ?? '') ?? [])
+    )
+      .slice()
+      .sort(byTitle);
   const items = (
-    isStarred
+    isStarred && !isLensAdvanced
       ? starredNodes.filter((node) => node.kind !== 'folder')
-      : isShared
+      : isShared && !isLensAdvanced
         ? sharedNodes.filter((node) => node.kind !== 'folder')
-        : isRecent
-          ? recentNodes
-          : isRoot
-            ? rootContent(containment) // loose top-level content (no parent folder)
-            : folder
-              ? childContent(containment, folder.id)
-              : []
+        : isSharedByMe && !isLensAdvanced
+          ? sharedByMeNodes.filter((node) => node.kind !== 'folder')
+          : isRecent
+            ? recentNodes
+            : isRoot
+              ? rootContent(treeContainment) // loose top-level content (no parent folder)
+              : folder
+                ? childContent(treeContainment, folder.id)
+                : []
   )
     .slice()
     .sort(isRecent ? byRecency : byTitle);
@@ -555,6 +878,7 @@ export function DriveProjectionView({
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
+        onOpenInKb={onRevealInKbAction}
         onEdit={
           node.kind === 'text' && onEditNode
             ? () => onEditNode(node.id)
@@ -581,15 +905,16 @@ export function DriveProjectionView({
         onMutated={onMutated}
         onDetails={() => onSelect(node.id)}
         onCopyToClipboard={onCopyToClipboard}
+        onOpenInKb={onRevealInKbAction}
       />
     ),
     subRows:
       isTree && !ancestors.has(node.id)
         ? [
-            ...childFolders(containment, node.id).map((f) =>
+            ...childFolders(treeContainment, node.id).map((f) =>
               folderRow(f, new Set(ancestors).add(node.id))
             ),
-            ...childContent(containment, node.id).map(itemRow),
+            ...childContent(treeContainment, node.id).map(itemRow),
           ]
         : undefined,
   });
@@ -648,13 +973,22 @@ export function DriveProjectionView({
           <Button
             key={item.key}
             variant="ghost"
-            onClick={() =>
-              // 'kb' returns to the tree root (which also resets the scope); any flat
-              // lens ('starred'/'recent'/'shared') switches to that scope.
-              item.scope && item.scope !== 'kb'
-                ? applyScope(item.scope)
-                : navigate(null)
-            }
+            onClick={() => {
+              // Every wired lens switches via the scope owner (the workbench roots the
+              // folder on a lens switch). The KB lens must NOT use `navigate(null)`: in
+              // the advanced Shared tree (ADR-0022) `goFolder(null)` deliberately STAYS
+              // on the Shared lens, so routing 'kb' through it would trap the user there.
+              if (!item.scope) {
+                navigate(null);
+                return;
+              }
+              applyScope(item.scope);
+              // Uncontrolled fallback: the workbench isn't owning the scope, so reset the
+              // local folder to root here (controlled mode roots in `goScope`).
+              if (!controlled && item.scope === 'kb') {
+                navigate(null);
+              }
+            }}
             data-active={active}
             className={cn(
               'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
@@ -692,8 +1026,8 @@ export function DriveProjectionView({
           <Folder className="text-muted-foreground size-4" aria-hidden />
           <span className="flex-1 truncate">{root.title}</span>
           <span className="text-muted-foreground text-[11px]">
-            {childFolders(containment, root.id).length +
-              childContent(containment, root.id).length}
+            {childFolders(treeContainment, root.id).length +
+              childContent(treeContainment, root.id).length}
           </span>
         </Button>
       ))}
@@ -703,71 +1037,101 @@ export function DriveProjectionView({
   const toolbar = (
     <div className="flex items-center gap-2.5 border-b px-5 py-3">
       <div className="flex min-w-0 items-center gap-1 text-sm">
-        {isFilterScope ? (
-          // A flat filter lens (Starred / Recent) is not a tree location — a single
-          // inert crumb stands in for the folder path.
-          <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
-            {isHome ? (
+        {isFilterScope || isStructuralLens ? (
+          // A flat filter lens (Recent) is not a tree location — a single inert crumb
+          // stands in for the folder path. A structural lens (flat OR advanced) keeps its
+          // lens label as the ROOT crumb — the advanced tree is still a projection of the
+          // LENS set, not the Knowledge-base root. In an advanced lens tree the crumb is
+          // CLICKABLE (returns to the lens root) once drilled, exactly as the kb-browse
+          // root crumb is — same scope, just a narrowed tree.
+          (() => {
+            const lensIcon = isHome ? (
               <House className="size-3.5" aria-hidden />
             ) : isStarred ? (
               <Star className="size-3.5" aria-hidden />
             ) : isShared ? (
               <Users className="size-3.5" aria-hidden />
+            ) : isSharedByMe ? (
+              <Send className="size-3.5" aria-hidden />
             ) : isTrash ? (
               <Trash2 className="size-3.5" aria-hidden />
             ) : (
               <Clock className="size-3.5" aria-hidden />
-            )}
-            {isHome
+            );
+            const lensLabel = isHome
               ? t('graph.drive.navHome')
               : isStarred
                 ? t('graph.drive.navStarred')
                 : isShared
                   ? t('graph.drive.navShared')
-                  : isTrash
-                    ? t('graph.drive.navTrash')
-                    : t('graph.drive.navRecent')}
-          </span>
+                  : isSharedByMe
+                    ? t('graph.drive.navSharedByMe')
+                    : isTrash
+                      ? t('graph.drive.navTrash')
+                      : t('graph.drive.navRecent');
+            // Drilled into an advanced lens tree → the lens label is a button back to the
+            // lens root (keeps the lens scope). Otherwise an inert label.
+            return isLensAdvanced && !isRoot ? (
+              <Button
+                type="button"
+                variant="crumb"
+                size={null}
+                onClick={() => navigate(null)}
+                className="flex shrink-0 items-center gap-1.5 font-semibold"
+              >
+                {lensIcon}
+                {lensLabel}
+              </Button>
+            ) : (
+              <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
+                {lensIcon}
+                {lensLabel}
+              </span>
+            );
+          })()
         ) : dndEnabled ? (
           // The root crumb is also a drop target: dropping a node here re-parents it
           // to the top level (drop the current contains edge, add no new one).
           <RootDropZone>
             {(over) => (
-              <button
+              <Button
                 type="button"
+                variant="crumb"
+                size={null}
                 onClick={() => navigate(null)}
                 title={t('graph.drive.dropOnRoot')}
                 className={cn(
                   'shrink-0 rounded px-1',
-                  isRoot
-                    ? 'text-foreground font-semibold'
-                    : 'text-muted-foreground hover:text-foreground',
+                  isRoot && 'text-foreground font-semibold',
                   over && 'bg-accent text-foreground ring-ring/50 ring-1'
                 )}
               >
                 {t('graph.lens.knowledgeBase')}
-              </button>
+              </Button>
             )}
           </RootDropZone>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="crumb"
+            size={null}
             onClick={() => navigate(null)}
             className={cn(
               'shrink-0',
-              isRoot
-                ? 'text-foreground font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
+              isRoot && 'text-foreground font-semibold'
             )}
           >
             {t('graph.lens.knowledgeBase')}
-          </button>
+          </Button>
         )}
         {/* Full ancestry path (deliberate delta: the prototype showed only the
             immediate folder). Each ancestor is a clickable crumb; the current one
             is bold and inert. */}
         {!isFilterScope && !isRoot && folder
-          ? pathTo(containment, folder.id).map((crumb, index, crumbs) => {
+          ? // In the advanced Shared tree the path walks the SHARED subset's forest
+            // (`treeContainment`) so the breadcrumb never reaches a non-shared ancestor;
+            // kb-browse walks the full graph forest.
+            pathTo(treeContainment, folder.id).map((crumb, index, crumbs) => {
               const isCurrent = index === crumbs.length - 1;
               return (
                 <React.Fragment key={crumb.id}>
@@ -780,13 +1144,15 @@ export function DriveProjectionView({
                       {crumb.title}
                     </span>
                   ) : (
-                    <button
+                    <Button
                       type="button"
+                      variant="crumb"
+                      size={null}
                       onClick={() => navigate(crumb.id)}
-                      className="text-muted-foreground hover:text-foreground truncate"
+                      className="truncate"
                     >
                       {crumb.title}
-                    </button>
+                    </Button>
                   )}
                 </React.Fragment>
               );
@@ -808,6 +1174,7 @@ export function DriveProjectionView({
               onMutated={onMutated}
               onDetails={() => onSelect(folder.id)}
               onCopyToClipboard={onCopyToClipboard}
+              onOpenInKb={onRevealInKbAction}
             />
           </span>
         ) : null}
@@ -832,30 +1199,32 @@ export function DriveProjectionView({
                   { title: clipboard.title }
                 )}
               >
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={handlePaste}
                   aria-label={t(
                     isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
                     { title: clipboard.title }
                   )}
-                  className="hover:bg-accent flex h-7 items-center gap-1.5 px-2 text-sm"
+                  className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-none px-2 text-sm font-normal"
                 >
                   <ClipboardPaste className="size-[15px]" aria-hidden />
                   <span className="max-w-[120px] truncate">
                     {clipboard.title}
                   </span>
-                </button>
+                </Button>
               </Hint>
               <Hint label={t('graph.drive.pasteClear')}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={onClearClipboard}
                   aria-label={t('graph.drive.pasteClear')}
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
                 >
                   <X className="size-[14px]" aria-hidden />
-                </button>
+                </Button>
               </Hint>
             </div>
           ) : (
@@ -878,14 +1247,15 @@ export function DriveProjectionView({
                 </div>
               </Hint>
               <Hint label={t('graph.drive.pasteClear')}>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   onClick={onClearClipboard}
                   aria-label={t('graph.drive.pasteClear')}
-                  className="hover:bg-accent hover:text-foreground grid h-7 w-7 place-items-center border-l"
+                  className="hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
                 >
                   <X className="size-[14px]" aria-hidden />
-                </button>
+                </Button>
               </Hint>
             </div>
           )
@@ -904,38 +1274,81 @@ export function DriveProjectionView({
             {t('graph.drive.upload')}
           </Button>
         ) : null}
+        {/* The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced,
+            shown ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on
+            Recent/Home. When the space is NOT entitled it renders DISABLED, wrapped in a
+            Hint with the upsell copy — NEVER hidden (the locked control IS the upsell,
+            Fork 2). The server clamps `?view=` to 'flat' on a locked plan, so even a
+            forged URL stays flat. */}
+        {isStructuralLens && onLensViewChange ? (
+          <Hint
+            label={
+              advancedStructuralEntitled
+                ? undefined
+                : t('graph.drive.advancedStructuralLocked', {
+                    tariff: t('graph.drive.advancedStructuralTariff'),
+                  })
+            }
+          >
+            <div
+              className="flex overflow-hidden rounded-md border"
+              aria-disabled={!advancedStructuralEntitled}
+            >
+              <Button
+                type="button"
+                variant="segmented"
+                onClick={() => onLensViewChange('flat')}
+                disabled={!advancedStructuralEntitled}
+                aria-label={t('graph.drive.lensViewFlat')}
+                aria-pressed={lensView === 'flat'}
+                className={cn(
+                  'h-7 px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
+                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                {t('graph.drive.lensViewFlat')}
+              </Button>
+              <Button
+                type="button"
+                variant="segmented"
+                onClick={() => onLensViewChange('advanced')}
+                disabled={!advancedStructuralEntitled}
+                aria-label={t('graph.drive.lensViewAdvanced')}
+                aria-pressed={lensView === 'advanced'}
+                className={cn(
+                  'border-l-border h-7 border-l px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
+                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                {t('graph.drive.lensViewAdvanced')}
+              </Button>
+            </div>
+          </Hint>
+        ) : null}
         <div className="flex overflow-hidden rounded-md border">
           <Hint label={t('graph.drive.layoutGrid')}>
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={() => applyLayout('grid')}
               aria-label={t('graph.drive.layoutGrid')}
               aria-pressed={layout === 'grid'}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center',
-                layout === 'grid'
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground'
-              )}
+              className="grid h-7 w-[30px] place-items-center p-0"
             >
               <LayoutGrid className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
           <Hint label={t('graph.drive.layoutList')}>
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={() => applyLayout('list')}
               aria-label={t('graph.drive.layoutList')}
               aria-pressed={layout === 'list'}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center',
-                layout === 'list'
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground'
-              )}
+              className="grid h-7 w-[30px] place-items-center p-0"
             >
               <List className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
         </div>
         {onToggleSplit && scope === 'kb' ? (
@@ -944,20 +1357,18 @@ export function DriveProjectionView({
               split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
             )}
           >
-            <button
+            <Button
               type="button"
+              variant="segmented"
               onClick={onToggleSplit}
               aria-label={t(
                 split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
               )}
               aria-pressed={split}
-              className={cn(
-                'grid h-7 w-[30px] place-items-center rounded-md border',
-                split ? 'bg-accent text-foreground' : 'text-muted-foreground'
-              )}
+              className="border-border grid h-7 w-[30px] place-items-center rounded-md border p-0"
             >
               <Columns2 className="size-[15px]" aria-hidden />
-            </button>
+            </Button>
           </Hint>
         ) : null}
       </div>
@@ -977,22 +1388,41 @@ export function DriveProjectionView({
         currentUserId={currentUserId}
         layout={layout}
         selected={item.id === selectedId}
+        sharedBadge={renderAccessBadge(item.id)}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
             : onSelect(item.id)
         }
         onDetails={() => onSelect(item.id)}
+        footer={
+          isSharedByMe ? (
+            <GranteeSummary
+              t={t}
+              grantees={sharedByMeByResource.get(item.id) ?? []}
+            />
+          ) : isShared && shareMechanism[item.id] ? (
+            <ShareMechanismBadge t={t} mechanism={shareMechanism[item.id]!} />
+          ) : undefined
+        }
         star={
-          <StarButton
-            starred={starredSet.has(item.id)}
-            onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
-            label={t(
-              starredSet.has(item.id)
-                ? 'graph.drive.unstar'
-                : 'graph.drive.star'
-            )}
-          />
+          <>
+            <StarButton
+              starred={starredSet.has(item.id)}
+              onToggle={() => toggleStar(item.id, !starredSet.has(item.id))}
+              label={t(
+                starredSet.has(item.id)
+                  ? 'graph.drive.unstar'
+                  : 'graph.drive.star'
+              )}
+            />
+            {onRevealInKbAction ? (
+              <RevealInKbButton
+                onReveal={() => onRevealInKbAction(item.id)}
+                label={t('graph.panel.openInKb')}
+              />
+            ) : null}
+          </>
         }
         actions={
           <NodeActionsMenu
@@ -1006,6 +1436,7 @@ export function DriveProjectionView({
             onMutated={onMutated}
             onDetails={() => onSelect(item.id)}
             onCopyToClipboard={onCopyToClipboard}
+            onOpenInKb={onRevealInKbAction}
             onEdit={
               item.kind === 'text' && onEditNode
                 ? () => onEditNode(item.id)
@@ -1092,6 +1523,19 @@ export function DriveProjectionView({
             </div>
           ) : null}
 
+          {/* "Shared with me" mechanism facet (ADR-0021 Part C) — a chip row that
+              filters the shared set by mechanism. Only rendered in the 'shared' lens,
+              and only when ≥2 mechanisms are present (a single-mechanism set has
+              nothing to filter). Display over the precomputed annotation. */}
+          {isShared && presentMechanisms.length > 1 ? (
+            <ShareFacetChips
+              t={t}
+              mechanisms={presentMechanisms}
+              active={shareFacet}
+              onChange={setShareFacet}
+            />
+          ) : null}
+
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
           {layout === 'list' ? (
             driveRows.length > 0 ? (
@@ -1100,7 +1544,14 @@ export function DriveProjectionView({
                 // "Modified" column elsewhere): the table's sort state is seeded once at
                 // mount, so without this it keeps a stale `{id:'viewed'}` sort after
                 // leaving Recent and TanStack throws "Column 'viewed' does not exist".
-                key={isRecent ? 'recent' : 'browse'}
+                // ALSO remount when the structural mode flips (flat ↔ tree) — a Shared
+                // lens toggling Flat↔Advanced (ADR-0022) changes `tree` in place; without
+                // a fresh mount TanStack's expanded-row model leaves a stale expand
+                // control behind (a detached duplicate). The mode is part of the table's
+                // identity, so it keys the remount.
+                key={
+                  isRecent ? 'recent' : isTree ? 'browse-tree' : 'browse-flat'
+                }
                 rows={driveRows}
                 tree={isTree}
                 t={t}
@@ -1121,6 +1572,9 @@ export function DriveProjectionView({
                     : [{ id: 'name', desc: false }]
                 }
                 dndEnabled={dndEnabled}
+                // The access-status badge per row (ADR-0023 §7a) — the SAME globe-XOR-people
+                // taxonomy the cards use (globe precedence), so the list mirrors the grid.
+                sharedBadgeFor={(node) => renderAccessBadge(node.id) ?? null}
               />
             ) : null
           ) : (
@@ -1133,16 +1587,51 @@ export function DriveProjectionView({
                   ) : null}
                   <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
                     {folders.map((sub) => {
+                      const folderShared = sharedOut(
+                        containment,
+                        sub.id,
+                        isGranted
+                      );
+                      const folderGrantees =
+                        sharedByMeByResource.get(sub.id) ?? [];
                       const folderCardProps = {
                         title: sub.title,
                         subtitle: t('graph.drive.itemsCount', {
                           count:
-                            childFolders(containment, sub.id).length +
-                            childContent(containment, sub.id).length,
+                            childFolders(treeContainment, sub.id).length +
+                            childContent(treeContainment, sub.id).length,
                         }),
                         layout,
                         onOpen: () => navigate(sub.id),
                         onDetails: () => onSelect(sub.id),
+                        sharedBadge: renderAccessBadge(sub.id),
+                        // The "placement = sharing" hint shows only when THIS folder
+                        // itself confers access (a direct grant or a broadcast floor) —
+                        // dropping a node here would share it. A folder that is shared
+                        // only via a granted ANCESTOR gets the badge (above) but not the
+                        // hint (the hint is about what placing INTO this folder does, and
+                        // the ancestor already covers that one level up).
+                        folderHint:
+                          folderShared.direct ||
+                          metaByItem[sub.id]?.visibility === 'space' ||
+                          metaByItem[sub.id]?.visibility === 'organization' ? (
+                            <SharedFolderHint
+                              t={t}
+                              visibility={metaByItem[sub.id]?.visibility}
+                              grantees={folderGrantees}
+                            />
+                          ) : undefined,
+                        footer: isSharedByMe ? (
+                          <GranteeSummary
+                            t={t}
+                            grantees={sharedByMeByResource.get(sub.id) ?? []}
+                          />
+                        ) : isShared && shareMechanism[sub.id] ? (
+                          <ShareMechanismBadge
+                            t={t}
+                            mechanism={shareMechanism[sub.id]!}
+                          />
+                        ) : undefined,
                         star: (
                           <StarButton
                             starred={starredSet.has(sub.id)}
@@ -1170,6 +1659,7 @@ export function DriveProjectionView({
                             onMutated={onMutated}
                             onDetails={() => onSelect(sub.id)}
                             onCopyToClipboard={onCopyToClipboard}
+                            onOpenInKb={onRevealInKbAction}
                             triggerClassName={CARD_ACTION_TRIGGER}
                           />
                         ),
@@ -1202,6 +1692,16 @@ export function DriveProjectionView({
                             : onSelect(target.id)
                         }
                         onDetails={() => onSelect(target.id)}
+                        actions={
+                          // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
+                          // the KB lens — it jumps to the target's CANONICAL home (target.id).
+                          onRevealInKb ? (
+                            <RevealInKbButton
+                              onReveal={() => onRevealInKb(target.id)}
+                              label={t('graph.panel.openInKb')}
+                            />
+                          ) : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -1230,7 +1730,16 @@ export function DriveProjectionView({
             <EmptyState>{t('graph.drive.recentEmpty')}</EmptyState>
           ) : null}
           {isShared && folders.length === 0 && items.length === 0 ? (
-            <EmptyState>{t('graph.drive.sharedEmpty')}</EmptyState>
+            <EmptyState>
+              {/* A facet filtered the set to nothing → "nothing shared this way";
+                  an empty lens with no facet → the generic shared-empty copy. */}
+              {shareFacet != null
+                ? t('graph.drive.facetFilteredEmpty')
+                : t('graph.drive.sharedEmpty')}
+            </EmptyState>
+          ) : null}
+          {isSharedByMe && folders.length === 0 && items.length === 0 ? (
+            <EmptyState>{t('graph.drive.sharedByMeEmpty')}</EmptyState>
           ) : null}
           {!isFilterScope &&
           isRoot &&
@@ -1322,8 +1831,9 @@ function StarButton({
   alwaysShow?: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       aria-label={label}
       aria-pressed={starred}
       onClick={(event) => {
@@ -1331,7 +1841,7 @@ function StarButton({
         onToggle();
       }}
       className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md',
+        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
         starred || alwaysShow ? 'opacity-100' : CARD_ACTION_TRIGGER
       )}
     >
@@ -1342,7 +1852,365 @@ function StarButton({
         )}
         aria-hidden
       />
-    </button>
+    </Button>
+  );
+}
+
+/**
+ * RevealInKbButton — a small inline action that sits next to the star and jumps to this
+ * resource's position in the KB containment tree (the 'kb' lens at its parent folder).
+ * Hover-revealed like the other card actions; the same affordance lives in the `⋯` menu
+ * ("Open in KB") for surfaces without a star.
+ */
+function RevealInKbButton({
+  onReveal,
+  label,
+}: {
+  onReveal: () => void;
+  label: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        onReveal();
+      }}
+      className={cn(
+        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
+        CARD_ACTION_TRIGGER
+      )}
+    >
+      <Target className="text-muted-foreground size-4" aria-hidden />
+    </Button>
+  );
+}
+
+/**
+ * GranteeSummary — the "who I shared this with" line on a "Shared by me" card
+ * (ADR-0021 Part B). A compact avatar cluster + a label: "Shared with {name}" for
+ * one grantee, "Shared with {name} +{n}" for a few, or "Shared with {n} people" once
+ * the cluster would overflow. Each avatar carries a Hint tooltip with the person's
+ * name + email (the same EntityAvatar + Hint pattern the Share dialog uses for the
+ * per-person grant rows). Grantees arrive pre-sorted by display name from the data
+ * layer (don't re-sort).
+ */
+const GRANTEE_AVATAR_CAP = 3;
+
+function GranteeSummary({
+  t,
+  grantees,
+}: {
+  t: GraphTranslator;
+  grantees: SharedByMeEntry['grantees'];
+}) {
+  if (grantees.length === 0) {
+    return null;
+  }
+  const shown = grantees.slice(0, GRANTEE_AVATAR_CAP);
+  const overflow = grantees.length - shown.length;
+  // One → name the person; a few → name the first + "+n"; many → just the count.
+  const label =
+    grantees.length === 1
+      ? t('graph.drive.sharedWithOne', { name: grantees[0]!.displayName })
+      : grantees.length <= GRANTEE_AVATAR_CAP
+        ? t('graph.drive.sharedWithMany', {
+            name: grantees[0]!.displayName,
+            count: grantees.length - 1,
+          })
+        : t('graph.drive.sharedWithCount', { count: grantees.length });
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex -space-x-1.5">
+        {shown.map((g) => (
+          <Hint key={g.userId} label={g.email ?? g.displayName}>
+            <span className="inline-flex">
+              <EntityAvatar
+                name={g.displayName}
+                className="ring-card size-5 ring-2"
+                fallbackClassName="text-[9px]"
+              />
+            </span>
+          </Hint>
+        ))}
+        {overflow > 0 ? (
+          <span className="bg-muted text-muted-foreground ring-card grid size-5 place-items-center rounded-full text-[9px] font-semibold ring-2">
+            +{overflow}
+          </span>
+        ) : null}
+      </div>
+      <span className="text-muted-foreground truncate text-xs">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * SharedOutBadge — the per-card "this is shared out" people-icon badge (ADR-0023 §7a,
+ * Tier 1). It marks a node shown-as-shared per the access-mirror invariant: the node OR
+ * a granted ancestor folder is shared (computed by `sharedOut` over the loaded forest).
+ * It renders in ALL browse scopes (not only 'shared-by-me') so a node shared via an
+ * ancestor badges wherever it appears. The Hint names the audience: the grantee count/
+ * names for a direct grant, or "Shared via {folder}" when access is purely inherited —
+ * so the badge can never silently imply a node is shared without saying by whom. Pure
+ * DISPLAY mirror of the already-resolved `sharedByMe` + forest; never a fence.
+ */
+function SharedOutBadge({
+  t,
+  direct,
+  grantees,
+  inheritedFromTitle,
+}: {
+  t: GraphTranslator;
+  /** The node carries its OWN direct grant (vs purely inherited from an ancestor). */
+  direct: boolean;
+  /** Grantees of the DIRECT grant (empty when access is purely inherited). */
+  grantees: SharedByMeEntry['grantees'];
+  /** Title of the nearest granted ancestor when access is (also) inherited. */
+  inheritedFromTitle: string | null;
+}) {
+  // The tooltip names WHO can read it: the direct grantees (count/names) when granted
+  // directly, else the inheriting folder. A direct grant takes precedence in the copy.
+  const label =
+    direct && grantees.length > 0
+      ? grantees.length === 1
+        ? t('graph.drive.sharedWithOne', { name: grantees[0]!.displayName })
+        : grantees.length <= GRANTEE_AVATAR_CAP
+          ? t('graph.drive.sharedWithMany', {
+              name: grantees[0]!.displayName,
+              count: grantees.length - 1,
+            })
+          : t('graph.drive.sharedWithCount', { count: grantees.length })
+      : inheritedFromTitle != null
+        ? t('graph.drive.sharedOutInherited', { folder: inheritedFromTitle })
+        : t('graph.drive.sharedOutBadge');
+  return (
+    <AccessBadgeChip label={label}>
+      <Users className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * AccessBadgeChip — the shared round icon-chip shell for the access-status badges
+ * (ADR-0023 §7a): the people-icon `SharedOutBadge` and the globe `BroadcastBadge` are the
+ * SAME `size-5` muted round chip wrapped in a `Hint`, differing only in the icon + the
+ * tooltip copy. Lifting the shell keeps the two badges pixel-identical and gives the
+ * globe-XOR-people taxonomy one visual vocabulary (ui-primitive-hygiene). The Hint label
+ * doubles as the `aria-label`, so the badge always names its audience (never a silent mark).
+ */
+function AccessBadgeChip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Hint label={label}>
+      <span
+        aria-label={label}
+        className="text-muted-foreground bg-muted grid size-5 shrink-0 place-items-center rounded-full"
+      >
+        {children}
+      </span>
+    </Hint>
+  );
+}
+
+/**
+ * BroadcastBadge — the per-card GLOBE badge (ADR-0023 §7a, the broadcast state): the node's
+ * EFFECTIVE floor is `space`/`organization`, either its OWN `visibility` or — via floor
+ * inheritance — an owner-scoped ancestor folder on a broadcast floor (`broadcastOut`). It
+ * OUTRANKS the people badge (a broadcast node is "for everyone in the scope", the widest
+ * audience). The Hint NAMES the scope ("Visible to everyone in {Space|Organization}") and,
+ * when inherited, the broadcasting folder — so the globe can never silently imply a blast
+ * radius. Pure DISPLAY mirror of the RLS-seeded node `visibility` + forest; never a fence.
+ */
+function BroadcastBadge({
+  t,
+  scope,
+  broadcastViaTitle,
+}: {
+  t: GraphTranslator;
+  /** The broadcast scope — the node's own floor, else the inheriting folder's. */
+  scope: 'space' | 'organization';
+  /** Title of the broadcasting ANCESTOR folder when broadcast is inherited, else null. */
+  broadcastViaTitle: string | null;
+}) {
+  const scopeLabel =
+    scope === 'organization'
+      ? t('graph.drive.broadcastScopeOrganization')
+      : t('graph.drive.broadcastScopeSpace');
+  // Inherited → name BOTH the scope and the broadcasting folder; own floor → the scope only.
+  const label =
+    broadcastViaTitle != null
+      ? t('graph.drive.broadcastViaFolder', {
+          scope: scopeLabel,
+          folder: broadcastViaTitle,
+        })
+      : t('graph.drive.broadcastBadge', { scope: scopeLabel });
+  return (
+    <AccessBadgeChip label={label}>
+      <Globe className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * PrivateBadge — flags a PRIVATE (personal, not-shared) node. KB inverts the default: the
+ * space-wide broadcast (the common case) is badge-less, so the EXCEPTION worth surfacing is
+ * the still-personal resource — a freshly created node is private by default (ADR-0017), and
+ * the lock makes "this is yours only, not yet shared with the space" legible at a glance.
+ */
+function PrivateBadge({ t }: { t: GraphTranslator }) {
+  return (
+    <AccessBadgeChip label={t('graph.drive.privateBadge')}>
+      <Lock className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * SharedFolderHint — the load-bearing "placement = sharing" warning on a folder that
+ * confers access (ADR-0023 §5 + §7a). Because there is NO subtractive detach, dropping
+ * a node into a shared folder auto-shares it; for a `space`/`organization`-FLOOR folder
+ * that is an AUTO-BROADCAST to everyone in the scope. The copy MUST name the actual
+ * audience — and for a floor folder the SCOPE explicitly — never collapse a floor into a
+ * generic "shared with N people" (the only guardrail against an accidental broadcast).
+ * Precedence: a broadcast floor (the widest blast radius) is named even when the folder
+ * ALSO has per-person grants. Pure display over the node's `visibility` + `sharedByMe`.
+ */
+function SharedFolderHint({
+  t,
+  visibility,
+  grantees,
+}: {
+  t: GraphTranslator;
+  visibility: ResourceFloor | undefined;
+  grantees: SharedByMeEntry['grantees'];
+}) {
+  const text =
+    visibility === 'organization'
+      ? t('graph.drive.sharedFolderHintOrganization')
+      : visibility === 'space'
+        ? t('graph.drive.sharedFolderHintSpace')
+        : grantees.length === 1
+          ? t('graph.drive.sharedFolderHintPeople', {
+              name: grantees[0]!.displayName,
+            })
+          : grantees.length > 1
+            ? t('graph.drive.sharedFolderHintPeopleCount', {
+                count: grantees.length,
+              })
+            : null;
+  if (text == null) {
+    return null;
+  }
+  return (
+    <div className="text-muted-foreground mt-1 flex items-start gap-1.5 text-[11px]">
+      <Info className="mt-px size-3 shrink-0" aria-hidden />
+      <span className="whitespace-normal">{text}</span>
+    </div>
+  );
+}
+
+/**
+ * ShareMechanismBadge — the per-card "why is this shared with me" badge in the
+ * 'shared' (incoming) lens ONLY (ADR-0021 Part C). A compact shadcn `Badge` (the same
+ * chip primitive the cards already use) + a small lucide icon + the mechanism label,
+ * wrapped in a `Hint` that explains the mechanism (the label alone is terse). The
+ * mechanism is the precomputed WINNING one (personal > cohort > broadcast) — DISPLAY
+ * over an already-resolved, already-fenced set, never a recomputed access decision.
+ */
+function ShareMechanismBadge({
+  t,
+  mechanism,
+}: {
+  t: GraphTranslator;
+  mechanism: ShareMechanism;
+}) {
+  const meta = SHARE_MECHANISM_META[mechanism];
+  const Icon = meta.icon;
+  const label = meta.label(t);
+  return (
+    <Hint label={meta.hint(t)}>
+      <Badge
+        variant="secondary"
+        className="gap-1 font-normal"
+        aria-label={label}
+      >
+        <Icon className="size-3" aria-hidden />
+        <span className="truncate">{label}</span>
+      </Badge>
+    </Hint>
+  );
+}
+
+/**
+ * ShareFacetChips — the facet/chip row above the 'shared' lens (ADR-0021 Part C). One
+ * "All" chip + one chip per mechanism PRESENT in the shared set (absent mechanisms are
+ * never shown). Clicking a mechanism narrows the rendered shared nodes to it; "All"
+ * clears the filter. A client display filter over the precomputed annotation — facet
+ * state is local to the lens and resets on leaving it. Built from the `Button` toggle
+ * pattern the toolbar already uses (`aria-pressed`, rounded chips, accent-on-active),
+ * NOT a new primitive (shadcn-patterns-required).
+ */
+function ShareFacetChips({
+  t,
+  mechanisms,
+  active,
+  onChange,
+}: {
+  t: GraphTranslator;
+  mechanisms: readonly ShareMechanism[];
+  active: ShareMechanism | null;
+  onChange: (next: ShareMechanism | null) => void;
+}) {
+  const chip = (
+    key: string,
+    selected: boolean,
+    label: string,
+    onClick: () => void,
+    icon?: LucideIcon
+  ) => {
+    const Icon = icon;
+    return (
+      <Button
+        key={key}
+        type="button"
+        variant="ghost"
+        size="pill"
+        onClick={onClick}
+        aria-pressed={selected}
+        className={cn(
+          'border',
+          selected
+            ? 'bg-accent text-foreground border-transparent'
+            : 'text-muted-foreground border-border hover:bg-accent hover:text-foreground'
+        )}
+      >
+        {Icon ? <Icon className="size-3" aria-hidden /> : null}
+        {label}
+      </Button>
+    );
+  };
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+      {chip('all', active == null, t('graph.drive.facetAll'), () =>
+        onChange(null)
+      )}
+      {mechanisms.map((mech) =>
+        chip(
+          mech,
+          active === mech,
+          SHARE_MECHANISM_META[mech].label(t),
+          () => onChange(mech),
+          SHARE_MECHANISM_META[mech].icon
+        )
+      )}
+    </div>
   );
 }
 
@@ -1371,6 +2239,9 @@ function FolderCard({
   onDetails,
   star,
   actions,
+  footer,
+  sharedBadge,
+  folderHint,
   dnd,
 }: {
   title: string;
@@ -1387,6 +2258,14 @@ function FolderCard({
    * need a separate affordance — a deliberate delta from the prototype (which
    * navigated folders with no action surface). Omitted for shortcut cards. */
   actions?: React.ReactNode;
+  /** Extra line under the subtitle (the "Shared by me" grantee summary). */
+  footer?: React.ReactNode;
+  /** The access-mirror people-icon badge, shown when the folder is shared out
+   * (ADR-0023 §7a) — direct OR via a granted ancestor. Inline beside the title. */
+  sharedBadge?: React.ReactNode;
+  /** The "placement = sharing" hint on a folder that confers access (ADR-0023 §7a) —
+   * names the audience / floor scope. Rendered under the subtitle. */
+  folderHint?: React.ReactNode;
   /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
   dnd?: CardDnd;
 }) {
@@ -1429,8 +2308,13 @@ function FolderCard({
           />
         )}
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-medium">{title}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{title}</span>
+            {sharedBadge}
+          </div>
           <div className="text-muted-foreground text-xs">{subtitle}</div>
+          {folderHint}
+          {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
         {shortcut ? (
           <ArrowUpRight
@@ -1461,6 +2345,8 @@ function ItemCard({
   onDetails,
   star,
   actions,
+  footer,
+  sharedBadge,
   dnd,
 }: {
   t: GraphTranslator;
@@ -1478,6 +2364,11 @@ function ItemCard({
   star?: React.ReactNode;
   /** Hover `⋯` action menu for this node (Details opens the panel). */
   actions?: React.ReactNode;
+  /** Extra line under the meta line (the "Shared by me" grantee summary). */
+  footer?: React.ReactNode;
+  /** The access-mirror people-icon badge, shown when the node is shared out (ADR-0023
+   * §7a) — direct OR via a granted ancestor. Rendered inline beside the title. */
+  sharedBadge?: React.ReactNode;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;
 }) {
@@ -1530,10 +2421,14 @@ function ItemCard({
           'aria-hidden': true,
         })}
         <div className="min-w-0 flex-1 text-left">
-          <div className="truncate text-sm font-medium">{node.title}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{node.title}</span>
+            {sharedBadge}
+          </div>
           <div className="text-muted-foreground truncate text-xs">
             {metaLine}
           </div>
+          {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
       </CardTile>
       {star || actions ? (
@@ -1971,6 +2866,7 @@ function DriveListTable({
   defaultSorting,
   tree = false,
   dndEnabled = false,
+  sharedBadgeFor,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -1990,6 +2886,9 @@ function DriveListTable({
   /** Wire rows as drag sources / folder rows as drop targets (move = re-parent).
    * Only in 'kb' browse — flat lenses are read-only digests. */
   dndEnabled?: boolean;
+  /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
+   * out — rendered in the name cell so the list mirrors the grid cards. */
+  sharedBadgeFor?: (node: LensNode) => React.ReactNode;
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
@@ -2053,13 +2952,14 @@ function DriveListTable({
             >
               {tree ? (
                 row.getCanExpand() ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
                       row.getToggleExpandedHandler()();
                     }}
-                    className="text-muted-foreground hover:text-foreground -ml-1 shrink-0 rounded p-0.5"
+                    className="text-muted-foreground hover:text-foreground -ml-1 h-auto shrink-0 rounded p-0.5 hover:bg-transparent"
                     aria-label={t(
                       row.getIsExpanded()
                         ? 'graph.tree.collapse'
@@ -2073,7 +2973,7 @@ function DriveListTable({
                       )}
                       aria-hidden
                     />
-                  </button>
+                  </Button>
                 ) : (
                   // Align leaf rows with the chevron of expandable siblings.
                   <span className="size-3.5 shrink-0" aria-hidden />
@@ -2089,7 +2989,9 @@ function DriveListTable({
                   className="text-muted-foreground size-3.5 shrink-0"
                   aria-hidden
                 />
-              ) : null}
+              ) : (
+                (sharedBadgeFor?.(r.node) ?? null)
+              )}
             </div>
           );
         },
@@ -2162,6 +3064,7 @@ function DriveListTable({
       onToggleStar,
       recentOpenedAt,
       tree,
+      sharedBadgeFor,
     ]
   );
 

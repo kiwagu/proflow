@@ -18,6 +18,9 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/zod-schema-first-contracts.mdc
 @.cursor/rules/ui-i18n-json-required.mdc
 @.cursor/rules/seed-dictionary-coverage.mdc
+@.cursor/rules/ui-primitive-hygiene.mdc
+@.cursor/rules/security-review-before-commit.mdc
+@.cursor/rules/lint-warnings-block-commit.mdc
 
 ## Architecture & routing
 

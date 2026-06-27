@@ -86,6 +86,11 @@ export const config = [
       '**/.wrangler/**',
       '**/.open-next/**',
       '**/storybook-static/**',
+      // Vendored, dynamically-downloaded dev-browser artifacts (side-loaded
+      // react-devtools extension + persistent profile for `bun run dev:browser`);
+      // gitignored, not our source — never lint them (parity with node_modules).
+      '**/.dev-browser-extensions/**',
+      '**/.dev-browser-profile/**',
     ],
   },
   {

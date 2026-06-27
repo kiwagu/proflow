@@ -24,11 +24,15 @@ export function ProfileAvatarUpload({
     const fileName = `${userId}-${Date.now()}.${fileExt}`;
     const filePath = `avatars/${userId}/${fileName}`;
 
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('media')
+      // No upsert: `upsert: true` makes storage emit INSERT … ON CONFLICT …
+      // RETURNING *, which Postgres checks against a SELECT policy on
+      // storage.objects — and the 2026-06-27 advisor hardening dropped the media
+      // SELECT policy, so upsert now fails RLS (42501). A plain INSERT needs no
+      // SELECT. The filename is timestamp-unique anyway, so upsert was never needed.
       .upload(filePath, file, {
         cacheControl: '3600',
-        upsert: true,
       });
 
     if (error) {

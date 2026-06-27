@@ -22,20 +22,27 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { request } from '@playwright/test';
+import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
 
 import {
   actorCookieHeader,
   actorSsrAuthCookies,
   addActor,
+  ADVANCED_SHARED_SCENARIO,
   authenticatedClient,
   bootstrapEphemeralTenant,
   bootstrapMemberActor,
   buildBoardSpec,
   buildKnowledgeBaseSpec,
+  CONTAINMENT_INHERITANCE_SCENARIO,
   createActor,
+  DIRECTORY_PICKER_SCENARIO,
+  DIRECTORY_PICKER_DISPLAY_NAMES,
   makeSeedClient,
   materializeScenario,
+  PER_USER_SHARE_SCENARIO,
   resolveRoleIds,
+  SHARE_MECHANISM_SCENARIO,
   slug,
   teardownTenant,
   type MaterializedScenario,
@@ -1268,4 +1275,513 @@ export async function materializeFixture(
         stable: false,
       }),
   });
+}
+
+// ── ADR-0022 Addendum A: tariff-gated advanced STRUCTURAL-view entitlement (config seed) ──
+//
+// The advanced (structural) display of the STRUCTURAL lenses (the two Shared lenses +
+// Starred + Trash) is gated by the COMMERCIAL `advanced_structural_view` entitlement — a
+// scoped `runtime_settings` row resolved global→org→space with org∧space AND-composition
+// (a space's plan can never exceed its org's). Wave 1's `rpc_resolve_platform_flag` reads
+// it; here we SET it for the test by writing the scoped rows directly via the service-role
+// client (a control-plane config write, NOT a knowledge-resource seed — the forbidden path
+// is migration-seeding DOMAIN content, not setup-time config). The entitlement is a DISPLAY
+// gate, never an access fence: the SAME RLS-visible node-set renders in both modes, so
+// toggling it changes pixels, not rows.
+
+const ADVANCED_STRUCTURAL_VIEW_SETTING_KEY =
+  PLATFORM_ENTITLEMENT_SETTING_KEYS.advanced_structural_view;
+
+/** Upsert ONE scoped `runtime_settings` boolean row (org or space scope) for the
+ * advanced-structural-view entitlement, via service-role (setup only). */
+async function upsertEntitlementRow(
+  service: SupabaseClient,
+  scope: 'organization' | 'space',
+  scopeId: string,
+  enabled: boolean
+): Promise<void> {
+  const { error } = await service.from('runtime_settings').upsert(
+    {
+      scope,
+      scope_id: scopeId,
+      key: ADVANCED_STRUCTURAL_VIEW_SETTING_KEY,
+      value: enabled,
+      value_type: 'boolean',
+      is_public: false,
+    },
+    { onConflict: 'scope,key,scope_target' }
+  );
+  if (error) {
+    throw new Error(`upsertEntitlementRow(${scope}): ${error.message}`);
+  }
+}
+
+/**
+ * Set the advanced-structural-view entitlement for a tenant's space (ADR-0022 Addendum A).
+ * The resolver AND-composes org∧space, so an ENTITLED space needs BOTH rows true; a
+ * "locked" space = either row false/absent. Common cases:
+ *   - entitle a space:  setAdvancedStructuralEntitlement(t, { org: true,  space: true })
+ *   - lock a space:     (don't call it — absent rows resolve false) OR { org/space:false }
+ *   - org-off override: setAdvancedStructuralEntitlement(t, { org: false, space: true })
+ */
+export async function setAdvancedStructuralEntitlement(
+  tenant: KnowledgeGraphTenant,
+  opts: { org: boolean; space: boolean }
+): Promise<void> {
+  await upsertEntitlementRow(
+    tenant.service,
+    'organization',
+    tenant.organizationId,
+    opts.org
+  );
+  await upsertEntitlementRow(
+    tenant.service,
+    'space',
+    tenant.spaceId,
+    opts.space
+  );
+}
+
+// ── ADR-0022: the advanced-shared CONTENT fixture (the shared node-set) ──────
+//
+// The advanced (structural) view renders the SAME RLS-visible shared node-set as the
+// flat digest. That node-set is now a CATALOG scenario (`ADVANCED_SHARED_SCENARIO`) so
+// the demo DB and this e2e build the worked-example tree the SAME way, through the one
+// `/author/graph/*` create-vocabulary — never an inline `createFolder`/`createDoc` tree.
+// `materializeFixture` CREATES it (folders/docs via the live routes, the floor publish via
+// `setFloor`, the containment via `contain`); this thin wrapper resolves the named refs +
+// the titles the DOM assertions key on. The COMMERCIAL entitlement is control-plane config,
+// out of scope for a content scenario — set it separately via `setAdvancedStructuralEntitlement`.
+
+/** The shared-fixture titles the advanced-shared spec's DOM assertions key on — the SAME
+ * set must appear in both display modes. Kept in sync with `ADVANCED_SHARED_SCENARIO`. */
+export const ADVANCED_SHARED_TITLES = {
+  /** The shared folder (published) — gains an expand control in the advanced tree. */
+  folder: 'Shared Folder',
+  /** Lives inside the shared folder → nests under it in the advanced tree. */
+  nested: 'Nested Shared Doc',
+  /** Parent folder is NOT shared → roots in the advanced tree (orphan-at-root). */
+  orphan: 'Orphan Shared Doc',
+} as const;
+
+/** The advanced-shared structural-view fixture, resolved from the shared catalog scenario:
+ * a shared folder ⊃ a shared doc (nests) + an orphan doc whose private parent is invisible
+ * (roots). `materializeFixture` has already CREATED + published the tree through the runtime
+ * RLS path; this only names the pieces the spec asserts against. */
+export type AdvancedSharedFixture = {
+  /** The space the shared lens is scoped to. */
+  spaceId: string;
+  /** The published shared folder (the shared container) — `knr_…`. */
+  folderId: string;
+  /** The published doc inside the shared folder → nests under it in the tree — `knr_…`. */
+  nestedDocId: string;
+  /** The published doc whose parent folder is private → roots in the tree — `knr_…`. */
+  orphanDocId: string;
+  /** The titles the DOM assertions key on (folder / nested / orphan). */
+  titles: typeof ADVANCED_SHARED_TITLES;
+};
+
+/**
+ * Materialize the advanced-shared structural-view scenario over an existing tenant and
+ * project its refs onto the spec shape. Owned by the tenant's `granted` (`admin`) actor; a
+ * non-owning member (see `bootstrapMemberActor`) sees the three published nodes as its
+ * whole "Shared with me" set, which both display modes render (flat digest ↔ advanced tree).
+ */
+export async function seedAdvancedSharedFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<AdvancedSharedFixture> {
+  const { refs } = await materializeFixture(ADVANCED_SHARED_SCENARIO, tenant);
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`advanced-shared fixture: missing ref "${ref}"`);
+    return value;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('advanced-shared/folder'),
+    nestedDocId: id('advanced-shared/nested'),
+    orphanDocId: id('advanced-shared/orphan'),
+    titles: ADVANCED_SHARED_TITLES,
+  };
+}
+
+// ── ADR-0019: per-person (per-user) sharing fixture ──────────────────────────
+//
+// The access-matrix spec (grantee sees / third blind / revoke narrows / re-grant
+// restores / authority / cross-space) draws ENTIRELY from the shared
+// `PER_USER_SHARE_SCENARIO` catalog entry — no inline create helpers — so the demo
+// DB and the test build the grant through the one Share transport
+// (`POST /author/graph/visibility`, grantType:'user'). `materializeFixture` already
+// CREATES the per-user grant (the scenario's `userGrants` field is driven via
+// `seedClientFor(owner).grantUser`); this thin wrapper resolves the named refs +
+// actors the matrix asserts against (the grantee logs in to confirm visibility; the
+// un-granted outsider to confirm fail-closed; the plain-member `bystander` to confirm
+// a non-owner non-access-manager cannot grant). The revoke→re-grant arc is driven
+// through the SAME shared vocabulary (`seedClientFor(owner).revokeUser` /
+// `.grantUser`), so the spec never inlines a raw `del('/author/graph/visibility')`.
+
+/** The display names the per-user-share scenario gives its co-members (ADR-0020):
+ * the directory must resolve THESE, never a bare short-id. Kept in sync with the
+ * `displayName` fields on `PER_USER_SHARE_SCENARIO.actors`. */
+export const PER_USER_SHARE_DISPLAY_NAMES = {
+  grantee: 'Grace Granger',
+  outsider: 'Otis Outerly',
+  bystander: 'Bobby Bystand',
+} as const;
+
+/** The per-person-sharing fixture, resolved from the shared catalog scenario. */
+export type PerUserShareFixture = {
+  /** The space the multi-member directory is scoped to (ADR-0020 GET param). */
+  spaceId: string;
+  /** The private folder that contains the shared + control docs. */
+  folderId: string;
+  /** The private doc shared with `grantee` via a per-user grant (visible to grantee). */
+  grantedDocId: string;
+  /** A private sibling with NO grant (control — neither teammate can see it). */
+  unsharedDocId: string;
+  /** The resource OWNER (`admin`) — always sees its own private content. */
+  owner: KnowledgeActor;
+  /** The member the granted doc is shared WITH (sees it via the per-user grant). */
+  grantee: KnowledgeActor;
+  /** A member with NO grant (the granted doc stays invisible — fail-closed). */
+  outsider: KnowledgeActor;
+  /** A plain `member` (no `space.knowledge.access`) — proves a non-owner
+   * non-access-manager cannot grant/revoke (the authority-negative actor). */
+  bystander: KnowledgeActor;
+  /** Display names the co-member directory must resolve for the picker / grant rows. */
+  displayNames: typeof PER_USER_SHARE_DISPLAY_NAMES;
+};
+
+/**
+ * Materialize the per-person-sharing scenario over an existing tenant and project
+ * its refs/actors onto the matrix-spec shape. The grant is already CREATED by
+ * `materializeFixture` through the live Share endpoint; this only names the pieces.
+ */
+export async function seedPerUserShareFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<PerUserShareFixture> {
+  const { refs, actors } = await materializeFixture(
+    PER_USER_SHARE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`per-user-share fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(`per-user-share fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('per-user-share/folder'),
+    grantedDocId: id('per-user-share/granted'),
+    unsharedDocId: id('per-user-share/unshared'),
+    owner: who('admin'),
+    grantee: who('grantee'),
+    outsider: who('outsider'),
+    bystander: who('bystander'),
+    displayNames: PER_USER_SHARE_DISPLAY_NAMES,
+  };
+}
+
+// ── ADR-0021 Part C: "Shared with me" mechanism-distinction fixture ──────────
+//
+// Wave 3a landed the DATA layer: the graph annotates each node in the `'shared'` lens
+// (visible-not-owned) with the WINNING mechanism that admits the current user, precedence
+// `personal > cohort > broadcast` (`annotateShareMechanism` → `KbViewData.shareMechanism`).
+// The Wave 3b RENDER agent's badge/facet e2e draws its tree ENTIRELY from the shared
+// `SHARE_MECHANISM_SCENARIO` catalog entry (via this fixture) — never an inline
+// `createFolder`/`createDoc` or grant/cohort setup — so the demo DB and the test build the
+// four admitting mechanisms the SAME way: the per-user grants from the owner via the live
+// Share transport (`POST /author/graph/visibility`, grantType:'user'), the cohort link +
+// the viewer's membership from the access-manager, the floor publish from the owner —
+// every row created at runtime under each actor's own RLS, never a migration seed.
+//
+// The render spec authenticates AS `viewer` (the single non-owner grantee), loads the
+// `'shared'` lens, and asserts each node badges its expected mechanism — `personal/personal`,
+// `cohort/cohort`, `broadcast/broadcast` — and that the both-granted node badges `personal`
+// (precedence over `cohort`). `materializeFixture` has already CREATED every grant; this
+// thin wrapper only resolves the named refs + the three actors the assertions name.
+
+/** The "Shared with me" mechanism-distinction fixture, resolved from the shared catalog
+ * scenario. Each `…NodeId` is owned by `owner` (≠ `viewer`), so all four are in the
+ * viewer's `'shared'` lens; the field name states the mechanism the viewer must see. */
+export type ShareMechanismFixture = {
+  /** The space the shared lens + the annotation are scoped to. */
+  spaceId: string;
+  /** The published folder that contains the four mechanism docs (the shared container). */
+  folderId: string;
+  /** Per-user granted to `viewer` (sole disjunct) → annotates `personal`. */
+  personalNodeId: string;
+  /** Fenced to the `mech-cohort` cohort `viewer` belongs to (sole disjunct) → `cohort`. */
+  cohortNodeId: string;
+  /** Published to the space floor (`visibility='space'`) → `broadcast` (the residual). */
+  broadcastNodeId: string;
+  /** BOTH per-user-granted AND cohort-fenced to `viewer` → must annotate `personal`
+   * (precedence personal > cohort > broadcast). The precedence assertion. */
+  bothNodeId: string;
+  /** ref → expected `ShareMechanism` ('personal'|'cohort'|'broadcast') for the lens. */
+  expected: {
+    personal: 'personal';
+    cohort: 'cohort';
+    broadcast: 'broadcast';
+    both: 'personal';
+  };
+  /** The single non-owner grantee (`member`): sees all four in `'shared'`; the render
+   * spec authenticates AS this actor and asserts each node's badge. */
+  viewer: KnowledgeActor;
+  /** Owns all four nodes (`admin`); authors each node's own grant (owner-sovereign). */
+  owner: KnowledgeActor;
+  /** The access-manager (the built-in `admin`) that creates the cohort + enrols `viewer`. */
+  accessManager: KnowledgeActor;
+};
+
+/**
+ * Materialize the mechanism-distinction scenario over an existing tenant and project its
+ * refs/actors onto the badge-spec shape. The four admitting mechanisms (a per-user grant,
+ * a cohort link + membership, a floor publish, and the both-granted precedence case) are
+ * already CREATED by `materializeFixture` through the runtime RLS path + the live Share
+ * endpoint; this only names the pieces the render spec asserts against.
+ */
+export async function seedShareMechanismFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<ShareMechanismFixture> {
+  const { refs, actors } = await materializeFixture(
+    SHARE_MECHANISM_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`share-mechanism fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(`share-mechanism fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('share-mechanism/folder'),
+    personalNodeId: id('share-mechanism/personal'),
+    cohortNodeId: id('share-mechanism/cohort'),
+    broadcastNodeId: id('share-mechanism/broadcast'),
+    bothNodeId: id('share-mechanism/both'),
+    expected: {
+      personal: 'personal',
+      cohort: 'cohort',
+      broadcast: 'broadcast',
+      both: 'personal',
+    },
+    // `admin` is the access-manager: it creates the `mech-cohort` cohort and enrols
+    // `viewer` (the materializer's scope-membership write runs as `admin`).
+    viewer: who('viewer'),
+    owner: who('owner'),
+    accessManager: who('admin'),
+  };
+}
+
+// ── ADR-0021 Part A: directory-v2 paginated picker fixture ───────────────────
+//
+// The Wave-1 picker e2e needs a space with MORE THAN 5 grantable co-members so the
+// page-of-5 people-picker can show 5 + "+N more", a keyset "Show more" next page with
+// no overlap, and `p_exclude` dropping the owner + already-granted from BOTH the page
+// and the `total_count`. The 4-member `per-user-share` space cannot (one page holds
+// them all). This fixture draws the ten-member grantable space ENTIRELY from the shared
+// `DIRECTORY_PICKER_SCENARIO` catalog entry (via `materializeFixture`) — never an inline
+// member tree — so the demo DB and the picker spec build the same cohort the same way:
+// members minted as active space members under RLS, their display names set own-row, the
+// one pre-existing grant authored through the live Share transport (`userGrants`).
+
+/** Member ref → display name, in directory sort order (`coalesce(display_name,email)
+ * asc, user_id asc`). The picker spec asserts the first keyset page and the next page
+ * against THESE names. Re-exported from the catalog so the spec and the demo agree. */
+export const DIRECTORY_PICKER_NAMES = DIRECTORY_PICKER_DISPLAY_NAMES;
+
+/** The directory-v2 picker fixture, resolved from the shared catalog scenario. */
+export type DirectoryPickerFixture = {
+  /** The space the ten-member grantable directory is scoped to (ADR-0021 GET param). */
+  spaceId: string;
+  /** The private folder containing the share target + control docs. */
+  folderId: string;
+  /** The private Share-target doc (owned by `owner`) whose picker offers the cohort —
+   * `member03` is already granted it, so `p_exclude` must drop owner + member03 from
+   * both the page and the count (9 grantable: a full page of 5 + a next page of 4). */
+  sharedDocId: string;
+  /** A private sibling with NO grant — its picker offers the FULL cohort (only the
+   * owner is excluded): ten members across two keyset pages from a clean slate. */
+  controlDocId: string;
+  /** The resource OWNER (`admin`) — excluded from its own grantable directory (p_exclude). */
+  owner: KnowledgeActor;
+  /** The member already granted the share target — `p_exclude` must drop it from the
+   * shared doc's page AND count (but it still appears in the control doc's picker). */
+  grantedMember: KnowledgeActor;
+  /** All ten grantable co-members, in directory sort order (keyset-page assertions). */
+  members: KnowledgeActor[];
+  /** Member ref → display name, in directory sort order (page-boundary assertions). */
+  displayNames: typeof DIRECTORY_PICKER_DISPLAY_NAMES;
+};
+
+/**
+ * Materialize the directory-v2 picker cohort over an existing tenant and project its
+ * refs/actors onto the picker-spec shape. The ten members + the one pre-existing grant
+ * are already CREATED by `materializeFixture` through the runtime RLS path + the live
+ * Share endpoint; this only names the pieces the picker spec asserts against.
+ */
+export async function seedDirectoryPickerFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<DirectoryPickerFixture> {
+  const { refs, actors } = await materializeFixture(
+    DIRECTORY_PICKER_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`directory-picker fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(`directory-picker fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  // In directory sort order (the display names carry a two-digit ordinal that pins the
+  // `coalesce(display_name,email)` order), so `members[0..4]` is the first keyset page.
+  const memberRefs = Object.keys(DIRECTORY_PICKER_DISPLAY_NAMES).sort((a, b) =>
+    DIRECTORY_PICKER_DISPLAY_NAMES[a]!.localeCompare(
+      DIRECTORY_PICKER_DISPLAY_NAMES[b]!
+    )
+  );
+  return {
+    spaceId: tenant.spaceId,
+    folderId: id('directory-picker/folder'),
+    sharedDocId: id('directory-picker/shared'),
+    controlDocId: id('directory-picker/control'),
+    owner: who('admin'),
+    grantedMember: who('picker-member-03'),
+    members: memberRefs.map(who),
+    displayNames: DIRECTORY_PICKER_DISPLAY_NAMES,
+  };
+}
+
+// ── ADR-0023: owner-scoped, live containment inheritance fixture ─────────────
+//
+// The access-matrix spec (granted folder exposes the owner's OWN descendants; owner-scope
+// holds against a third party's nested node, even under an admin's folder-share; new child
+// auto-appears; revoke removes the subtree; a self-granted child survives; floor + cohort
+// folders inherit owner-scoped) draws its multi-owner tree ENTIRELY from the shared
+// `CONTAINMENT_INHERITANCE_SCENARIO` catalog entry — no inline create helpers — so the demo
+// DB and the test build the folders / containment / grants the SAME way, through the one
+// `/author/graph/*` create-vocabulary. `materializeFixture` has already CREATED the tree (the
+// folder grant via `grantUser`, the containment via `contain`, the floor via `setFloor`, the
+// cohort link via `linkScope`); this wrapper names the refs + actors the matrix asserts, and
+// the spec drives the LIVE arcs (new-child / revoke / re-grant) through the same vocabulary
+// (`seedClientFor(owner).createDoc/contain/revokeUser/grantUser`).
+
+/** The containment-inheritance fixture, resolved from the shared catalog scenario. */
+export type ContainmentInheritanceFixture = {
+  /** The space the multi-owner tree is scoped to. */
+  spaceId: string;
+  /** Folder A shares with `grantee` (private + per-user grant) — its OWN contents inherit. */
+  sharedFolderId: string;
+  /** A's own doc directly in the shared folder (inherits via the folder grant). */
+  ownChildId: string;
+  /** A's deeper subfolder under the shared folder (the >1-level walk). */
+  ownSubfolderId: string;
+  /** A's own grandchild two levels under the shared folder (recursive walk reaches it). */
+  ownGrandchildId: string;
+  /** A's child shared BOTH via the folder AND a direct grant → survives the folder revoke. */
+  selfGrantedChildId: string;
+  /** ownerB's node filed into A's shared folder (must NOT reach `grantee` — owner-scope). */
+  foreignChildId: string;
+  /** Folder owned by the ADMIN `adminC` (holds access), shared with `grantee`. */
+  curatorFolderId: string;
+  /** ownerB's node inside the admin's folder (no admin cascade — stays private to grantee). */
+  curatorForeignChildId: string;
+  /** A's space-floor folder. */
+  floorFolderId: string;
+  /** A's own doc under the floor folder (broadcast to the whole space). */
+  floorOwnChildId: string;
+  /** ownerB's node under A's floor folder (NOT broadcast — owner-scope). */
+  floorForeignChildId: string;
+  /** A's cohort-shared folder (scope → Cohort A). */
+  cohortFolderId: string;
+  /** A's own doc inside the cohort folder (inherits to Cohort A members). */
+  cohortOwnChildId: string;
+  /** A top-level PRIVATE, UN-SHARED A-owned doc (no grant/scope/floor, no folder ancestor) —
+   * the render NEGATIVE: the Access section must show NO "shared out" badge nor inherited summary. */
+  privateUnsharedId: string;
+  /** Owner A (`admin`) — owns the folders + most descendants; authors the live arcs. */
+  owner: KnowledgeActor;
+  /** The person A shares the folder WITH — sees the owner's descendants via inheritance. */
+  grantee: KnowledgeActor;
+  /** A SECOND owner — its nodes filed into A's folders must NOT inherit (owner-scope). */
+  ownerB: KnowledgeActor;
+  /** An ADMIN (holds `space.knowledge.access`) — its folder-share does NOT cascade cross-owner. */
+  adminC: KnowledgeActor;
+  /** A member of Cohort A — sees A's own cohort-folder descendants via inheritance. */
+  cohortMember: KnowledgeActor;
+  /** NOT a member of Cohort A — the cohort-folder descendants stay hidden (fail-closed). */
+  cohortStranger: KnowledgeActor;
+};
+
+/**
+ * Materialize the containment-inheritance scenario over an existing tenant and project
+ * its refs/actors onto the matrix-spec shape. The folder grants, the cross-owner
+ * containment, the floor, and the cohort link are already CREATED by `materializeFixture`
+ * through the runtime RLS path + the live endpoints; this only names the pieces.
+ */
+export async function seedContainmentInheritanceFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<ContainmentInheritanceFixture> {
+  const { refs, actors } = await materializeFixture(
+    CONTAINMENT_INHERITANCE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`containment-inheritance fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(
+        `containment-inheritance fixture: missing actor "${ref}"`
+      );
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    sharedFolderId: id('containment-inheritance/shared-folder'),
+    ownChildId: id('containment-inheritance/own-child'),
+    ownSubfolderId: id('containment-inheritance/own-subfolder'),
+    ownGrandchildId: id('containment-inheritance/own-grandchild'),
+    selfGrantedChildId: id('containment-inheritance/self-granted-child'),
+    foreignChildId: id('containment-inheritance/foreign-child'),
+    curatorFolderId: id('containment-inheritance/curator-folder'),
+    curatorForeignChildId: id('containment-inheritance/curator-foreign-child'),
+    floorFolderId: id('containment-inheritance/floor-folder'),
+    floorOwnChildId: id('containment-inheritance/floor-own-child'),
+    floorForeignChildId: id('containment-inheritance/floor-foreign-child'),
+    cohortFolderId: id('containment-inheritance/cohort-folder'),
+    cohortOwnChildId: id('containment-inheritance/cohort-own-child'),
+    privateUnsharedId: id('containment-inheritance/private-unshared'),
+    owner: who('admin'),
+    grantee: who('grantee'),
+    ownerB: who('ownerB'),
+    adminC: who('adminC'),
+    cohortMember: who('cohortMember'),
+    cohortStranger: who('cohortStranger'),
+  };
 }

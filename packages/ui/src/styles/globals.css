@@ -125,4 +125,28 @@
   body {
     @apply bg-background text-foreground;
     }
+
+  /* Slim, indicator-style native scrollbars app-wide. Thin track, a subtle
+     rounded thumb (inset via a transparent border so it reads ~4px) — enough to
+     show scroll position without a chunky OS scrollbar. Firefox + WebKit. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+    border: 1.5px solid transparent;
+    background-clip: padding-box;
+    }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+    }
 }

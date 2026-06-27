@@ -4,8 +4,11 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  SharedByMeEntry,
+  ShareMechanismByItem,
   ShortcutEdge,
   SpaceCapabilities,
+  SpaceEntitlements,
 } from '@/app/graph/graph-data.types';
 
 /**
@@ -43,6 +46,19 @@ export type KbViewData = {
    */
   capabilities: SpaceCapabilities;
   /**
+   * The CURRENT space's COMMERCIAL entitlements (ADR-0022) — a plan-derived signal,
+   * resolved ONCE server-side from the platform `runtime_settings` registry, NOT from
+   * RLS verbs. Rides as a SIBLING of `capabilities` (NOT inside it): an entitlement is
+   * a DIFFERENT authority (commercial plan vs RLS permission), kept ORTHOGONAL so the
+   * verb namespace is never polluted with billing state (Fork 1). Today the only
+   * dimension is `advancedStructuralView` — the gate for the advanced (structural /
+   * containment-tree) display of the STRUCTURAL lenses (the two Shared lenses + Starred
+   * + Trash; ADR-0022 Addendum A). A DISPLAY gate, never a fence: the same RLS-visible
+   * node-set renders either way (Fork 2). Defaults all-`false` (cheapest plan) on the
+   * no-space / fail-closed branch.
+   */
+  entitlements: SpaceEntitlements;
+  /**
    * The ids of nodes the CURRENT user has starred in this space (per-user state,
    * own rows under RLS). Drives the Drive sidebar's "Starred" filter and the
    * filled/empty star toggle on each card. Empty when nothing is starred.
@@ -69,6 +85,30 @@ export type KbViewData = {
    * is its own "trashed root") — there is no containment tree inside Trash.
    */
   trash: TrashLensData;
+  /**
+   * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user
+   * has shared OUT, each with the people they granted it to. A read-only projection
+   * over `knowledge_resource_user_grants WHERE granted_by = me` joined to the resources
+   * I can still SEE (RLS the fence, fail-closed): a resource I revoked the only grant on
+   * — or can no longer see — never appears. Rides alongside the live canvas exactly as
+   * the flat 'shared' lens does; the view INTERSECTS these `resourceId`s with the
+   * resolved canvas (lens = canvas ∩ {ids I granted}) and reads `grantees` for the
+   * grantee summary. Empty when I've shared nothing visible. v1 = per-user grants only
+   * (cohort-by-me is a DEFERRED additive layer).
+   */
+  sharedByMe: SharedByMeEntry[];
+  /**
+   * The "Shared with me" mechanism annotation (ADR-0021 Part C) — a map from each node
+   * in the shared set (visible nodes I do NOT own — the same set the `'shared'` lens
+   * filters to) to the WINNING mechanism that grants ME access: `personal` (a per-user
+   * grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the floor/supervisory
+   * residual). Resolved server-side under the user's RLS by ONE batched fanout
+   * (`annotateShareMechanism`) — pure DISPLAY ENRICHMENT of an already-visible set,
+   * never a fence (a node not visible to me is never in the input, so it can never be
+   * annotated). The render agent reads it to badge each shared card by mechanism and to
+   * drive the facet chip row. Empty when nothing is shared-with-me.
+   */
+  shareMechanism: ShareMechanismByItem;
 };
 
 /**
@@ -86,11 +126,14 @@ export type TrashLensData = {
 /**
  * The active Drive sidebar filter, owned by the workbench and mirrored in the URL
  * (`?scope=`) so the lenses are shareable + survive refresh. 'kb' browses the
- * containment tree; 'home'/'starred'/'recent'/'shared' are flat cross-cutting lenses.
- * 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader lens on top of the
- * already-personal RLS floor, NOT a security boundary (ADR-0017 §2.1). 'home' = the
- * personalized "For you" digest (recently opened + recently updated) over the
- * now-personal visible set (ADR-0017 §4, personalization on the activity spine).
+ * containment tree; 'home'/'starred'/'recent'/'shared'/'shared-by-me' are flat
+ * cross-cutting lenses. 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader
+ * lens on top of the already-personal RLS floor, NOT a security boundary (ADR-0017
+ * §2.1). 'shared-by-me' = the resources I have shared OUT (owner-direction sibling of
+ * 'shared'): the canvas ∩ the `kbData.sharedByMe` resourceId set, the read-only
+ * projection over my per-user grants (ADR-0021 Part B). 'home' = the personalized
+ * "For you" digest (recently opened + recently updated) over the now-personal visible
+ * set (ADR-0017 §4, personalization on the activity spine).
  */
 export type DriveScope =
   | 'kb'
@@ -98,7 +141,48 @@ export type DriveScope =
   | 'starred'
   | 'recent'
   | 'shared'
+  | 'shared-by-me'
   | 'trash';
+
+/**
+ * The lenses that get the advanced (structural / containment-tree) DISPLAY MODE
+ * (ADR-0022 Addendum A) — a render-side OPT-IN set, the single source of truth for the
+ * `lensView` gate. A lens here can toggle Flat↔Advanced (gated by the
+ * `advancedStructuralView` entitlement); a lens NOT here (Recent, Home) NEVER shows the
+ * toggle and is never structural:
+ *  - `shared` / `shared-by-me` — the two Shared lenses (the original Fork 5 cases).
+ *  - `starred` — the starred set ∩ canvas, over the LIVE containment forest.
+ * 'kb' is omitted: it is already the structural browse, not a flat lens being upgraded.
+ * 'recent' is omitted BY DECISION (a log / ordering, not a containment projection);
+ * 'home' is a personal digest, likewise excluded.
+ *
+ * NOTE — `trash` is INTENTIONALLY NOT here yet (ADR-0022 Addendum A4). Its structural
+ * tree needs the `contains` edges AMONG trashed nodes, but those edges are DORMANT: the
+ * edge SELECT RLS requires BOTH endpoints `deleted_at IS NULL`, so a both-trashed edge
+ * is not selectable under the user's RLS client at all (not merely filtered). Building
+ * the Trash tree therefore needs a backend addition (a SECURITY DEFINER read of dormant
+ * edges, or an edge-policy change) beyond a thin RLS select — surfaced for a decision
+ * rather than silently shipping a flat-rooted (wrong) Trash "tree".
+ */
+export const STRUCTURAL_LENS_SCOPES: ReadonlySet<DriveScope> =
+  new Set<DriveScope>(['shared', 'shared-by-me', 'starred']);
+
+/**
+ * The DISPLAY-MODE axis for the STRUCTURAL lenses (ADR-0022 Fork 5 + Addendum A) —
+ * ORTHOGONAL to `DriveScope` (it modulates HOW a lens renders, never WHICH scope is
+ * active, so it adds NO new `DriveScope` member). It applies to the lenses in
+ * `STRUCTURAL_LENS_SCOPES` (the two Shared lenses + Starred + Trash) — NEVER Recent or
+ * Home (a log / personal digest, structurally excluded by decision). 'flat' = the digest
+ * the lens ships with (the default, zero behavioural change); 'advanced' = the
+ * KB-containment TREE over the same lens node-set (the same `buildContainment` render,
+ * narrowed) — a projection-within-a-projection (the lens filter composed over the
+ * structural view), gated by the `advancedStructuralView` entitlement. Owned by the
+ * workbench in the URL (`?view=`) exactly as `?scope=`/`?folder=`/`?doc=` are, SSR-stable.
+ * The server forces it to 'flat' when the space is not entitled, so a hand-edited
+ * `?view=advanced` on a locked plan still renders flat (the gate is honest without being
+ * a security boundary — the cheap plan always renders flat over the SAME RLS-visible set).
+ */
+export type LensView = 'flat' | 'advanced';
 
 export type ProjectionViewProps = {
   result: ProjectionResult;
@@ -125,6 +209,12 @@ export type ProjectionViewProps = {
    */
   onEditNode?: (nodeId: string) => void;
   /**
+   * Reveal a node in the KB containment tree — jump to the default 'kb' lens at the node's
+   * PARENT folder so its position among siblings is visible. Wired by the workbench (which
+   * owns navigation) to the card `⋯` menu's "Open in KB" item and the inline target button.
+   */
+  onRevealInKb?: (nodeId: string) => void;
+  /**
    * The current folder location (a `kind=folder` node id, or null for the root),
    * owned by the workbench in the URL so it survives refresh / browser history.
    * Drive-navigation props — views without a folder tree simply omit them and
@@ -141,6 +231,18 @@ export type ProjectionViewProps = {
   scope?: DriveScope;
   /** Switch the filter scope. The workbench writes it to the URL. */
   onScopeChange?: (scope: DriveScope) => void;
+  /**
+   * The active lens DISPLAY MODE (ADR-0022 + Addendum A), owned by the workbench in the
+   * URL (`?view=flat|advanced`) — the SERVER-resolved EFFECTIVE mode (already forced to
+   * 'flat' when the space is not entitled), so the toolbar toggle + the canvas render
+   * agree SSR-side with no hydration flip. Read by the view only for the STRUCTURAL
+   * lenses (`STRUCTURAL_LENS_SCOPES` — Shared/Shared-by-me/Starred/Trash); ignored for
+   * every other scope (never Recent/Home). Defaults 'flat'.
+   */
+  lensView?: LensView;
+  /** Switch the lens display mode (Flat ↔ Advanced). The workbench writes it to the URL
+   * (`?view=`). Only ever called from a structural lens's toolbar toggle. */
+  onLensViewChange?: (view: LensView) => void;
   /** Bumped by the workbench after a mutation so views drop stale lazy children. */
   refreshKey: number;
   /** Re-run the server resolve after a mutation (the workbench refreshes). */

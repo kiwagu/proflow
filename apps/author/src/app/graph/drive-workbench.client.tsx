@@ -35,9 +35,12 @@ import {
   ResourcePanel,
   type SelectedNode,
 } from './views/resource-panel/resource-panel';
+import { STRUCTURAL_LENS_SCOPES } from './views/registry/projection-view.types';
+import type { ResourceFloor, SharedByMeEntry } from './graph-data.types';
 import type {
   DriveScope,
   KbViewData,
+  LensView,
 } from './views/registry/projection-view.types';
 
 /**
@@ -63,6 +66,7 @@ export function DriveWorkbench({
   initialFolder = null,
   initialDoc = null,
   initialScope = 'kb',
+  initialLensView = 'flat',
   initialLayout = 'grid',
 }: {
   messages: Record<string, string>;
@@ -72,6 +76,7 @@ export function DriveWorkbench({
   initialFolder?: string | null;
   initialDoc?: string | null;
   initialScope?: DriveScope;
+  initialLensView?: LensView;
   initialLayout?: 'grid' | 'list';
 }) {
   const router = useRouter();
@@ -88,6 +93,14 @@ export function DriveWorkbench({
   const [folderId, setFolderId] = React.useState<string | null>(initialFolder);
   const [docId, setDocId] = React.useState<string | null>(initialDoc);
   const [scope, setScope] = React.useState<DriveScope>(initialScope);
+  // The lens display mode (ADR-0022 + Addendum A) — seeded from the SERVER-resolved
+  // EFFECTIVE mode (already clamped to 'flat' when the space is not entitled), so the
+  // SSR'd toolbar + canvas agree with the client's first render (no hydration flip).
+  // Mirrored in the URL (`?view=`) exactly as `?scope=`. The advanced entitlement is
+  // the commercial gate; the client clamps too so a forged URL never advances the mode.
+  const advancedStructuralEntitled =
+    kbData?.entitlements?.advancedStructuralView ?? false;
+  const [lensView, setLensView] = React.useState<LensView>(initialLensView);
 
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
     undefined
@@ -101,6 +114,11 @@ export function DriveWorkbench({
   // (they follow the pane you last acted in — both call the same `selectNode`/
   // `openDocument`).
   const [split, setSplit] = React.useState(false);
+  // A node id to reveal in the KB tree once the NEXT re-resolve lands (used by restore-from-
+  // trash, whose `contains` edge only becomes active after the refresh). The effect below
+  // fires on the first `containment` change after this is set. A ref so setting it never
+  // re-renders and it survives the refresh.
+  const pendingRevealRef = React.useRef<string | null>(null);
   const [folderId2, setFolderId2] = React.useState<string | null>(null);
 
   // The Dolphin-style clipboard — a node MARKED for copy by the `⋯` "Copy" action.
@@ -182,6 +200,15 @@ export function DriveWorkbench({
         body: JSON.stringify({ spaceId, resourceId: nodeId }),
       });
       if (res.ok) {
+        // Jump to the restored node's position in the KB tree — the SAME reveal as the
+        // panel / ⋯ "Open in KB". Switch to the kb lens now; the deferred effect performs
+        // the actual reveal once the re-resolved containment knows the node's now-active
+        // parent (the `contains` edge is dormant while trashed).
+        pendingRevealRef.current = nodeId;
+        setScope('kb');
+        setFolderId(null);
+        setDocId(null);
+        setSelectedId(undefined);
         refresh();
         return true;
       }
@@ -248,11 +275,20 @@ export function DriveWorkbench({
   // filters client-side, so navigation never refetches the (identical) data. A
   // relative `?query` keeps the app `basePath`; an empty query clears to the pathname.
   const pushLocation = React.useCallback(
-    (loc: { folder: string | null; doc: string | null; scope: DriveScope }) => {
+    (loc: {
+      folder: string | null;
+      doc: string | null;
+      scope: DriveScope;
+      view: LensView;
+    }) => {
       const params = new URLSearchParams();
       if (loc.folder) params.set('folder', loc.folder);
       if (loc.doc) params.set('doc', loc.doc);
       if (loc.scope !== 'kb') params.set('scope', loc.scope);
+      // The Shared-lens display mode rides the URL exactly as `?scope=` does — only
+      // when it deviates from the default 'flat', and only carries meaning on a
+      // Shared scope (the server/view ignore it elsewhere).
+      if (loc.view !== 'flat') params.set('view', loc.view);
       const qs = params.toString();
       window.history.pushState(
         null,
@@ -277,30 +313,52 @@ export function DriveWorkbench({
           s === 'starred' ||
           s === 'recent' ||
           s === 'shared' ||
+          s === 'shared-by-me' ||
           s === 'trash'
           ? s
           : 'kb'
+      );
+      // Clamp the URL `?view=` to the entitlement — a forged 'advanced' on a locked
+      // plan reads back as 'flat' (the same fence the server applies on first load).
+      setLensView(
+        p.get('view') === 'advanced' && advancedStructuralEntitled
+          ? 'advanced'
+          : 'flat'
       );
       setSelectedId(undefined);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  }, [advancedStructuralEntitled]);
 
-  // Browse the tree → a folder (null = root). Clears a now-stale selection + open
-  // doc and returns to the 'kb' scope (the flat filters are not folders you enter).
+  // Browse the tree → a folder (null = root). Clears a now-stale selection + open doc.
+  // Normally this returns to the 'kb' scope (the flat filters are not folders you enter)
+  // — EXCEPT an advanced STRUCTURAL lens (ADR-0022 + Addendum A), which IS folder-
+  // navigable WITHIN its lens: drilling a folder there STAYS on the lens scope
+  // (`?scope=<lens>&folder=…&view=advanced`) and narrows to that folder's subtree within
+  // the lens node-set (Shared / Shared-by-me / Starred / Trash).
   const goFolder = React.useCallback(
     (id: string | null) => {
+      const stayInLens =
+        STRUCTURAL_LENS_SCOPES.has(scope) &&
+        lensView === 'advanced' &&
+        advancedStructuralEntitled;
+      const nextScope: DriveScope = stayInLens ? scope : 'kb';
       setSelectedId(undefined);
       setFolderId(id);
       setDocId(null);
-      setScope('kb');
-      pushLocation({ folder: id, doc: null, scope: 'kb' });
+      setScope(nextScope);
+      pushLocation({
+        folder: id,
+        doc: null,
+        scope: nextScope,
+        view: lensView,
+      });
       if (id) {
         recordOpen(id); // entering a folder is a deliberate open (root is not a node)
       }
     },
-    [pushLocation, recordOpen]
+    [pushLocation, recordOpen, lensView, scope, advancedStructuralEntitled]
   );
 
   // Switch the sidebar filter (kb / starred / recent) — a shareable location. Leaving
@@ -312,9 +370,48 @@ export function DriveWorkbench({
       if (next !== 'kb') {
         setSplit(false);
       }
-      pushLocation({ folder: folderId, doc: docId, scope: next });
+      // Clicking a sidebar lens always lands at its ROOT — a flat lens is not a folder
+      // location, and the KB lens returns to the tree root (it must NOT inherit a folder
+      // drilled in the advanced Shared tree, whose `?folder=` is a Shared-subset node).
+      // This is also what frees the KB lens from the advanced-Shared folder-drill that
+      // keeps `goFolder` on the Shared scope (ADR-0022): the lens switch roots here.
+      setFolderId(null);
+      pushLocation({
+        folder: null,
+        doc: docId,
+        scope: next,
+        view: lensView,
+      });
     },
-    [pushLocation, folderId, docId]
+    [pushLocation, docId, lensView]
+  );
+
+  // Switch the lens display mode (ADR-0022 Fork 4 + Addendum A) — Flat ↔ Advanced. Only
+  // reachable from a structural lens's toolbar toggle (shown for the STRUCTURAL_LENS_
+  // SCOPES and ENABLED only when entitled), so 'advanced' can never be set on a locked
+  // plan from here; the URL clamp (popstate) + the server clamp guard the hand-edited path.
+  const goLensView = React.useCallback(
+    (next: LensView) => {
+      const effective =
+        next === 'advanced' && advancedStructuralEntitled ? next : 'flat';
+      setLensView(effective);
+      // PERSIST the choice (ADR-0022 amended Fork 4) via a server-read cookie, exactly
+      // as the grid/list layout toggle does — so the mode is remembered across sessions
+      // (the server reads it on the next load with no hydration flip). GATED to the
+      // entitled (Pro) plan: a locked plan never writes the cookie, so it can never
+      // remember 'advanced' (the toggle is disabled there anyway; this is belt-and-braces).
+      if (advancedStructuralEntitled && typeof document !== 'undefined') {
+        document.cookie = `lens-view=${effective};path=/;max-age=31536000;samesite=lax`;
+      }
+      // FLAT is a digest, not a folder location — leaving the advanced tree drops any
+      // drilled `?folder=` so the flat lens shows its whole set (and the URL is clean).
+      const nextFolder = effective === 'flat' ? null : folderId;
+      if (effective === 'flat') {
+        setFolderId(null);
+      }
+      pushLocation({ folder: nextFolder, doc: docId, scope, view: effective });
+    },
+    [pushLocation, folderId, docId, scope, advancedStructuralEntitled]
   );
 
   // Second pane — folder navigation only, LOCAL (no URL): the ephemeral split view.
@@ -342,10 +439,10 @@ export function DriveWorkbench({
     (id: string) => {
       setSelectedId(undefined);
       setDocId(id);
-      pushLocation({ folder: folderId, doc: id, scope });
+      pushLocation({ folder: folderId, doc: id, scope, view: lensView });
       recordOpen(id);
     },
-    [pushLocation, folderId, scope, recordOpen]
+    [pushLocation, folderId, scope, recordOpen, lensView]
   );
 
   // Containment over the resolved canvas — fed to the panel (Move folder picker)
@@ -354,6 +451,65 @@ export function DriveWorkbench({
     () => buildContainment(result.items, kbData?.containment ?? []),
     [result.items, kbData]
   );
+
+  // Reveal a node in the KB containment tree (the panel's "Open in KB" action). FORCES the
+  // default 'kb' lens at the node's PARENT folder so the resource shows among its siblings
+  // (its position in the tree), and keeps it selected so it is highlighted. Works from any
+  // flat cross-cutting lens or the advanced tree, where the containment context is lost.
+  const revealInKb = React.useCallback(
+    (nodeId: string) => {
+      const parent = containment.parentOf.get(nodeId) ?? null;
+      setDocId(null);
+      setSplit(false);
+      setFolderId(parent);
+      setScope('kb');
+      setSelectedId(nodeId);
+      pushLocation({ folder: parent, doc: null, scope: 'kb', view: lensView });
+      if (parent) {
+        recordOpen(parent);
+      }
+    },
+    [containment, pushLocation, lensView, recordOpen]
+  );
+
+  // Deferred reveal for restore-from-trash: a restored node's `contains` edge is only active
+  // AFTER the re-resolve, so `restoreNode` sets `pendingRevealRef` + refreshes and we wait
+  // for the first `containment` change (the new data landing), then jump to its KB position.
+  React.useEffect(() => {
+    if (!pendingRevealRef.current) {
+      return;
+    }
+    const id = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+    revealInKb(id);
+  }, [containment, revealInKb]);
+
+  // The "shared by me" overlay reshaped for the ResourcePanel's Access summary (ADR-0023
+  // §7b): a per-resource grantee map (the node's explicit grantees) + the SET of ids the
+  // owner shared OUT (the membership test for the access-mirror ancestor walk). SAME source
+  // as the Drive card badge, so the panel summary and the badge can never diverge.
+  const sharedByMeGranteesById = React.useMemo(() => {
+    const map = new Map<string, SharedByMeEntry['grantees']>();
+    for (const entry of kbData?.sharedByMe ?? []) {
+      map.set(entry.resourceId, entry.grantees);
+    }
+    return map;
+  }, [kbData]);
+  const sharedByMeIds = React.useMemo(
+    () => new Set(sharedByMeGranteesById.keys()),
+    [sharedByMeGranteesById]
+  );
+  // The broadcast-floor lookup for the panel's access-mirror walk (ADR-0023 §7b): each
+  // node's `visibility` floor from the already-loaded `metaByItem` (no new load). The
+  // panel runs `broadcastOut` over it + the containment forest to name an INHERITED
+  // broadcast ("Broadcast via folder {X}"), the exact mirror of the card globe badge.
+  const visibilityById = React.useMemo(() => {
+    const map = new Map<string, ResourceFloor>();
+    for (const [id, meta] of Object.entries(kbData?.metaByItem ?? {})) {
+      map.set(id, meta.visibility);
+    }
+    return map;
+  }, [kbData]);
 
   // ── Drag & drop (move = re-parent; Alt-held = copy) ───────────────────────
   // ONE DndContext spans both split panes (declared in JSX below), so a drag from
@@ -558,11 +714,14 @@ export function DriveWorkbench({
       selectedId={selectedId}
       onSelect={selectNode}
       onEditNode={spaceId ? requestEdit : undefined}
+      onRevealInKb={revealInKb}
       onOpenDocument={openDocument}
       folderId={paneFolderId}
       onNavigate={onNav}
       scope={paneScope}
       onScopeChange={onScopeChg}
+      lensView={lensView}
+      onLensViewChange={goLensView}
       initialLayout={initialLayout}
       onMutated={refresh}
       refreshKey={refreshKey}
@@ -654,6 +813,7 @@ export function DriveWorkbench({
                   canUpdate: false,
                   canDelete: false,
                   canCreate: false,
+                  canAccess: false,
                 }
               }
               onClose={() => {
@@ -696,8 +856,21 @@ export function DriveWorkbench({
                 canUpdate: false,
                 canDelete: false,
                 canCreate: false,
+                canAccess: false,
               }
             }
+            visibility={
+              selectedNode
+                ? (kbData?.metaByItem[selectedNode.id]?.visibility ?? null)
+                : null
+            }
+            grantees={
+              selectedNode
+                ? (sharedByMeGranteesById.get(selectedNode.id) ?? [])
+                : []
+            }
+            sharedByMeIds={sharedByMeIds}
+            visibilityById={visibilityById}
             open={selectedNode != null}
             onOpenChange={(isOpen) => {
               if (!isOpen) {
@@ -706,6 +879,7 @@ export function DriveWorkbench({
             }}
             onMutated={refresh}
             onEdit={requestEdit}
+            onOpenInKb={revealInKb}
           />
         ) : null}
       </div>

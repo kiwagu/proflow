@@ -1,0 +1,76 @@
+---
+description: "Use when: implementing or changing UI (any *.tsx that renders JSX/markup, or a shared component) — keep the UI on @workspace/ui primitives and fold recurring className clusters into shared semantic variants, audited as a feature close-out by the refactoring-modularizer agent."
+globs: ["apps/**/*.tsx", "packages/ui/src/**"]
+alwaysApply: true
+---
+
+# UI primitive hygiene — close-out audit (chain the modularizer)
+
+## Pyramid Layer
+
+- Layer: L1 core rule.
+
+## Use This When
+
+- Keep this rule active for any work that adds or changes USER-FACING UI — renders
+  JSX/markup, styles a component, or builds a view / dialog / toolbar / form / menu.
+
+## Stop Here If
+
+- Stop after the close-out + variant-extraction obligations are clear; this is a leaf rule.
+
+## Descend To
+
+- The WHAT (which primitive, how to compose): `shadcn-patterns-required.mdc` +
+  `shadcn-patterns-react-ui.mdc` + the shadcn skill (`/.agents/skills/shadcn/SKILL.md`).
+- The WHO (execution): the **`refactoring-modularizer`** agent
+  (`.claude/agents/refactoring-modularizer.local.md`).
+
+## Why this rule
+
+A feature pass naturally accretes raw HTML controls (`<button>`, `<input>`, `<select>`, …)
+and per-call-site `className` blobs — the fastest way to ship pixels. Left alone they drift
+from the design system: a raw `<button>` skips the `@workspace/ui` `Button`'s a11y +
+variants, and the same className cluster copy-pasted across call-sites is one shape that was
+NOT standardised (an un-named de-facto variant). `shadcn-patterns-required` says *use the
+primitive*; this rule adds the **close-out that enforces it**, exactly the way
+`seed-dictionary-coverage` chains the `seed-curator`. This rule was added after a refactor
+where raw `<button>`s and repeated `border-border / hover:bg-transparent / h-auto p-0`
+neutralization blobs had accreted and were lifted into `Button` `crumb`/`segmented`/`pill`
+variants.
+
+## Required behavior
+
+1. **Feature work ends with a primitive-hygiene audit.** When a change adds or alters UI,
+   BEFORE reporting done, get the UI primitive-clean: every raw HTML control that a
+   `@workspace/ui` primitive already covers (Button, Input, Select, Dialog, Checkbox, …)
+   routes through that primitive (the `CardTile`-style complex surfaces that already use a
+   primitive are fine). Do this as the **close-out of the feature**, by **chaining the
+   `refactoring-modularizer` agent** when you can spawn sub-agents, or INLINE following its
+   methodology when you cannot — alongside the `seed-curator` close-out, not instead of it.
+
+2. **Recurring className clusters become shared variants.** When the SAME override cluster
+   repeats across ≥2 call-sites (a chip, a breadcrumb crumb, a segmented toggle, …), lift it
+   into a reusable, semantic, token-only variant/size on the shared primitive (e.g. a
+   `Button` cva variant) rather than copy-pasting the blob. The variant name reads as generic
+   UI vocabulary, never a feature name. Behaviour + rendered look MUST be unchanged — verify
+   with the repo gates + the relevant e2e. A genuinely one-off control stays a plain
+   variant/size; do not force-fit it into a shape variant.
+
+   The same DRY duty applies to repeated **logic**, not only className: when the SAME
+   multi-line stateful pattern repeats across ≥2 components (a prev-value "adjust state
+   during render" compare, a controlled-from-prop sync, a `useSyncExternalStore`
+   subscribe/getSnapshot, a fetch+retry/cancel loop, a debounce, an open/close reset), lift
+   it into ONE shared hook/util (`packages/ui/src/hooks/*`) — e.g. `useValueChanged` — not a
+   copy-pasted block per file. A refactor that *creates* this duplication is not done until it
+   is extracted.
+
+3. **Exemptions.** A change with no JSX/markup (data layer, migration, pure logic) is exempt
+   — say so. Genuinely one-off, non-recurring styling is exempt from #2.
+
+## Rationale
+
+One primitive + a small set of semantic variants means the UI is consistent, accessible, and
+DRY by construction — and a className blob never silently becomes the de-facto Nth copy of an
+un-named variant. Drift (a raw control where a primitive exists; a repeated className cluster
+that should be a variant) is what this rule prevents.

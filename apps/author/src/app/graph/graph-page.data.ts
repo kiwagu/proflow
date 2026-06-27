@@ -6,8 +6,14 @@ import {
   type ProjectionSpec,
 } from '@workspace/knowledge-contracts';
 import { resolveProjection } from '@workspace/knowledge-engine';
+import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
 import { cookies } from 'next/headers';
+import { z } from 'zod';
 
+import {
+  annotateShareMechanism,
+  listResourcesSharedByMe,
+} from '@/knowledge/fanout';
 import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
@@ -19,8 +25,12 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  ResourceFloor,
+  SharedByMeEntry,
+  ShareMechanismByItem,
   ShortcutEdge,
   SpaceCapabilities,
+  SpaceEntitlements,
 } from '@/app/graph/graph-data.types';
 
 /**
@@ -78,6 +88,31 @@ export async function resolveDriveLayout(): Promise<'grid' | 'list'> {
 }
 
 /**
+ * The cookie the structural-lens Flat/Advanced toggle persists (ADR-0022, amended Fork 4
+ * + Addendum A) — a per-device UI preference, mirroring `DRIVE_LAYOUT_COOKIE`. Lens-
+ * agnostic (one cookie across all structural lenses). Only ever written on the ENTITLED
+ * (Pro) plan: a locked plan never persists 'advanced' (the toggle is disabled and the
+ * server clamps the effective mode to 'flat' regardless). A stale legacy `shared-view`
+ * cookie is simply ignored (this reads only `lens-view`), so it fail-safes to flat.
+ */
+export const LENS_VIEW_COOKIE = 'lens-view';
+
+/**
+ * Resolve the persisted lens display mode (flat/advanced) from its cookie, SERVER-SIDE,
+ * so the SSR'd HTML already renders the remembered mode — no post-hydration flip (the
+ * same reason a cookie beats localStorage for an SSR-affecting view preference). Default
+ * 'flat'. This is the REMEMBERED preference; an explicit `?view=` in the URL WINS over it
+ * (a shareable deep-link override) and the entitlement clamps the final effective mode —
+ * both applied by the caller (`page.tsx`).
+ */
+export async function resolveLensView(): Promise<'flat' | 'advanced'> {
+  const cookieStore = await cookies();
+  return cookieStore.get(LENS_VIEW_COOKIE)?.value === 'advanced'
+    ? 'advanced'
+    : 'flat';
+}
+
+/**
  * The current user's Supabase id, or `null` for a guest. Used ONLY to label a
  * node's owner as "You" vs another member — a display label, never an access
  * decision; RLS is unaffected.
@@ -119,12 +154,61 @@ export async function resolveSpaceCapabilities(
     }
     return data === true;
   };
-  const [canUpdate, canDelete, canCreate] = await Promise.all([
+  const [canUpdate, canDelete, canCreate, canAccess] = await Promise.all([
     can('space.knowledge.update'),
     can('space.knowledge.delete'),
     can('space.knowledge.create'),
+    // The audience-management verb (ADR-0019 §4 / ADR-0017 §3 D9) — the non-owner
+    // half of `canShare`. Mirrors the per-user grant & cohort INSERT/DELETE RLS.
+    can('space.knowledge.access'),
   ]);
-  return { canUpdate, canDelete, canCreate };
+  return { canUpdate, canDelete, canCreate, canAccess };
+}
+
+/**
+ * The zod boundary contract for the entitlement resolve (zod-schema-first). The
+ * `rpc_resolve_platform_flag` RPC returns a bare boolean (non-sensitive plan state);
+ * we parse it into `{ advancedStructuralView }` so the commercial signal crosses the
+ * boundary as a validated shape, never a loose primitive.
+ */
+const SPACE_ENTITLEMENTS_SCHEMA = z.object({
+  advancedStructuralView: z.boolean(),
+});
+
+/**
+ * The CURRENT space's COMMERCIAL entitlements (ADR-0022) — resolved ONCE here
+ * server-side under the user's RLS client, the EXACT parity of how
+ * `resolveSpaceCapabilities` calls its predicate (`auth_user_can_access_in_space`).
+ * It calls the platform `rpc_resolve_platform_flag` read-RPC (Wave 1, SECURITY
+ * DEFINER, granted to `authenticated`) which performs the global→org→space hierarchy
+ * with the org∧space AND-composition IN SQL and returns ONE boolean — ZERO
+ * service-role on this read path (the RPC reads three scoped `runtime_settings` config
+ * rows, never knowledge-resource data, never PII).
+ *
+ * An entitlement is a DIFFERENT authority from the RLS verbs `resolveSpaceCapabilities`
+ * resolves (commercial plan, not permission) — so it is kept ORTHOGONAL, packed as a
+ * SIBLING of `capabilities` on `KbViewData` (Fork 1), never merged. Any RPC error
+ * fails CLOSED to `false` (fail-to-cheapest-plan, parity with the verb resolve's
+ * fail-closed `:121-124`): the toggle locks, the structural lenses render flat. This is
+ * a DISPLAY gate only — RLS shows exactly the same node-set either way (Fork 2).
+ */
+export async function resolveSpaceEntitlements(
+  spaceId: string
+): Promise<SpaceEntitlements> {
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db.rpc('rpc_resolve_platform_flag', {
+    p_key: PLATFORM_ENTITLEMENT_SETTING_KEYS.advanced_structural_view,
+    p_space_id: spaceId,
+  });
+  if (error) {
+    // Fail-closed to the cheapest plan: an unresolved entitlement locks the toggle
+    // and forces the flat render. The entitlement is never an access fence (RLS is
+    // the sole data authority), so a false-here only withholds a display affordance.
+    return { advancedStructuralView: false };
+  }
+  return SPACE_ENTITLEMENTS_SCHEMA.parse({
+    advancedStructuralView: data === true,
+  });
 }
 
 /**
@@ -367,7 +451,7 @@ export async function loadNodeMetaForItems(
   const rows = await inChunks(itemIds, async (chunk) => {
     const { data, error } = await db
       .from('knowledge_resources')
-      .select('id,owner_user_id,last_modified_at')
+      .select('id,owner_user_id,last_modified_at,visibility')
       .eq('space_id', spaceId)
       .in('id', chunk);
     if (error) {
@@ -379,6 +463,7 @@ export async function loadNodeMetaForItems(
     map[(row as { id: string }).id] = {
       ownerUserId: (row as { owner_user_id: string | null }).owner_user_id,
       lastModifiedAt: (row as { last_modified_at: string }).last_modified_at,
+      visibility: (row as { visibility: ResourceFloor }).visibility,
     };
   }
   return map;
@@ -432,4 +517,46 @@ export async function loadStarredIds(spaceId: string): Promise<string[]> {
   return (data ?? []).map(
     (row) => (row as { resource_id: string }).resource_id
   );
+}
+
+/**
+ * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user has
+ * shared OUT in a space, each with the grantee(s) they granted it to. A thin RLS-scoped
+ * wrapper over the `listResourcesSharedByMe` fanout: it reads the per-user grant table
+ * (`granted_by = me`) joined to the resources I can still SEE under the node SELECT RLS
+ * (the fail-closed fence), grantees labelled via the co-member directory (ADR-0020).
+ *
+ * Rides alongside the live canvas (parity with `trash`/`starredIds`): the view filters
+ * the resolved canvas to these ids client-side, so the 'shared-by-me' scope switch needs
+ * no server re-navigation. Empty when nothing visible is shared — never an error.
+ */
+export async function loadSharedByMe(
+  spaceId: string
+): Promise<SharedByMeEntry[]> {
+  const db = await createRlsClientFromServerCookies();
+  return listResourcesSharedByMe({ spaceId }, { db });
+}
+
+/**
+ * The "Shared with me" mechanism annotation seed (ADR-0021 Part C) — a map from each
+ * node in the shared set (visible nodes I do NOT own) to the WINNING mechanism that
+ * grants ME access: `personal > cohort > broadcast`. A thin RLS-scoped wrapper over the
+ * `annotateShareMechanism` fanout (three batched reads, never per-node), seeded
+ * server-side alongside the live canvas exactly as `sharedByMe` / `starredIds` are.
+ *
+ * The input is the SHARED SUBSET, not the whole resolved set — the page already has the
+ * resolved item meta (`ownerUserId`) and the current user id, so it computes
+ * "visible AND owner ≠ me" here and annotates only those ids (the precise `'shared'`
+ * lens input, smaller). The annotation is PURE DISPLAY ENRICHMENT over an already-
+ * RLS-admitted set; it never decides visibility. Empty when nothing is shared-with-me.
+ */
+export async function loadShareMechanism(
+  spaceId: string,
+  sharedNodeIds: string[]
+): Promise<ShareMechanismByItem> {
+  if (sharedNodeIds.length === 0) {
+    return {};
+  }
+  const db = await createRlsClientFromServerCookies();
+  return annotateShareMechanism({ spaceId, nodeIds: sharedNodeIds }, { db });
 }

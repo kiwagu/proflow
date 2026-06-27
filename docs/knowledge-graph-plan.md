@@ -196,6 +196,118 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       are never placed in the gating registry; a hidden node is ABSENT, never a visible `available=false`
       flag — keeping the authorization ≠ gating boundary intact. Demo data lives in the e2e harness, not
       a migration
+- [x] Third access dimension — PER-PERSON sharing: a `knowledge_resource_user_grants` link (a calque of
+      the cohort link, composite PK `(resource_id, user_id)`, same-space guard) plus one top-level OR in
+      `auth_user_can_access_resource` — "share this node with one identified member". Owner-sovereign OR
+      `space.knowledge.access` to grant/revoke (the audience-management verb); additive + fail-closed
+      (grant widens, revoke narrows; live `security invoker` resolve ⇒ revoke hides, re-grant restores,
+      zero reindex). Surfaced through ONE unified **Share dialog** (folding the broadcast floor + cohort
+      grants + per-user grants into a single surface — the old cohort "Visibility" panel section is
+      folded in, not a sibling), opened from a capability-gated `Share` entry in the node `⋯` menu
+      (`canShare = owned || canAccess`, server-derived, laxer-not-stricter — RLS the sole fence). "Copy
+      link" is pure navigation (grants nothing; RLS re-evaluates at open). Per ADR-0019
+- [x] Co-member identity directory — a `space_member_directory` SECURITY-DEFINER RPC resolves
+      `display_name` + `email` for co-members (the own-row `profiles` posture untouched), gated by the
+      caller's own active membership (the fence — non-member → ∅, zero service-role), searchable +
+      hard-limited (≤50). Powers the Share dialog people-picker; reusable for @mentions / assignment.
+      Per ADR-0020
+- [x] Directory v2 (data/route — picker scalability): keyset cursor (`p_after_key`,`p_after_user` over the
+      stable `(sort_key, user_id)` order — drift-free, not offset) + a windowed `total_count` (the count of
+      grantable matches, one round-trip) + `p_exclude uuid[]` (owner + already-granted removed BEFORE the
+      limit AND the count, so a small page is full of real candidates and "+N more" is accurate). The fanout
+      builds the exclusion set server-side + encodes the opaque cursor; the GET `members` slice becomes one
+      `{ items, nextCursor, total }` page. The reusable picker UI + lenses/badges are later waves. Per ADR-0021
+- [x] Directory v2 (reusable picker UI — Wave 1b): a generic, props-driven `AsyncSearchPicker<T>` in
+      `@workspace/ui` `components/platform/` (the "типовая функция" — `fetchPage(query,cursor)→{items,
+      nextCursor,total}` + `getKey`/`renderItem`/`onPick`/`labels`, NO i18n inside, render-prop rows). It
+      owns the debounce + the cursor "load more" append + the "+N more" count footer, with a stale-response
+      guard. The Share dialog people-picker is refit as a thin caller (fixed page of 5 + "+N more — keep
+      typing to narrow" + "Show more"; granting drops the person out via server-side `p_exclude`). Per ADR-0021 §A4
+- [x] "Shared by me" lens (Wave 2): the owner-direction sibling of "Shared with me". Data (Wave 2a) — a
+      `listResourcesSharedByMe` fanout over `knowledge_resource_user_grants WHERE granted_by = me` joined to
+      the resources I can still SEE (RLS the fence, fail-closed: a resource I revoked the only grant on, or
+      can no longer see, never appears), SSR-seeded into `KbViewData.sharedByMe` (parity with Trash, no
+      re-navigation). Render (Wave 2b) — a flat `'shared-by-me'` `DriveScope` + a sidebar nav item beside
+      "Shared with me" (a send/outgoing `Send` icon vs the incoming `Users`); the lens is the resolved canvas
+      ∩ the granted resourceId set, and each card shows a compact grantee summary (avatar cluster + "Shared
+      with {name}" / "+{n}", per-avatar `Hint` name+email tooltip via `EntityAvatar`). v1 = per-user grants
+      only (cohort-by-me deferred). Per ADR-0021 Part B
+- [x] "Shared with me" mechanism distinction — DATA (Wave 3a): the `'shared'` lens (visible nodes I do
+      NOT own) mixed three reasons a node is visible to me; this annotates each with the single WINNING
+      mechanism — `personal` (a per-user grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the
+      space/org floor, with supervisory folded in for v1). A batched read-only fanout
+      (`annotateShareMechanism({ spaceId, nodeIds })` → `Record<nodeId, ShareMechanism>`) — NOT per-node,
+      NOT a resolver change: a constant cohort-membership read (via the `knowledge_user_scope_ids`
+      security-definer RPC — the batched twin of the cohort predicate, needed because `scope_memberships`
+      SELECT RLS gates on the legacy `space.content.read` a plain `member` lacks) plus two node-keyed
+      IN-list reads (personal grants + cohort links), `broadcast` the in-memory residual. Seeded SSR as
+      `KbViewData.shareMechanism` over the visible-not-owned set (parity with `sharedByMe`). Pure display
+      enrichment over an already-RLS-admitted set — never a fence, Invariant #1 holds (no new table, no
+      resolver change, no new access dimension). The per-card badges + facet chip-row are the Wave 3b
+      render agent. Per ADR-0021 Part C
+- [x] "Shared with me" mechanism distinction — RENDER (Wave 3b): the `'shared'` (incoming) lens now makes
+      each node's WINNING mechanism LEGIBLE. A compact per-card mechanism badge (shadcn `Badge` + a lucide
+      icon + a `Hint`): `personal` → "Shared with you" (UserCheck), `cohort` → "Via a group" (UsersRound),
+      `broadcast` → "Whole space" (Radio) — threaded through the SAME card `footer` slot Wave 2b's grantee
+      summary uses (no new card surface). Plus a facet chip row above the lens ("All" + one chip per
+      mechanism PRESENT in the shared set — absent-mechanism chips hidden, the row appears only with ≥2
+      mechanisms) that filters the rendered set client-side over the precomputed annotation; the facet is
+      local lens state (reset on leave) with a "nothing shared this way" filtered-empty message. Badges +
+      facet are scoped to the `'shared'` lens ONLY (not shared-by-me/home/trash). Pure DISPLAY over the
+      already-fenced, already-resolved Wave 3a annotation — never recomputes access. en+es i18n in lockstep.
+      Per ADR-0021 Part C
+- [x] Tariff-gated ADVANCED (structural) view of the STRUCTURAL lenses — a commercial, VIEW-ONLY display
+      mode that renders the SAME RLS-visible lens node-set as the KB containment TREE instead of a flat
+      digest, gated by ONE generic platform ENTITLEMENT (`platform.entitlement.advanced_structural_view`,
+      resolved global→org→space with org∧space AND-composition; zero service-role on the read path). Platform
+      entitlement substrate landed first (Wave 1, re-keyed generic in Addendum A1); the author render threads
+      it as `entitlements.advancedStructuralView` — a SIBLING of the RLS-verb `capabilities`, kept orthogonal
+      (commercial plan ≠ permission) — into `KbViewData`. The display axis is lens-agnostic (`lensView`), gated
+      by a render-side opt-in set `STRUCTURAL_LENS_SCOPES = {shared, shared-by-me, starred}`: a Flat/Advanced
+      toolbar toggle appears ONLY on those lenses (NEVER Recent/Home), default Flat; the choice is an explicit
+      `?view=` deep-link override AND a REMEMBERED preference (a server-read `lens-view` cookie, mirroring the
+      grid/list `drive-layout` cookie, written only on the entitled Pro plan) — precedence `?view=` › cookie ›
+      flat, then server-clamped to flat when not entitled (a forged URL or a stale cookie on a locked plan stays
+      flat). A locked plan shows the toggle DISABLED + an upsell `Hint` (never hidden — the locked control IS the
+      upsell). Advanced reuses the EXISTING `buildContainment` over the lens subset + the already-loaded LIVE
+      `contains` forest — no new data model, no resolver change, no new load (Invariant #1); the advanced tree is
+      folder-NAVIGABLE WITHIN the lens (drilling narrows to the folder's subtree in the lens set and STAYS on the
+      lens scope, never breaking out to kb-browse), and a node whose parent is not in the lens set roots
+      gracefully (no synthetic ancestors, ADR-0018 §14). RLS untouched: the same node-set renders in both modes.
+      en+es i18n. Proven by `tests/e2e/src/knowledge-advanced-shared-view.e2e.spec.ts` (Shared: toggles flat↔tree
+      over the same set, orphan-at-root, folder-drill stays + crumb returns, cookie-persist Pro-only, locked =
+      disabled+hint + `?view=advanced`/stale-cookie still flat, org-off forces space-off; Starred: the same
+      structural toggle renders the starred set as a tree + drill stays on Starred; negative: no toggle on
+      Recent/Home). Per ADR-0022 + Addendum A (A1 platform re-key + A2 generic axis + A3 Starred).
+      TRASH (Addendum A4) is DEFERRED pending a backend decision: its structural tree needs the dormant
+      `contains` edges among trashed nodes, which the edge SELECT RLS hides (both-endpoints-trashed → not
+      selectable under the user's RLS), so it cannot be built from a thin RLS select without a SECURITY DEFINER
+      dormant-edge read or an edge-policy change — surfaced, not silently shipped flat-rooted.
+- [x] Owner-scoped, live containment access INHERITANCE — a node is readable if it OR an ancestor folder
+      (up the forward `contains` forest) is granted to the viewer, owner-scoped (same-owner spine, no admin
+      cross-owner cascade), live (new child auto-appears, revoke removes the subtree), additive across the
+      per-user / cohort / broadcast-floor dimensions. Wave 1 = ONE new `knowledge_resource_inherited_grant`
+      recursive sub-function + one top-level OR in `auth_user_can_access_resource` (depth-32 + `union` cycle
+      guard); the 9-case access matrix is the merge gate. Wave 2 = the three-tier access-mirror RENDER
+      (`badge ≡ panel-summary ≡ access predicate`, one client `pathTo`/`sharedOut` walk over the loaded
+      forest, no new server load): Tier 1 — the Drive card people-icon "Shared" badge (direct OR
+      inherited-via-granted-ancestor, in ALL scopes) + the load-bearing shared-folder hint that NAMES the
+      audience and, for a space/org-floor folder, the floor SCOPE explicitly (the only guardrail against an
+      accidental broadcast, since there is no detach); Tier 2 — a read-only "Access" section in the
+      ResourcePanel (floor + grantees-by-name in a bounded `ScrollArea` + "Inherited from {folder}" + a
+      "Manage access" affordance opening the EXISTING ShareDialog, unchanged); Tier 3 — the ShareDialog is
+      the sole EDIT surface (untouched). en+es. Per ADR-0023 (refines ADR-0019 §7c: management = ShareDialog,
+      read-only status = badge + panel summary).
+  - [x] Access-STATUS taxonomy (ADR-0023 §7 refinement) — the single people-badge becomes three
+        mutually-exclusive states so the owner can tell at a glance which resources are "for others" vs
+        "only mine": GLOBE = broadcast (effective floor space/org, own OR via a broadcast-floor ancestor —
+        `broadcastOut`, the floor sibling of `sharedOut`), PEOPLE = targeted (per-user OR cohort, direct OR
+        inherited), NONE = private (the absence is the signal); globe outranks people. Closes the cohort-by-me
+        gap: `sharedByMe` now also reads my outbound cohort links (`knowledge_resource_scopes WHERE
+        linked_by = me`, under RLS, a FILTER never a fence — display-only), so a cohort-shared node gets the
+        people badge AND a cohort grantee row in the panel; the panel floor line now also names an inherited
+        broadcast ("Broadcast … via {folder}"). Same `badge ≡ panel ≡ predicate` mirror; grid + list, all
+        scopes; en+es. e2e proves all three states direct + inherited.
 
 ## 6. First projection — validate the invariant
 

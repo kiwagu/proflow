@@ -85,6 +85,45 @@ export type TextResourceResult = {
 export type CopyResult = { nodeId: string; count: number };
 export type PurgeResult = { purged: string[]; reason?: string };
 
+/** One grantable co-member as the Share dialog people-picker reads it (ADR-0019/0020):
+ * `displayName` + `email` resolved via the co-member directory (`email` may be null). */
+export type GrantableMember = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+};
+
+/** One per-user grant row as the "who has access" list reads it (ADR-0019/0020):
+ * the grantee with a directory-resolved `displayName` + `email`. */
+export type UserGrant = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  grantedBy: string;
+};
+
+/** ONE keyset page of the grantable-member people-picker (ADR-0021 Part A). The
+ * directory pages a keyset cursor over the stable `coalesce(display_name,email) asc,
+ * user_id asc` order with the owner + already-granted removed server-side (`p_exclude`),
+ * so `items` is a page of REAL grantable candidates, `total` is the count of grantable
+ * matches for the query (across all pages → the picker's "+N more"), and `nextCursor` is
+ * an OPAQUE token to fetch the next page (`null` on the last page; re-sent as `cursor`). */
+export type GrantableMembersPage = {
+  items: GrantableMember[];
+  nextCursor: string | null;
+  total: number;
+};
+
+/** The `/author/graph/visibility` GET projection — the Share dialog's whole audience:
+ * the broadcast floor, the cohort `choices`, the per-user `grants` ("who has access"),
+ * and the searchable, paginated `members` people-picker page (ADR-0020 + ADR-0021). */
+export type Visibility = {
+  choices: { id: string; name: string; linked: boolean }[];
+  floor: Floor;
+  grants: UserGrant[];
+  members: GrantableMembersPage;
+};
+
 /**
  * A `SeedFetcher` enriched with one method per `/author/graph/*` write — the
  * shared create-vocabulary. Raw `post/get/patch/del` stay exposed for negative /
@@ -150,7 +189,27 @@ export type SeedClient = SeedFetcher & {
   restore(spaceId: string, resourceId: string): Promise<void>;
   purge(spaceId: string, resourceId: string): Promise<PurgeResult>;
   setFloor(resourceId: string, visibility: Floor): Promise<void>;
+  /** Read a node's Share-dialog audience (ADR-0019/0020/0021): the floor, cohort choices,
+   * the per-user `grants` ("who has access"), and the searchable, PAGINATED `members`
+   * people-picker page. `query` narrows the directory server-side (`?q=`); `cursor` is the
+   * opaque keyset token from a prior page's `nextCursor` (omit for page 1); `limit` overrides
+   * the default page size of 5 (clamped ≤50 server-side). Driven AS the caller — the
+   * co-member directory is fenced to the caller's own active membership (a non-member gets an
+   * empty page). The owner + already-granted are excluded from the page AND the `total`. */
+  visibility(
+    spaceId: string,
+    nodeId: string,
+    opts?: { query?: string; cursor?: string; limit?: number }
+  ): Promise<Visibility>;
   linkScope(resourceId: string, scopeId: string): Promise<void>;
+  /** Share a resource to ONE person — a per-user grant that widens that user's
+   * READ access (ADR-0019). Owner-sovereign or `space.knowledge.access`; the
+   * grantee must be an active member of the resource's space. */
+  grantUser(resourceId: string, userId: string): Promise<void>;
+  /** Revoke a per-user grant (ADR-0019) — symmetric to `grantUser`. Narrows that
+   * user's READ access back, non-destructively (the node returns to owner-only when
+   * it was the sole widening disjunct). Owner-sovereign or `space.knowledge.access`. */
+  revokeUser(resourceId: string, userId: string): Promise<void>;
   star(spaceId: string, nodeId: string, starred: boolean): Promise<void>;
 };
 
@@ -328,12 +387,48 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
       expectStatus(res, 200, `setFloor(${resourceId})`);
     },
 
+    async visibility(spaceId, nodeId, opts) {
+      const params = new URLSearchParams({
+        space_id: spaceId,
+        node_id: nodeId,
+      });
+      if (opts?.query !== undefined) params.set('q', opts.query);
+      if (opts?.cursor !== undefined) params.set('cursor', opts.cursor);
+      if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
+      const res = await fetcher.get(`/author/graph/visibility?${params}`);
+      const label = [
+        opts?.query === undefined ? '' : ` q=${opts.query}`,
+        opts?.cursor === undefined ? '' : ` cursor=…`,
+        opts?.limit === undefined ? '' : ` limit=${opts.limit}`,
+      ].join('');
+      const body = expectStatus(res, 200, `visibility(${nodeId}${label})`);
+      return body as Visibility;
+    },
+
     async linkScope(resourceId, scopeId) {
       const res = await fetcher.post('/author/graph/visibility', {
         resourceId,
         scopeId,
       });
       expectStatus(res, 201, `linkScope(${resourceId})`);
+    },
+
+    async grantUser(resourceId, userId) {
+      const res = await fetcher.post('/author/graph/visibility', {
+        grantType: 'user',
+        resourceId,
+        userId,
+      });
+      expectStatus(res, 201, `grantUser(${resourceId}→${userId})`);
+    },
+
+    async revokeUser(resourceId, userId) {
+      const res = await fetcher.del('/author/graph/visibility', {
+        grantType: 'user',
+        resourceId,
+        userId,
+      });
+      expectStatus(res, 200, `revokeUser(${resourceId}→${userId})`);
     },
 
     async star(spaceId, nodeId, starred) {
