@@ -346,6 +346,8 @@
   "graph.panel.accessFloorOrganization": "Organization",
   "graph.panel.accessSharedWithCount": "Shared with {count} people",
   "graph.panel.accessSharedWithOne": "Shared with 1 person",
+  "graph.panel.accessSharedWithCohortCount": "Shared with {count} cohorts",
+  "graph.panel.accessSharedWithCohortOne": "Shared with 1 cohort",
   "graph.panel.accessInheritedFrom": "Inherited from {folder}",
   "graph.panel.accessInheritedHeader": "Inherited access",
   "graph.panel.accessBroadcastViaFolder": "Broadcast to {scope} via {folder}",

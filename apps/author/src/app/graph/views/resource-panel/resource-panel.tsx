@@ -34,6 +34,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  UsersRound,
   X,
 } from 'lucide-react';
 import * as React from 'react';
@@ -401,6 +402,12 @@ function AccessSection({
   const FloorIcon = FLOOR_META[floor].icon;
   const floorLabel = FLOOR_META[floor].label(t);
 
+  // The merged audience (ADR-0023 §7) carries BOTH per-user grants and cohort grants,
+  // each tagged with `kind`. Split them so a cohort is never miscounted/mislabelled as a
+  // "person" — people get a name+email row, cohorts a group row counted as cohorts.
+  const people = grantees.filter((g) => g.kind === 'user');
+  const cohorts = grantees.filter((g) => g.kind === 'cohort');
+
   return (
     <section className="flex flex-col gap-2.5">
       <PanelSectionLabel>
@@ -435,20 +442,20 @@ function AccessSection({
         </AccessMetaLine>
       ) : null}
 
-      {/* Explicit grantees — a count header + a bounded scroll list of names. */}
-      {grantees.length > 0 ? (
+      {/* Per-user grantees — count header + bounded scroll list of names (people only). */}
+      {people.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           <AccessMetaLine>
             <Users className="size-3.5 shrink-0" aria-hidden />
-            {grantees.length === 1
+            {people.length === 1
               ? t('graph.panel.accessSharedWithOne')
               : t('graph.panel.accessSharedWithCount', {
-                  count: grantees.length,
+                  count: people.length,
                 })}
           </AccessMetaLine>
           <ScrollArea className={ACCESS_LIST_MAX_H}>
             <ul className="flex flex-col gap-1 pr-2.5">
-              {grantees.map((g) => (
+              {people.map((g) => (
                 <li
                   key={g.userId}
                   className="flex items-center gap-2 rounded-md px-1 py-1"
@@ -462,6 +469,36 @@ function AccessSection({
                       </span>
                     ) : null}
                   </div>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
+        </div>
+      ) : null}
+
+      {/* Cohort (group) grants — counted and labelled as COHORTS, never "people"; a group
+          glyph (not a person avatar) so the audience meaning is not distorted. */}
+      {cohorts.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <AccessMetaLine>
+            <UsersRound className="size-3.5 shrink-0" aria-hidden />
+            {cohorts.length === 1
+              ? t('graph.panel.accessSharedWithCohortOne')
+              : t('graph.panel.accessSharedWithCohortCount', {
+                  count: cohorts.length,
+                })}
+          </AccessMetaLine>
+          <ScrollArea className={ACCESS_LIST_MAX_H}>
+            <ul className="flex flex-col gap-1 pr-2.5">
+              {cohorts.map((c) => (
+                <li
+                  key={c.userId}
+                  className="flex items-center gap-2 rounded-md px-1 py-1"
+                >
+                  <span className="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full">
+                    <UsersRound className="size-3.5" aria-hidden />
+                  </span>
+                  <span className="truncate text-sm">{c.displayName}</span>
                 </li>
               ))}
             </ul>
