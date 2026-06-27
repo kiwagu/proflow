@@ -28,6 +28,7 @@ import {
   Info,
   LayoutGrid,
   List,
+  Lock,
   Plus,
   Radio,
   RotateCcw,
@@ -442,20 +443,27 @@ export function DriveProjectionView({
     },
     [containment, floorOf, isGranted]
   );
-  // The per-card / per-row access STATUS badge (ADR-0023 §7a): GLOBE (broadcast) XOR
-  // PEOPLE (targeted), globe winning; NONE for private (`null` — the absence is the
-  // signal). One render path for the grid + the list so the two surfaces are identical.
+  // The per-card / per-row access STATUS badge (ADR-0023 §7a). KB is SPACE-FIRST: a
+  // space-wide broadcast is the TYPICAL audience, so it shows NO badge — a clean card
+  // reads as "shared with the space". Only the EXCEPTIONS are flagged: organization-wide
+  // broadcast (wider, GLOBE), targeted PEOPLE, and PRIVATE (a freshly created node's
+  // personal default — a LOCK, so an un-shared/personal resource stands out). One render
+  // path for the grid + the list so the two surfaces are identical.
   const renderAccessBadge = React.useCallback(
     (id: string): React.ReactNode => {
       const { state, broadcast, shared } = accessStatus(id);
       if (state === 'broadcast') {
-        return (
-          <BroadcastBadge
-            t={t}
-            scope={broadcast.scope ?? 'space'}
-            broadcastViaTitle={broadcast.broadcastVia?.title ?? null}
-          />
-        );
+        // Space-wide broadcast = the typical KB default → no badge. Only org-wide flags.
+        if (broadcast.scope === 'organization') {
+          return (
+            <BroadcastBadge
+              t={t}
+              scope="organization"
+              broadcastViaTitle={broadcast.broadcastVia?.title ?? null}
+            />
+          );
+        }
+        return undefined;
       }
       if (state === 'targeted') {
         return (
@@ -467,7 +475,8 @@ export function DriveProjectionView({
           />
         );
       }
-      return undefined;
+      // private — personal, not shared (the default at creation); flag it with the lock.
+      return <PrivateBadge t={t} />;
     },
     [accessStatus, sharedByMeByResource, t]
   );
@@ -1983,6 +1992,20 @@ function BroadcastBadge({
   return (
     <AccessBadgeChip label={label}>
       <Globe className="size-3" aria-hidden />
+    </AccessBadgeChip>
+  );
+}
+
+/**
+ * PrivateBadge — flags a PRIVATE (personal, not-shared) node. KB inverts the default: the
+ * space-wide broadcast (the common case) is badge-less, so the EXCEPTION worth surfacing is
+ * the still-personal resource — a freshly created node is private by default (ADR-0017), and
+ * the lock makes "this is yours only, not yet shared with the space" legible at a glance.
+ */
+function PrivateBadge({ t }: { t: GraphTranslator }) {
+  return (
+    <AccessBadgeChip label={t('graph.drive.privateBadge')}>
+      <Lock className="size-3" aria-hidden />
     </AccessBadgeChip>
   );
 }

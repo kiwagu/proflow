@@ -333,6 +333,7 @@
   "graph.drive.broadcastScopeSpace": "este espacio",
   "graph.drive.broadcastScopeOrganization": "esta organización",
   "graph.drive.broadcastBadge": "Visible para todos en {scope}",
+  "graph.drive.privateBadge": "Privado — solo tú, hasta que lo compartas",
   "graph.drive.broadcastViaFolder": "Visible para todos en {scope} a través de {folder}",
   "graph.drive.sharedFolderHintPeople": "Los elementos que agregues aquí serán visibles para {name}.",
   "graph.drive.sharedFolderHintPeopleCount": "Los elementos que agregues aquí serán visibles para {count} personas.",
