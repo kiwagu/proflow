@@ -7,13 +7,44 @@ accepted** so the close-out review does not keep re-opening it.
 
 > Source of truth is always the live advisor, not this list. Re-run
 > `get_advisors({ type: "security" })` after each migration and compare. The
-> remediation pass of 2026-06-27 took the count from **168 → 31**.
+> remediation pass of 2026-06-27 took the count from **168 → 31**; the
+> `private`-schema relocation of 2026-06-27 (migrations `…192000` + `…192100`)
+> then took it from **31 → ~17** by moving the RLS-internal helpers off the
+> PostgREST surface. Every remaining warning is `0029`
+> (`authenticated_security_definer_function_executable`).
 
-## The 31 accepted warnings — all `authenticated_security_definer_function_executable`
+## What was moved to the `private` schema (no longer residue)
 
-Every remaining warning is the same lint (`0029`): a `SECURITY DEFINER`
-function in the PostgREST-exposed `public` schema that the `authenticated` role
-can call via `/rest/v1/rpc/...`. They fall into two by-design buckets.
+Migrations `20260627192000_move_knowledge_rls_helpers_to_private.sql` and
+`20260627192100_move_platform_rls_helpers_to_private.sql` relocated the **14
+RLS-INTERNAL** `SECURITY DEFINER` helpers (referenced only by policies / other
+functions, **never** called by the app via PostgREST — verified against every
+app `.rpc(...)`) into the non-exposed `private` schema. `private` is not in
+`PGRST_DB_SCHEMAS` (`public,storage,kb`), so they are no longer REST-reachable;
+`authenticated` keeps `EXECUTE` (RLS evaluation needs it) plus `usage` on the
+schema, reached only inside RLS / security-definer call chains.
+
+Moved (knowledge): `auth_user_can_access_resource`, `knowledge_resource_user_grant`,
+`knowledge_resource_scope_member`, `knowledge_resource_inherited_grant`,
+`auth_user_manages_owner`.
+Moved (platform): `auth_user_active_in_space`, `auth_user_is_space_admin`,
+`auth_user_is_org_admin`, `auth_user_member_of_org`,
+`auth_user_can_manage_space_invites`, `role_assignment_is_valid`,
+`platform_feature_flag_actor_can_manage_scope`,
+`runtime_settings_actor_can_manage_scope`, `runtime_settings_actor_can_read_scope`.
+
+> **Mechanics that made this LOW-blast-radius** (correcting the prior note that
+> assumed every policy had to be recreated): `alter function … set schema private`
+> **preserves the function OID**, so every RLS policy that references a moved helper
+> follows the move automatically — **zero policy edits**. Only function-to-function
+> calls needed fixing (callers qualify `public.<helper>`): they were re-pointed to
+> `private.<helper>` deterministically from the live `pg_get_functiondef` (see the
+> migration DO block), avoiding hand-transcription of large plpgsql bodies. Verified
+> by the platform RPC integration suite (vitest 88 + 28) and the full e2e (112).
+
+## The remaining ~17 accepted warnings — all `0029`
+
+These STAY in `public` and remain authenticated-executable **by design**.
 
 ### Bucket A — intended public RPCs (the app's own API)
 
@@ -25,49 +56,32 @@ capability before doing anything). Authenticated-executable is the whole point.
 - `rpc_bootstrap_organization_and_space` — onboarding bootstrap (signed-in user)
 - `rpc_create_space_invite` / `rpc_revoke_space_invite` / `rpc_accept_space_invite`
 - `rpc_set_runtime_setting` / `rpc_delete_runtime_setting`
-- `rpc_set_platform_feature_flag`
-- `rpc_resolve_platform_flag` — entitlement/feature-flag resolve
+- `rpc_set_platform_feature_flag` / `rpc_resolve_platform_flag`
+- `rpc_*` role administration (`rpc_set_space_member_role`, `rpc_create_*_role`, …)
 - `rpc_grant_platform_super_admin` / `rpc_revoke_platform_super_admin`
 - `rpc_start_break_glass` / `rpc_end_break_glass`
 - `space_member_directory` — powers the co-member picker
 
-### Bucket B — internal RLS-helper predicates
+### Bucket B′ — DUAL-USE RLS helpers the app also calls by name
 
-These are referenced **inside `authenticated` RLS policies** (so the
-`authenticated` role must retain `EXECUTE`, or policy evaluation breaks). They
-are `SECURITY DEFINER` so they can read the membership/role tables the policy
-needs. Crucially, each returns only the **caller's own access verdict**
-(`auth.uid()`-scoped boolean) or data the caller can already see — a direct REST
-call leaks nothing a normal RLS-governed query would not already return.
+Referenced inside `authenticated` RLS policies **and** called by the app via
+`.rpc(...)`, so they must stay in the REST-exposed `public` schema. Each returns
+only the caller's own access verdict (`auth.uid()`-scoped) or already-visible
+data — a direct REST call leaks nothing a normal RLS query would not.
 
-- `auth_user_can_access_resource`, `auth_user_can_access_in_space`,
-  `auth_user_has_permission`, `auth_user_active_in_space`
-- `auth_user_is_space_admin`, `auth_user_is_org_admin`, `auth_user_member_of_org`,
-  `auth_user_manages_owner`, `auth_user_can_manage_space_invites`
+- `auth_user_can_access_in_space`, `auth_user_has_permission`
 - `auth_current_user_has_critical_capability`, `auth_user_has_critical_capability`
-- `knowledge_resource_user_grant`, `knowledge_resource_scope_member`,
-  `knowledge_resource_inherited_grant`, `knowledge_user_scope_ids`
-- `role_assignment_is_valid`
-- `platform_feature_flag_actor_can_manage_scope`,
-  `runtime_settings_actor_can_manage_scope`, `runtime_settings_actor_can_read_scope`
+- `knowledge_user_scope_ids`
 
-## Why we accept Bucket B instead of driving it to zero
+## Why we accept the rest instead of driving it to zero
 
-The real exposure — **anon** (unauthenticated) reach — was closed in the
-2026-06-27 pass (`20260627191100` revokes `EXECUTE` from `anon` on every public
-`SECURITY DEFINER` function, and `SELECT` from `anon` on the flagged tables).
-What remains is `authenticated` reach, which:
+The real exposure — **anon** reach — was closed in the 2026-06-27 pass
+(`20260627191100` revokes `EXECUTE` from `anon` on every public
+`SECURITY DEFINER` function, and `SELECT` from `anon` on the flagged tables). The
+RLS-internal helpers are now off the REST surface (above). What remains is
+`authenticated` reach of **Bucket A** (privileged RPCs guarded by an internal
+capability re-check) and **Bucket B′** (own-verdict helpers the app calls by
+name) — neither closes an exploit, and both must stay REST-reachable to function.
 
-1. closes **no exploit** — these return only the caller's own verdict / already
-   visible data; and
-2. would cost a **high-blast-radius migration** to silence: the only way to keep
-   them callable inside RLS while hiding them from PostgREST is to move them to a
-   non-exposed schema (`private`) and **recreate every policy that references
-   them** — `auth_user_can_access_in_space` alone appears in ~44 policies,
-   `auth_current_user_has_critical_capability` in ~30.
-
-So the `private`-move is a **deferred, optional purity pass**, not a security
-fix. If undertaken, it must recreate all referencing policies and be verified by
-the full access e2e matrix. Until then, these 31 are the documented baseline:
-a new migration should not increase the count, and any NEW lint of a different
-kind must be fixed, not absorbed here.
+These ~17 are the documented baseline: a new migration should not increase the
+count, and any NEW lint of a different kind must be fixed, not absorbed here.
