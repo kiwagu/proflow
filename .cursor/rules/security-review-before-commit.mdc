@@ -48,7 +48,15 @@ refactoring-modularizer). It is easy to forget by hand — this rule makes it no
    function, raw SQL, an input parser, a secret/env read, a dependency bump) in its report,
    so the coordinator runs `/security-review` on the full diff before committing.
 
-3. **Exemptions.** A change with NO security surface (pure copy/i18n, a comment, a docs
+3. **DB migration → also run the Supabase advisors.** If the change includes a Postgres
+   migration, the diff-level `/security-review` is NOT enough — run the live-DB advisors
+   (`mcp__supabase-self-hosted__get_advisors`, security + performance) after applying it and
+   fix new WARN/ERROR (missing RLS, anon/authenticated-exposed `security definer` functions,
+   mutable `search_path`, public-bucket listing, GraphQL exposure). See `create-migration.mdc`'s
+   "Post-apply" close-out. They reached 168 once because nothing checked them — don't let them
+   accumulate.
+
+4. **Exemptions.** A change with NO security surface (pure copy/i18n, a comment, a docs
    tweak, a refs/ note) is exempt — say so. Never skip the review for anything touching the
    surfaces in "Use This When".
 
