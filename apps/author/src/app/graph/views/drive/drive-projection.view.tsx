@@ -291,7 +291,10 @@ export function DriveProjectionView({
   );
   const shortcutEdges = React.useMemo(() => kbData?.shortcuts ?? [], [kbData]);
   const attributesByItem = kbData?.attributesByItem ?? {};
-  const metaByItem = kbData?.metaByItem ?? {};
+  // Memoized so the `?? {}` default is a STABLE reference — `metaByItem` feeds
+  // `floorOf` (the broadcast badge) which is a `useCallback`/`useMemo` dependency;
+  // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
+  const metaByItem = React.useMemo(() => kbData?.metaByItem ?? {}, [kbData]);
   // The "Shared with me" mechanism annotation (ADR-0021 Part C): each node in the
   // 'shared' set → the WINNING mechanism that grants ME access (personal > cohort >
   // broadcast, precedence applied server-side). Pure DISPLAY enrichment of an

@@ -67,19 +67,6 @@ function extractRoleKey(value: unknown): string | null {
   return normalizedKey.length > 0 ? normalizedKey : null;
 }
 
-function normalizeRoleRows(rows: readonly unknown[]): string[] {
-  const keys: string[] = [];
-  for (const row of rows) {
-    const roleValue =
-      row && typeof row === 'object' ? Reflect.get(row, 'roles') : row;
-    const key = extractRoleKey(roleValue);
-    if (key) {
-      keys.push(key);
-    }
-  }
-  return [...new Set(keys)].sort();
-}
-
 function extractRoleInfo(value: unknown): SpaceMemberAssignedRole | null {
   if (Array.isArray(value)) {
     return extractRoleInfo(value[0]);

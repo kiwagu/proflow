@@ -8,6 +8,7 @@
     "build": "NODE_OPTIONS=\"--use-system-ca\" next build",
     "start": "NODE_OPTIONS=\"--use-system-ca\" next start",
     "lint": "eslint",
+    "lint:strict": "eslint --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "test:vitest": "cross-env NODE_OPTIONS=--use-system-ca bunx vitest run",

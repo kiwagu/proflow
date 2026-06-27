@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@workspace/ui/components/select';
 import { Textarea } from '@workspace/ui/components/textarea';
-import { cn } from '@workspace/ui/lib/utils';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { Check } from 'lucide-react';
 import * as React from 'react';
 
@@ -108,16 +108,15 @@ export function CreateResource({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(false);
 
-  // Reset/prefill when a new open request arrives.
-  React.useEffect(() => {
-    if (request) {
-      setKind(request.kind ?? 'text');
-      setTitle('');
-      setParentId(request.parentFolderId ?? '');
-      setDescription('');
-      setError(false);
-    }
-  }, [request]);
+  // Reset/prefill when a new open request arrives — adjust state during render on
+  // the request transition ("you might not need an effect"), not in an effect.
+  if (useValueChanged(request) && request) {
+    setKind(request.kind ?? 'text');
+    setTitle('');
+    setParentId(request.parentFolderId ?? '');
+    setDescription('');
+    setError(false);
+  }
 
   // Scope the folder picker to the CURRENT level — the folders at the location where
   // creation was triggered (the current folder's direct children, or the top-level

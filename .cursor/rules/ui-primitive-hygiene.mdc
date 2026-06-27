@@ -57,6 +57,14 @@ variants.
    with the repo gates + the relevant e2e. A genuinely one-off control stays a plain
    variant/size; do not force-fit it into a shape variant.
 
+   The same DRY duty applies to repeated **logic**, not only className: when the SAME
+   multi-line stateful pattern repeats across ≥2 components (a prev-value "adjust state
+   during render" compare, a controlled-from-prop sync, a `useSyncExternalStore`
+   subscribe/getSnapshot, a fetch+retry/cancel loop, a debounce, an open/close reset), lift
+   it into ONE shared hook/util (`packages/ui/src/hooks/*`) — e.g. `useValueChanged` — not a
+   copy-pasted block per file. A refactor that *creates* this duplication is not done until it
+   is extracted.
+
 3. **Exemptions.** A change with no JSX/markup (data layer, migration, pure logic) is exempt
    — say so. Genuinely one-off, non-recurring styling is exempt from #2.
 

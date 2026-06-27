@@ -14,6 +14,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@workspace/ui/components/field';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 
 import {
   mutatePlatformFeatureFlagAction,
@@ -53,9 +54,12 @@ export function FeatureFlagCheckboxForm({
   const [submitState, setSubmitState] =
     useState<MutatePlatformFeatureFlagResult | null>(null);
 
-  useEffect(() => {
+  // Re-sync the editable draft to a NEW server value during render (e.g. after a
+  // saved mutation revalidates `currentValue`) — the "adjust state when a prop
+  // changes" pattern, no effect needed.
+  if (useValueChanged(currentValue)) {
     setChecked(currentValue);
-  }, [currentValue]);
+  }
 
   useEffect(() => {
     if (!submitState?.ok) {

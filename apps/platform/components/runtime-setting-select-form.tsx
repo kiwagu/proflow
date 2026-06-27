@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 
 import {
   mutateRuntimeSettingAction,
@@ -66,14 +67,18 @@ export function RuntimeSettingSelectForm({
   const [selectedValue, setSelectedValue] = useState(currentValue);
   const [submitState, setSubmitState] =
     useState<MutateRuntimeSettingResult | null>(null);
+
+  // Re-sync the editable draft to a NEW server value during render (e.g. after a
+  // saved mutation revalidates `currentValue`) — the "adjust state when a prop
+  // changes" pattern, no effect needed.
+  if (useValueChanged(currentValue)) {
+    setSelectedValue(currentValue);
+  }
+
   const selectedUiValue =
     allowInherit && selectedValue.trim().length === 0
       ? INHERIT_SELECT_VALUE
       : selectedValue;
-
-  useEffect(() => {
-    setSelectedValue(currentValue);
-  }, [currentValue]);
 
   useEffect(() => {
     if (!submitState?.ok) {

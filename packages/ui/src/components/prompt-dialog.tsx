@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { Input } from '@workspace/ui/components/input';
 
 /**
@@ -47,12 +48,11 @@ export function PromptDialog({
 }) {
   const [value, setValue] = React.useState(defaultValue);
 
-  // Reseed the draft whenever the dialog (re)opens.
-  React.useEffect(() => {
-    if (open) {
-      setValue(defaultValue);
-    }
-  }, [open, defaultValue]);
+  // Reseed the draft whenever the dialog (re)opens — adjust state during render on
+  // the closed→open transition ("you might not need an effect"), not in an effect.
+  if (useValueChanged(open) && open) {
+    setValue(defaultValue);
+  }
 
   const disabled = busy || !value.trim();
   function submit() {

@@ -24,7 +24,7 @@ export function ProfileAvatarUpload({
     const fileName = `${userId}-${Date.now()}.${fileExt}`;
     const filePath = `avatars/${userId}/${fileName}`;
 
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from('media')
       .upload(filePath, file, {
         cacheControl: '3600',

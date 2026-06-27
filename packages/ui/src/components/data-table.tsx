@@ -31,6 +31,10 @@ export type { ColumnDef } from '@tanstack/react-table';
 
 /** Per-column display hints (alignment / width) — applied to head + cell. */
 declare module '@tanstack/react-table' {
+  // `TData`/`TValue` are unused in the body but MANDATORY for the declaration merge —
+  // the augmented interface's type parameters must be identical to the upstream
+  // `ColumnMeta<TData extends RowData, TValue>` (TS2428), so they cannot be renamed/dropped.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     /** Tailwind classes for both the header and body cell of this column. */
     cellClassName?: string;

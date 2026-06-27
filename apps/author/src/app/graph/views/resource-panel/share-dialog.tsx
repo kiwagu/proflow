@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { Check, Link2, Search, UserRound, Users, X } from 'lucide-react';
 import * as React from 'react';
 
@@ -200,18 +201,29 @@ export function ShareDialog({
     }
   }, [buildUrl]);
 
-  // (Re)load every time the dialog opens for a node, so a stale audience never
-  // shows after a grant elsewhere. Remount the picker to its starter list.
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
+  // Reset the dialog to its starter state on the closed→open transition — adjusted
+  // during render ("you might not need an effect"), not in an effect. This remounts
+  // the picker (epoch bump) and clears any prior audience/flags so a stale set never
+  // shows after a grant elsewhere.
+  if (useValueChanged(open) && open) {
     setData(null);
     setLoadFailed(false);
     setCopied(false);
     setAssignedQuery('');
-    mutatedRef.current = false;
     setPickerEpoch((e) => e + 1);
+  }
+
+  // Genuine load effect: (re)fetch the audience while the dialog is open (and again
+  // if the query changes), so the visible set is always fresh. It also clears the
+  // deferred-refresh flag on open (a ref write — only valid here, not in render).
+  // `reload` only setStates AFTER an awaited fetch, so this is not the synchronous
+  // cascade the rule guards against.
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+    mutatedRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState (post-fetch) inside an owned data-load effect
     void reload();
   }, [open, reload]);
 

@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { cn } from '@workspace/ui/lib/utils';
 import { BookCheck, FilePen } from 'lucide-react';
 import * as React from 'react';
@@ -40,12 +41,11 @@ export function ChooseEditSourceDialog({
   onConfirm: (source: EditSource) => void;
 }) {
   const [selected, setSelected] = React.useState<EditSource>('published');
-  // Default back to "from published" each time the chooser opens.
-  React.useEffect(() => {
-    if (open) {
-      setSelected('published');
-    }
-  }, [open]);
+  // Default back to "from published" each time the chooser opens — adjust state
+  // during render on the closed→open transition ("you might not need an effect").
+  if (useValueChanged(open) && open) {
+    setSelected('published');
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

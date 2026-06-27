@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@workspace/ui/components/select';
 import { Textarea } from '@workspace/ui/components/textarea';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import {
   ArrowRight,
   Check,
@@ -173,7 +174,6 @@ export function ResourcePanel({
   if (!node || !open) {
     return null;
   }
-  const KindIcon = iconForKind(node.kind);
   // Share = audience management (ADR-0019 §4): owner-sovereign OR the space access verb —
   // mirrors the per-user-grant/cohort RLS authority. The "Manage access" affordance is
   // shown on the same gate the ⋯ Share item uses (display courtesy; RLS re-checks).
@@ -209,7 +209,9 @@ export function ResourcePanel({
           aria-hidden
           className="bg-muted grid size-8 shrink-0 place-items-center rounded-md"
         >
-          <KindIcon className="text-muted-foreground size-[17px]" />
+          {React.createElement(iconForKind(node.kind), {
+            className: 'text-muted-foreground size-[17px]',
+          })}
         </span>
         <span className="text-muted-foreground flex-1 text-xs tracking-wide uppercase">
           {kindLabel(t, node.kind)}
@@ -275,6 +277,7 @@ export function ResourcePanel({
         />
         {node.kind === 'text' ? (
           <VersionsSection
+            key={node.id}
             t={t}
             spaceId={spaceId}
             nodeId={node.id}
@@ -540,10 +543,17 @@ function EditableDescription({
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value);
 
-  React.useEffect(() => {
+  // A new node, or a fresh server `value` (after a save), discards the local draft
+  // and exits edit mode — adjusted during render on the change ("you might not need
+  // an effect"), not in an effect. Compound key → shallow-equal comparator.
+  const changed = useValueChanged(
+    { value, nodeId },
+    (a, b) => a.value === b.value && a.nodeId === b.nodeId
+  );
+  if (changed) {
     setDraft(value);
     setEditing(false);
-  }, [value, nodeId]);
+  }
 
   return (
     <section className="flex flex-col gap-2">
@@ -725,8 +735,12 @@ function VersionsSection({
     );
   }, [base]);
 
+  // Genuine load effect: fetch the version list on mount and whenever the query
+  // changes. The reset-to-loading on node switch is handled by a `key` remount at
+  // the call site (initial `versions` is already `null`), so no synchronous
+  // setState is needed here.
   React.useEffect(() => {
-    setVersions(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState (post-fetch) inside an owned data-load effect
     void load();
   }, [load]);
 

@@ -16,6 +16,7 @@
     "generate:importmap": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation\" payload generate:importmap",
     "generate:types": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation\" payload generate:types",
     "lint": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation\" eslint .",
+    "lint:strict": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation\" eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx}\" \"!**/.next/**\"",
     "typecheck": "tsc --noEmit",
     "payload": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation\" payload",

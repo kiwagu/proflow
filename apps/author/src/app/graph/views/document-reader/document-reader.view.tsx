@@ -115,6 +115,12 @@ export function DocumentReader({
 
   React.useEffect(() => {
     mounted.current = true;
+    // Genuine side effect: this effect OWNS the initial body fetch AND a `focus`
+    // subscription it sets up/tears down. `loadBody` only setStates AFTER an awaited
+    // fetch (never synchronously in the effect body), so this is not the cascading
+    // render the rule guards against — keep it an effect (react.dev "you might not
+    // need an effect" exempts subscriptions/fetches).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState (post-fetch) inside an owned subscription effect
     void loadBody();
     // Returning from the editor route (a full navigation away) refocuses the
     // window — refetch so the reader reflects a just-saved edit.
