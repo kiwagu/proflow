@@ -24,7 +24,11 @@ import { cn } from '@workspace/ui/lib/utils';
 import { Check } from 'lucide-react';
 import * as React from 'react';
 
-import { allFolders, type Containment } from '@/app/graph/containment';
+import {
+  childFolders,
+  rootFolders,
+  type Containment,
+} from '@/app/graph/containment';
 import { iconForKind } from '@/app/graph/presentation';
 
 /**
@@ -115,7 +119,22 @@ export function CreateResource({
     }
   }, [request]);
 
-  const folders = React.useMemo(() => allFolders(containment), [containment]);
+  // Scope the folder picker to the CURRENT level — the folders at the location where
+  // creation was triggered (the current folder's direct children, or the top-level
+  // folders at root) plus the current container as the default — instead of flattening
+  // the WHOLE KB tree into the dropdown (unusable at scale: 1000 folders would all
+  // list). To place a resource elsewhere, navigate into that folder first, then create.
+  const currentParentId = request?.parentFolderId ?? null;
+  const currentFolderNode = currentParentId
+    ? (containment.byId.get(currentParentId) ?? null)
+    : null;
+  const levelFolders = React.useMemo(
+    () =>
+      currentParentId
+        ? childFolders(containment, currentParentId)
+        : rootFolders(containment),
+    [containment, currentParentId]
+  );
 
   async function onSubmit() {
     setBusy(true);
@@ -220,10 +239,16 @@ export function CreateResource({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="top">
-                    {t('graph.create.topLevel')}
-                  </SelectItem>
-                  {folders.map((folder) => (
+                  {currentFolderNode ? (
+                    <SelectItem value={currentFolderNode.id}>
+                      {currentFolderNode.title}
+                    </SelectItem>
+                  ) : (
+                    <SelectItem value="top">
+                      {t('graph.create.topLevel')}
+                    </SelectItem>
+                  )}
+                  {levelFolders.map((folder) => (
                     <SelectItem key={folder.id} value={folder.id}>
                       {folder.title}
                     </SelectItem>
