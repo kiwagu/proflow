@@ -38,6 +38,10 @@ const KB_TAG = 'Knowledge Base';
  *  - `kb/egerie-accent` ('Égérie') ................... accent fold (`unaccent`).
  *  - `kb/greeting-typo` ('Привет команде') ........... the Phase-2 `'превет'` fuzzy target
  *      (the NODE is seeded now so the corpus is complete; the typo ASSERTION is Phase 2).
+ *  - `kb/onboarding-title` ('Onboarding Guide') + `kb/onboarding-description`
+ *      ('Workspace Setup', `onboarding` in its DESCRIPTION) ... the Phase-2 ranking pair:
+ *      both match `onboarding`, but the title-match (title-prefix band) must outrank the
+ *      description-match (description-prefix band) — title > description at equal tier.
  *
  * RLS-absence corpus (the security proof, ADR-0024 §6/§8 — RLS is the SOLE fence):
  *  - `kb/private-other-owner` ('Договорённость приватная', owned by `searcherB`, NO grant)
@@ -150,6 +154,40 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           tags: [KB_TAG],
           body: prose(
             'A friendly Cyrillic greeting to the team. Seeded as the typo-tolerance target: a fuzzy query like "превет" should find "Привет" once the Phase-2 trigram tier lands.'
+          ),
+        },
+
+        // ── search corpus: the title>description ranking pair (ADR-0024 §3, Phase 2) ──
+        // Two nodes that BOTH match `onboarding`, but at the SAME tier via DIFFERENT
+        // fields: this node carries it in its TITLE (title-prefix), its sibling below
+        // carries it as a description PREFIX (description-prefix). The banded scorer puts
+        // title-prefix (500) strictly above description-prefix (300), so this node must
+        // rank BEFORE its sibling — the assertion-5 proof. `onboarding` is a fresh term
+        // that collides with no other corpus assertion (договор / egerie / GETTING / превет).
+        {
+          // TITLE match: `onboarding` is a prefix of 'Onboarding Guide' → title band.
+          ref: 'kb/onboarding-title',
+          kind: 'text',
+          title: 'Onboarding Guide',
+          description:
+            'The TITLE carries the ranking term — this node must outrank the description-match.',
+          tags: [KB_TAG],
+          body: prose(
+            'A short orientation for new teammates. This node exists to prove search ranking: a TITLE match outranks a DESCRIPTION match for the same query term at the same tier.'
+          ),
+        },
+        {
+          // DESCRIPTION match: 'onboarding' opens the DESCRIPTION body (description prefix),
+          // while the TITLE deliberately avoids the term — so the only way this node matches
+          // `onboarding` is via its description, ranking it BELOW the title-match above.
+          ref: 'kb/onboarding-description',
+          kind: 'text',
+          title: 'Workspace Setup',
+          description:
+            'Onboarding new teammates starts here — the ranking term lives in the DESCRIPTION, not the title.',
+          tags: [KB_TAG],
+          body: prose(
+            'Steps to configure a new workspace. The ranking term appears only in this node’s description, so a search for it ranks this node below the title-match sibling.'
           ),
         },
 

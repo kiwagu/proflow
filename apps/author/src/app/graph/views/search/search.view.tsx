@@ -8,12 +8,120 @@ import {
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { Input } from '@workspace/ui/components/input';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
-import { byText } from '@workspace/ui/lib/sort';
+import { compareText } from '@workspace/ui/lib/sort';
 import { Search } from 'lucide-react';
 import * as React from 'react';
 
 import { ItemCard } from '@/app/graph/views/drive/drive-projection.view';
 import type { KbViewData } from '@/app/graph/views/registry/projection-view.types';
+import type { ResourceFloor } from '@/app/graph/graph-data.types';
+
+/**
+ * The renderable meta a SEARCH hit carries on the wire (ADR-0024 §1) — the subset of
+ * `SearchResultItem` the SHARED ResourcePanel needs to render correct meta when the
+ * hit is NOT in the resolved Drive canvas (`kbData`/`result.items`). The workbench
+ * keeps these keyed by id and reads them as a FALLBACK so opening a search result
+ * (`kind`/`status`/broadcast `visibility`) shows the node's real meta line instead of
+ * a bare degraded one — and so the panel opens at all for an out-of-canvas hit (whose
+ * `selectedNode` would otherwise resolve to null). `visibility` is the broadcast floor
+ * the row already carries; never a fence (RLS already admitted the row to the result).
+ */
+export type SearchSelection = {
+  id: string;
+  kind: string;
+  title: string;
+  status: string;
+  visibility: ResourceFloor;
+};
+
+/**
+ * Fold a string the way the server's `kb.search_normalize` does (lower + strip
+ * accents) — for CLIENT-SIDE highlight matching ONLY (ADR-0024 §3a). The server
+ * already did the real lexical matching + ranking + snippet extraction; this fold
+ * is purely so the term we visually `<mark>` inside the plain-text snippet matches
+ * the same case/accent-insensitive boundaries the lexical fold used (so `egerie`
+ * highlights inside `Égérie`, `getting` inside `Getting`, `превет`-class folds).
+ * NFD + combining-mark strip mirrors `unaccent(lower(...))` for the Latin + Cyrillic
+ * cases the search corpus covers; it is a presentation approximation, never a fence.
+ */
+function foldForHighlight(value: string): string {
+  // U+0300–U+036F = the combining diacritical marks NFD splits accents into; drop them
+  // to fold `é→e`, `ё→е`-class (the unaccent(lower(...)) approximation, §3a/§3c).
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/**
+ * HighlightedText — render `text` with each case/accent-insensitive occurrence of
+ * `term` wrapped in `<mark>`, emitting REACT NODES (never `dangerouslySetInnerHTML`,
+ * so a snippet can never inject markup — the data layer ships PLAIN text). Matching
+ * runs over the folded forms (so accents/case fold) but the ORIGINAL substring is
+ * rendered, preserving the snippet's real casing/accents. A term that does not occur
+ * (e.g. a fuzzy/typo hit whose exact letters aren't in the excerpt) renders the text
+ * unmarked — the row is still a valid ranked result, just with nothing to underline.
+ */
+function HighlightedText({
+  text,
+  term,
+}: {
+  text: string;
+  term: string;
+}): React.ReactElement {
+  const trimmed = term.trim();
+  if (trimmed.length === 0) {
+    return <>{text}</>;
+  }
+  const foldedText = foldForHighlight(text);
+  const foldedTerm = foldForHighlight(trimmed);
+  // NFD can change length per char (a precomposed accent → base + combining mark we
+  // then strip), so fold per-character and keep a map from FOLDED offset back to the
+  // ORIGINAL offset — that lets us slice the original (real casing/accents) at the
+  // boundaries we found in the folded string.
+  if (foldedTerm.length === 0 || !foldedText.includes(foldedTerm)) {
+    return <>{text}</>;
+  }
+  // Build the folded->original index map (folding each char independently keeps the
+  // 1:N relationship local and the map exact for the BMP text the corpus uses).
+  const foldedToOriginal: number[] = [];
+  let folded = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const piece = foldForHighlight(text[i] ?? '');
+    for (let j = 0; j < piece.length; j += 1) {
+      foldedToOriginal.push(i);
+    }
+    folded += piece;
+  }
+  foldedToOriginal.push(text.length); // sentinel for the end boundary
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0; // offset in the FOLDED string
+  let key = 0;
+  for (;;) {
+    const hit = folded.indexOf(foldedTerm, cursor);
+    if (hit === -1) {
+      break;
+    }
+    const origStart = foldedToOriginal[hit] ?? text.length;
+    const origEnd = foldedToOriginal[hit + foldedTerm.length] ?? text.length;
+    if (origStart > (foldedToOriginal[cursor] ?? 0)) {
+      parts.push(text.slice(foldedToOriginal[cursor] ?? 0, origStart));
+    }
+    parts.push(
+      <mark
+        key={key}
+        className="bg-primary/15 text-foreground rounded-[2px] px-0.5"
+      >
+        {text.slice(origStart, origEnd)}
+      </mark>
+    );
+    key += 1;
+    cursor = hit + foldedTerm.length;
+  }
+  const tail = foldedToOriginal[cursor] ?? text.length;
+  if (tail < text.length) {
+    parts.push(text.slice(tail));
+  }
+  return <>{parts}</>;
+}
 
 /**
  * SearchView — the Drive lexical-search lens (ADR-0024 §5, slice-12 Phase 1). NOT a
@@ -31,8 +139,14 @@ import type { KbViewData } from '@/app/graph/views/registry/projection-view.type
  * ResourcePanel (owned by the workbench) via `onSelect`; a `text` node opens the
  * reader via `onOpenDocument`.
  *
- * Phase 1 = FIRST PAGE ONLY. `score`/`snippet` and the keyset "load more" cursor are
- * Phase 2 (deliberately not wired here) — this renders the first page of rows.
+ * Phase 2 adds the `snippet` excerpt (rendered under each row, with the query term
+ * client-highlighted to match the lexical fold) and a stable client tiebreak on equal
+ * server score. STILL FIRST PAGE ONLY — the keyset "load more" cursor stays unwired
+ * (a separate later increment). The banded `score` is NOT surfaced as UI chrome: it is
+ * an internal ranking value, not a user-meaningful number — rows simply render in the
+ * server's authoritative `score DESC, title COLLATE kb.text_ci_ai, id` order, with the
+ * client only stabilising rows of EQUAL score by title (the same `compareText` the
+ * server mirrors).
  */
 
 /** Debounce before firing a search (parity with the member-picker async search). */
@@ -58,8 +172,13 @@ export function SearchView({
   initialTerm: string;
   /** The currently selected node id (shared across views — highlights the row). */
   selectedId?: string;
-  /** Single-click a row → open the SHARED ResourcePanel (owned by the workbench). */
-  onSelect: (nodeId: string) => void;
+  /**
+   * Single-click a row → open the SHARED ResourcePanel (owned by the workbench). The
+   * SELECTED search item's renderable meta rides along so the panel can render correct
+   * meta even when the hit is NOT in the resolved canvas (`result.items`/`kbData`) —
+   * the workbench reads it as a fallback (ADR-0024 §5, out-of-canvas hit follow-up).
+   */
+  onSelect: (selection: SearchSelection) => void;
   /** Open a `text` node in the reader (owned by the workbench). */
   onOpenDocument?: (nodeId: string) => void;
   /** Server-loaded KB seed — read for the owner "You" label + node meta line. */
@@ -142,11 +261,17 @@ export function SearchView({
     return () => window.clearTimeout(handle);
   }, [spaceId, trimmed]);
 
-  // Client-side tiebreak by title (case-insensitive, natural) — consistent with the
-  // sibling Drive lenses, which sort their card sets via `byText`. The server already
-  // orders the page; this only stabilizes equal-rank rows (score is Phase 2).
+  // The server is AUTHORITATIVE on order (`score DESC, title COLLATE kb.text_ci_ai,
+  // id`). The client only STABILISES rows of EQUAL score by title — `compareText` is
+  // the JS mirror of the server `kb.text_ci_ai` collation (ADR-0024 §3c), so this
+  // re-sort agrees with the server and never reorders across different scores. (A
+  // higher score must never fall below a lower one — so score is the primary key here,
+  // title only the equal-score tiebreak, matching how sibling Drive views tiebreak.)
   const sortedItems = React.useMemo(
-    () => items.slice().sort(byText((item) => item.title)),
+    () =>
+      items
+        .slice()
+        .sort((a, b) => b.score - a.score || compareText(a.title, b.title)),
     [items]
   );
 
@@ -156,6 +281,23 @@ export function SearchView({
       onTermChange?.(next);
     },
     [onTermChange]
+  );
+
+  // Open the shared ResourcePanel for a search hit, carrying the row's own renderable
+  // meta up (so an out-of-canvas hit still shows correct kind/status/visibility). The
+  // wire `visibility` is `string`; the broadcast floor is one of the three enum values,
+  // so narrow it for the panel (RLS already admitted the row — this is display only).
+  const onSelectItem = React.useCallback(
+    (item: SearchResultItem) => {
+      onSelect({
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        status: item.status,
+        visibility: item.visibility as ResourceFloor,
+      });
+    },
+    [onSelect]
   );
 
   const toolbar = (
@@ -201,12 +343,27 @@ export function SearchView({
               currentUserId={currentUserId}
               layout="grid"
               selected={item.id === selectedId}
+              footer={
+                // The PLAIN-text excerpt the engine extracted (left(body,160) for a
+                // description hit, the title for a title-only hit; ADR-0024 §3). The
+                // UI does the highlighting — wrap the live query term where it folds
+                // into the snippet, as React nodes (never raw HTML). A title-only
+                // snippet (== title) is fine to highlight; omitted when no snippet.
+                item.snippet ? (
+                  <p
+                    className="text-muted-foreground line-clamp-2 text-xs"
+                    data-testid="drive-search-snippet"
+                  >
+                    <HighlightedText text={item.snippet} term={trimmed} />
+                  </p>
+                ) : null
+              }
               onOpen={() =>
                 item.kind === 'text' && onOpenDocument
                   ? onOpenDocument(item.id)
-                  : onSelect(item.id)
+                  : onSelectItem(item)
               }
-              onDetails={() => onSelect(item.id)}
+              onDetails={() => onSelectItem(item)}
             />
           ))}
         </div>

@@ -111,8 +111,11 @@ already-granted member from BOTH the page and the `total_count`.
 `search` is the lexical-search corpus (ADR-0024 / slice-12): the `knowledge-base` scenario
 ALSO opts into it, layering a multi-locale match set onto the KB articles — a Cyrillic node
 (`Договор аренды`, case-insensitive prefix), an accented node (`Égérie`, `unaccent` fold),
-the English `Getting Started` (case-insensitive prefix), and the Phase-2 typo target
-(`Привет команде`, seeded now, asserted later) — PLUS the RLS-absence proof (ADR-0024 §6):
+the English `Getting Started` (case-insensitive prefix), the Phase-2 fuzzy typo target
+(`Привет команде`, found by `превет` via `pg_trgm` word_similarity — NOT a prefix, so only
+the fuzzy tier surfaces it), and the Phase-2 ranking pair (`Onboarding Guide` whose TITLE
+matches `onboarding` vs `Workspace Setup` whose DESCRIPTION does, proving the banded scorer
+ranks title above description at equal tier) — PLUS the RLS-absence proof (ADR-0024 §6):
 a PRIVATE node owned by a SECOND space member (`searcherB`) that must stay ABSENT from a
 non-grantee's search, and a child under a folder shared to `searcherB` that is PRESENT for
 them via the ADR-0023 inherited-grant disjunct composing through search. RLS is the SOLE
@@ -175,8 +178,9 @@ The lexical-search matrix spec (`knowledge-search.e2e.spec.ts`, ADR-0024 / slice
 draws its corpus from the shared `knowledge-base` scenario via `seedSearchCorpusFixture`,
 and runs the search itself through the SAME create-vocabulary — `seedClientFor(actor).search`
 POSTs `/author/graph/search`, the REAL route, RLS-fenced as the acting user — so a hit's
-presence/absence is the live runtime truth. It asserts the Phase-1 match classes (Cyrillic /
-accented / case-insensitive prefix) and the security proof: another user's PRIVATE node is
+presence/absence is the live runtime truth. It asserts the match classes (Cyrillic /
+accented / case-insensitive prefix, plus the Phase-2 fuzzy typo and title>description
+ranking) and the security proof: another user's PRIVATE node is
 ABSENT for a non-grantee, an ancestor-shared child is PRESENT for the grantee (inherited
 grant), and a node in a SECOND tenant (built by the fixture, since the catalog is
 single-space) stays out of an in-space search — every absence proven by RLS, not an app filter.

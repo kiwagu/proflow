@@ -1821,6 +1821,14 @@ export type SearchCorpusFixture = {
   /** Cyrillic greeting ('Привет команде') — the Phase-2 `'превет'` typo target (seeded now). */
   typoTargetId: string;
   typoTargetTitle: string;
+  /** 'Onboarding Guide' — `onboarding` matches its TITLE; must outrank the description-match
+   * below (title > description at equal tier — Phase-2 assertion 5). */
+  onboardingTitleId: string;
+  onboardingTitleTitle: string;
+  /** 'Workspace Setup' — `onboarding` matches only its DESCRIPTION; must rank BELOW the
+   * title-match above (Phase-2 assertion 5). */
+  onboardingDescriptionId: string;
+  onboardingDescriptionTitle: string;
   /** Bea's PRIVATE node ('Договорённость приватная') — ABSENT from `admin`'s search (assertion 6). */
   privateOtherOwnerId: string;
   privateOtherOwnerTitle: string;
@@ -1895,6 +1903,10 @@ export async function seedSearchCorpusFixture(
     englishTitle: 'Getting Started',
     typoTargetId: id('kb/greeting-typo'),
     typoTargetTitle: 'Привет команде',
+    onboardingTitleId: id('kb/onboarding-title'),
+    onboardingTitleTitle: 'Onboarding Guide',
+    onboardingDescriptionId: id('kb/onboarding-description'),
+    onboardingDescriptionTitle: 'Workspace Setup',
     privateOtherOwnerId: id('kb/private-other-owner'),
     privateOtherOwnerTitle: 'Договорённость приватная',
     inheritedChildId: id('kb/inherited-child'),

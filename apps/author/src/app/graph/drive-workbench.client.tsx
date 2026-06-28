@@ -27,7 +27,7 @@ import {
   type DriveDropData,
 } from './drive-dnd';
 import { DriveProjectionView } from './views/drive/drive-projection.view';
-import { SearchView } from './views/search/search.view';
+import { SearchView, type SearchSelection } from './views/search/search.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
 import { useEditLauncher } from './views/document-reader/use-edit-launcher';
 import { WorkbenchChrome } from './workbench-chrome';
@@ -276,6 +276,30 @@ export function DriveWorkbench({
     (id: string) => {
       setSelectedId(id);
       recordOpen(id);
+    },
+    [recordOpen]
+  );
+
+  // The renderable meta of a SEARCH hit opened from the search lens (ADR-0024 §5
+  // follow-up). The Details panel derives `selectedNode` + its meta from the resolved
+  // canvas (`result.items` / `kbData`), keyed by the resolved set — but a search hit can
+  // be OUTSIDE that set (it resolves its own live result, a superset of the canvas). For
+  // such a hit the canvas lookups return null, so the panel would either not open or show
+  // a bare line. We stash the row's own fields here (the search result carries
+  // kind/title/status/visibility) and read them as a FALLBACK below — no parallel data
+  // path, no service-role, no widening: it is the SAME row RLS already admitted to the
+  // result, surfaced to the SAME panel. (Description/grantees aren't on the search row;
+  // those panel sections degrade gracefully — the on-demand description fetch is the
+  // panel's existing RLS-fenced save route, never a new read path.)
+  const [searchSelection, setSearchSelection] =
+    React.useState<SearchSelection | null>(null);
+
+  // Open the Details panel for a search hit, remembering its meta as the canvas fallback.
+  const selectSearchHit = React.useCallback(
+    (selection: SearchSelection) => {
+      setSearchSelection(selection);
+      setSelectedId(selection.id);
+      recordOpen(selection.id);
     },
     [recordOpen]
   );
@@ -698,20 +722,39 @@ export function DriveWorkbench({
     [spaceId, containment, copyHeld, isSelfOrDescendant, refresh, endDrag, t]
   );
 
+  // The canvas-keyed fallback for a search hit OUTSIDE the resolved canvas (ADR-0024 §5).
+  // Only honoured when its id matches the live selection (a stale stash from a previous
+  // search row is ignored — a canvas node always wins).
+  const fallbackSelection =
+    searchSelection && searchSelection.id === selectedId
+      ? searchSelection
+      : null;
+
   const selectedNode = React.useMemo<SelectedNode | null>(() => {
     if (!selectedId) {
       return null;
     }
     const item = result.items.find((entry) => entry.id === selectedId);
-    return item
+    if (item) {
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        status: item.status,
+      };
+    }
+    // Out-of-canvas search hit — render the panel from the row's own carried meta so it
+    // opens with correct kind/title/status (its description/versions/grantees sections
+    // degrade gracefully; the description's own edit/save route stays RLS-fenced).
+    return fallbackSelection
       ? {
-          id: item.id,
-          kind: item.kind,
-          title: item.title,
-          status: item.status,
+          id: fallbackSelection.id,
+          kind: fallbackSelection.kind,
+          title: fallbackSelection.title,
+          status: fallbackSelection.status,
         }
       : null;
-  }, [selectedId, result.items]);
+  }, [selectedId, result.items, fallbackSelection]);
 
   // The open document's title (the reader header). A mutation that removed it
   // collapses the reader back to the Drive grid.
@@ -791,7 +834,7 @@ export function DriveWorkbench({
               spaceId={spaceId}
               initialTerm={searchTerm}
               selectedId={selectedId}
-              onSelect={selectNode}
+              onSelect={selectSearchHit}
               onOpenDocument={openDocument}
               kbData={kbData}
               onTermChange={setSearch}
@@ -919,7 +962,9 @@ export function DriveWorkbench({
             }
             visibility={
               selectedNode
-                ? (kbData?.metaByItem[selectedNode.id]?.visibility ?? null)
+                ? (kbData?.metaByItem[selectedNode.id]?.visibility ??
+                  fallbackSelection?.visibility ??
+                  null)
                 : null
             }
             grantees={

@@ -46,6 +46,7 @@ type SearchRow = {
   body_ref: unknown;
   score: number;
   matched_field: 'title' | 'description';
+  snippet: string | null;
 };
 
 export async function resolveSearch(
@@ -88,15 +89,19 @@ export async function resolveSearch(
     body_ref: row.body_ref ?? null,
     score: row.score,
     matchedField: row.matched_field,
+    ...(row.snippet != null ? { snippet: row.snippet } : {}),
   }));
 
-  // The keyset cursor for "load more": the (score, id) of the last row, when the
-  // page came back FULL (a partial page means no further rows). Decoded back into
-  // the cursor predicate on the next call (`compileSearchQuery`).
+  // The keyset cursor for "load more": the (score, title, id) of the last row —
+  // the 3-tuple mirroring the ORDER BY EXACTLY — when the page came back FULL (a
+  // partial page means no further rows). Decoded back into the cursor predicate on
+  // the next call (`compileSearchQuery`).
   const last = rows[rows.length - 1];
   const isFullPage = rows.length >= parsed.data.limit;
   const nextCursor =
-    isFullPage && last ? encodeSearchCursor(last.score, last.id) : undefined;
+    isFullPage && last
+      ? encodeSearchCursor(last.score, last.title, last.id)
+      : undefined;
 
   return searchResultSchema.parse({ items, nextCursor });
 }

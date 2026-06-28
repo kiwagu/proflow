@@ -31,7 +31,10 @@ export const searchResultItemSchema = projectionResultItemSchema
     score: z.number(),
     // the field that produced the winning tier
     matchedField: matchedFieldSchema,
-    // highlighted excerpt (Phase 2 — optional until then)
+    // PLAIN-TEXT lexical excerpt (ADR-0024 §3, Phase 2): for a description match,
+    // a leading window of the body; for a title-only match, the title. PLAIN text
+    // only — the UI does the term highlighting (no HTML/<mark> crosses the data
+    // layer). Optional: a row whose snippet would be empty omits it.
     snippet: z.string().optional(),
   });
 export type SearchResultItem = z.infer<typeof searchResultItemSchema>;
