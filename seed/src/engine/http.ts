@@ -85,6 +85,22 @@ export type TextResourceResult = {
 export type CopyResult = { nodeId: string; count: number };
 export type PurgeResult = { purged: string[]; reason?: string };
 
+/** One row of the lexical-search result (ADR-0024 §1) — a knowledge resource the
+ * caller may see under RLS, annotated with its match `score` + `matchedField`. The
+ * shape mirrors `SearchResultItem`; the seed/e2e only needs `id`/`title` to assert
+ * presence/absence by `ref`. */
+export type SearchHit = {
+  id: string;
+  kind: string;
+  title: string;
+  score: number;
+  matchedField: 'title' | 'description';
+};
+
+/** The `/author/graph/search` POST result (ADR-0024 §5): the ordered first page of
+ * hits the caller may see under RLS (the SOLE access fence). */
+export type SearchHits = { items: SearchHit[]; nextCursor?: string };
+
 /** One grantable co-member as the Share dialog people-picker reads it (ADR-0019/0020):
  * `displayName` + `email` resolved via the co-member directory (`email` may be null). */
 export type GrantableMember = {
@@ -211,6 +227,18 @@ export type SeedClient = SeedFetcher & {
    * it was the sole widening disjunct). Owner-sovereign or `space.knowledge.access`. */
   revokeUser(resourceId: string, userId: string): Promise<void>;
   star(spaceId: string, nodeId: string, starred: boolean): Promise<void>;
+  /** Run a lexical search as THIS actor (ADR-0024 §5): POST `/author/graph/search`
+   * with a `term` + `spaceId`. The server compiles + runs the SELECT under the
+   * caller's RLS session, so the returned hits are exactly the resources the caller
+   * may see — a private / other-space node never appears for a non-grantee (RLS is
+   * the SOLE fence; there is NO app-level visibility filter). `limit` overrides the
+   * default page size. The shared create-vocabulary the search e2e draws through, so
+   * the test exercises the SAME runtime path the Drive search lens fires. */
+  search(
+    spaceId: string,
+    term: string,
+    opts?: { limit?: number }
+  ): Promise<SearchHits>;
 };
 
 /** Wrap a `SeedFetcher` with the typed `/author/graph/*` create-vocabulary. */
@@ -438,6 +466,16 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
         starred,
       });
       expectStatus(res, 200, `star(${nodeId})`);
+    },
+
+    async search(spaceId, term, opts) {
+      const res = await fetcher.post('/author/graph/search', {
+        spaceId,
+        term,
+        ...(opts?.limit === undefined ? {} : { limit: opts.limit }),
+      });
+      const body = expectStatus(res, 200, `search("${term}")`);
+      return body as SearchHits;
     },
   };
 }

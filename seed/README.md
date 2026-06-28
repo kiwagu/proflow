@@ -55,9 +55,9 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`per-user-share`, `knowledge-base`, `board`, `shared`, `hierarchy`, `trash` — group the
-scenarios for one capability so the seed stays runnable as the catalog grows. A scenario
-opts into a preset via its `presets` field. `access` is cohort/floor sharing;
+`per-user-share`, `knowledge-base`, `search`, `board`, `shared`, `hierarchy`, `trash` —
+group the scenarios for one capability so the seed stays runnable as the catalog grows. A
+scenario opts into a preset via its `presets` field. `access` is cohort/floor sharing;
 `shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
 mechanism-distinction fixture (ADR-0021 Part C): one non-owner `viewer` sees four nodes
 owned by another member, one per access MECHANISM — a per-user grant (→ `personal`), a
@@ -108,6 +108,18 @@ grantable cohort sharing one space with a private share target — that exercise
 paginated directory-v2 picker (ADR-0021 Part A): a page of 5 + "+N more", a keyset
 "Show more" next page with no overlap, and `p_exclude` dropping the owner + the
 already-granted member from BOTH the page and the `total_count`.
+`search` is the lexical-search corpus (ADR-0024 / slice-12): the `knowledge-base` scenario
+ALSO opts into it, layering a multi-locale match set onto the KB articles — a Cyrillic node
+(`Договор аренды`, case-insensitive prefix), an accented node (`Égérie`, `unaccent` fold),
+the English `Getting Started` (case-insensitive prefix), and the Phase-2 typo target
+(`Привет команде`, seeded now, asserted later) — PLUS the RLS-absence proof (ADR-0024 §6):
+a PRIVATE node owned by a SECOND space member (`searcherB`) that must stay ABSENT from a
+non-grantee's search, and a child under a folder shared to `searcherB` that is PRESENT for
+them via the ADR-0023 inherited-grant disjunct composing through search. RLS is the SOLE
+fence — there is no app-level visibility filter — so the search SELECT runs as the user
+through the reused projection-resolve transport (ADR-0009). The other-space negative
+(a node in a DIFFERENT space) is built in the e2e fixture's second tenant, since a catalog
+scenario is single-space.
 
 ## The dictionary
 
@@ -158,6 +170,16 @@ child auto-appearing, a folder REVOKE removing the inherited subtree, a RE-GRANT
 `contains` cycle that must not hang or over-grant) run through the SAME
 `seedClientFor(actor)` create-vocabulary, never inline create/delete helpers — so the
 demo DB and the test exercise one owner-scoped inheritance predicate identically.
+
+The lexical-search matrix spec (`knowledge-search.e2e.spec.ts`, ADR-0024 / slice-12)
+draws its corpus from the shared `knowledge-base` scenario via `seedSearchCorpusFixture`,
+and runs the search itself through the SAME create-vocabulary — `seedClientFor(actor).search`
+POSTs `/author/graph/search`, the REAL route, RLS-fenced as the acting user — so a hit's
+presence/absence is the live runtime truth. It asserts the Phase-1 match classes (Cyrillic /
+accented / case-insensitive prefix) and the security proof: another user's PRIVATE node is
+ABSENT for a non-grantee, an ancestor-shared child is PRESENT for the grantee (inherited
+grant), and a node in a SECOND tenant (built by the fixture, since the catalog is
+single-space) stays out of an in-space search — every absence proven by RLS, not an app filter.
 
 ## Extending the catalog
 

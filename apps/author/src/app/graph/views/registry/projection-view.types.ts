@@ -133,7 +133,11 @@ export type TrashLensData = {
  * 'shared'): the canvas ∩ the `kbData.sharedByMe` resourceId set, the read-only
  * projection over my per-user grants (ADR-0021 Part B). 'home' = the personalized
  * "For you" digest (recently opened + recently updated) over the now-personal visible
- * set (ADR-0017 §4, personalization on the activity spine).
+ * set (ADR-0017 §4, personalization on the activity spine). 'search' = the lexical
+ * search lens (ADR-0024 §5, slice-12 Phase 1) — NOT a projection over the resolved
+ * canvas but a SUBSTRATE-capability surface that resolves its own `SearchResult` live
+ * (debounced `?q=` term) under the same RLS transport; the first consumer of the
+ * search capability, rendered in the Drive workbench but not bound to it.
  */
 export type DriveScope =
   | 'kb'
@@ -142,7 +146,8 @@ export type DriveScope =
   | 'recent'
   | 'shared'
   | 'shared-by-me'
-  | 'trash';
+  | 'trash'
+  | 'search';
 
 /**
  * The lenses that get the advanced (structural / containment-tree) DISPLAY MODE

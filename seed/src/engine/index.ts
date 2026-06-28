@@ -34,6 +34,8 @@ export {
   type GrantableMembersPage,
   type NodeKind,
   type PurgeResult,
+  type SearchHit,
+  type SearchHits,
   type SeedClient,
   type SeedFetcher,
   type SeedResponse,

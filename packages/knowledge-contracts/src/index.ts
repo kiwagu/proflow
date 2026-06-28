@@ -46,6 +46,29 @@ export {
 } from './projection-result.schema.js';
 
 export {
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MAX_LIMIT,
+  SEARCH_QUERY_SCHEMA_VERSION,
+  lexicalSearchQuerySchema,
+  parseSearchQuery,
+  searchQuerySchema,
+  searchScopeSchema,
+  type LexicalSearchQuery,
+  type SearchQuery,
+  type SearchScope,
+} from './search-query.schema.js';
+
+export {
+  matchedFieldSchema,
+  parseSearchResult,
+  searchResultItemSchema,
+  searchResultSchema,
+  type MatchedField,
+  type SearchResult,
+  type SearchResultItem,
+} from './search-result.schema.js';
+
+export {
   KNOWLEDGE_ACTIVITY_BODY_SUBJECT,
   KNOWLEDGE_ACTIVITY_CONSUMER_NAME,
   KNOWLEDGE_ACTIVITY_STREAM_NAME,

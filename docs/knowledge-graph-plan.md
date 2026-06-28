@@ -413,4 +413,12 @@ guarded for in-use cross-owner references.
       natural-key PKs, so no prefix is needed there
 - [x] Concrete filter/traversal schema — `FilterNode` + `TraversalSpec` landed in
       `@workspace/knowledge-contracts`; the remaining concrete work is the compiler (tracked in §4)
+- [x] Findability — lexical search (Phase 1): search is a standalone substrate capability (its own
+      `SearchQuery`/`SearchResult` contracts + `compileSearchQuery`/`resolveSearch` engine artifacts),
+      a SIBLING of projection-resolve that REUSES the same per-user RLS transport (never service-role) —
+      RLS is the sole access fence. The first consumer is the Drive `search` lens: a debounced, min-2-char
+      input that renders the first page of results by REUSING the existing Drive resource card +
+      ResourcePanel (the search-result shape is a superset of the projection item, so zero adapter), with
+      en+es i18n. Fuzzy/ranking + score/snippet + "load more" (Phase 2), a second consumer / command palette
+      (Phase 3), and semantic search via pgvector (Phase 4) are the deferred next rungs
 - [ ] Verify `pg_graphql` and (future) graph-extension feasibility on self-hosted Supabase

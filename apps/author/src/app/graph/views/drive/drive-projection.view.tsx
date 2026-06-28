@@ -32,6 +32,7 @@ import {
   Plus,
   Radio,
   RotateCcw,
+  Search,
   Send,
   Star,
   Target,
@@ -184,6 +185,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     key: 'navKnowledgeBase',
     label: (t) => t('graph.drive.navKnowledgeBase'),
     scope: 'kb',
+  },
+  {
+    icon: Search,
+    key: 'navSearch',
+    label: (t) => t('graph.drive.navSearch'),
+    scope: 'search',
   },
   {
     icon: Users,
@@ -2333,7 +2340,7 @@ function FolderCard({
   );
 }
 
-function ItemCard({
+export function ItemCard({
   t,
   node,
   attributes,

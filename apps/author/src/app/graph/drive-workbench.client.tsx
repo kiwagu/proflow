@@ -27,6 +27,7 @@ import {
   type DriveDropData,
 } from './drive-dnd';
 import { DriveProjectionView } from './views/drive/drive-projection.view';
+import { SearchView } from './views/search/search.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
 import { useEditLauncher } from './views/document-reader/use-edit-launcher';
 import { WorkbenchChrome } from './workbench-chrome';
@@ -66,6 +67,7 @@ export function DriveWorkbench({
   initialFolder = null,
   initialDoc = null,
   initialScope = 'kb',
+  initialSearchTerm = '',
   initialLensView = 'flat',
   initialLayout = 'grid',
 }: {
@@ -76,6 +78,9 @@ export function DriveWorkbench({
   initialFolder?: string | null;
   initialDoc?: string | null;
   initialScope?: DriveScope;
+  /** The `?q=` search term, read SERVER-SIDE so a deep-linked search lens SSRs with
+   * its term (no hydration flip). Only meaningful when `initialScope === 'search'`. */
+  initialSearchTerm?: string;
   initialLensView?: LensView;
   initialLayout?: 'grid' | 'list';
 }) {
@@ -93,6 +98,10 @@ export function DriveWorkbench({
   const [folderId, setFolderId] = React.useState<string | null>(initialFolder);
   const [docId, setDocId] = React.useState<string | null>(initialDoc);
   const [scope, setScope] = React.useState<DriveScope>(initialScope);
+  // The lexical-search term (ADR-0024 §5), mirrored in the URL (`?q=`) exactly as
+  // `?folder=`/`?scope=` are — so a search lens is shareable + survives refresh. Only
+  // carries meaning on the 'search' scope (the other lenses ignore it).
+  const [searchTerm, setSearchTerm] = React.useState<string>(initialSearchTerm);
   // The lens display mode (ADR-0022 + Addendum A) — seeded from the SERVER-resolved
   // EFFECTIVE mode (already clamped to 'flat' when the space is not entitled), so the
   // SSR'd toolbar + canvas agree with the client's first render (no hydration flip).
@@ -280,6 +289,8 @@ export function DriveWorkbench({
       doc: string | null;
       scope: DriveScope;
       view: LensView;
+      /** The search term — only set by the 'search'-scope callers (`?q=`). */
+      q?: string;
     }) => {
       const params = new URLSearchParams();
       if (loc.folder) params.set('folder', loc.folder);
@@ -289,6 +300,10 @@ export function DriveWorkbench({
       // when it deviates from the default 'flat', and only carries meaning on a
       // Shared scope (the server/view ignore it elsewhere).
       if (loc.view !== 'flat') params.set('view', loc.view);
+      // The search term rides the URL only on the 'search' scope (ADR-0024 §5) — a
+      // shareable deep-link `?scope=search&q=<term>`. `loc.q` is undefined for every
+      // non-search caller, so the param is absent everywhere else.
+      if (loc.scope === 'search' && loc.q) params.set('q', loc.q);
       const qs = params.toString();
       window.history.pushState(
         null,
@@ -314,10 +329,12 @@ export function DriveWorkbench({
           s === 'recent' ||
           s === 'shared' ||
           s === 'shared-by-me' ||
-          s === 'trash'
+          s === 'trash' ||
+          s === 'search'
           ? s
           : 'kb'
       );
+      setSearchTerm(p.get('q') ?? '');
       // Clamp the URL `?view=` to the entitlement — a forged 'advanced' on a locked
       // plan reads back as 'flat' (the same fence the server applies on first load).
       setLensView(
@@ -381,10 +398,26 @@ export function DriveWorkbench({
         doc: docId,
         scope: next,
         view: lensView,
+        // Entering 'search' carries the current term into the URL; any other scope
+        // leaves `q` absent (the param is search-only).
+        q: next === 'search' ? searchTerm : undefined,
       });
     },
-    [pushLocation, docId, lensView]
+    [pushLocation, docId, lensView, searchTerm]
   );
+
+  // Live search-term changes (ADR-0024 §5) — mirror the term into client state +
+  // the URL (`?q=`) via `replaceState` (no new history entry per keystroke), so the
+  // search lens is shareable + survives refresh without flooding browser history.
+  const setSearch = React.useCallback((next: string) => {
+    setSearchTerm(next);
+    const params = new URLSearchParams();
+    params.set('scope', 'search');
+    if (next) {
+      params.set('q', next);
+    }
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  }, []);
 
   // Switch the lens display mode (ADR-0022 Fork 4 + Addendum A) — Flat ↔ Advanced. Only
   // reachable from a structural lens's toolbar toggle (shown for the STRUCTURAL_LENS_
@@ -746,57 +779,82 @@ export function DriveWorkbench({
           right column that shrinks the content beside it when a node is selected */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          {/* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a
+          {/* The lexical-search lens (ADR-0024 §5) REPLACES the projection panes when
+              the 'search' scope is active — it is a substrate-capability surface, not a
+              projection over the resolved canvas, so it owns its own toolbar + results
+              and needs no DndContext (search rows are not draggable). Single-click a row
+              opens the SAME shared ResourcePanel via `selectNode`; a `text` row opens the
+              reader via `openDocument` — identical to the Drive cards. */}
+          {scope === 'search' ? (
+            <SearchView
+              messages={messages}
+              spaceId={spaceId}
+              initialTerm={searchTerm}
+              selectedId={selectedId}
+              onSelect={selectNode}
+              onOpenDocument={openDocument}
+              kbData={kbData}
+              onTermChange={setSearch}
+            />
+          ) : (
+            /* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a
               folder in pane B (folder/root targets are absolute graph ids). The custom
               `driveCollision` prefers a folder over the nested root zone (empty canvas /
               breadcrumb = root). The overlay shows the dragged node's title. `dragState`
-              lights up valid landing zones for every droppable the moment a drag starts. */}
-          <DndContext
-            id="drive-dnd"
-            sensors={dndSensors}
-            collisionDetection={driveCollision}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDragCancel={endDrag}
-          >
-            <DriveDragProvider value={dragState}>
-              {split ? (
-                <div className="flex min-w-0 flex-1 overflow-hidden">
-                  {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
+              lights up valid landing zones for every droppable the moment a drag starts. */
+            <DndContext
+              id="drive-dnd"
+              sensors={dndSensors}
+              collisionDetection={driveCollision}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragCancel={endDrag}
+            >
+              <DriveDragProvider value={dragState}>
+                {split ? (
+                  <div className="flex min-w-0 flex-1 overflow-hidden">
+                    {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
                       always KB-browse, navigating independently. Each pane namespaces its
                       dnd ids (a/b) so the SAME node rendered in both does not collide. */}
-                  <div className="flex min-w-0 flex-1 overflow-hidden border-r">
-                    <DrivePaneProvider value="a">
-                      {renderPane(folderId, scope, goFolder, goScope)}
-                    </DrivePaneProvider>
+                    <div className="flex min-w-0 flex-1 overflow-hidden border-r">
+                      <DrivePaneProvider value="a">
+                        {renderPane(folderId, scope, goFolder, goScope)}
+                      </DrivePaneProvider>
+                    </div>
+                    <div className="flex min-w-0 flex-1 overflow-hidden">
+                      <DrivePaneProvider value="b">
+                        {renderPane(
+                          folderId2,
+                          'kb',
+                          goFolder2,
+                          undefined,
+                          true
+                        )}
+                      </DrivePaneProvider>
+                    </div>
                   </div>
-                  <div className="flex min-w-0 flex-1 overflow-hidden">
-                    <DrivePaneProvider value="b">
-                      {renderPane(folderId2, 'kb', goFolder2, undefined, true)}
-                    </DrivePaneProvider>
-                  </div>
-                </div>
-              ) : (
-                <DrivePaneProvider value="a">
-                  {renderPane(folderId, scope, goFolder, goScope)}
-                </DrivePaneProvider>
-              )}
-            </DriveDragProvider>
+                ) : (
+                  <DrivePaneProvider value="a">
+                    {renderPane(folderId, scope, goFolder, goScope)}
+                  </DrivePaneProvider>
+                )}
+              </DriveDragProvider>
 
-            <DragOverlay dropAnimation={null}>
-              {dragData ? (
-                <CardTile className="pointer-events-none w-[240px] gap-2.5 px-3.5 py-2.5 shadow-lg">
-                  {React.createElement(iconForKind(dragData.kind), {
-                    className: 'text-muted-foreground size-[18px] shrink-0',
-                    'aria-hidden': true,
-                  })}
-                  <span className="truncate text-sm font-medium">
-                    {dragData.title}
-                  </span>
-                </CardTile>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+              <DragOverlay dropAnimation={null}>
+                {dragData ? (
+                  <CardTile className="pointer-events-none w-[240px] gap-2.5 px-3.5 py-2.5 shadow-lg">
+                    {React.createElement(iconForKind(dragData.kind), {
+                      className: 'text-muted-foreground size-[18px] shrink-0',
+                      'aria-hidden': true,
+                    })}
+                    <span className="truncate text-sm font-medium">
+                      {dragData.title}
+                    </span>
+                  </CardTile>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          )}
 
           {spaceId && openDoc ? (
             <DocumentReader
