@@ -1219,26 +1219,8 @@ export type Database = {
         Args: { p_capability_key: string }
         Returns: boolean
       }
-      auth_user_active_in_space: {
-        Args: { p_space_id: string; p_user_id: string }
-        Returns: boolean
-      }
       auth_user_can_access_in_space: {
         Args: { p_permission_key: string; p_space_id: string }
-        Returns: boolean
-      }
-      auth_user_can_access_resource: {
-        Args: {
-          p_owner_user_id: string
-          p_resource_id: string
-          p_space_id: string
-          p_verb: string
-          p_visibility: string
-        }
-        Returns: boolean
-      }
-      auth_user_can_manage_space_invites: {
-        Args: { p_space_id: string; p_user_id: string }
         Returns: boolean
       }
       auth_user_has_critical_capability: {
@@ -1253,22 +1235,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      auth_user_is_org_admin: {
-        Args: { p_organization_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      auth_user_is_space_admin: {
-        Args: { p_space_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      auth_user_manages_owner: {
-        Args: { p_resource_owner: string; p_space_id: string }
-        Returns: boolean
-      }
-      auth_user_member_of_org: {
-        Args: { p_organization_id: string; p_user_id: string }
-        Returns: boolean
-      }
       ensure_outbox_queue: {
         Args: { p_queue_name: string }
         Returns: undefined
@@ -1281,36 +1247,8 @@ export type Database = {
       entity_id_encode_rand_16: { Args: { bytes: string }; Returns: string }
       entity_id_encode_ts_10: { Args: { ms: number }; Returns: string }
       entity_id_generate: { Args: { prefix: string }; Returns: string }
-      knowledge_resource_inherited_grant: {
-        Args: {
-          p_owner_user_id: string
-          p_resource_id: string
-          p_space_id: string
-        }
-        Returns: boolean
-      }
-      knowledge_resource_scope_member: {
-        Args: { p_resource_id: string }
-        Returns: boolean
-      }
-      knowledge_resource_user_grant: {
-        Args: { p_resource_id: string }
-        Returns: boolean
-      }
       knowledge_user_scope_ids: { Args: never; Returns: string[] }
       outbox_queue_name: { Args: { p_channel: string }; Returns: string }
-      platform_feature_flag_actor_can_manage_scope: {
-        Args: { p_scope: string; p_scope_id?: string }
-        Returns: boolean
-      }
-      role_assignment_is_valid: {
-        Args: {
-          p_organization_id: string
-          p_role_id: string
-          p_space_id: string
-        }
-        Returns: boolean
-      }
       role_catalog_audit_snapshot: {
         Args: { p_role_id: string }
         Returns: Json
@@ -1535,14 +1473,6 @@ export type Database = {
           p_role_id: string
         }
         Returns: string
-      }
-      runtime_settings_actor_can_manage_scope: {
-        Args: { p_scope: string; p_scope_id?: string }
-        Returns: boolean
-      }
-      runtime_settings_actor_can_read_scope: {
-        Args: { p_is_public?: boolean; p_scope: string; p_scope_id?: string }
-        Returns: boolean
       }
       space_member_directory: {
         Args: {
