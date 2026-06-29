@@ -1,5 +1,8 @@
 # Docker Image Versions
 
+## 2026-06-29
+- supabase/postgres:17.6.1.136 (prev supabase/postgres:17.6.1.095) — PG17 patch; stays on 17.x
+
 ## 2026-06-03
 - supabase/studio:2026.06.03-sha-0bca601 (prev supabase/studio:2026.04.27-sha-5f60601)
 - supabase/gotrue:v2.189.0 (prev supabase/gotrue:v2.186.0)
