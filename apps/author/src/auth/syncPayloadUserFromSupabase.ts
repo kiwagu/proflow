@@ -1,6 +1,7 @@
 import type { Payload, PayloadRequest, TypedUser } from 'payload';
 
 import { AUTHOR_USERS_WRITE_CONTEXT } from '@/collections/users.sync-context';
+import { resolveMirrorEntityId } from '@/identity/mirror-source';
 import type { Config } from '@/payload-types';
 
 import type { SupabaseJwtClaims } from './verifySupabaseAccessToken';
@@ -51,10 +52,16 @@ export async function syncPayloadUserFromSupabase(
     }) as Promise<TypedUser>;
   }
 
+  // The `users` collection runs `customIdPlugin` in `validate` mode — an id MUST be
+  // supplied on create. Use the SAME stable mirror key (`profiles.entity_id`) the
+  // JetStream identity worker creates under, so this JIT bridge and the canonical
+  // worker never mint divergent ids for the same identity.
+  const id = await resolveMirrorEntityId(claims.sub);
   const created = await payload.create({
     collection: collectionSlug,
     context: AUTHOR_USERS_WRITE_CONTEXT,
     data: {
+      id,
       email: claims.email,
       supabaseSub: claims.sub,
     },
