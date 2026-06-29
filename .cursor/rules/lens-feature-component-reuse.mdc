@@ -1,0 +1,47 @@
+---
+description: Reuse the parameterizable lens / feature component — parameterize, don't fork
+globs: apps/author/src/app/graph/views/**
+alwaysApply: false
+---
+
+# Parameterize the lens — never fork the renderer
+
+The graph render layer is ONE parameterizable lens (ADR-0014, ADR-0025). KB / Shared /
+Shared-by-me / Starred / Recent / Trash / search are CONFIGURATIONS of it, not separate
+view components. This is the render-layer analogue of Invariant #1: a new view is data
+(a config), not a new code path.
+
+BEFORE building any list, tree, card-grid, row, row-cell, or row-action renderer:
+
+1. It already exists. The lens core renders a node-set in {grid|list} × {flat|tree}. Find
+   the existing renderer (`DriveProjectionView` / `LensView` / `LensListTable` / the shared
+   `DataTable`) and add your concern as a PROP or SLOT.
+2. Every cross-cutting feature is already an optional prop/slot: `dnd`, `star`,
+   `rowActions`, `rowAccessory`, `snippet`, `breadcrumb`, `create`, `view`, `layout`,
+   `expansion`, `nodeSet`. Default each OFF (fail-safe). If your feature is new, ADD a slot
+   to the core — do not clone the core to host it.
+3. Only the genuinely-new provider is yours to write: a node-set source, a fetch hook, a
+   slot renderer (e.g. a search snippet). Inject it; never re-derive card/table/tree/cell
+   /click-activate logic that the lens or `@workspace/ui` DataTable already owns.
+
+A second renderer beside the lens is a FORK. "The existing component is large / coupled" is
+the debt to pay down by extracting a prop — never a license to reinvent. If a true new view
+TYPE is needed (course/board), it is still a config of the lens, recorded by an ADR.
+
+Forbidden without an ADR: a parallel `*-table` / `*-tree` / `*-row` / `*-row-cells` file
+that re-implements the lens's grid/list/tree/cell rendering.
+
+# For the orchestrator / planner (ADR-0025 §7 R4)
+
+When a task is framed as a NEW render surface (e.g. "the search lens", "a graph view"),
+first ask: is this a new VIEW TYPE or a CONFIG of the existing lens? A data-layer "sibling
+capability" (ADR-0024-style) does NOT imply a sibling VIEW — at the render layer it is "one
+more config of the one lens" (ADR-0014 §2). Default to config. Only an ADR may authorize a
+new renderer.
+
+Sequence reuse explicitly: if the shared component lacks the slot the new feature needs,
+PARAMETERIZE FIRST, IMPLEMENT SECOND. The modularization agent runs proactively BEFORE the
+feature — it makes the cross-cutting concern (DnD, snippet, reveal, star, …) an optional
+prop/slot (behavior-preserving), and only THEN does the feature agent land the feature as a
+config + an injected provider. Never let a feature agent fork a renderer because "the
+component isn't ready"; the readiness step is a modularization task that precedes the feature.

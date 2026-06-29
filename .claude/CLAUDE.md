@@ -48,6 +48,7 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/shadcn-patterns-required.mdc
 @.cursor/rules/shadcn-patterns-react-ui.mdc
 @.cursor/rules/ui-hints-tooltips.mdc
+@.cursor/rules/lens-feature-component-reuse.mdc
 
 ## Payload CMS (Author app)
 
