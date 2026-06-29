@@ -1836,6 +1836,19 @@ export type SearchCorpusFixture = {
    * Bea via the inherited-grant disjunct, even though never granted directly (assertion 8). */
   inheritedChildId: string;
   inheritedChildTitle: string;
+  /** The leaf doc ('Abyssal Treasure', `abyssal` in its DESCRIPTION) buried SIX levels
+   * below the KB root — searching `abyssal` matches only this node; the Advanced
+   * (`?view=advanced`) lens must render its full ancestor chain expanded down to it. */
+  deepLeafId: string;
+  deepLeafTitle: string;
+  /** The distinctive term that matches ONLY the deep leaf (collides with no other
+   * corpus assertion) — the query the deep-tree advanced-search spec searches for. */
+  deepLeafTerm: string;
+  /** The five ancestor-folder titles on the path root → leaf, OUTERMOST first
+   * ('Level One' … 'Level Five') — the advanced view renders each, fully expanded. */
+  deepChainFolderTitles: [string, string, string, string, string];
+  /** The five ancestor-folder ids on the path root → leaf, OUTERMOST first. */
+  deepChainFolderIds: [string, string, string, string, string];
   /** The searcher (`admin`, owner of the corpus) — the primary acting user. */
   searcher: KnowledgeActor;
   /** A second owner in the SAME space: owns the private negative; the grantee of the
@@ -1911,6 +1924,23 @@ export async function seedSearchCorpusFixture(
     privateOtherOwnerTitle: 'Договорённость приватная',
     inheritedChildId: id('kb/inherited-child'),
     inheritedChildTitle: 'Договор унаследованный',
+    deepLeafId: id('kb/deep/leaf'),
+    deepLeafTitle: 'Abyssal Treasure',
+    deepLeafTerm: 'abyssal',
+    deepChainFolderTitles: [
+      'Level One',
+      'Level Two',
+      'Level Three',
+      'Level Four',
+      'Level Five',
+    ],
+    deepChainFolderIds: [
+      id('kb/deep/level-1'),
+      id('kb/deep/level-2'),
+      id('kb/deep/level-3'),
+      id('kb/deep/level-4'),
+      id('kb/deep/level-5'),
+    ],
     searcher: who('admin'),
     searcherB: who('searcherB'),
     otherSpace: {

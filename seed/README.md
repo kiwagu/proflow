@@ -123,6 +123,18 @@ fence — there is no app-level visibility filter — so the search SELECT runs 
 through the reused projection-resolve transport (ADR-0009). The other-space negative
 (a node in a DIFFERENT space) is built in the e2e fixture's second tenant, since a catalog
 scenario is single-space.
+The `search` corpus ALSO carries a SIX-LEVEL-DEEP folder chain — `kb/deep/level-1`…
+`kb/deep/level-5` (`Level One`…`Level Five`) ⊃ `kb/deep/leaf` (`Abyssal Treasure`, the
+distinctive term `abyssal` in its DESCRIPTION) — for the Pro-gated ADVANCED search lens
+(`/author/graph?scope=search&q=…&view=advanced`): Flat view lists the matched leaf, while
+Advanced view places it in its FULLY-EXPANDED ancestor-folder tree, recursively, to ANY
+depth (search = a filtered KB). A query for `abyssal` matches only the leaf; the advanced
+view must render every ancestor folder on the path root → leaf, expanded, with the snippet
+highlight on the leaf. The chain is nested via the scenario's `children` (the same
+`contain` create-vocabulary), never an inline spec tree — `seedSearchCorpusFixture`
+surfaces `deepLeafId`/`deepLeafTitle`/`deepLeafTerm` + the `deepChainFolderTitles`/
+`deepChainFolderIds` (outermost first) so a deep-tree advanced-search spec can assert the
+whole path renders.
 
 ## The dictionary
 
@@ -184,6 +196,17 @@ ranking) and the security proof: another user's PRIVATE node is
 ABSENT for a non-grantee, an ancestor-shared child is PRESENT for the grantee (inherited
 grant), and a node in a SECOND tenant (built by the fixture, since the catalog is
 single-space) stays out of an in-space search — every absence proven by RLS, not an app filter.
+
+The SAME `seedSearchCorpusFixture` corpus also backs the Phase-3 cross-client proof
+(ADR-0024 §5): a SECOND consumer of the search capability — the command palette — drives
+the SAME `/author/graph/search` path under the SAME RLS transport, so its results are
+IDENTICAL to the Drive lens for the same term. The command-palette render spec
+(`knowledge-command-palette-search.e2e.spec.ts`) opens the palette in the browser (the
+top-bar `command-palette-trigger`, then types into `command-palette-input`) over the SAME
+shared fixture — no inline tree — and asserts the match classes (`договор` / `egerie` /
+`GETTING`) plus the RLS-absence half (a non-grantee's PRIVATE node and another space's node
+stay ABSENT), proving search is a SUBSTRATE capability, not Drive-bound. One corpus, two
+consumers, one dictionary.
 
 ## Extending the catalog
 

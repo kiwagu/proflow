@@ -1,20 +1,41 @@
 'use client';
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
-import {
-  parseSearchResult,
-  type SearchResultItem,
-} from '@workspace/knowledge-contracts';
+import { type SearchResultItem } from '@workspace/knowledge-contracts';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { Input } from '@workspace/ui/components/input';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
-import { compareText } from '@workspace/ui/lib/sort';
 import { Search } from 'lucide-react';
 import * as React from 'react';
 
-import { ItemCard } from '@/app/graph/views/drive/drive-projection.view';
-import type { KbViewData } from '@/app/graph/views/registry/projection-view.types';
-import type { ResourceFloor } from '@/app/graph/graph-data.types';
+import type { Containment, LensNode } from '@/app/graph/containment';
+import type { NodeMeta, ResourceFloor } from '@/app/graph/graph-data.types';
+import { activationForKind } from '@/app/graph/presentation';
+import {
+  ItemCard,
+  LensListTable,
+  type DriveRow,
+} from '@/app/graph/views/drive/drive-projection.view';
+import { DriveSidebar } from '@/app/graph/views/drive/drive-sidebar';
+import {
+  LayoutToggle,
+  type DriveLayout,
+} from '@/app/graph/views/drive/layout-toggle';
+import {
+  LensTreeGrid,
+  type LensTreeNode,
+} from '@/app/graph/views/drive/lens-tree-grid';
+import { LensViewToggle } from '@/app/graph/views/drive/lens-view-toggle';
+import type {
+  DriveScope,
+  KbViewData,
+  LensView,
+} from '@/app/graph/views/registry/projection-view.types';
+
+import { OpenInKbButton } from './open-in-kb-button';
+import { SearchSnippet } from './search-snippet';
+import { buildSearchTree, type SearchTreeNode } from './search-tree';
+import { useLexicalSearch } from './use-lexical-search';
 
 /**
  * The renderable meta a SEARCH hit carries on the wire (ADR-0024 §1) — the subset of
@@ -35,124 +56,29 @@ export type SearchSelection = {
 };
 
 /**
- * Fold a string the way the server's `kb.search_normalize` does (lower + strip
- * accents) — for CLIENT-SIDE highlight matching ONLY (ADR-0024 §3a). The server
- * already did the real lexical matching + ranking + snippet extraction; this fold
- * is purely so the term we visually `<mark>` inside the plain-text snippet matches
- * the same case/accent-insensitive boundaries the lexical fold used (so `egerie`
- * highlights inside `Égérie`, `getting` inside `Getting`, `превет`-class folds).
- * NFD + combining-mark strip mirrors `unaccent(lower(...))` for the Latin + Cyrillic
- * cases the search corpus covers; it is a presentation approximation, never a fence.
- */
-function foldForHighlight(value: string): string {
-  // U+0300–U+036F = the combining diacritical marks NFD splits accents into; drop them
-  // to fold `é→e`, `ё→е`-class (the unaccent(lower(...)) approximation, §3a/§3c).
-  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-/**
- * HighlightedText — render `text` with each case/accent-insensitive occurrence of
- * `term` wrapped in `<mark>`, emitting REACT NODES (never `dangerouslySetInnerHTML`,
- * so a snippet can never inject markup — the data layer ships PLAIN text). Matching
- * runs over the folded forms (so accents/case fold) but the ORIGINAL substring is
- * rendered, preserving the snippet's real casing/accents. A term that does not occur
- * (e.g. a fuzzy/typo hit whose exact letters aren't in the excerpt) renders the text
- * unmarked — the row is still a valid ranked result, just with nothing to underline.
- */
-function HighlightedText({
-  text,
-  term,
-}: {
-  text: string;
-  term: string;
-}): React.ReactElement {
-  const trimmed = term.trim();
-  if (trimmed.length === 0) {
-    return <>{text}</>;
-  }
-  const foldedText = foldForHighlight(text);
-  const foldedTerm = foldForHighlight(trimmed);
-  // NFD can change length per char (a precomposed accent → base + combining mark we
-  // then strip), so fold per-character and keep a map from FOLDED offset back to the
-  // ORIGINAL offset — that lets us slice the original (real casing/accents) at the
-  // boundaries we found in the folded string.
-  if (foldedTerm.length === 0 || !foldedText.includes(foldedTerm)) {
-    return <>{text}</>;
-  }
-  // Build the folded->original index map (folding each char independently keeps the
-  // 1:N relationship local and the map exact for the BMP text the corpus uses).
-  const foldedToOriginal: number[] = [];
-  let folded = '';
-  for (let i = 0; i < text.length; i += 1) {
-    const piece = foldForHighlight(text[i] ?? '');
-    for (let j = 0; j < piece.length; j += 1) {
-      foldedToOriginal.push(i);
-    }
-    folded += piece;
-  }
-  foldedToOriginal.push(text.length); // sentinel for the end boundary
-
-  const parts: React.ReactNode[] = [];
-  let cursor = 0; // offset in the FOLDED string
-  let key = 0;
-  for (;;) {
-    const hit = folded.indexOf(foldedTerm, cursor);
-    if (hit === -1) {
-      break;
-    }
-    const origStart = foldedToOriginal[hit] ?? text.length;
-    const origEnd = foldedToOriginal[hit + foldedTerm.length] ?? text.length;
-    if (origStart > (foldedToOriginal[cursor] ?? 0)) {
-      parts.push(text.slice(foldedToOriginal[cursor] ?? 0, origStart));
-    }
-    parts.push(
-      <mark
-        key={key}
-        className="bg-primary/15 text-foreground rounded-[2px] px-0.5"
-      >
-        {text.slice(origStart, origEnd)}
-      </mark>
-    );
-    key += 1;
-    cursor = hit + foldedTerm.length;
-  }
-  const tail = foldedToOriginal[cursor] ?? text.length;
-  if (tail < text.length) {
-    parts.push(text.slice(tail));
-  }
-  return <>{parts}</>;
-}
-
-/**
- * SearchView — the Drive lexical-search lens (ADR-0024 §5, slice-12 Phase 1). NOT a
- * projection over the resolved canvas: it is the first consumer of the standalone
- * SEARCH capability (a SIBLING of projection-resolve), resolving its own
- * `SearchResult` live as the user types. The browser POSTs only a `term` + `spaceId`
- * to `/author/graph/search`; the server compiles + runs the SELECT AS THE USER, so
- * Postgres RLS is the sole access fence (ADR-0024 §6) — a private / other-space node
- * never appears for a non-grantee, with NO app-level filter doing the fencing.
+ * SearchView — the lexical-search lens (ADR-0024 §5), rendered as a CONFIG of the ONE
+ * parameterizable lens (ADR-0025), NOT a forked renderer. It owns only the irreducible
+ * search delta — the live RLS-fenced fetch (`useLexicalSearch`), the hits∪ancestors
+ * node-set builder (`buildSearchTree`), and the snippet/highlight slot (`SearchSnippet`)
+ * — and renders every result through the SAME leaves every other lens uses: the Drive
+ * `ItemCard` (grid), the shared `LensListTable` (list, flat + the fully-expanded advanced
+ * tree), and the `LensTreeGrid` (the advanced grid). There is no `search-result-table` /
+ * `search-result-tree` / `search-row-cells` renderer — those were the fork ADR-0025 deletes.
  *
- * Purely presentational beyond the fetch: a debounced, min-2-char input drives the
- * query; each result row REUSES the Drive resource card (`ItemCard`) — a
- * `SearchResultItem` is a SUPERSET of the projection item (ADR-0024 §1), so the same
- * card renders a search row with zero adapter work. Clicking a row opens the SHARED
- * ResourcePanel (owned by the workbench) via `onSelect`; a `text` node opens the
- * reader via `onOpenDocument`.
+ * Search is NOT a projection over the resolved canvas: it is the first consumer of the
+ * standalone SEARCH capability (a SIBLING of projection-resolve), resolving its own
+ * `SearchResult` live as the user types. The browser POSTs only a `term` + `spaceId` to
+ * `/author/graph/search`; the server compiles + runs the SELECT AS THE USER, so Postgres
+ * RLS is the sole access fence (ADR-0024 §6).
  *
- * Phase 2 adds the `snippet` excerpt (rendered under each row, with the query term
- * client-highlighted to match the lexical fold) and a stable client tiebreak on equal
- * server score. STILL FIRST PAGE ONLY — the keyset "load more" cursor stays unwired
- * (a separate later increment). The banded `score` is NOT surfaced as UI chrome: it is
- * an internal ranking value, not a user-meaningful number — rows simply render in the
- * server's authoritative `score DESC, title COLLATE kb.text_ci_ai, id` order, with the
- * client only stabilising rows of EQUAL score by title (the same `compareText` the
- * server mirrors).
+ * The two axes match every other lens: layout (grid tiles ↔ list table, the shared
+ * `drive-layout` cookie) is ORTHOGONAL to the lens-view axis (flat ↔ advanced, the
+ * Pro-gated `?view=`). Flat = the ranked matched LEAVES (cards or table); advanced = the
+ * matched leaves placed in their FULLY-EXPANDED ancestor-folder TREE at UNBOUNDED depth
+ * (nested folder sections + leaf cards in grid; one depth-indented force-expanded table in
+ * list). Each result row carries the snippet excerpt + a per-row "Open in KB" reveal — the
+ * ONLY things that differ from a KB/Shared row.
  */
-
-/** Debounce before firing a search (parity with the member-picker async search). */
-const SEARCH_DEBOUNCE_MS = 280;
-/** Minimum term length before a query fires — below this we never hit the server. */
-const SEARCH_MIN_CHARS = 2;
 
 const GRID_WRAP = 'flex flex-wrap gap-2.5';
 
@@ -163,8 +89,17 @@ export function SearchView({
   selectedId,
   onSelect,
   onOpenDocument,
+  onOpenFolder,
   kbData,
   onTermChange,
+  containment,
+  onScopeChange,
+  onNavigate,
+  onMutated,
+  onRevealInKb,
+  lensView = 'flat',
+  onLensViewChange,
+  initialLayout,
 }: {
   messages: Record<string, string>;
   spaceId?: string;
@@ -181,99 +116,90 @@ export function SearchView({
   onSelect: (selection: SearchSelection) => void;
   /** Open a `text` node in the reader (owned by the workbench). */
   onOpenDocument?: (nodeId: string) => void;
+  /** Navigate INTO a `folder` hit (jump to it in the KB tree, owned by the workbench). */
+  onOpenFolder?: (nodeId: string) => void;
   /** Server-loaded KB seed — read for the owner "You" label + node meta line. */
   kbData?: KbViewData;
   /** Mirror the live term back to the workbench (which writes `?q=` to the URL). */
   onTermChange?: (term: string) => void;
+  /**
+   * The containment forest over the resolved canvas (built once by the workbench) — the
+   * SAME forest the Drive rail walks for its "Sections" roots, so the search lens's shared
+   * sidebar shows the identical sections, and `buildSearchTree` nests hits in it for advanced.
+   */
+  containment: Containment;
+  /** Switch the lens scope — wired so the shared rail's nav can leave 'search'. */
+  onScopeChange: (scope: DriveScope) => void;
+  /** Navigate to a folder (null → root) — the shared rail's "Sections" roots + the KB nav
+   * item use it (leaving the search lens for the folder's KB location). */
+  onNavigate: (folderId: string | null) => void;
+  /** Re-resolve after a create from the shared rail's "New" launcher. */
+  onMutated: () => void;
+  /**
+   * Reveal a HIT in the KB containment tree — jump to the 'kb' lens at the node's PARENT
+   * folder, node highlighted (the workbench's `revealInKb`, the SAME action the Details
+   * panel + the Drive `⋯` menu expose). Wired to the per-row "Open in KB" affordance on
+   * every search result row. Optional — omitted standalone / in tests.
+   */
+  onRevealInKb?: (nodeId: string) => void;
+  /**
+   * The lens DISPLAY MODE (ADR-0022 + Addendum A), owned by the workbench in the URL
+   * (`?view=`). The search lens carries the SAME Flat↔Advanced toggle as the structural
+   * lenses (present + Pro-gated). Defaults 'flat'. Gated by the `advancedStructuralView`
+   * entitlement.
+   */
+  lensView?: LensView;
+  /** Switch the lens display mode (Flat ↔ Advanced). The workbench writes `?view=`. */
+  onLensViewChange?: (view: LensView) => void;
+  /**
+   * The display LAYOUT (grid tiles ↔ list table), seeded from the SAME server-read
+   * `drive-layout` cookie the Drive lenses use — so the chosen layout PERSISTS across
+   * every lens. The toggle writes the cookie back. ORTHOGONAL to the lens-view axis.
+   */
+  initialLayout?: DriveLayout;
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
   const [term, setTerm] = React.useState(initialTerm);
-  const [items, setItems] = React.useState<SearchResultItem[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  // True once at least one query has resolved for the current term — so the empty
-  // state distinguishes "no results" from "haven't searched yet" (the idle prompt).
-  const [resolved, setResolved] = React.useState(false);
+  // Grid/list layout — seeded from the server-read `drive-layout` cookie (SSR-stable, no
+  // post-hydration flip) and written back by the toggle, exactly as the Drive lenses do.
+  const [layout, setLayout] = React.useState<DriveLayout>(
+    initialLayout ?? 'grid'
+  );
+  const applyLayout = React.useCallback((next: DriveLayout) => {
+    setLayout(next);
+    if (typeof document !== 'undefined') {
+      document.cookie = `drive-layout=${next};path=/;max-age=31536000;samesite=lax`;
+    }
+  }, []);
 
   const currentUserId = kbData?.currentUserId ?? null;
-  const metaByItem = kbData?.metaByItem ?? {};
-  const attributesByItem = kbData?.attributesByItem ?? {};
-
-  // Stale-response guard: every fired fetch bumps the token; a response whose token
-  // is no longer current is dropped (race-safe across the debounce + fast typing).
-  const fetchToken = React.useRef(0);
-
-  const trimmed = term.trim();
-  const tooShort = trimmed.length < SEARCH_MIN_CHARS;
-
-  React.useEffect(() => {
-    const tooShortNow = !spaceId || trimmed.length < SEARCH_MIN_CHARS;
-    // Invalidate any in-flight response immediately (so a stale fetch can't land
-    // after the term shrank). State changes happen ASYNCHRONOUSLY below — never
-    // synchronously in this effect body — so no cascading-render warning.
-    fetchToken.current += 1;
-
-    const handle = window.setTimeout(() => {
-      const token = (fetchToken.current += 1);
-      // Below the min length (or no space) we never hit the server — reset to the
-      // idle prompt. Done in this timer callback (not the effect body), so the
-      // reset is asynchronous and cascade-free.
-      if (tooShortNow) {
-        setItems([]);
-        setLoading(false);
-        setResolved(false);
-        return;
-      }
-      setLoading(true);
-      void fetch('/author/graph/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spaceId, term: trimmed }),
-      })
-        .then(async (res) => {
-          if (token !== fetchToken.current) {
-            return; // a newer query superseded this one — drop the result.
-          }
-          if (!res.ok) {
-            setItems([]);
-            setResolved(true);
-            return;
-          }
-          const parsed = parseSearchResult(await res.json());
-          if (token !== fetchToken.current) {
-            return;
-          }
-          setItems(parsed.success ? parsed.data.items : []);
-          setResolved(true);
-        })
-        .catch(() => {
-          if (token === fetchToken.current) {
-            setItems([]);
-            setResolved(true);
-          }
-        })
-        .finally(() => {
-          if (token === fetchToken.current) {
-            setLoading(false);
-          }
-        });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(handle);
-  }, [spaceId, trimmed]);
-
-  // The server is AUTHORITATIVE on order (`score DESC, title COLLATE kb.text_ci_ai,
-  // id`). The client only STABILISES rows of EQUAL score by title — `compareText` is
-  // the JS mirror of the server `kb.text_ci_ai` collation (ADR-0024 §3c), so this
-  // re-sort agrees with the server and never reorders across different scores. (A
-  // higher score must never fall below a lower one — so score is the primary key here,
-  // title only the equal-score tiebreak, matching how sibling Drive views tiebreak.)
-  const sortedItems = React.useMemo(
-    () =>
-      items
-        .slice()
-        .sort((a, b) => b.score - a.score || compareText(a.title, b.title)),
-    [items]
+  // Memoized so the `?? {}` default is a STABLE reference — fed to the row/cell builders,
+  // and a fresh `{}` each render would invalidate their memos (react-hooks/exhaustive-deps).
+  const metaByItem = React.useMemo(
+    () => kbData?.metaByItem ?? {},
+    [kbData]
+  ) as Record<string, NodeMeta>;
+  const attributesByItem = React.useMemo(
+    () => kbData?.attributesByItem ?? {},
+    [kbData]
   );
+  // The COMMERCIAL entitlement (ADR-0022 Fork 1) — the Pro gate for the Flat↔Advanced
+  // toggle. Resolved server-side from the platform registry, fail-CLOSED `false`. The
+  // toggle shows either way (the locked control is the upsell); only its ENABLED state
+  // depends on it.
+  const advancedStructuralEntitled =
+    kbData?.entitlements?.advancedStructuralView ?? false;
+
+  // The ONE lexical-search fetch path (shared with the command palette) — debounced,
+  // min-2-char, race-safe, RLS-fenced; returns the server-ordered rows for this term.
+  const {
+    items: sortedItems,
+    loading,
+    resolved,
+    tooShort,
+    trimmed,
+  } = useLexicalSearch(spaceId, term);
 
   const onInput = React.useCallback(
     (next: string) => {
@@ -284,9 +210,7 @@ export function SearchView({
   );
 
   // Open the shared ResourcePanel for a search hit, carrying the row's own renderable
-  // meta up (so an out-of-canvas hit still shows correct kind/status/visibility). The
-  // wire `visibility` is `string`; the broadcast floor is one of the three enum values,
-  // so narrow it for the panel (RLS already admitted the row — this is display only).
+  // meta up (so an out-of-canvas hit still shows correct kind/status/visibility).
   const onSelectItem = React.useCallback(
     (item: SearchResultItem) => {
       onSelect({
@@ -298,6 +222,218 @@ export function SearchView({
       });
     },
     [onSelect]
+  );
+
+  // Activating a row dispatches by the kind's ACTIVATION behaviour (presentation.ts) —
+  // the SAME map the command palette uses: a container navigates IN, a document opens the
+  // reader, everything else opens the shared Details panel.
+  const activateItem = React.useCallback(
+    (item: SearchResultItem) => {
+      switch (activationForKind(item.kind)) {
+        case 'navigate':
+          onOpenFolder?.(item.id);
+          return;
+        case 'read':
+          onOpenDocument?.(item.id);
+          return;
+        default:
+          onSelectItem(item);
+          return;
+      }
+    },
+    [onOpenFolder, onOpenDocument, onSelectItem]
+  );
+
+  // The advanced (GROUPED) render is ON only when the lens mode is 'advanced' AND the
+  // space is entitled (ADR-0022 — the same Pro gate the structural lenses use). The
+  // server clamps `?view=` to 'flat' on a locked plan; this client clamp is belt-and-braces.
+  const isAdvanced = lensView === 'advanced' && advancedStructuralEntitled;
+
+  // The hits keyed by id — the snippet slot + activation map read the row off this so the
+  // shared leaves (which carry only a `LensNode`) recover the full `SearchResultItem`.
+  const hitById = React.useMemo(() => {
+    const map = new Map<string, SearchResultItem>();
+    for (const item of sortedItems) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [sortedItems]);
+
+  // The matched leaves placed in their FULLY-EXPANDED ancestor-folder tree (the SAME
+  // containment tree the KB / Shared advanced lens renders, specialized to search). The
+  // node-set is hits ∪ ALL their ancestor folders (`buildSearchTree`); built only in advanced.
+  const searchTree = React.useMemo(
+    () => (isAdvanced ? buildSearchTree(sortedItems, containment) : []),
+    [isAdvanced, sortedItems, containment]
+  );
+
+  // The per-row "Open in KB" reveal affordance, on HIT rows only (a path folder is
+  // structural). Omitted standalone (no `onRevealInKb`). `reveal:'hover'` for the grid
+  // cards (corner overlay), `'always'` for the table action cell (no hover group).
+  const revealAction = React.useCallback(
+    (nodeId: string, reveal: 'hover' | 'always') =>
+      onRevealInKb ? (
+        <OpenInKbButton
+          label={t('graph.panel.openInKb')}
+          onOpen={() => onRevealInKb(nodeId)}
+          reveal={reveal}
+        />
+      ) : undefined,
+    [onRevealInKb, t]
+  );
+
+  // ONE search-result card — the Drive `ItemCard` (a `SearchResultItem` is a superset of
+  // the projection item, ADR-0024 §1), with the snippet footer + the reveal action. Shared
+  // by the flat grid AND every advanced grid leaf, so the two render modes never drift.
+  const renderCard = React.useCallback(
+    (item: SearchResultItem) => (
+      <ItemCard
+        key={item.id}
+        t={t}
+        node={{ id: item.id, kind: item.kind, title: item.title }}
+        attributes={attributesByItem[item.id]}
+        meta={metaByItem[item.id]}
+        currentUserId={currentUserId}
+        layout="grid"
+        selected={item.id === selectedId}
+        actions={revealAction(item.id, 'hover')}
+        footer={
+          item.snippet ? (
+            <SearchSnippet
+              snippet={item.snippet}
+              term={trimmed}
+              variant="block"
+            />
+          ) : null
+        }
+        onOpen={() => activateItem(item)}
+        onDetails={() => onSelectItem(item)}
+      />
+    ),
+    [
+      t,
+      attributesByItem,
+      metaByItem,
+      currentUserId,
+      selectedId,
+      trimmed,
+      activateItem,
+      onSelectItem,
+      revealAction,
+    ]
+  );
+
+  // Render a content LEAF of the advanced grid forest (look it up as a hit; a forest leaf
+  // is always a content hit by construction). Reuses the SAME card as the flat grid.
+  const renderTreeLeaf = React.useCallback(
+    (node: LensNode) => {
+      const item = hitById.get(node.id);
+      return item ? renderCard(item) : null;
+    },
+    [hitById, renderCard]
+  );
+
+  // Build a `DriveRow` for the LIST table from a content hit — the row interaction +
+  // actions match the cards (single → Details, double → open; reveal action on hover/always).
+  const itemRow = React.useCallback(
+    (item: SearchResultItem): DriveRow => ({
+      id: item.id,
+      node: { id: item.id, kind: item.kind, title: item.title },
+      rowKind: 'item',
+      onOpen: () => activateItem(item),
+      onDetails: () => onSelectItem(item),
+      actions: revealAction(item.id, 'always') ?? null,
+    }),
+    [activateItem, onSelectItem, revealAction]
+  );
+
+  // The flat list rows = the ranked hits (no ancestors); the advanced list rows = the
+  // forest mapped to `DriveRow`s with `subRows` (the DataTable tree mode + `expansion:
+  // 'always'` fully unfold it). A node's STRUCTURE follows its kind, not its hit status: a
+  // FOLDER is a tree row carrying its in-set children as `subRows` (even when it is ITSELF
+  // a matched hit — the chain stays visible); a non-folder LEAF is a hit content row. When
+  // a folder is also a hit it carries the snippet + reveal action like any other hit; a
+  // PURE path folder is inert (no open/details/actions). This mirrors the (deleted) forked
+  // tree table, where `flattenTree` recursed every node's children and a hit folder row was
+  // interactive — the grid renders a hit folder as a plain header instead (the same asymmetry).
+  const listRows = React.useMemo<DriveRow[]>(() => {
+    const toRow = (entry: SearchTreeNode): DriveRow => {
+      if (entry.node.kind === 'folder') {
+        const hit = entry.hit;
+        return {
+          id: entry.node.id,
+          node: entry.node,
+          rowKind: 'folder',
+          onOpen: hit ? () => activateItem(hit) : () => {},
+          onDetails: hit ? () => onSelectItem(hit) : () => {},
+          actions: hit ? (revealAction(hit.id, 'always') ?? null) : null,
+          subRows: entry.children.map(toRow),
+        };
+      }
+      // A content leaf in the forest is always a matched hit by construction (the builder
+      // only nests content that matched), so `entry.hit` is non-null here; a path-only node
+      // is always a folder (handled above). Defensive fall-through renders an inert leaf row.
+      return entry.hit
+        ? itemRow(entry.hit)
+        : {
+            id: entry.node.id,
+            node: entry.node,
+            rowKind: 'item',
+            onOpen: () => {},
+            onDetails: () => {},
+            actions: null,
+          };
+    };
+    return isAdvanced ? searchTree.map(toRow) : sortedItems.map(itemRow);
+  }, [
+    isAdvanced,
+    searchTree,
+    sortedItems,
+    itemRow,
+    activateItem,
+    onSelectItem,
+    revealAction,
+  ]);
+
+  // The snippet column slot for the list table — looks the row's hit up and renders the
+  // shared `snippetCell` (the matched excerpt, live term highlighted; em dash for a path
+  // folder, which carries no hit). The SAME cell the (now-deleted) forked table rendered.
+  const snippetSlot = React.useMemo(
+    () => ({
+      header: t('graph.table.snippet'),
+      cell: (node: LensNode) => {
+        const snippet = hitById.get(node.id)?.snippet;
+        return snippet ? (
+          <SearchSnippet snippet={snippet} term={trimmed} variant="inline" />
+        ) : (
+          <span className="text-muted-foreground/60">—</span>
+        );
+      },
+    }),
+    [t, hitById, trimmed]
+  );
+
+  // The shared list table — the ONE place the {flat | advanced} × list axis renders, with
+  // the search snippet column + the reveal action per row. `tree`/`expansion:'always'`
+  // force-unfolds the advanced ancestor tree; the flat list passes neither (a flat table).
+  const listTable = (
+    <div data-testid="drive-search-table">
+      <LensListTable
+        key={isAdvanced ? 'search-tree' : 'search-flat'}
+        rows={listRows}
+        tree={isAdvanced}
+        expansion="always"
+        t={t}
+        metaByItem={metaByItem}
+        currentUserId={currentUserId}
+        selectedId={selectedId}
+        // Search has no star / Recent / DnD / shared-badge column — the fail-safe defaults
+        // (star omitted entirely, ADR-0025 §1 `star?` off).
+        recentOpenedAt={null}
+        defaultSorting={SEARCH_LIST_NO_SORT}
+        snippet={snippetSlot}
+      />
+    </div>
   );
 
   const toolbar = (
@@ -318,11 +454,27 @@ export function SearchView({
           data-testid="drive-search-input"
         />
       </div>
+      <div className="ml-auto" />
+      {/* The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A) — the SAME
+          Flat↔Advanced control the structural lenses carry; present + Pro-gated (the
+          locked control IS the upsell). */}
+      {onLensViewChange ? (
+        <LensViewToggle
+          t={t}
+          lensView={lensView}
+          onLensViewChange={onLensViewChange}
+          entitled={advancedStructuralEntitled}
+        />
+      ) : null}
+      {/* The grid/list LAYOUT toggle — the SAME control the Drive lenses carry. The layout
+          axis is ORTHOGONAL to the lens-view axis: all four {flat,advanced}×{grid,list}
+          combinations render. */}
+      <LayoutToggle t={t} layout={layout} onLayoutChange={applyLayout} />
     </div>
   );
 
   const main = (
-    <div className="p-5" data-testid="drive-search-results">
+    <div data-testid="drive-search-results">
       {tooShort ? (
         <EmptyState>{t('graph.search.idle')}</EmptyState>
       ) : loading && sortedItems.length === 0 ? (
@@ -331,42 +483,27 @@ export function SearchView({
         <EmptyState data-testid="drive-search-empty">
           {t('graph.search.noResults', { term: trimmed })}
         </EmptyState>
-      ) : (
-        <div className={GRID_WRAP}>
-          {sortedItems.map((item) => (
-            <ItemCard
-              key={item.id}
-              t={t}
-              node={{ id: item.id, kind: item.kind, title: item.title }}
-              attributes={attributesByItem[item.id]}
-              meta={metaByItem[item.id]}
-              currentUserId={currentUserId}
-              layout="grid"
-              selected={item.id === selectedId}
-              footer={
-                // The PLAIN-text excerpt the engine extracted (left(body,160) for a
-                // description hit, the title for a title-only hit; ADR-0024 §3). The
-                // UI does the highlighting — wrap the live query term where it folds
-                // into the snippet, as React nodes (never raw HTML). A title-only
-                // snippet (== title) is fine to highlight; omitted when no snippet.
-                item.snippet ? (
-                  <p
-                    className="text-muted-foreground line-clamp-2 text-xs"
-                    data-testid="drive-search-snippet"
-                  >
-                    <HighlightedText text={item.snippet} term={trimmed} />
-                  </p>
-                ) : null
-              }
-              onOpen={() =>
-                item.kind === 'text' && onOpenDocument
-                  ? onOpenDocument(item.id)
-                  : onSelectItem(item)
-              }
-              onDetails={() => onSelectItem(item)}
+      ) : isAdvanced ? (
+        // Advanced (extended) = a FILTERED KB: the matched leaves placed in their
+        // FULLY-EXPANDED ancestor-folder tree (the SAME containment tree the KB / Shared
+        // advanced lens renders), at UNBOUNDED depth, with the snippet highlight on the
+        // matched leaves. Grid = nested folder sections + leaf cards; list = ONE aligned,
+        // depth-indented force-expanded table. The `drive-search-groups` wrapper is retained.
+        <div data-testid="drive-search-groups">
+          {layout === 'list' ? (
+            listTable
+          ) : (
+            <LensTreeGrid
+              roots={searchTree as LensTreeNode[]}
+              renderLeaf={renderTreeLeaf}
+              folderTestId="drive-search-tree-folder"
             />
-          ))}
+          )}
         </div>
+      ) : layout === 'list' ? (
+        listTable
+      ) : (
+        <div className={GRID_WRAP}>{sortedItems.map(renderCard)}</div>
       )}
     </div>
   );
@@ -375,5 +512,36 @@ export function SearchView({
     return null;
   }
 
-  return <WorkbenchShell toolbar={toolbar} main={main} />;
+  // The shared Drive left-rail — the SAME chrome every other lens renders, so search sits
+  // in the workbench frame (sidebar nav + toolbar + the shared Details panel the workbench
+  // overlays on `onSelect`) exactly like Shared. The "Search" nav item highlights as active.
+  const sidebar = (
+    <DriveSidebar
+      t={t}
+      scope="search"
+      onScopeChange={onScopeChange}
+      onNavigate={onNavigate}
+      folderId={null}
+      containment={containment}
+      spaceId={spaceId}
+      onMutated={onMutated}
+    />
+  );
+
+  return (
+    <WorkbenchShell
+      panel={{
+        kind: 'fixed',
+        width: 230,
+        'aria-label': t('graph.drive.navSearch'),
+        children: sidebar,
+      }}
+      toolbar={toolbar}
+      main={main}
+    />
+  );
 }
+
+// A stable empty default-sorting reference — the search list keeps the server rank order
+// (no column default sort), and a fresh literal each render would thrash the table's memo.
+const SEARCH_LIST_NO_SORT: { id: string; desc: boolean }[] = [];

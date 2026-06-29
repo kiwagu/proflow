@@ -43,6 +43,13 @@ const KB_TAG = 'Knowledge Base';
  *      both match `onboarding`, but the title-match (title-prefix band) must outrank the
  *      description-match (description-prefix band) — title > description at equal tier.
  *
+ * Deep-tree advanced search (the `?view=advanced` Pro-gated lens places each matched
+ * leaf in its fully-expanded ancestor-folder tree, recursively, to ANY depth):
+ *  - `kb/deep/level-1` … `kb/deep/level-5` (folders 'Level One' … 'Level Five') ⊃
+ *      `kb/deep/leaf` ('Abyssal Treasure', `abyssal` in its DESCRIPTION) — a leaf SIX
+ *      levels below the KB root. A search for `abyssal` matches only the leaf; the
+ *      advanced view must render the whole nested path expanded down to the highlight.
+ *
  * RLS-absence corpus (the security proof, ADR-0024 §6/§8 — RLS is the SOLE fence):
  *  - `kb/private-other-owner` ('Договорённость приватная', owned by `searcherB`, NO grant)
  *      — a PRIVATE node owned by ANOTHER user; must be ABSENT from `admin`'s search even
@@ -64,7 +71,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target) and the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee).',
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search — the matched leaf rendered in its fully-expanded ancestor tree at unbounded depth.',
   presets: ['knowledge-base', 'search'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
@@ -215,6 +222,75 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
                 'Этот договор лежит внутри папки, которой со мной поделились, поэтому я вижу его по наследованию — даже без прямого доступа к самому документу.',
                 'Поиск наследует ту же модель доступа: документ находится в результатах того, кому папка была предоставлена, — наследуемая выдача проходит через поиск.'
               ),
+            },
+          ],
+        },
+
+        // ── deep-nested chain: advanced search renders the full ancestor tree ──────
+        // The Advanced (Pro-gated) search lens places each matched leaf inside its
+        // FULLY-EXPANDED ancestor-folder tree, recursively, to ANY depth (search = a
+        // filtered KB). To exercise UNBOUNDED depth the corpus needs content several
+        // folders deep: a five-folder chain `Level One → … → Level Five` containing a
+        // single leaf doc whose DESCRIPTION holds the distinctive term `abyssal` — six
+        // levels below the KB root. A search for `abyssal` (a term that collides with no
+        // other corpus assertion) matches only the leaf; the Advanced view must then
+        // render every ancestor folder on the path root → leaf, expanded, with the
+        // snippet highlight on the leaf. The chain is nested via `children` (the same
+        // `contain` create-vocabulary as the shallow corpus), never an inline spec tree.
+        {
+          ref: 'kb/deep/level-1',
+          kind: 'folder',
+          title: 'Level One',
+          description:
+            'Top of the deep chain — advanced search expands from here.',
+          children: [
+            {
+              ref: 'kb/deep/level-2',
+              kind: 'folder',
+              title: 'Level Two',
+              description: 'Second folder on the deep ancestor path.',
+              children: [
+                {
+                  ref: 'kb/deep/level-3',
+                  kind: 'folder',
+                  title: 'Level Three',
+                  description: 'Third folder on the deep ancestor path.',
+                  children: [
+                    {
+                      ref: 'kb/deep/level-4',
+                      kind: 'folder',
+                      title: 'Level Four',
+                      description: 'Fourth folder on the deep ancestor path.',
+                      children: [
+                        {
+                          ref: 'kb/deep/level-5',
+                          kind: 'folder',
+                          title: 'Level Five',
+                          description:
+                            'Fifth (deepest) folder — directly contains the abyssal leaf.',
+                          children: [
+                            {
+                              // The matched leaf: the term `abyssal` lives in its
+                              // DESCRIPTION, six levels below the KB root. Searching
+                              // `abyssal` finds only this node; Advanced view then
+                              // renders Level One → … → Level Five expanded down to it.
+                              ref: 'kb/deep/leaf',
+                              kind: 'text',
+                              title: 'Abyssal Treasure',
+                              description:
+                                'An abyssal treasure buried six levels deep in the folder chain.',
+                              body: prose(
+                                'This document sits six levels below the knowledge-base root, at the bottom of a five-folder chain.',
+                                'It exists to exercise advanced (deep-tree) search: a query for "abyssal" matches only this leaf, and the advanced search lens must render every ancestor folder on the path from the root down to it, fully expanded, with the snippet highlight on this node.'
+                              ),
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
             },
           ],
         },

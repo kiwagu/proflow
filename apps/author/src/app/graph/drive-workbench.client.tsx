@@ -26,6 +26,9 @@ import {
   type DriveDragState,
   type DriveDropData,
 } from './drive-dnd';
+import { CommandPalette } from './command-palette/command-palette';
+import { CommandPaletteTrigger } from './command-palette/command-palette-trigger';
+import { useCommandPalette } from './command-palette/use-command-palette';
 import { DriveProjectionView } from './views/drive/drive-projection.view';
 import { SearchView, type SearchSelection } from './views/search/search.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
@@ -115,6 +118,12 @@ export function DriveWorkbench({
     undefined
   );
   const [refreshKey, setRefreshKey] = React.useState(0);
+
+  // The command palette (ADR-0024 §5, slice-12 Phase 3) — the SECOND consumer of the
+  // lexical-search capability, proving it is not Drive-bound. Toggled by ⌘K/Ctrl+K (the
+  // hook) or the chrome trigger; it reuses the SAME `/author/graph/search` path the
+  // Drive lens uses and opens a selected hit through THIS workbench's existing nav.
+  const commandPalette = useCommandPalette();
 
   // Dual-pane (Dolphin-style split) — KB-browse only. The SECOND pane is EPHEMERAL: it
   // shares the first pane's ONE sidebar (renders sidebar-less), is always KB-browse,
@@ -815,7 +824,43 @@ export function DriveWorkbench({
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
-      <WorkbenchChrome messages={messages} />
+      <WorkbenchChrome
+        messages={messages}
+        actions={
+          spaceId ? (
+            <CommandPaletteTrigger
+              messages={messages}
+              onOpen={() => commandPalette.setOpen(true)}
+            />
+          ) : undefined
+        }
+      />
+
+      {/* The command palette (slice-12 Phase 3) — the SECOND consumer of the lexical-
+          search capability. ⌘K/Ctrl+K (the hook) or the chrome trigger opens it; it
+          reuses the SAME `/author/graph/search` path the Drive lens uses and routes a
+          selected hit through THIS workbench's existing nav (reader for a `text` node,
+          the shared Details panel for anything else — identical to a Drive search row). */}
+      {spaceId ? (
+        <CommandPalette
+          messages={messages}
+          spaceId={spaceId}
+          open={commandPalette.open}
+          onOpenChange={commandPalette.setOpen}
+          handlers={{
+            onOpenDocument: openDocument,
+            onOpenFolder: goFolder,
+            onSelect: (item) =>
+              selectSearchHit({
+                id: item.id,
+                kind: item.kind,
+                title: item.title,
+                status: item.status,
+                visibility: item.visibility as ResourceFloor,
+              }),
+          }}
+        />
+      ) : null}
 
       {/* body: a flex row — the content area (Drive projection, with the document
           read-view overlaying it) grows; the shared Details panel is an INLINE
@@ -836,8 +881,17 @@ export function DriveWorkbench({
               selectedId={selectedId}
               onSelect={selectSearchHit}
               onOpenDocument={openDocument}
+              onOpenFolder={goFolder}
               kbData={kbData}
               onTermChange={setSearch}
+              containment={containment}
+              onScopeChange={goScope}
+              onNavigate={goFolder}
+              onMutated={refresh}
+              onRevealInKb={revealInKb}
+              lensView={lensView}
+              onLensViewChange={goLensView}
+              initialLayout={initialLayout}
             />
           ) : (
             /* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a

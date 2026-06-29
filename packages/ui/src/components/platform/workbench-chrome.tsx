@@ -26,6 +26,9 @@ export type WorkbenchChromeProps = {
   tabLabel: string;
   /** The explainer strip: a bold lead-in label + the descriptive text. */
   note: { label: string; text: string };
+  /** Optional right-aligned actions in the top bar (e.g. a command-palette trigger).
+   * Presentation-only — the host owns the action's behaviour + i18n. */
+  actions?: React.ReactNode;
   className?: string;
 };
 
@@ -34,6 +37,7 @@ export function WorkbenchChrome({
   brandMark,
   tabLabel,
   note,
+  actions,
   className,
 }: WorkbenchChromeProps) {
   return (
@@ -58,6 +62,10 @@ export function WorkbenchChrome({
             </SegmentedControlButton>
           </SegmentedControl>
         </div>
+
+        {actions ? (
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        ) : null}
       </header>
 
       {/* explainer strip */}
