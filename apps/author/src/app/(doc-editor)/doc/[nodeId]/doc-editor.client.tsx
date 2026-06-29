@@ -7,6 +7,7 @@ import { Button } from '@workspace/ui/components/button';
 import { ArrowLeft, Check, Send } from 'lucide-react';
 import * as React from 'react';
 
+import { EditableDocumentTitle } from '@/app/graph/views/document-reader/document-title';
 import { WorkbenchChrome } from '@/app/graph/workbench-chrome';
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 
@@ -40,6 +41,35 @@ export function DocEditorClient({
     (initialBody as DefaultTypedEditorState | null) ?? undefined
   );
   const [saving, setSaving] = React.useState(false);
+
+  // The document title is the NODE title (outside the Lexical body) — editable inline at the
+  // top of the editor (WYSIWYG with the read view) and persisted via the existing rename
+  // route (`PATCH /author/graph/resources`, `space.knowledge.update`, RLS). The last SAVED
+  // title rides in a ref so a re-blur with no change never re-PATCHes; empty/failed commits
+  // revert to it.
+  const [titleValue, setTitleValue] = React.useState(title);
+  const savedTitleRef = React.useRef(title);
+  const revertTitle = React.useCallback(
+    () => setTitleValue(savedTitleRef.current),
+    []
+  );
+  const commitTitle = React.useCallback(async () => {
+    const next = titleValue.trim();
+    if (!next || next === savedTitleRef.current) {
+      setTitleValue(savedTitleRef.current);
+      return;
+    }
+    const res = await fetch('/author/graph/resources', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spaceId, resourceId: nodeId, title: next }),
+    });
+    if (res.ok) {
+      savedTitleRef.current = next;
+    } else {
+      setTitleValue(savedTitleRef.current);
+    }
+  }, [titleValue, spaceId, nodeId]);
 
   // RenderLexical's `setValue` is `(val: unknown, …) => void`; adapt the setter.
   const handleSetValue = React.useCallback(
@@ -87,7 +117,6 @@ export function DocEditorClient({
           <ArrowLeft className="size-4" aria-hidden />
           {t('graph.reader.back')}
         </Button>
-        <span className="ml-2 truncate text-sm font-semibold">{title}</span>
         <div className="ml-auto flex items-center gap-1.5">
           <Button
             variant="outline"
@@ -113,6 +142,17 @@ export function DocEditorClient({
 
       <main className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto w-full max-w-[760px] px-6 py-8">
+          {/* The document title leads the editor content — SAME serif heading the read view
+              shows (WYSIWYG, no read↔edit drift), but EDITABLE here. `pl-[10rem]` aligns it
+              with the Lexical content column (which is inset by the editor's block gutter /
+              per-line DnD affordances). */}
+          <EditableDocumentTitle
+            value={titleValue}
+            onChange={setTitleValue}
+            onCommit={commitTitle}
+            onRevert={revertTitle}
+            className="pl-[3rem]"
+          />
           <RenderLexical
             // `label: false` drops the redundant "Body" field label — the editor
             // pane is obviously the document body.

@@ -3,13 +3,15 @@ import type { ReactNode } from 'react';
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
 
 import '../../author-tailwind.css';
-// Load Payload's admin stylesheet on the READ side too, so the workbench and the
-// document-editor route (which renders under Payload's `RootLayout`) share ONE
-// baseline — the wrapper is then consistent read↔edit, and customisation starts
-// from that consensus instead of fighting an asymmetric cascade. Keep this CSS
-// stack identical to `app/(doc-editor)/layout.tsx` — diverging them re-introduces
-// the drift (Payload's `html{font-size:13px}` + resets now apply to BOTH sides).
-import '@payloadcms/next/css';
+// NO Payload admin CSS here on purpose. `/graph` is an INDEPENDENT shadcn consumer
+// surface — it needs none of Payload's admin baseline: the chrome is `@workspace/ui`
+// shadcn, and the inline document reader renders the Lexical body with Payload's
+// `RichText` SERIALIZER (structure) + Tailwind `prose` (styling), neither of which
+// needs `@payloadcms/next/css`. Loading it only leaked Payload's global resets (the
+// `:focus-visible` admin outline, `html{font-size}`) onto shadcn and required cascade-
+// layer/belt workarounds — so we don't load it. The Payload EDIT surface
+// (`app/(doc-editor)/layout.tsx`) keeps `@payloadcms/next/css`: it renders the actual
+// Payload editor under RootLayout and genuinely needs it.
 
 /**
  * Root layout for the knowledge-graph CONSUMER render surface (`/author/graph/*`

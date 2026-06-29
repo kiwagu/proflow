@@ -1,0 +1,191 @@
+/**
+ * rich-content.css — the ONE typography contract for a Lexical body's CONTENT,
+ * scoped to `.rich-content`. It makes the READ surface (`/graph` reader, which
+ * renders the body with Payload's `RichText` SERIALIZER → plain semantic HTML:
+ * `<h1>`/`<p>`/`<ul>`/`<strong>`/…) look PIXEL-IDENTICAL to the EDIT surface
+ * (`/author/doc/[nodeId]`, Payload's interactive Lexical editor).
+ *
+ * Why a hand-authored sheet and not `@payloadcms/next/css` on the reader:
+ * `/graph` is an independent shadcn surface and must NOT load Payload's admin
+ * baseline — that baseline leaks GLOBAL resets (`:focus-visible{outline}`,
+ * `html{font-size:13px}`) that fight shadcn (a black frame on the command-palette
+ * input, shrunk fonts). So instead we mirror, here, the EXACT content-typography
+ * values the editor's bundled CSS applies to its content classes
+ * (`.LexicalEditorTheme__h1/__paragraph/__ul/__listItem/__quote/__textBold/…`),
+ * translated 1:1 onto the serializer's plain tags. The values below are the
+ * editor's source of truth — keep them in lockstep with the Payload Lexical
+ * theme if it changes (paragraph 16px/1.5, h1 28 / h2 25 / h3 22, weight 700,
+ * the serif body font, list/quote spacing). Colours map to shadcn tokens so the
+ * reader honours light/dark without any Payload `--theme-*` var.
+ *
+ * NO global selectors here (no bare `html`/`:focus-visible`/`:root`): everything
+ * is under `.rich-content`, so importing it on `/graph` cannot re-introduce the
+ * admin leak.
+ */
+
+.rich-content {
+  /* The editor content area renders in Payload's serif body font at 16px with a
+     slight letter-spacing (`.editor-container { font-family: var(--font-serif);
+     font-size: 16px; letter-spacing: .02em }`). Mirror the resolved stack so the
+     reader's prose has the same texture without depending on `--font-serif`. */
+  font-family: 'Georgia', 'Bitstream Charter', 'Charis SIL', Utopia,
+    'URW Bookman L', serif;
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--foreground);
+}
+
+/* Paragraph — `.LexicalEditorTheme__paragraph`: 16px / 1.5 / margin-bottom .55em. */
+.rich-content p {
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  margin: 0 0 0.55em;
+}
+
+/* Headings — `.LexicalEditorTheme__h1/__h2/__h3`: 28/25/22px, weight 700, with the
+   editor's asymmetric block margins. h4–h6 step down sensibly (the editor caps at
+   h3 in its theme; keep the smaller levels readable + heavier than body). */
+.rich-content h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
+  margin: 0.5em 0 0.4em;
+}
+
+.rich-content h2 {
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
+  margin: 0.55em 0 0.4em;
+}
+
+.rich-content h3 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: normal;
+  margin: 0.6em 0 0.4em;
+}
+
+.rich-content h4 {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: normal;
+  margin: 0.65em 0 0.4em;
+}
+
+.rich-content h5 {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: normal;
+  margin: 0.7em 0 0.4em;
+}
+
+.rich-content h6 {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: normal;
+  margin: 0.75em 0 0.4em;
+}
+
+/* Lists — `.LexicalEditorTheme__ul`: margin 8px 0 16px, list-style-position outside.
+   `.LexicalEditorTheme__listItem`: 16px / 1.5, margin `0 0 .4em 40px` (the 40px is
+   the editor's left indent that produces the bullet column). Bullets/numbers per the
+   serializer's `<ul class="list-bullet">` / `<ol class="list-number">`. */
+.rich-content ul,
+.rich-content ol {
+  padding: 0;
+  margin: 8px 0 16px;
+  list-style-position: outside;
+}
+
+.rich-content ul {
+  list-style-type: disc;
+}
+
+.rich-content ol {
+  list-style-type: decimal;
+}
+
+.rich-content li {
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  margin: 0 0 0.4em 40px;
+}
+
+/* Nested lists tuck in (no double top margin); the serializer marks them
+   `nestedListItem` and removes the bullet on the wrapping item. */
+.rich-content li.nestedListItem {
+  list-style-type: none;
+  margin-left: 0;
+}
+
+.rich-content ul ul,
+.rich-content ul ol,
+.rich-content ol ul,
+.rich-content ol ol {
+  margin: 0.2em 0 0;
+}
+
+/* Checkbox (task) list — the serializer emits `li.list-item-checkbox` with an
+   inline checkbox + label and removes the marker. Keep it aligned with the text
+   column, marker-free. */
+.rich-content li.list-item-checkbox {
+  list-style-type: none;
+  margin-left: 24px;
+}
+
+/* Blockquote — `.LexicalEditorTheme__quote`: 16px / 1.5, margin-block 16px,
+   margin-inline 4px, a leading border. Use shadcn tokens for the rule + muted text. */
+.rich-content blockquote {
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  margin: 16px 4px;
+  padding-inline-start: 16px;
+  border-inline-start: 4px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+/* Inline marks — the serializer emits `<strong>`/`<em>`/`<code>`/`<sub>`/`<sup>`
+   and `<span style="text-decoration:…">` for underline/strikethrough. Match the
+   editor's `__textBold` (700) / `__textItalic` / `__textCode`. */
+.rich-content strong {
+  font-weight: 700;
+}
+
+.rich-content em {
+  font-style: italic;
+}
+
+.rich-content code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+  font-size: 0.9em;
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+/* Links — the serializer wraps `<a>`; underline + accent, matching a read surface. */
+.rich-content a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Horizontal rule. */
+.rich-content hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}
