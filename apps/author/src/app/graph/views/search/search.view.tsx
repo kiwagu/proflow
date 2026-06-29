@@ -496,6 +496,9 @@ export function SearchView({
             <LensTreeGrid
               roots={searchTree as LensTreeNode[]}
               renderLeaf={renderTreeLeaf}
+              // Every breadcrumb path folder reveals itself in the KB on click (the crumb IS
+              // the per-folder jump affordance — no separate icon).
+              onJumpToFolder={onRevealInKb}
               folderTestId="drive-search-tree-folder"
             />
           )}

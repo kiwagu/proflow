@@ -80,6 +80,8 @@ import {
 } from '@/app/graph/create-resource.view';
 import { DriveSidebar } from '@/app/graph/views/drive/drive-sidebar';
 import { LayoutToggle } from '@/app/graph/views/drive/layout-toggle';
+import { LensTreeGrid } from '@/app/graph/views/drive/lens-tree-grid';
+import type { LensTreeNode } from '@/app/graph/views/drive/lens-tree-grid';
 import { modifiedCell, typeCell } from '@/app/graph/views/drive/lens-row-cells';
 import { LensViewToggle } from '@/app/graph/views/drive/lens-view-toggle';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
@@ -764,6 +766,38 @@ export function DriveProjectionView({
     .slice()
     .sort(isRecent ? byRecency : byTitle);
 
+  // The advanced lens GRID forest (ADR-0025): the SAME `treeContainment` subset the list
+  // tree (`driveRows`) walks, shaped as a `LensTreeNode[]` for `LensTreeGrid` so the grid +
+  // list advanced trees can never drift. Folders recurse their lens children inline (nested
+  // sections + indent guides + sticky chain) so EVERY matching node is visible — never
+  // hidden behind a drill (the consistency the flat lens has, plus the containment context).
+  // Cycle-guarded (single-parent forest) exactly like `folderRow`. Built only when advanced.
+  const buildTreeNode = (
+    node: LensNode,
+    ancestors: Set<string>
+  ): LensTreeNode => ({
+    node,
+    children:
+      node.kind === 'folder' && !ancestors.has(node.id)
+        ? [
+            ...childFolders(treeContainment, node.id)
+              .slice()
+              .sort(byTitle)
+              .map((f) => buildTreeNode(f, new Set(ancestors).add(node.id))),
+            ...childContent(treeContainment, node.id)
+              .slice()
+              .sort(byTitle)
+              .map((c) => ({ node: c, children: [] as LensTreeNode[] })),
+          ]
+        : [],
+  });
+  const lensForest: LensTreeNode[] = isLensAdvanced
+    ? [
+        ...folders.map((f) => buildTreeNode(f, new Set<string>())),
+        ...items.map((it) => ({ node: it, children: [] as LensTreeNode[] })),
+      ]
+    : [];
+
   if (!spaceId) {
     return null;
   }
@@ -1376,146 +1410,171 @@ export function DriveProjectionView({
             ) : null
           ) : (
             <>
-              {/* folders + shortcuts */}
-              {folders.length > 0 || shortcuts.length > 0 ? (
+              {isLensAdvanced ? (
+                // ADVANCED lens GRID (ADR-0025): the lens subset as a recursive tree-grid —
+                // every matching node visible (nested folder sections + indent guides +
+                // sticky ancestor chain), not hidden behind a drill. Folders carry the SAME
+                // jump-to-KB the cards do, even when empty.
+                lensForest.length > 0 ? (
+                  <LensTreeGrid
+                    roots={lensForest}
+                    renderLeaf={renderItemCard}
+                    // Each breadcrumb path folder reveals itself in the KB on click.
+                    onJumpToFolder={onRevealInKb}
+                    folderTestId="drive-advanced-tree-folder"
+                  />
+                ) : null
+              ) : (
                 <>
-                  {!isRoot || isFilterScope ? (
-                    <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
-                  ) : null}
-                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                    {folders.map((sub) => {
-                      const folderShared = sharedOut(
-                        containment,
-                        sub.id,
-                        isGranted
-                      );
-                      const folderGrantees =
-                        sharedByMeByResource.get(sub.id) ?? [];
-                      const folderCardProps = {
-                        title: sub.title,
-                        subtitle: t('graph.drive.itemsCount', {
-                          count:
-                            childFolders(treeContainment, sub.id).length +
-                            childContent(treeContainment, sub.id).length,
-                        }),
-                        layout,
-                        onOpen: () => navigate(sub.id),
-                        onDetails: () => onSelect(sub.id),
-                        sharedBadge: renderAccessBadge(sub.id),
-                        // The "placement = sharing" hint shows only when THIS folder
-                        // itself confers access (a direct grant or a broadcast floor) —
-                        // dropping a node here would share it. A folder that is shared
-                        // only via a granted ANCESTOR gets the badge (above) but not the
-                        // hint (the hint is about what placing INTO this folder does, and
-                        // the ancestor already covers that one level up).
-                        folderHint:
-                          folderShared.direct ||
-                          metaByItem[sub.id]?.visibility === 'space' ||
-                          metaByItem[sub.id]?.visibility === 'organization' ? (
-                            <SharedFolderHint
-                              t={t}
-                              visibility={metaByItem[sub.id]?.visibility}
-                              grantees={folderGrantees}
-                            />
-                          ) : undefined,
-                        footer: isSharedByMe ? (
-                          <GranteeSummary
-                            t={t}
-                            grantees={sharedByMeByResource.get(sub.id) ?? []}
-                          />
-                        ) : isShared && shareMechanism[sub.id] ? (
-                          <ShareMechanismBadge
-                            t={t}
-                            mechanism={shareMechanism[sub.id]!}
-                          />
-                        ) : undefined,
-                        star: (
-                          <StarButton
-                            starred={starredSet.has(sub.id)}
-                            onToggle={() =>
-                              toggleStar(sub.id, !starredSet.has(sub.id))
-                            }
-                            label={t(
-                              starredSet.has(sub.id)
-                                ? 'graph.drive.unstar'
-                                : 'graph.drive.star'
-                            )}
-                          />
-                        ),
-                        actions: (
-                          <NodeActionsMenu
-                            spaceId={spaceId}
-                            t={t}
-                            node={sub}
-                            containment={containment}
-                            currentUserId={currentUserId}
-                            ownerUserId={
-                              metaByItem[sub.id]?.ownerUserId ?? null
-                            }
-                            capabilities={capabilities}
-                            onMutated={onMutated}
-                            onDetails={() => onSelect(sub.id)}
-                            onCopyToClipboard={onCopyToClipboard}
-                            onOpenInKb={onRevealInKbAction}
-                            triggerClassName={CARD_ACTION_TRIGGER}
-                          />
-                        ),
-                      };
-                      return dndEnabled ? (
-                        <DraggableDroppableFolderCard
-                          key={sub.id}
-                          {...folderCardProps}
-                          dragData={{
-                            type: 'node',
-                            nodeId: sub.id,
+                  {/* folders + shortcuts */}
+                  {folders.length > 0 || shortcuts.length > 0 ? (
+                    <>
+                      {!isRoot || isFilterScope ? (
+                        <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
+                      ) : null}
+                      <div
+                        className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}
+                      >
+                        {folders.map((sub) => {
+                          const folderShared = sharedOut(
+                            containment,
+                            sub.id,
+                            isGranted
+                          );
+                          const folderGrantees =
+                            sharedByMeByResource.get(sub.id) ?? [];
+                          const folderCardProps = {
                             title: sub.title,
-                            kind: 'folder',
-                          }}
-                        />
-                      ) : (
-                        <FolderCard key={sub.id} {...folderCardProps} />
-                      );
-                    })}
-                    {shortcuts.map((target) => (
-                      <FolderCard
-                        key={`sc-${target.id}`}
-                        title={target.title}
-                        subtitle={t('graph.drive.shortcutFolder')}
-                        layout={layout}
-                        shortcut
-                        onOpen={() =>
-                          target.kind === 'folder'
-                            ? navigate(target.id)
-                            : onSelect(target.id)
-                        }
-                        onDetails={() => onSelect(target.id)}
-                        actions={
-                          // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
-                          // the KB lens — it jumps to the target's CANONICAL home (target.id).
-                          onRevealInKb ? (
-                            <RevealInKbButton
-                              onReveal={() => onRevealInKb(target.id)}
-                              label={t('graph.panel.openInKb')}
+                            subtitle: t('graph.drive.itemsCount', {
+                              count:
+                                childFolders(treeContainment, sub.id).length +
+                                childContent(treeContainment, sub.id).length,
+                            }),
+                            layout,
+                            onOpen: () => navigate(sub.id),
+                            onDetails: () => onSelect(sub.id),
+                            sharedBadge: renderAccessBadge(sub.id),
+                            // The "placement = sharing" hint shows only when THIS folder
+                            // itself confers access (a direct grant or a broadcast floor) —
+                            // dropping a node here would share it. A folder that is shared
+                            // only via a granted ANCESTOR gets the badge (above) but not the
+                            // hint (the hint is about what placing INTO this folder does, and
+                            // the ancestor already covers that one level up).
+                            folderHint:
+                              folderShared.direct ||
+                              metaByItem[sub.id]?.visibility === 'space' ||
+                              metaByItem[sub.id]?.visibility ===
+                                'organization' ? (
+                                <SharedFolderHint
+                                  t={t}
+                                  visibility={metaByItem[sub.id]?.visibility}
+                                  grantees={folderGrantees}
+                                />
+                              ) : undefined,
+                            footer: isSharedByMe ? (
+                              <GranteeSummary
+                                t={t}
+                                grantees={
+                                  sharedByMeByResource.get(sub.id) ?? []
+                                }
+                              />
+                            ) : isShared && shareMechanism[sub.id] ? (
+                              <ShareMechanismBadge
+                                t={t}
+                                mechanism={shareMechanism[sub.id]!}
+                              />
+                            ) : undefined,
+                            star: (
+                              <StarButton
+                                starred={starredSet.has(sub.id)}
+                                onToggle={() =>
+                                  toggleStar(sub.id, !starredSet.has(sub.id))
+                                }
+                                label={t(
+                                  starredSet.has(sub.id)
+                                    ? 'graph.drive.unstar'
+                                    : 'graph.drive.star'
+                                )}
+                              />
+                            ),
+                            actions: (
+                              <NodeActionsMenu
+                                spaceId={spaceId}
+                                t={t}
+                                node={sub}
+                                containment={containment}
+                                currentUserId={currentUserId}
+                                ownerUserId={
+                                  metaByItem[sub.id]?.ownerUserId ?? null
+                                }
+                                capabilities={capabilities}
+                                onMutated={onMutated}
+                                onDetails={() => onSelect(sub.id)}
+                                onCopyToClipboard={onCopyToClipboard}
+                                onOpenInKb={onRevealInKbAction}
+                                triggerClassName={CARD_ACTION_TRIGGER}
+                              />
+                            ),
+                          };
+                          return dndEnabled ? (
+                            <DraggableDroppableFolderCard
+                              key={sub.id}
+                              {...folderCardProps}
+                              dragData={{
+                                type: 'node',
+                                nodeId: sub.id,
+                                title: sub.title,
+                                kind: 'folder',
+                              }}
                             />
-                          ) : undefined
-                        }
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : null}
+                          ) : (
+                            <FolderCard key={sub.id} {...folderCardProps} />
+                          );
+                        })}
+                        {shortcuts.map((target) => (
+                          <FolderCard
+                            key={`sc-${target.id}`}
+                            title={target.title}
+                            subtitle={t('graph.drive.shortcutFolder')}
+                            layout={layout}
+                            shortcut
+                            onOpen={() =>
+                              target.kind === 'folder'
+                                ? navigate(target.id)
+                                : onSelect(target.id)
+                            }
+                            onDetails={() => onSelect(target.id)}
+                            actions={
+                              // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
+                              // the KB lens — it jumps to the target's CANONICAL home (target.id).
+                              onRevealInKb ? (
+                                <RevealInKbButton
+                                  onReveal={() => onRevealInKb(target.id)}
+                                  label={t('graph.panel.openInKb')}
+                                />
+                              ) : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
 
-              {/* files / docs */}
-              {items.length > 0 ? (
-                <>
-                  <SectionLabel className="mt-[18px]">
-                    {t('graph.canvas.files')}
-                  </SectionLabel>
-                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                    {items.map(renderItemCard)}
-                  </div>
+                  {/* files / docs */}
+                  {items.length > 0 ? (
+                    <>
+                      <SectionLabel className="mt-[18px]">
+                        {t('graph.canvas.files')}
+                      </SectionLabel>
+                      <div
+                        className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}
+                      >
+                        {items.map(renderItemCard)}
+                      </div>
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              )}
             </>
           )}
 
