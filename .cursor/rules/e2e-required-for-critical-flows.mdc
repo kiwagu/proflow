@@ -100,3 +100,16 @@ For critical auth/profile interactions, provide deterministic selectors and keep
 - Full regression/nightly: `bun run test:e2e:full`
 
 If local/CI infrastructure is unavailable, explicitly document why the test was not executed and what should be run by the reviewer.
+
+## Reconcile e2e when you change covered behavior (every feature, not just auth)
+
+A behavior change is **not done** until the e2e that asserts the OLD behavior is reconciled — this is the rule's broadest application, beyond the auth scope above. When you change ANY observable behavior an e2e covers — a rendered badge / icon / label, a panel summary, a flow's visible outcome, an aria-label or `data-testid`, an API shape a spec drives — you MUST, in the SAME change:
+
+1. **FIND the covering spec(s).** Grep `tests/e2e/src` for the strings / aria-labels / `data-testid` / counts you are changing (e.g. a badge's `getByLabel`, a panel header like "Shared with N person"). The spec is the contract; your change is a claim against it. If you cannot find a covering spec for behavior that clearly warrants one, that absence is itself a finding.
+2. **DECIDE which side is canonical, explicitly** (mirrors `standard-design-patterns` / the design-decision posture):
+   - the change is **DELIBERATE** → the test encodes superseded behavior → UPDATE its assertions AND its descriptive comments to the new canon (never `.skip`, never delete coverage to make red disappear); OR
+   - the change is an **accident** → the red test caught a regression → fix the CODE.
+   Never leave the divergence unresolved or unnoticed.
+3. **RUN the reconciled spec(s) green before commit** (`@full` against the live stack for render/flow changes). A behavior change committed with its covering e2e left **red or unrun** is exactly the failure mode this section exists to stop (e.g. a badge inversion shipped while its `…-render` spec still asserted the old icon).
+
+Owners of rendered/observable behavior — `knowledge-render-implementer`, `author-payload-implementer`, `knowledge-base-app`, `kb-*` — apply this on every badge/label/panel/flow change, not only "critical" auth flows.
