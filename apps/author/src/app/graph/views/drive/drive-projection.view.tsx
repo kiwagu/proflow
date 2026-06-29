@@ -10,6 +10,7 @@ import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
+import { RowActionButton } from '@workspace/ui/components/platform/row-action-button';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
@@ -1626,29 +1627,28 @@ function StarButton({
   label: string;
   alwaysShow?: boolean;
 }) {
+  // Thin domain wrapper over the shared RowActionButton (single source of truth for the
+  // row-action style). `active`/`alwaysShow` force the button visible; otherwise it
+  // hover-reveals like the ⋯ menu. The amber fill (when starred) lives on the icon — the
+  // shared button governs chrome + reveal, not the star's domain treatment. Note the hover
+  // is now the STRONG one (darker fill + foreground), matching the other row actions.
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={label}
+    <RowActionButton
+      label={label}
       aria-pressed={starred}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
-        starred || alwaysShow ? 'opacity-100' : CARD_ACTION_TRIGGER
-      )}
+      onActivate={onToggle}
+      reveal={alwaysShow ? 'always' : 'hover'}
+      active={starred}
+      hint={false}
     >
       <Star
         className={cn(
           'size-4',
-          starred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'
+          starred ? 'fill-amber-400 text-amber-400' : undefined
         )}
         aria-hidden
       />
-    </Button>
+    </RowActionButton>
   );
 }
 
@@ -1656,7 +1656,8 @@ function StarButton({
  * RevealInKbButton — a small inline action that sits next to the star and jumps to this
  * resource's position in the KB containment tree (the 'kb' lens at its parent folder).
  * Hover-revealed like the other card actions; the same affordance lives in the `⋯` menu
- * ("Open in KB") for surfaces without a star.
+ * ("Open in KB") for surfaces without a star. A thin domain wrapper over the shared
+ * RowActionButton (the same `Target` "open in KB" jump the search lens's OpenInKbButton is).
  */
 function RevealInKbButton({
   onReveal,
@@ -1666,21 +1667,14 @@ function RevealInKbButton({
   label: string;
 }) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={label}
-      onClick={(event) => {
-        event.stopPropagation();
-        onReveal();
-      }}
-      className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
-        CARD_ACTION_TRIGGER
-      )}
+    <RowActionButton
+      label={label}
+      onActivate={onReveal}
+      reveal="hover"
+      hint={false}
     >
-      <Target className="text-muted-foreground size-4" aria-hidden />
-    </Button>
+      <Target className="size-4" aria-hidden />
+    </RowActionButton>
   );
 }
 
@@ -2628,7 +2622,7 @@ function useDriveRowDnd(row: DriveRow): {
 // ── list view (table) ─────────────────────────────────────────────────────
 
 /** One Drive row for the table view — a folder, a shortcut, or a content item. */
-type DriveRow = {
+export type DriveRow = {
   id: string;
   node: LensNode;
   rowKind: 'folder' | 'shortcut' | 'item';
@@ -2656,7 +2650,7 @@ type DriveRow = {
  * `expansion: 'always'` renders the tree fully-unfolded with no collapse (search's
  * advanced view) instead of the collapsible browse tree.
  */
-function LensListTable({
+export function LensListTable({
   rows,
   t,
   metaByItem,
@@ -2682,8 +2676,11 @@ function LensListTable({
   recentOpenedAt: Record<string, string> | null;
   /** Initial column sort (Recent → viewed-desc; otherwise name-asc). */
   defaultSorting: { id: string; desc: boolean }[];
-  starredSet: Set<string>;
-  onToggleStar: (nodeId: string, next: boolean) => void;
+  /** The starred set + toggle. OPTIONAL (ADR-0025 §1 `star?`): supplied → a leading star
+   * column; OMITTED (default OFF, fail-safe) → no star column at all. The structural
+   * lenses pass it; the lexical-search list omits it (a ranked hit list has no star). */
+  starredSet?: Set<string>;
+  onToggleStar?: (nodeId: string, next: boolean) => void;
   /** Browse tree: folders expand inline (a chevron + depth indent in the name cell,
    * `subRows` drive the children). Off → a flat table. */
   tree?: boolean;
@@ -2697,9 +2694,10 @@ function LensListTable({
   /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
    * out — rendered in the name cell so the list mirrors the grid cards. */
   sharedBadgeFor?: (node: LensNode) => React.ReactNode;
-  /** OPTIONAL trailing column slot rendering a per-row excerpt (the search snippet).
-   * Absent (default) → no snippet column, so non-search lenses are unchanged. */
-  snippet?: (node: LensNode) => React.ReactNode;
+  /** OPTIONAL trailing column slot rendering a per-row excerpt (the search snippet) —
+   * a localized header plus a per-row cell renderer. Absent (default) → no snippet
+   * column, so non-search lenses are unchanged (only the search config supplies it). */
+  snippet?: { header: string; cell: (node: LensNode) => React.ReactNode };
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
@@ -2719,31 +2717,37 @@ function LensListTable({
             },
           ]
         : []),
-      {
-        id: 'star',
-        header: '',
-        enableSorting: false,
-        // Shortcuts are symlinks, not nodes — nothing to star.
-        cell: ({ row }) =>
-          row.original.rowKind === 'shortcut' ? null : (
-            <StarButton
-              alwaysShow
-              starred={starredSet.has(row.original.node.id)}
-              onToggle={() =>
-                onToggleStar(
-                  row.original.node.id,
-                  !starredSet.has(row.original.node.id)
-                )
-              }
-              label={t(
-                starredSet.has(row.original.node.id)
-                  ? 'graph.drive.unstar'
-                  : 'graph.drive.star'
-              )}
-            />
-          ),
-        meta: { cellClassName: 'w-10' },
-      },
+      // OPTIONAL leading star column (ADR-0025 §1 `star?`) — present only when a starred
+      // set + toggle are supplied (the structural lenses); omitted for the search list.
+      ...(starredSet && onToggleStar
+        ? [
+            {
+              id: 'star',
+              header: '',
+              enableSorting: false,
+              // Shortcuts are symlinks, not nodes — nothing to star.
+              cell: ({ row }: { row: { original: DriveRow } }) =>
+                row.original.rowKind === 'shortcut' ? null : (
+                  <StarButton
+                    alwaysShow
+                    starred={starredSet.has(row.original.node.id)}
+                    onToggle={() =>
+                      onToggleStar(
+                        row.original.node.id,
+                        !starredSet.has(row.original.node.id)
+                      )
+                    }
+                    label={t(
+                      starredSet.has(row.original.node.id)
+                        ? 'graph.drive.unstar'
+                        : 'graph.drive.star'
+                    )}
+                  />
+                ),
+              meta: { cellClassName: 'w-10' },
+            } satisfies ColumnDef<DriveRow>,
+          ]
+        : []),
       {
         id: 'name',
         accessorFn: (r) => r.node.title,
@@ -2848,11 +2852,9 @@ function LensListTable({
             {
               id: 'snippet',
               enableSorting: false,
-              // Header text is supplied by the search config in Phase B (no current
-              // lens renders this column); left blank here to avoid a speculative key.
-              header: '',
+              header: snippet.header,
               cell: ({ row }: { row: { original: DriveRow } }) =>
-                snippet(row.original.node),
+                snippet.cell(row.original.node),
             },
           ]
         : []),
