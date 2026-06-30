@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
-import type { PlatformRoleCatalogRow } from '@/lib/platform-role-catalog.actions';
 import {
   getSpaceSettingsTranslator,
   type SpaceSettingsLocale,
 } from '@/app/(account)/space-settings/space-settings.i18n';
 
 export type Translator = ReturnType<typeof getSpaceSettingsTranslator>;
+
+export type RoleCatalogLocale = SpaceSettingsLocale;
 
 export function createRoleFormSchema(t: Translator) {
   return z.object({
@@ -34,9 +35,3 @@ export function createRoleFormSchema(t: Translator) {
 export type RoleFormSchema = ReturnType<typeof createRoleFormSchema>;
 
 export type RoleDraft = z.infer<RoleFormSchema>;
-
-export type GlobalSystemRoleCatalogClientProps = Readonly<{
-  roles: readonly PlatformRoleCatalogRow[];
-  permissionCatalogKeys: readonly string[];
-  locale: SpaceSettingsLocale;
-}>;

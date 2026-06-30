@@ -12,10 +12,10 @@ import {
 } from '@workspace/ui/components/card';
 
 import {
-  archiveGlobalSystemRoleAction,
-  createGlobalSystemRoleAction,
+  archiveOrganizationCustomRoleAction,
+  createOrganizationCustomRoleAction,
   type PlatformRoleCatalogRow,
-  updateGlobalSystemRoleAction,
+  updateOrganizationCustomRoleAction,
 } from '@/lib/platform-role-catalog.actions';
 import {
   getSpaceSettingsTranslator,
@@ -27,19 +27,32 @@ import {
   type RoleDraft,
   RoleCreateForm,
   RoleRow,
+  type Translator,
 } from '@/components/role-catalog';
 
-type GlobalSystemRoleCatalogClientProps = Readonly<{
+type OrganizationRoleCatalogClientProps = Readonly<{
+  organizationId: string;
   roles: readonly PlatformRoleCatalogRow[];
   permissionCatalogKeys: readonly string[];
   locale: SpaceSettingsLocale;
 }>;
 
-export function GlobalSystemRoleCatalogClient({
+function formatRoleScope(scope: string, t: Translator): string {
+  if (scope === 'organization') {
+    return t('roleCatalog.scope.organization');
+  }
+  if (scope === 'space') {
+    return t('roleCatalog.scope.space');
+  }
+  return scope;
+}
+
+export function OrganizationRoleCatalogClient({
+  organizationId,
   roles,
   permissionCatalogKeys,
   locale,
-}: GlobalSystemRoleCatalogClientProps) {
+}: OrganizationRoleCatalogClientProps) {
   const router = useRouter();
   const t = useMemo(() => getSpaceSettingsTranslator(locale), [locale]);
   const roleSchema = useMemo(() => createRoleFormSchema(t), [t]);
@@ -47,18 +60,14 @@ export function GlobalSystemRoleCatalogClient({
   const [busyArchiveRoleId, setBusyArchiveRoleId] = useState<string | null>(
     null
   );
-  const [archiveConfirmedRoleIds, setArchiveConfirmedRoleIds] = useState<
-    Set<string>
-  >(new Set());
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState<RoleDraft | null>(null);
-  const [editingConfirmed, setEditingConfirmed] = useState(false);
   const [busyEditRoleId, setBusyEditRoleId] = useState<string | null>(null);
 
   return (
     <div
       className="flex flex-col gap-4"
-      data-testid="global-system-role-catalog"
+      data-testid={`organization-role-catalog-${organizationId}`}
     >
       <RoleCreateForm
         t={t}
@@ -68,42 +77,39 @@ export function GlobalSystemRoleCatalogClient({
         onError={setCatalogError}
         onCreated={() => router.refresh()}
         copy={{
-          cardTitle: t('superAdmin.globalRoles.create.title'),
-          cardDescription: t('superAdmin.globalRoles.create.description'),
-          keyHint: t('superAdmin.globalRoles.create.keyHint'),
+          cardTitle: t('roleCatalog.create.title'),
+          cardDescription: t('roleCatalog.create.description'),
+          keyHint: t('roleCatalog.create.roleKeyHint'),
           descriptionPlaceholder: t(
-            'superAdmin.globalRoles.create.descriptionPlaceholder'
+            'roleCatalog.create.descriptionPlaceholder'
           ),
-          submitLabel: t('superAdmin.globalRoles.create.submit'),
+          submitLabel: t('roleCatalog.actions.create'),
         }}
-        fieldIdPrefix="create-global-role-permission"
-        cardTestId="global-system-role-catalog-create"
-        confirm={{
-          inputId: 'create-global-role-confirm',
-          label: t('superAdmin.globalRoles.create.confirm'),
-        }}
+        fieldIdPrefix="create-role-permission"
+        cardTestId="organization-role-catalog-create"
+        formTestId="organization-role-catalog-create-form"
+        showFieldErrors
         onSubmit={(payload) =>
-          createGlobalSystemRoleAction({
+          createOrganizationCustomRoleAction({
+            organizationId,
             key: payload.key,
             label: payload.label,
             description: payload.description,
             permissionKeys: payload.permissionKeys,
-            confirmed: payload.confirmed,
+            scope: 'space',
           })
         }
       />
 
-      <Card data-testid="global-system-role-catalog-list">
+      <Card data-testid="organization-role-catalog-list">
         <CardHeader>
-          <CardTitle>{t('superAdmin.globalRoles.list.title')}</CardTitle>
-          <CardDescription>
-            {t('superAdmin.globalRoles.list.description')}
-          </CardDescription>
+          <CardTitle>{t('roleCatalog.list.title')}</CardTitle>
+          <CardDescription>{t('roleCatalog.list.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           {roles.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              {t('superAdmin.globalRoles.list.empty')}
+              {t('roleCatalog.list.empty')}
             </p>
           ) : (
             <div className="flex flex-col gap-3">
@@ -113,60 +119,33 @@ export function GlobalSystemRoleCatalogClient({
                   role={role}
                   t={t}
                   permissionCatalogKeys={permissionCatalogKeys}
-                  scopeLabel={t('roleCatalog.scope.global')}
-                  editIdPrefix="edit-global"
-                  permissionFieldIdPrefix="edit-global-role-permission"
+                  scopeLabel={formatRoleScope(role.scope, t)}
+                  editIdPrefix="edit"
+                  permissionFieldIdPrefix="edit-role-permission"
+                  rowTestId={`organization-role-row-${role.id}`}
+                  saveTestId={`organization-role-save-${role.id}`}
                   busyArchive={busyArchiveRoleId === role.id}
                   busyEdit={busyEditRoleId === role.id}
                   isEditing={editingRoleId === role.id}
                   editingDraft={editingRoleId === role.id ? editingDraft : null}
-                  confirmArchive={{
-                    inputId: `archive-global-role-confirm-${role.id}`,
-                    label: t('superAdmin.globalRoles.confirm.archive'),
-                    checked: archiveConfirmedRoleIds.has(role.id),
-                    onChange: (checked) => {
-                      setArchiveConfirmedRoleIds((current) => {
-                        const next = new Set(current);
-                        if (checked) {
-                          next.add(role.id);
-                        } else {
-                          next.delete(role.id);
-                        }
-                        return next;
-                      });
-                    },
-                  }}
-                  confirmEdit={{
-                    inputId: `edit-global-confirm-${role.id}`,
-                    label: t('superAdmin.globalRoles.confirm.update'),
-                    checked: editingConfirmed,
-                    onChange: (checked) => setEditingConfirmed(checked),
-                  }}
                   onArchive={() => {
                     void (async () => {
                       setCatalogError(null);
                       setBusyArchiveRoleId(role.id);
-                      const result = await archiveGlobalSystemRoleAction({
+                      const result = await archiveOrganizationCustomRoleAction({
                         roleId: role.id,
-                        confirmed: archiveConfirmedRoleIds.has(role.id),
                       });
                       setBusyArchiveRoleId(null);
                       if (!result.ok) {
                         setCatalogError(result.message);
                         return;
                       }
-                      setArchiveConfirmedRoleIds((current) => {
-                        const next = new Set(current);
-                        next.delete(role.id);
-                        return next;
-                      });
                       router.refresh();
                     })();
                   }}
                   onBeginEdit={() => {
                     setCatalogError(null);
                     setEditingRoleId(role.id);
-                    setEditingConfirmed(false);
                     setEditingDraft({
                       key: role.key,
                       label: role.label,
@@ -188,13 +167,12 @@ export function GlobalSystemRoleCatalogClient({
                       }
 
                       setBusyEditRoleId(role.id);
-                      const result = await updateGlobalSystemRoleAction({
+                      const result = await updateOrganizationCustomRoleAction({
                         roleId: role.id,
                         key: parsedDraft.data.key,
                         label: parsedDraft.data.label,
                         description: parsedDraft.data.description,
                         permissionKeys: parsedDraft.data.permissionKeys,
-                        confirmed: editingConfirmed,
                       });
                       setBusyEditRoleId(null);
 
@@ -205,14 +183,12 @@ export function GlobalSystemRoleCatalogClient({
 
                       setEditingRoleId(null);
                       setEditingDraft(null);
-                      setEditingConfirmed(false);
                       router.refresh();
                     })();
                   }}
                   onCancelEdit={() => {
                     setEditingRoleId(null);
                     setEditingDraft(null);
-                    setEditingConfirmed(false);
                   }}
                 />
               ))}

@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from '@workspace/ui/components/card';
 
-import type { Translator } from './global-system-role-catalog.schema';
+import type { Translator } from './role-catalog.schema';
 
 type PermissionCatalogCardProps = Readonly<{
   t: Translator;

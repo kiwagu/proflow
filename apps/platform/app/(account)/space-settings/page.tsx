@@ -19,7 +19,7 @@ import {
 } from '@workspace/settings-runtime';
 
 import { SpaceInviteManagerClient } from '@/app/(account)/organizations/space-invite.manager.client';
-import { OrganizationRoleCatalogClient } from '@/app/(account)/space-settings/organization-role-catalog.client';
+import { OrganizationRoleCatalogClient } from '@/app/(account)/space-settings/organization-role-catalog';
 import { SpaceAvatarForm } from '@/app/(account)/space-settings/space-avatar-form';
 import { SpaceMemberRolesClient } from '@/app/(account)/space-settings/space-member-roles.client';
 import { RuntimeSettingSelectForm } from '@/components/runtime-setting-select-form';

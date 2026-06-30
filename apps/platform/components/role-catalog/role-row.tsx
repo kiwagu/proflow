@@ -24,62 +24,87 @@ import { Textarea } from '@workspace/ui/components/textarea';
 
 import type { PlatformRoleCatalogRow } from '@/lib/platform-role-catalog.actions';
 
-import type {
-  RoleDraft,
-  Translator,
-} from './global-system-role-catalog.schema';
-import {
-  PermissionField,
-  togglePermissionKey,
-} from './global-system-role-permission-field';
+import type { RoleDraft, Translator } from './role-catalog.schema';
+import { PermissionField, togglePermissionKey } from './permission-field';
 
-type GlobalSystemRoleRowProps = Readonly<{
+/**
+ * Confirm-gate wiring for a destructive action (system variant). When present,
+ * the archive control moves into the card body, a confirm checkbox precedes it,
+ * and the action is gated behind that checkbox.
+ */
+export type RoleRowConfirmGate = Readonly<{
+  inputId: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}>;
+
+type RoleRowProps = Readonly<{
   role: PlatformRoleCatalogRow;
   t: Translator;
   permissionCatalogKeys: readonly string[];
-  archiveConfirmed: boolean;
+  /** Resolved scope label shown after the role key (variant-specific). */
+  scopeLabel: string;
+  /** Prefix for edit-field ids, e.g. `edit` (org) or `edit-global` (system). */
+  editIdPrefix: string;
+  /** Prefix for the permission checkbox group within the edit form. */
+  permissionFieldIdPrefix: string;
   busyArchive: boolean;
   busyEdit: boolean;
   isEditing: boolean;
   editingDraft: RoleDraft | null;
-  editingConfirmed: boolean;
-  onArchiveConfirmChange: (checked: boolean) => void;
   onArchive: () => void;
   onBeginEdit: () => void;
   onEditingDraftChange: (
     update: (current: RoleDraft | null) => RoleDraft | null
   ) => void;
-  onEditingConfirmChange: (checked: boolean) => void;
   onSave: () => void;
   onCancelEdit: () => void;
+  /** Optional `data-testid` on the card (org variant). */
+  rowTestId?: string;
+  /** Optional `data-testid` on the save button (org variant). */
+  saveTestId?: string;
+  /**
+   * Optional confirm-gate for archiving (system variant). When omitted, the
+   * archive button renders in the header gated only by `busyArchive`. When
+   * provided, it renders in the body behind the confirm checkbox.
+   */
+  confirmArchive?: RoleRowConfirmGate;
+  /** Optional confirm-gate for saving an edit (system variant). */
+  confirmEdit?: RoleRowConfirmGate;
 }>;
 
-export function GlobalSystemRoleRow({
+export function RoleRow({
   role,
   t,
   permissionCatalogKeys,
-  archiveConfirmed,
+  scopeLabel,
+  editIdPrefix,
+  permissionFieldIdPrefix,
   busyArchive,
   busyEdit,
   isEditing,
   editingDraft,
-  editingConfirmed,
-  onArchiveConfirmChange,
   onArchive,
   onBeginEdit,
   onEditingDraftChange,
-  onEditingConfirmChange,
   onSave,
   onCancelEdit,
-}: GlobalSystemRoleRowProps) {
+  rowTestId,
+  saveTestId,
+  confirmArchive,
+  confirmEdit,
+}: RoleRowProps) {
+  const archiveInHeader = !confirmArchive;
+
   return (
-    <Card size="sm">
+    <Card size="sm" data-testid={rowTestId}>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-col gap-1">
             <CardTitle>{role.label}</CardTitle>
             <CardDescription>
-              {role.key} · {t('roleCatalog.scope.global')}
+              {role.key} · {scopeLabel}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -98,6 +123,17 @@ export function GlobalSystemRoleRow({
                 {t('roleCatalog.actions.edit')}
               </Button>
             ) : null}
+            {archiveInHeader && !role.archivedAt ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busyArchive}
+                onClick={onArchive}
+              >
+                {t('roleCatalog.actions.archive')}
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -113,29 +149,29 @@ export function GlobalSystemRoleRow({
           ))}
         </div>
 
-        {!role.archivedAt ? (
+        {confirmArchive && !role.archivedAt ? (
           <Field orientation="horizontal">
             <Checkbox
-              id={`archive-global-role-confirm-${role.id}`}
-              checked={archiveConfirmed}
+              id={confirmArchive.inputId}
+              checked={confirmArchive.checked}
               onCheckedChange={(value) =>
-                onArchiveConfirmChange(value === true)
+                confirmArchive.onChange(value === true)
               }
             />
             <FieldContent>
-              <FieldLabel htmlFor={`archive-global-role-confirm-${role.id}`}>
-                {t('superAdmin.globalRoles.confirm.archive')}
+              <FieldLabel htmlFor={confirmArchive.inputId}>
+                {confirmArchive.label}
               </FieldLabel>
             </FieldContent>
           </Field>
         ) : null}
 
-        {!role.archivedAt ? (
+        {confirmArchive && !role.archivedAt ? (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={!archiveConfirmed || busyArchive}
+            disabled={!confirmArchive.checked || busyArchive}
             onClick={onArchive}
           >
             {t('roleCatalog.actions.archive')}
@@ -149,11 +185,11 @@ export function GlobalSystemRoleRow({
               <div className="flex flex-col gap-3">
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor={`edit-global-key-${role.id}`}>
+                    <FieldLabel htmlFor={`${editIdPrefix}-key-${role.id}`}>
                       {t('roleCatalog.create.roleKeyLabel')}
                     </FieldLabel>
                     <Input
-                      id={`edit-global-key-${role.id}`}
+                      id={`${editIdPrefix}-key-${role.id}`}
                       value={editingDraft.key}
                       onChange={(event) =>
                         onEditingDraftChange((current) =>
@@ -169,11 +205,11 @@ export function GlobalSystemRoleRow({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor={`edit-global-label-${role.id}`}>
+                    <FieldLabel htmlFor={`${editIdPrefix}-label-${role.id}`}>
                       {t('roleCatalog.create.roleLabelLabel')}
                     </FieldLabel>
                     <Input
-                      id={`edit-global-label-${role.id}`}
+                      id={`${editIdPrefix}-label-${role.id}`}
                       value={editingDraft.label}
                       onChange={(event) =>
                         onEditingDraftChange((current) =>
@@ -189,11 +225,13 @@ export function GlobalSystemRoleRow({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor={`edit-global-description-${role.id}`}>
+                    <FieldLabel
+                      htmlFor={`${editIdPrefix}-description-${role.id}`}
+                    >
                       {t('roleCatalog.create.descriptionLabel')}
                     </FieldLabel>
                     <Textarea
-                      id={`edit-global-description-${role.id}`}
+                      id={`${editIdPrefix}-description-${role.id}`}
                       rows={2}
                       value={editingDraft.description}
                       onChange={(event) =>
@@ -210,7 +248,7 @@ export function GlobalSystemRoleRow({
                   </Field>
 
                   <PermissionField
-                    fieldIdPrefix={`edit-global-role-permission-${role.id}`}
+                    fieldIdPrefix={`${permissionFieldIdPrefix}-${role.id}`}
                     legend={t('roleCatalog.permission.legend')}
                     description={t('roleCatalog.permission.editDescription')}
                     permissionCatalogKeys={permissionCatalogKeys}
@@ -231,27 +269,32 @@ export function GlobalSystemRoleRow({
                     }}
                   />
 
-                  <Field orientation="horizontal">
-                    <Checkbox
-                      id={`edit-global-confirm-${role.id}`}
-                      checked={editingConfirmed}
-                      onCheckedChange={(value) =>
-                        onEditingConfirmChange(value === true)
-                      }
-                    />
-                    <FieldContent>
-                      <FieldLabel htmlFor={`edit-global-confirm-${role.id}`}>
-                        {t('superAdmin.globalRoles.confirm.update')}
-                      </FieldLabel>
-                    </FieldContent>
-                  </Field>
+                  {confirmEdit ? (
+                    <Field orientation="horizontal">
+                      <Checkbox
+                        id={confirmEdit.inputId}
+                        checked={confirmEdit.checked}
+                        onCheckedChange={(value) =>
+                          confirmEdit.onChange(value === true)
+                        }
+                      />
+                      <FieldContent>
+                        <FieldLabel htmlFor={confirmEdit.inputId}>
+                          {confirmEdit.label}
+                        </FieldLabel>
+                      </FieldContent>
+                    </Field>
+                  ) : null}
                 </FieldGroup>
 
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     size="sm"
-                    disabled={!editingConfirmed || busyEdit}
+                    data-testid={saveTestId}
+                    disabled={
+                      confirmEdit ? !confirmEdit.checked || busyEdit : busyEdit
+                    }
                     onClick={onSave}
                   >
                     {t('roleCatalog.actions.save')}
