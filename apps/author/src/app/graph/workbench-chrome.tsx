@@ -13,8 +13,11 @@ import * as React from 'react';
  */
 export function WorkbenchChrome({
   messages,
+  actions,
 }: {
   messages: Record<string, string>;
+  /** Optional right-aligned top-bar actions (e.g. the command-palette trigger). */
+  actions?: React.ReactNode;
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -26,6 +29,7 @@ export function WorkbenchChrome({
         label: t('graph.variant.drive'),
         text: t('graph.variant.driveNote'),
       }}
+      actions={actions}
     />
   );
 }

@@ -1,5 +1,8 @@
 # Docker Image Versions
 
+## 2026-06-29
+- supabase/postgres:17.6.1.136 (prev supabase/postgres:17.6.1.095) — PG17 patch; stays on 17.x
+
 ## 2026-06-22
 - supabase/postgres:17.6.1.136 in docker-compose.pg17.yml (prev 17.6.1.084 in override; main docker-compose.yml stays at 17.6.1.095 pending human merge)
 - Upstream sync: CHANGELOG.md, CONFIG.md, tests/test-{self-hosted,pg17-upgrade}.sh, utils/upgrade-pg17.sh, docker-compose.pg15.yml (new file), docker-compose.pg17.yml

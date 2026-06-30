@@ -17,6 +17,10 @@ export {
   type ResolveQueryTransport,
 } from './projection.resolver.js';
 
+export { compileSearchQuery, encodeSearchCursor } from './search.compiler.js';
+
+export { resolveSearch } from './search.resolver.js';
+
 export {
   gateSequence,
   type GatedSequence,

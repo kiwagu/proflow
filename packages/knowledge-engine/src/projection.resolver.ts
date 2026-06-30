@@ -169,7 +169,13 @@ export function renderRpcQuery(fragment: SqlFragment): {
       return `array(select jsonb_array_elements_text(($1::jsonb) -> ${idx}))`;
     }
     if (typeof value === 'number') {
-      return `((($1::jsonb) ->> ${idx})::int)`;
+      // `::numeric` (not `::int`): the search compiler's keyset cursor carries a
+      // FUZZY `score` that is fractional (a tier-band floor + `word_similarity ∈
+      // [0,1)`), so an `::int` cast would TRUNCATE it and the `score = $cursor`
+      // keyset arm would never match a fuzzy row. `numeric` round-trips both the
+      // integer params (limit, max_depth, prefix/exact scores) and the fractional
+      // fuzzy score; `LIMIT (numeric)` and `depth < (numeric)` both coerce fine.
+      return `((($1::jsonb) ->> ${idx})::numeric)`;
     }
     // scalar text (kind/status/visibility/title/id/space_id/relation_type)
     return `(($1::jsonb) ->> ${idx})`;

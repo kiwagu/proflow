@@ -1,10 +1,9 @@
 import type { SpaceOrgLifecycleEnvelope } from '@workspace/domain-events';
-import type { Database } from '@workspace/db';
-import { createClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
 
 import { AUTHOR_USERS_WRITE_CONTEXT } from '@/collections/users.sync-context';
 import { AUTHOR_SPACE_ORG_WRITE_CONTEXT } from '@/collections/space-org.sync-context';
+import { serviceSupabaseClient } from '@/identity/mirror-source';
 import type { Config } from '@/payload-types';
 
 type AuthSlug = keyof Config['auth'];
@@ -23,17 +22,6 @@ type SyncUserResult =
 function tenantRowsFromUserDoc(doc: unknown): TenantRow[] {
   const u = doc as { tenants?: TenantRow[] | null };
   return Array.isArray(u.tenants) ? u.tenants : [];
-}
-
-function serviceSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceRole) {
-    return null;
-  }
-  return createClient<Database>(url, serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
 }
 
 function fallbackEmailForUserId(userId: string): string {

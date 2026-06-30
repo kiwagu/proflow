@@ -26,7 +26,11 @@ import {
   type DriveDragState,
   type DriveDropData,
 } from './drive-dnd';
+import { CommandPalette } from './command-palette/command-palette';
+import { CommandPaletteTrigger } from './command-palette/command-palette-trigger';
+import { useCommandPalette } from './command-palette/use-command-palette';
 import { DriveProjectionView } from './views/drive/drive-projection.view';
+import { SearchView, type SearchSelection } from './views/search/search.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
 import { useEditLauncher } from './views/document-reader/use-edit-launcher';
 import { WorkbenchChrome } from './workbench-chrome';
@@ -66,6 +70,7 @@ export function DriveWorkbench({
   initialFolder = null,
   initialDoc = null,
   initialScope = 'kb',
+  initialSearchTerm = '',
   initialLensView = 'flat',
   initialLayout = 'grid',
 }: {
@@ -76,6 +81,9 @@ export function DriveWorkbench({
   initialFolder?: string | null;
   initialDoc?: string | null;
   initialScope?: DriveScope;
+  /** The `?q=` search term, read SERVER-SIDE so a deep-linked search lens SSRs with
+   * its term (no hydration flip). Only meaningful when `initialScope === 'search'`. */
+  initialSearchTerm?: string;
   initialLensView?: LensView;
   initialLayout?: 'grid' | 'list';
 }) {
@@ -93,6 +101,10 @@ export function DriveWorkbench({
   const [folderId, setFolderId] = React.useState<string | null>(initialFolder);
   const [docId, setDocId] = React.useState<string | null>(initialDoc);
   const [scope, setScope] = React.useState<DriveScope>(initialScope);
+  // The lexical-search term (ADR-0024 §5), mirrored in the URL (`?q=`) exactly as
+  // `?folder=`/`?scope=` are — so a search lens is shareable + survives refresh. Only
+  // carries meaning on the 'search' scope (the other lenses ignore it).
+  const [searchTerm, setSearchTerm] = React.useState<string>(initialSearchTerm);
   // The lens display mode (ADR-0022 + Addendum A) — seeded from the SERVER-resolved
   // EFFECTIVE mode (already clamped to 'flat' when the space is not entitled), so the
   // SSR'd toolbar + canvas agree with the client's first render (no hydration flip).
@@ -106,6 +118,12 @@ export function DriveWorkbench({
     undefined
   );
   const [refreshKey, setRefreshKey] = React.useState(0);
+
+  // The command palette (ADR-0024 §5, slice-12 Phase 3) — the SECOND consumer of the
+  // lexical-search capability, proving it is not Drive-bound. Toggled by ⌘K/Ctrl+K (the
+  // hook) or the chrome trigger; it reuses the SAME `/author/graph/search` path the
+  // Drive lens uses and opens a selected hit through THIS workbench's existing nav.
+  const commandPalette = useCommandPalette();
 
   // Dual-pane (Dolphin-style split) — KB-browse only. The SECOND pane is EPHEMERAL: it
   // shares the first pane's ONE sidebar (renders sidebar-less), is always KB-browse,
@@ -271,6 +289,30 @@ export function DriveWorkbench({
     [recordOpen]
   );
 
+  // The renderable meta of a SEARCH hit opened from the search lens (ADR-0024 §5
+  // follow-up). The Details panel derives `selectedNode` + its meta from the resolved
+  // canvas (`result.items` / `kbData`), keyed by the resolved set — but a search hit can
+  // be OUTSIDE that set (it resolves its own live result, a superset of the canvas). For
+  // such a hit the canvas lookups return null, so the panel would either not open or show
+  // a bare line. We stash the row's own fields here (the search result carries
+  // kind/title/status/visibility) and read them as a FALLBACK below — no parallel data
+  // path, no service-role, no widening: it is the SAME row RLS already admitted to the
+  // result, surfaced to the SAME panel. (Description/grantees aren't on the search row;
+  // those panel sections degrade gracefully — the on-demand description fetch is the
+  // panel's existing RLS-fenced save route, never a new read path.)
+  const [searchSelection, setSearchSelection] =
+    React.useState<SearchSelection | null>(null);
+
+  // Open the Details panel for a search hit, remembering its meta as the canvas fallback.
+  const selectSearchHit = React.useCallback(
+    (selection: SearchSelection) => {
+      setSearchSelection(selection);
+      setSelectedId(selection.id);
+      recordOpen(selection.id);
+    },
+    [recordOpen]
+  );
+
   // Write the location to the URL via the History API (no server re-run): the canvas
   // filters client-side, so navigation never refetches the (identical) data. A
   // relative `?query` keeps the app `basePath`; an empty query clears to the pathname.
@@ -280,6 +322,8 @@ export function DriveWorkbench({
       doc: string | null;
       scope: DriveScope;
       view: LensView;
+      /** The search term — only set by the 'search'-scope callers (`?q=`). */
+      q?: string;
     }) => {
       const params = new URLSearchParams();
       if (loc.folder) params.set('folder', loc.folder);
@@ -289,6 +333,10 @@ export function DriveWorkbench({
       // when it deviates from the default 'flat', and only carries meaning on a
       // Shared scope (the server/view ignore it elsewhere).
       if (loc.view !== 'flat') params.set('view', loc.view);
+      // The search term rides the URL only on the 'search' scope (ADR-0024 §5) — a
+      // shareable deep-link `?scope=search&q=<term>`. `loc.q` is undefined for every
+      // non-search caller, so the param is absent everywhere else.
+      if (loc.scope === 'search' && loc.q) params.set('q', loc.q);
       const qs = params.toString();
       window.history.pushState(
         null,
@@ -314,10 +362,12 @@ export function DriveWorkbench({
           s === 'recent' ||
           s === 'shared' ||
           s === 'shared-by-me' ||
-          s === 'trash'
+          s === 'trash' ||
+          s === 'search'
           ? s
           : 'kb'
       );
+      setSearchTerm(p.get('q') ?? '');
       // Clamp the URL `?view=` to the entitlement — a forged 'advanced' on a locked
       // plan reads back as 'flat' (the same fence the server applies on first load).
       setLensView(
@@ -381,10 +431,26 @@ export function DriveWorkbench({
         doc: docId,
         scope: next,
         view: lensView,
+        // Entering 'search' carries the current term into the URL; any other scope
+        // leaves `q` absent (the param is search-only).
+        q: next === 'search' ? searchTerm : undefined,
       });
     },
-    [pushLocation, docId, lensView]
+    [pushLocation, docId, lensView, searchTerm]
   );
+
+  // Live search-term changes (ADR-0024 §5) — mirror the term into client state +
+  // the URL (`?q=`) via `replaceState` (no new history entry per keystroke), so the
+  // search lens is shareable + survives refresh without flooding browser history.
+  const setSearch = React.useCallback((next: string) => {
+    setSearchTerm(next);
+    const params = new URLSearchParams();
+    params.set('scope', 'search');
+    if (next) {
+      params.set('q', next);
+    }
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  }, []);
 
   // Switch the lens display mode (ADR-0022 Fork 4 + Addendum A) — Flat ↔ Advanced. Only
   // reachable from a structural lens's toolbar toggle (shown for the STRUCTURAL_LENS_
@@ -665,20 +731,39 @@ export function DriveWorkbench({
     [spaceId, containment, copyHeld, isSelfOrDescendant, refresh, endDrag, t]
   );
 
+  // The canvas-keyed fallback for a search hit OUTSIDE the resolved canvas (ADR-0024 §5).
+  // Only honoured when its id matches the live selection (a stale stash from a previous
+  // search row is ignored — a canvas node always wins).
+  const fallbackSelection =
+    searchSelection && searchSelection.id === selectedId
+      ? searchSelection
+      : null;
+
   const selectedNode = React.useMemo<SelectedNode | null>(() => {
     if (!selectedId) {
       return null;
     }
     const item = result.items.find((entry) => entry.id === selectedId);
-    return item
+    if (item) {
+      return {
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        status: item.status,
+      };
+    }
+    // Out-of-canvas search hit — render the panel from the row's own carried meta so it
+    // opens with correct kind/title/status (its description/versions/grantees sections
+    // degrade gracefully; the description's own edit/save route stays RLS-fenced).
+    return fallbackSelection
       ? {
-          id: item.id,
-          kind: item.kind,
-          title: item.title,
-          status: item.status,
+          id: fallbackSelection.id,
+          kind: fallbackSelection.kind,
+          title: fallbackSelection.title,
+          status: fallbackSelection.status,
         }
       : null;
-  }, [selectedId, result.items]);
+  }, [selectedId, result.items, fallbackSelection]);
 
   // The open document's title (the reader header). A mutation that removed it
   // collapses the reader back to the Drive grid.
@@ -739,64 +824,134 @@ export function DriveWorkbench({
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
-      <WorkbenchChrome messages={messages} />
+      <WorkbenchChrome
+        messages={messages}
+        actions={
+          spaceId ? (
+            <CommandPaletteTrigger
+              messages={messages}
+              onOpen={() => commandPalette.setOpen(true)}
+            />
+          ) : undefined
+        }
+      />
+
+      {/* The command palette (slice-12 Phase 3) — the SECOND consumer of the lexical-
+          search capability. ⌘K/Ctrl+K (the hook) or the chrome trigger opens it; it
+          reuses the SAME `/author/graph/search` path the Drive lens uses and routes a
+          selected hit through THIS workbench's existing nav (reader for a `text` node,
+          the shared Details panel for anything else — identical to a Drive search row). */}
+      {spaceId ? (
+        <CommandPalette
+          messages={messages}
+          spaceId={spaceId}
+          open={commandPalette.open}
+          onOpenChange={commandPalette.setOpen}
+          handlers={{
+            onOpenDocument: openDocument,
+            onOpenFolder: goFolder,
+            onSelect: (item) =>
+              selectSearchHit({
+                id: item.id,
+                kind: item.kind,
+                title: item.title,
+                status: item.status,
+                visibility: item.visibility as ResourceFloor,
+              }),
+          }}
+        />
+      ) : null}
 
       {/* body: a flex row — the content area (Drive projection, with the document
           read-view overlaying it) grows; the shared Details panel is an INLINE
           right column that shrinks the content beside it when a node is selected */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          {/* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a
+          {/* The lexical-search lens (ADR-0024 §5) REPLACES the projection panes when
+              the 'search' scope is active — it is a substrate-capability surface, not a
+              projection over the resolved canvas, so it owns its own toolbar + results
+              and needs no DndContext (search rows are not draggable). Single-click a row
+              opens the SAME shared ResourcePanel via `selectNode`; a `text` row opens the
+              reader via `openDocument` — identical to the Drive cards. */}
+          {scope === 'search' ? (
+            <SearchView
+              messages={messages}
+              spaceId={spaceId}
+              initialTerm={searchTerm}
+              selectedId={selectedId}
+              onSelect={selectSearchHit}
+              onOpenDocument={openDocument}
+              onOpenFolder={goFolder}
+              kbData={kbData}
+              onTermChange={setSearch}
+              containment={containment}
+              onScopeChange={goScope}
+              onNavigate={goFolder}
+              onMutated={refresh}
+              onRevealInKb={revealInKb}
+              lensView={lensView}
+              onLensViewChange={goLensView}
+              initialLayout={initialLayout}
+            />
+          ) : (
+            /* ONE DndContext over BOTH panes: a node dragged in pane A drops onto a
               folder in pane B (folder/root targets are absolute graph ids). The custom
               `driveCollision` prefers a folder over the nested root zone (empty canvas /
               breadcrumb = root). The overlay shows the dragged node's title. `dragState`
-              lights up valid landing zones for every droppable the moment a drag starts. */}
-          <DndContext
-            id="drive-dnd"
-            sensors={dndSensors}
-            collisionDetection={driveCollision}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDragCancel={endDrag}
-          >
-            <DriveDragProvider value={dragState}>
-              {split ? (
-                <div className="flex min-w-0 flex-1 overflow-hidden">
-                  {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
+              lights up valid landing zones for every droppable the moment a drag starts. */
+            <DndContext
+              id="drive-dnd"
+              sensors={dndSensors}
+              collisionDetection={driveCollision}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragCancel={endDrag}
+            >
+              <DriveDragProvider value={dragState}>
+                {split ? (
+                  <div className="flex min-w-0 flex-1 overflow-hidden">
+                    {/* primary pane carries the one shared sidebar; secondary is sidebar-less,
                       always KB-browse, navigating independently. Each pane namespaces its
                       dnd ids (a/b) so the SAME node rendered in both does not collide. */}
-                  <div className="flex min-w-0 flex-1 overflow-hidden border-r">
-                    <DrivePaneProvider value="a">
-                      {renderPane(folderId, scope, goFolder, goScope)}
-                    </DrivePaneProvider>
+                    <div className="flex min-w-0 flex-1 overflow-hidden border-r">
+                      <DrivePaneProvider value="a">
+                        {renderPane(folderId, scope, goFolder, goScope)}
+                      </DrivePaneProvider>
+                    </div>
+                    <div className="flex min-w-0 flex-1 overflow-hidden">
+                      <DrivePaneProvider value="b">
+                        {renderPane(
+                          folderId2,
+                          'kb',
+                          goFolder2,
+                          undefined,
+                          true
+                        )}
+                      </DrivePaneProvider>
+                    </div>
                   </div>
-                  <div className="flex min-w-0 flex-1 overflow-hidden">
-                    <DrivePaneProvider value="b">
-                      {renderPane(folderId2, 'kb', goFolder2, undefined, true)}
-                    </DrivePaneProvider>
-                  </div>
-                </div>
-              ) : (
-                <DrivePaneProvider value="a">
-                  {renderPane(folderId, scope, goFolder, goScope)}
-                </DrivePaneProvider>
-              )}
-            </DriveDragProvider>
+                ) : (
+                  <DrivePaneProvider value="a">
+                    {renderPane(folderId, scope, goFolder, goScope)}
+                  </DrivePaneProvider>
+                )}
+              </DriveDragProvider>
 
-            <DragOverlay dropAnimation={null}>
-              {dragData ? (
-                <CardTile className="pointer-events-none w-[240px] gap-2.5 px-3.5 py-2.5 shadow-lg">
-                  {React.createElement(iconForKind(dragData.kind), {
-                    className: 'text-muted-foreground size-[18px] shrink-0',
-                    'aria-hidden': true,
-                  })}
-                  <span className="truncate text-sm font-medium">
-                    {dragData.title}
-                  </span>
-                </CardTile>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+              <DragOverlay dropAnimation={null}>
+                {dragData ? (
+                  <CardTile className="pointer-events-none w-[240px] gap-2.5 px-3.5 py-2.5 shadow-lg">
+                    {React.createElement(iconForKind(dragData.kind), {
+                      className: 'text-muted-foreground size-[18px] shrink-0',
+                      'aria-hidden': true,
+                    })}
+                    <span className="truncate text-sm font-medium">
+                      {dragData.title}
+                    </span>
+                  </CardTile>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          )}
 
           {spaceId && openDoc ? (
             <DocumentReader
@@ -861,7 +1016,9 @@ export function DriveWorkbench({
             }
             visibility={
               selectedNode
-                ? (kbData?.metaByItem[selectedNode.id]?.visibility ?? null)
+                ? (kbData?.metaByItem[selectedNode.id]?.visibility ??
+                  fallbackSelection?.visibility ??
+                  null)
                 : null
             }
             grantees={

@@ -94,6 +94,12 @@ export type DataTableProps<TData, TValue> = {
    */
   getSubRows?: (row: TData) => TData[] | undefined;
   /**
+   * TREE mode only: start with EVERY expandable row expanded (a fully-unfolded tree
+   * with no per-row collapse intent at mount). Off (default) → the tree opens
+   * collapsed and expands on demand, preserving the existing browse behaviour.
+   */
+  defaultExpanded?: boolean;
+  /**
    * A column id that is ALWAYS the primary sort, ascending, regardless of the user's
    * column sort (which becomes secondary). Use for a stable group key that survives
    * sort direction — e.g. a hidden "folders before files" rank in a tree (the flat
@@ -139,6 +145,7 @@ export function DataTable<TData, TValue>({
   enableRowSelection = false,
   groupOrder,
   getSubRows,
+  defaultExpanded = false,
   pinnedSort,
   toolbar,
   footer,
@@ -190,6 +197,9 @@ export function DataTable<TData, TValue>({
         ? { pagination: { pageIndex: 0, pageSize: pagination } }
         : {}),
       ...(pinnedSort ? { columnVisibility: { [pinnedSort]: false } } : {}),
+      // Seed a fully-expanded tree (`true` = every row expanded) for an
+      // always-open lens; only meaningful with `getSubRows`.
+      ...(getSubRows && defaultExpanded ? { expanded: true } : {}),
     },
     state: { sorting: effectiveSorting },
   });

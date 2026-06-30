@@ -38,6 +38,7 @@ import {
   createActor,
   DIRECTORY_PICKER_SCENARIO,
   DIRECTORY_PICKER_DISPLAY_NAMES,
+  KNOWLEDGE_BASE_SCENARIO,
   makeSeedClient,
   materializeScenario,
   PER_USER_SHARE_SCENARIO,
@@ -1784,4 +1785,179 @@ export async function seedContainmentInheritanceFixture(
     cohortMember: who('cohortMember'),
     cohortStranger: who('cohortStranger'),
   };
+}
+
+// ── ADR-0024 (slice-12): lexical-search corpus fixture ───────────────────────
+//
+// The Phase-1 search e2e (`knowledge-search.e2e.spec.ts`, the merge gate) draws its
+// corpus ENTIRELY from the shared `KNOWLEDGE_BASE_SCENARIO` catalog entry (via
+// `materializeFixture`) — never an inline `createDoc` tree — so the demo seed and the
+// test build the multi-locale match set + the RLS-absence proof the SAME way, through
+// the one `/author/graph/*` create-vocabulary (`createDoc`/`describe`/`grantUser`/
+// `contain`). The fixture resolves the corpus refs + the `searcherB` actor the matrix
+// asserts against, and the spec drives the search itself through the SAME vocabulary
+// (`seedClientFor(actor).search` → `POST /author/graph/search`, RLS-fenced as the actor).
+//
+// Assertion 7 (a node in ANOTHER space stays absent) is NOT expressible in the single-
+// space scenario model, so this fixture mints a SECOND ephemeral tenant and seeds one
+// colliding-prefix Cyrillic node there (owned by that tenant's `granted` actor). The
+// space-A searcher searches space A; RLS + the per-space scope fence the foreign node out.
+
+/** The lexical-search corpus fixture, resolved from the shared `KNOWLEDGE_BASE_SCENARIO`
+ * plus a second tenant for the other-space negative (ADR-0024 §3). Every `…Id` is a
+ * `knr_…`; the spec asserts presence/absence by these named refs. */
+export type SearchCorpusFixture = {
+  /** Space A — the space the searcher (`admin`) browses + searches. */
+  spaceId: string;
+  /** Cyrillic article ('Договор аренды') — `договор` finds it (assertion 1). */
+  cyrillicId: string;
+  cyrillicTitle: string;
+  /** Accented article ('Égérie') — `egerie` finds it via unaccent (assertion 2). */
+  accentId: string;
+  accentTitle: string;
+  /** English article ('Getting Started') — `GETTING` finds it case-insensitively (assertion 3). */
+  englishId: string;
+  englishTitle: string;
+  /** Cyrillic greeting ('Привет команде') — the Phase-2 `'превет'` typo target (seeded now). */
+  typoTargetId: string;
+  typoTargetTitle: string;
+  /** 'Onboarding Guide' — `onboarding` matches its TITLE; must outrank the description-match
+   * below (title > description at equal tier — Phase-2 assertion 5). */
+  onboardingTitleId: string;
+  onboardingTitleTitle: string;
+  /** 'Workspace Setup' — `onboarding` matches only its DESCRIPTION; must rank BELOW the
+   * title-match above (Phase-2 assertion 5). */
+  onboardingDescriptionId: string;
+  onboardingDescriptionTitle: string;
+  /** Bea's PRIVATE node ('Договорённость приватная') — ABSENT from `admin`'s search (assertion 6). */
+  privateOtherOwnerId: string;
+  privateOtherOwnerTitle: string;
+  /** A's child inside the folder shared to Bea ('Договор унаследованный') — PRESENT for
+   * Bea via the inherited-grant disjunct, even though never granted directly (assertion 8). */
+  inheritedChildId: string;
+  inheritedChildTitle: string;
+  /** The leaf doc ('Abyssal Treasure', `abyssal` in its DESCRIPTION) buried SIX levels
+   * below the KB root — searching `abyssal` matches only this node; the Advanced
+   * (`?view=advanced`) lens must render its full ancestor chain expanded down to it. */
+  deepLeafId: string;
+  deepLeafTitle: string;
+  /** The distinctive term that matches ONLY the deep leaf (collides with no other
+   * corpus assertion) — the query the deep-tree advanced-search spec searches for. */
+  deepLeafTerm: string;
+  /** The five ancestor-folder titles on the path root → leaf, OUTERMOST first
+   * ('Level One' … 'Level Five') — the advanced view renders each, fully expanded. */
+  deepChainFolderTitles: [string, string, string, string, string];
+  /** The five ancestor-folder ids on the path root → leaf, OUTERMOST first. */
+  deepChainFolderIds: [string, string, string, string, string];
+  /** The searcher (`admin`, owner of the corpus) — the primary acting user. */
+  searcher: KnowledgeActor;
+  /** A second owner in the SAME space: owns the private negative; the grantee of the
+   * inherited folder (so its child surfaces in Bea's search via inheritance). */
+  searcherB: KnowledgeActor;
+  /** Space B — a DIFFERENT space holding a colliding-prefix node (assertion 7). */
+  otherSpace: {
+    tenant: KnowledgeGraphTenant;
+    /** A node in space B whose title prefix-matches `договор` — must NOT appear in a
+     * space-A search (per-space scope + RLS fence it out). */
+    nodeId: string;
+    nodeTitle: string;
+  };
+};
+
+/** A node in space B whose title shares the `договор` prefix the searcher queries — so
+ * its ABSENCE proves the fence is the space scope + RLS, not the term not matching. */
+const OTHER_SPACE_SEARCH_TITLE = 'Договор другого пространства';
+
+/**
+ * Materialize the search corpus over space A (the shared `KNOWLEDGE_BASE_SCENARIO`) and
+ * mint a second tenant (space B) carrying one colliding-prefix node for the other-space
+ * negative. The corpus + grants are CREATED by `materializeFixture` through the runtime
+ * RLS path + the live endpoints; the space-B node is created AS that tenant's `granted`
+ * actor through the shared `createDoc` vocabulary. Returns the named refs/actors the spec
+ * asserts against. Pair with `teardownSearchCorpusFixture` (it tears down space B).
+ */
+export async function seedSearchCorpusFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<SearchCorpusFixture> {
+  const { refs, actors } = await materializeFixture(
+    KNOWLEDGE_BASE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`search-corpus fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor)
+      throw new Error(`search-corpus fixture: missing actor "${ref}"`);
+    return actor;
+  };
+
+  // Space B: a SECOND tenant whose `granted` actor owns one node sharing the `договор`
+  // prefix the searcher queries. The space-A searcher is not a member of space B, and
+  // the search is per-space-scoped, so RLS never returns this row to a space-A search.
+  const otherTenant = await bootstrapEphemeralTenant();
+  const otherClient = await seedClientFor(otherTenant.granted);
+  const otherNode = await otherClient.createDoc(
+    otherTenant.spaceId,
+    OTHER_SPACE_SEARCH_TITLE
+  );
+  await otherClient.publishDoc(otherTenant.spaceId, otherNode.nodeId);
+
+  return {
+    spaceId: tenant.spaceId,
+    cyrillicId: id('kb/lease-cyrillic'),
+    cyrillicTitle: 'Договор аренды',
+    accentId: id('kb/egerie-accent'),
+    accentTitle: 'Égérie',
+    englishId: id('kb/getting-started'),
+    englishTitle: 'Getting Started',
+    typoTargetId: id('kb/greeting-typo'),
+    typoTargetTitle: 'Привет команде',
+    onboardingTitleId: id('kb/onboarding-title'),
+    onboardingTitleTitle: 'Onboarding Guide',
+    onboardingDescriptionId: id('kb/onboarding-description'),
+    onboardingDescriptionTitle: 'Workspace Setup',
+    privateOtherOwnerId: id('kb/private-other-owner'),
+    privateOtherOwnerTitle: 'Договорённость приватная',
+    inheritedChildId: id('kb/inherited-child'),
+    inheritedChildTitle: 'Договор унаследованный',
+    deepLeafId: id('kb/deep/leaf'),
+    deepLeafTitle: 'Abyssal Treasure',
+    deepLeafTerm: 'abyssal',
+    deepChainFolderTitles: [
+      'Level One',
+      'Level Two',
+      'Level Three',
+      'Level Four',
+      'Level Five',
+    ],
+    deepChainFolderIds: [
+      id('kb/deep/level-1'),
+      id('kb/deep/level-2'),
+      id('kb/deep/level-3'),
+      id('kb/deep/level-4'),
+      id('kb/deep/level-5'),
+    ],
+    searcher: who('admin'),
+    searcherB: who('searcherB'),
+    otherSpace: {
+      tenant: otherTenant,
+      nodeId: otherNode.nodeId,
+      nodeTitle: OTHER_SPACE_SEARCH_TITLE,
+    },
+  };
+}
+
+/** Tear down the search corpus's SECOND tenant (space B). Space A is the caller's main
+ * tenant, torn down by the spec via `teardownKnowledgeGraphTenant`; here we only release
+ * the ephemeral space-B tenant the fixture minted for the other-space negative. */
+export async function teardownSearchCorpusFixture(
+  fx: SearchCorpusFixture | undefined
+): Promise<void> {
+  if (fx?.otherSpace?.tenant) {
+    await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);
+  }
 }

@@ -48,6 +48,7 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
   folder: string | null;
   doc: string | null;
   scope: DriveScope;
+  searchTerm: string;
   requestedView: LensView | null;
 } {
   const one = (v: string | string[] | undefined): string | null =>
@@ -62,9 +63,14 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
       scope === 'recent' ||
       scope === 'shared' ||
       scope === 'shared-by-me' ||
-      scope === 'trash'
+      scope === 'trash' ||
+      scope === 'search'
         ? scope
         : 'kb',
+    // The lexical-search term (ADR-0024 §5) — read server-side so a deep-linked
+    // `?scope=search&q=<term>` SSRs with its term (no hydration flip). Empty unless
+    // the search lens is the active scope.
+    searchTerm: one(sp.q) ?? '',
     // The EXPLICITLY-REQUESTED lens display mode (ADR-0022 + Addendum A). `null` = `?view=`
     // absent → fall back to the persisted cookie (Fork 4 amended). An explicit `?view=`
     // WINS over the cookie (a shareable deep-link override). The entitlement clamps the
@@ -127,6 +133,7 @@ export default async function GraphPage({
         initialFolder={location.folder}
         initialDoc={location.doc}
         initialScope={location.scope}
+        initialSearchTerm={location.searchTerm}
         initialLensView="flat"
         initialLayout={initialLayout}
       />
@@ -225,6 +232,7 @@ export default async function GraphPage({
       initialFolder={location.folder}
       initialDoc={location.doc}
       initialScope={location.scope}
+      initialSearchTerm={location.searchTerm}
       initialLensView={effectiveLensView}
       initialLayout={initialLayout}
     />

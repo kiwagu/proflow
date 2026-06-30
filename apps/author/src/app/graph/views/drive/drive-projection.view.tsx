@@ -10,6 +10,7 @@ import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
+import { RowActionButton } from '@workspace/ui/components/platform/row-action-button';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
@@ -20,16 +21,12 @@ import {
   ClipboardPaste,
   Clock,
   Columns2,
-  Database,
   Folder,
   Globe,
   House,
   FolderSymlink,
   Info,
-  LayoutGrid,
-  List,
   Lock,
-  Plus,
   Radio,
   RotateCcw,
   Send,
@@ -81,6 +78,12 @@ import {
   CreateResource,
   type CreateRequest,
 } from '@/app/graph/create-resource.view';
+import { DriveSidebar } from '@/app/graph/views/drive/drive-sidebar';
+import { LayoutToggle } from '@/app/graph/views/drive/layout-toggle';
+import { LensTreeGrid } from '@/app/graph/views/drive/lens-tree-grid';
+import type { LensTreeNode } from '@/app/graph/views/drive/lens-tree-grid';
+import { modifiedCell, typeCell } from '@/app/graph/views/drive/lens-row-cells';
+import { LensViewToggle } from '@/app/graph/views/drive/lens-view-toggle';
 import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
 import { usePaneId, useDriveDragState } from '@/app/graph/drive-dnd';
 import type { DriveDragData, DriveDropData } from '@/app/graph/drive-dnd';
@@ -153,70 +156,6 @@ function useCardOpen(onDetails: () => void, onOpen: () => void) {
  * 220px grid min, etc.); color is always a token so dark mode works.
  */
 
-/**
- * A sidebar filter. `scope` present = the item is WIRED to a canvas filter
- * (the active one highlights); absent = a not-yet-implemented stub that, for now,
- * just returns to the tree root (Shared / Trash land in later passes). `DriveScope`
- * is the shared type (the workbench owns it in the URL).
- */
-type NavItem = {
-  icon: LucideIcon;
-  /** Stable React key / id for the row. */
-  key: string;
-  /** Resolves the label with a LITERAL i18n key (keeps keys statically extractable
-   * even though the nav is data-driven). */
-  label: (t: GraphTranslator) => string;
-  scope?: DriveScope;
-  /** Not yet available (depends on the access-model work) — rendered muted + inert
-   * with a "Coming soon" badge instead of a dead `navigate(null)` stub. */
-  comingSoon?: boolean;
-};
-
-const NAV_ITEMS: readonly NavItem[] = [
-  {
-    icon: House,
-    key: 'navHome',
-    label: (t) => t('graph.drive.navHome'),
-    scope: 'home',
-  },
-  {
-    icon: Database,
-    key: 'navKnowledgeBase',
-    label: (t) => t('graph.drive.navKnowledgeBase'),
-    scope: 'kb',
-  },
-  {
-    icon: Users,
-    key: 'navShared',
-    label: (t) => t('graph.drive.navShared'),
-    scope: 'shared',
-  },
-  {
-    icon: Send,
-    key: 'navSharedByMe',
-    label: (t) => t('graph.drive.navSharedByMe'),
-    scope: 'shared-by-me',
-  },
-  {
-    icon: Clock,
-    key: 'navRecent',
-    label: (t) => t('graph.drive.navRecent'),
-    scope: 'recent',
-  },
-  {
-    icon: Star,
-    key: 'navStarred',
-    label: (t) => t('graph.drive.navStarred'),
-    scope: 'starred',
-  },
-  {
-    icon: Trash2,
-    key: 'navTrash',
-    label: (t) => t('graph.drive.navTrash'),
-    scope: 'trash',
-  },
-];
-
 type DriveLayout = 'grid' | 'list';
 
 /**
@@ -285,6 +224,16 @@ export function DriveProjectionView({
   onPurge,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
+
+  // Locale/timezone date strings (`formatWhen`) differ between the server and the browser, so
+  // the "For you" sort dates render CLIENT-ONLY: `useSyncExternalStore` reports `false` on the
+  // server snapshot and `true` on the client — SSR + first hydration emit no date (no mismatch),
+  // then it appears.
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   // Stable references for the empty fallbacks so the `containment`/`shortcuts`
   // memos below don't recompute every render (a fresh `[]` would invalidate them).
@@ -827,6 +776,38 @@ export function DriveProjectionView({
     .slice()
     .sort(isRecent ? byRecency : byTitle);
 
+  // The advanced lens GRID forest (ADR-0025): the SAME `treeContainment` subset the list
+  // tree (`driveRows`) walks, shaped as a `LensTreeNode[]` for `LensTreeGrid` so the grid +
+  // list advanced trees can never drift. Folders recurse their lens children inline (nested
+  // sections + indent guides + sticky chain) so EVERY matching node is visible — never
+  // hidden behind a drill (the consistency the flat lens has, plus the containment context).
+  // Cycle-guarded (single-parent forest) exactly like `folderRow`. Built only when advanced.
+  const buildTreeNode = (
+    node: LensNode,
+    ancestors: Set<string>
+  ): LensTreeNode => ({
+    node,
+    children:
+      node.kind === 'folder' && !ancestors.has(node.id)
+        ? [
+            ...childFolders(treeContainment, node.id)
+              .slice()
+              .sort(byTitle)
+              .map((f) => buildTreeNode(f, new Set(ancestors).add(node.id))),
+            ...childContent(treeContainment, node.id)
+              .slice()
+              .sort(byTitle)
+              .map((c) => ({ node: c, children: [] as LensTreeNode[] })),
+          ]
+        : [],
+  });
+  const lensForest: LensTreeNode[] = isLensAdvanced
+    ? [
+        ...folders.map((f) => buildTreeNode(f, new Set<string>())),
+        ...items.map((it) => ({ node: it, children: [] as LensTreeNode[] })),
+      ]
+    : [];
+
   if (!spaceId) {
     return null;
   }
@@ -932,106 +913,28 @@ export function DriveProjectionView({
     ...items.map(itemRow),
   ];
 
+  // The shared Drive left-rail (lens nav + Sections + the "New" launcher), now a
+  // standalone component so the search lens renders the IDENTICAL chrome (ADR-0024
+  // §5). It walks `treeContainment` (the lens subset's forest when advanced, else the
+  // full graph) for the Sections roots, exactly as the inline rail did. The scope
+  // switch routes through `applyScope`; the uncontrolled fallback (no workbench owning
+  // the scope) roots the local folder when switching to 'kb'.
   const sidebar = (
-    <div className="flex flex-col gap-1">
-      <Button
-        onClick={() => setCreateRequest({ parentFolderId: folderId })}
-        className="mb-2 w-full justify-start"
-      >
-        <Plus className="size-4" aria-hidden />
-        {t('graph.create.new')}
-      </Button>
-      {NAV_ITEMS.map((item) => {
-        const Icon = item.icon;
-        // A wired item highlights when its scope is the active one ('kb' stays
-        // active even inside a folder); the not-yet-wired stubs never highlight.
-        const active = item.scope === scope;
-        // Not-yet-available filters (depend on the access-model work) read as muted +
-        // inert with a "Coming soon" badge — honest, not a dead navigate-to-root stub.
-        if (item.comingSoon) {
-          return (
-            <div
-              key={item.key}
-              aria-disabled
-              title={t('graph.drive.comingSoon')}
-              className="flex h-auto w-full cursor-not-allowed items-center gap-2.5 px-2 py-1.5 text-left text-sm font-normal select-none"
-            >
-              <Icon
-                className="text-muted-foreground/70 size-4 shrink-0"
-                aria-hidden
-              />
-              <span className="text-muted-foreground/70 flex-1 truncate">
-                {item.label(t)}
-              </span>
-              <Badge variant="secondary" className="text-[10px] font-normal">
-                {t('graph.drive.comingSoon')}
-              </Badge>
-            </div>
-          );
+    <DriveSidebar
+      t={t}
+      scope={scope}
+      onScopeChange={(next) => {
+        applyScope(next);
+        if (!controlled && next === 'kb') {
+          navigate(null);
         }
-        return (
-          <Button
-            key={item.key}
-            variant="ghost"
-            onClick={() => {
-              // Every wired lens switches via the scope owner (the workbench roots the
-              // folder on a lens switch). The KB lens must NOT use `navigate(null)`: in
-              // the advanced Shared tree (ADR-0022) `goFolder(null)` deliberately STAYS
-              // on the Shared lens, so routing 'kb' through it would trap the user there.
-              if (!item.scope) {
-                navigate(null);
-                return;
-              }
-              applyScope(item.scope);
-              // Uncontrolled fallback: the workbench isn't owning the scope, so reset the
-              // local folder to root here (controlled mode roots in `goScope`).
-              if (!controlled && item.scope === 'kb') {
-                navigate(null);
-              }
-            }}
-            data-active={active}
-            className={cn(
-              'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
-              'hover:bg-accent text-foreground',
-              active && 'bg-accent font-medium'
-            )}
-          >
-            <Icon
-              className={cn(
-                'size-4',
-                active ? 'text-foreground' : 'text-muted-foreground'
-              )}
-              aria-hidden
-            />
-            {item.label(t)}
-          </Button>
-        );
-      })}
-      <div className="bg-border my-2 h-px" />
-      <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold tracking-[0.04em] uppercase">
-        {t('graph.drive.sections')}
-      </div>
-      {roots.map((root) => (
-        <Button
-          key={root.id}
-          variant="ghost"
-          onClick={() => navigate(root.id)}
-          data-active={folderId === root.id}
-          className={cn(
-            'h-auto w-full justify-start gap-2.5 px-2 py-1.5 text-left font-normal',
-            'hover:bg-accent',
-            folderId === root.id && 'bg-accent font-medium'
-          )}
-        >
-          <Folder className="text-muted-foreground size-4" aria-hidden />
-          <span className="flex-1 truncate">{root.title}</span>
-          <span className="text-muted-foreground text-[11px]">
-            {childFolders(treeContainment, root.id).length +
-              childContent(treeContainment, root.id).length}
-          </span>
-        </Button>
-      ))}
-    </div>
+      }}
+      onNavigate={navigate}
+      folderId={folderId}
+      containment={treeContainment}
+      spaceId={spaceId}
+      onMutated={onMutated}
+    />
   );
 
   const toolbar = (
@@ -1281,76 +1184,14 @@ export function DriveProjectionView({
             Fork 2). The server clamps `?view=` to 'flat' on a locked plan, so even a
             forged URL stays flat. */}
         {isStructuralLens && onLensViewChange ? (
-          <Hint
-            label={
-              advancedStructuralEntitled
-                ? undefined
-                : t('graph.drive.advancedStructuralLocked', {
-                    tariff: t('graph.drive.advancedStructuralTariff'),
-                  })
-            }
-          >
-            <div
-              className="flex overflow-hidden rounded-md border"
-              aria-disabled={!advancedStructuralEntitled}
-            >
-              <Button
-                type="button"
-                variant="segmented"
-                onClick={() => onLensViewChange('flat')}
-                disabled={!advancedStructuralEntitled}
-                aria-label={t('graph.drive.lensViewFlat')}
-                aria-pressed={lensView === 'flat'}
-                className={cn(
-                  'h-7 px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
-                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
-                )}
-              >
-                {t('graph.drive.lensViewFlat')}
-              </Button>
-              <Button
-                type="button"
-                variant="segmented"
-                onClick={() => onLensViewChange('advanced')}
-                disabled={!advancedStructuralEntitled}
-                aria-label={t('graph.drive.lensViewAdvanced')}
-                aria-pressed={lensView === 'advanced'}
-                className={cn(
-                  'border-l-border h-7 border-l px-2 text-xs font-medium disabled:pointer-events-auto disabled:opacity-100',
-                  !advancedStructuralEntitled && 'cursor-not-allowed opacity-60'
-                )}
-              >
-                {t('graph.drive.lensViewAdvanced')}
-              </Button>
-            </div>
-          </Hint>
+          <LensViewToggle
+            t={t}
+            lensView={lensView}
+            onLensViewChange={onLensViewChange}
+            entitled={advancedStructuralEntitled}
+          />
         ) : null}
-        <div className="flex overflow-hidden rounded-md border">
-          <Hint label={t('graph.drive.layoutGrid')}>
-            <Button
-              type="button"
-              variant="segmented"
-              onClick={() => applyLayout('grid')}
-              aria-label={t('graph.drive.layoutGrid')}
-              aria-pressed={layout === 'grid'}
-              className="grid h-7 w-[30px] place-items-center p-0"
-            >
-              <LayoutGrid className="size-[15px]" aria-hidden />
-            </Button>
-          </Hint>
-          <Hint label={t('graph.drive.layoutList')}>
-            <Button
-              type="button"
-              variant="segmented"
-              onClick={() => applyLayout('list')}
-              aria-label={t('graph.drive.layoutList')}
-              aria-pressed={layout === 'list'}
-              className="grid h-7 w-[30px] place-items-center p-0"
-            >
-              <List className="size-[15px]" aria-hidden />
-            </Button>
-          </Hint>
-        </div>
+        <LayoutToggle t={t} layout={layout} onLayoutChange={applyLayout} />
         {onToggleSplit && scope === 'kb' ? (
           <Hint
             label={t(
@@ -1377,7 +1218,7 @@ export function DriveProjectionView({
 
   // One content card, reused by the flat items grid and the "For you" home sections.
   // In 'kb' browse it is a drag source (re-parent on drop); flat lenses render plain.
-  const renderItemCard = (item: LensNode) => {
+  const renderItemCard = (item: LensNode, whenIso?: string) => {
     const card = (
       <ItemCard
         key={item.id}
@@ -1389,6 +1230,7 @@ export function DriveProjectionView({
         layout={layout}
         selected={item.id === selectedId}
         sharedBadge={renderAccessBadge(item.id)}
+        when={whenIso && mounted ? formatWhen(whenIso) : undefined}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
@@ -1467,12 +1309,16 @@ export function DriveProjectionView({
   // "For you" — a personal digest: two sections of content cards. Shown instead of the
   // browse tree / flat list when scope='home'. Respects the grid/list toggle (cards vs
   // list rows); the sortable TABLE is browse-only — it does not fit a 2-section digest.
-  const homeSection = (label: string, nodes: LensNode[]) =>
+  const homeSection = (
+    label: string,
+    nodes: LensNode[],
+    whenOf: (node: LensNode) => string | undefined
+  ) =>
     nodes.length > 0 ? (
       <>
         <SectionLabel className="mt-[18px] first:mt-0">{label}</SectionLabel>
         <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-          {nodes.map(renderItemCard)}
+          {nodes.map((node) => renderItemCard(node, whenOf(node)))}
         </div>
       </>
     ) : null;
@@ -1508,10 +1354,15 @@ export function DriveProjectionView({
           <EmptyState>{t('graph.drive.homeEmpty')}</EmptyState>
         ) : (
           <>
-            {homeSection(t('graph.drive.homeJumpBackIn'), jumpBackNodes)}
+            {homeSection(
+              t('graph.drive.homeJumpBackIn'),
+              jumpBackNodes,
+              (n) => openedAtById[n.id]
+            )}
             {homeSection(
               t('graph.drive.homeRecentlyUpdated'),
-              recentlyUpdatedNodes
+              recentlyUpdatedNodes,
+              (n) => metaByItem[n.id]?.lastModifiedAt
             )}
           </>
         )
@@ -1539,7 +1390,7 @@ export function DriveProjectionView({
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
           {layout === 'list' ? (
             driveRows.length > 0 ? (
-              <DriveListTable
+              <LensListTable
                 // Remount when the column SET changes (Recent's "Viewed" column vs the
                 // "Modified" column elsewhere): the table's sort state is seeded once at
                 // mount, so without this it keeps a stale `{id:'viewed'}` sort after
@@ -1579,146 +1430,179 @@ export function DriveProjectionView({
             ) : null
           ) : (
             <>
-              {/* folders + shortcuts */}
-              {folders.length > 0 || shortcuts.length > 0 ? (
+              {isLensAdvanced ? (
+                // ADVANCED lens GRID (ADR-0025): the lens subset as a recursive tree-grid —
+                // every matching node visible (nested folder sections + indent guides +
+                // sticky ancestor chain), not hidden behind a drill. Folders carry the SAME
+                // jump-to-KB the cards do, even when empty.
+                lensForest.length > 0 ? (
+                  <LensTreeGrid
+                    roots={lensForest}
+                    renderLeaf={renderItemCard}
+                    // Each breadcrumb path folder reveals itself in the KB on click.
+                    onJumpToFolder={onRevealInKb}
+                    folderTestId="drive-advanced-tree-folder"
+                  />
+                ) : null
+              ) : (
                 <>
-                  {!isRoot || isFilterScope ? (
-                    <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
-                  ) : null}
-                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                    {folders.map((sub) => {
-                      const folderShared = sharedOut(
-                        containment,
-                        sub.id,
-                        isGranted
-                      );
-                      const folderGrantees =
-                        sharedByMeByResource.get(sub.id) ?? [];
-                      const folderCardProps = {
-                        title: sub.title,
-                        subtitle: t('graph.drive.itemsCount', {
-                          count:
-                            childFolders(treeContainment, sub.id).length +
-                            childContent(treeContainment, sub.id).length,
-                        }),
-                        layout,
-                        onOpen: () => navigate(sub.id),
-                        onDetails: () => onSelect(sub.id),
-                        sharedBadge: renderAccessBadge(sub.id),
-                        // The "placement = sharing" hint shows only when THIS folder
-                        // itself confers access (a direct grant or a broadcast floor) —
-                        // dropping a node here would share it. A folder that is shared
-                        // only via a granted ANCESTOR gets the badge (above) but not the
-                        // hint (the hint is about what placing INTO this folder does, and
-                        // the ancestor already covers that one level up).
-                        folderHint:
-                          folderShared.direct ||
-                          metaByItem[sub.id]?.visibility === 'space' ||
-                          metaByItem[sub.id]?.visibility === 'organization' ? (
-                            <SharedFolderHint
-                              t={t}
-                              visibility={metaByItem[sub.id]?.visibility}
-                              grantees={folderGrantees}
-                            />
-                          ) : undefined,
-                        footer: isSharedByMe ? (
-                          <GranteeSummary
-                            t={t}
-                            grantees={sharedByMeByResource.get(sub.id) ?? []}
-                          />
-                        ) : isShared && shareMechanism[sub.id] ? (
-                          <ShareMechanismBadge
-                            t={t}
-                            mechanism={shareMechanism[sub.id]!}
-                          />
-                        ) : undefined,
-                        star: (
-                          <StarButton
-                            starred={starredSet.has(sub.id)}
-                            onToggle={() =>
-                              toggleStar(sub.id, !starredSet.has(sub.id))
-                            }
-                            label={t(
-                              starredSet.has(sub.id)
-                                ? 'graph.drive.unstar'
-                                : 'graph.drive.star'
-                            )}
-                          />
-                        ),
-                        actions: (
-                          <NodeActionsMenu
-                            spaceId={spaceId}
-                            t={t}
-                            node={sub}
-                            containment={containment}
-                            currentUserId={currentUserId}
-                            ownerUserId={
-                              metaByItem[sub.id]?.ownerUserId ?? null
-                            }
-                            capabilities={capabilities}
-                            onMutated={onMutated}
-                            onDetails={() => onSelect(sub.id)}
-                            onCopyToClipboard={onCopyToClipboard}
-                            onOpenInKb={onRevealInKbAction}
-                            triggerClassName={CARD_ACTION_TRIGGER}
-                          />
-                        ),
-                      };
-                      return dndEnabled ? (
-                        <DraggableDroppableFolderCard
-                          key={sub.id}
-                          {...folderCardProps}
-                          dragData={{
-                            type: 'node',
-                            nodeId: sub.id,
+                  {/* folders + shortcuts */}
+                  {folders.length > 0 || shortcuts.length > 0 ? (
+                    <>
+                      {!isRoot || isFilterScope ? (
+                        <SectionLabel>{t('graph.canvas.folders')}</SectionLabel>
+                      ) : null}
+                      <div
+                        className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}
+                      >
+                        {folders.map((sub) => {
+                          const folderShared = sharedOut(
+                            containment,
+                            sub.id,
+                            isGranted
+                          );
+                          const folderGrantees =
+                            sharedByMeByResource.get(sub.id) ?? [];
+                          const folderCardProps = {
                             title: sub.title,
-                            kind: 'folder',
-                          }}
-                        />
-                      ) : (
-                        <FolderCard key={sub.id} {...folderCardProps} />
-                      );
-                    })}
-                    {shortcuts.map((target) => (
-                      <FolderCard
-                        key={`sc-${target.id}`}
-                        title={target.title}
-                        subtitle={t('graph.drive.shortcutFolder')}
-                        layout={layout}
-                        shortcut
-                        onOpen={() =>
-                          target.kind === 'folder'
-                            ? navigate(target.id)
-                            : onSelect(target.id)
-                        }
-                        onDetails={() => onSelect(target.id)}
-                        actions={
-                          // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
-                          // the KB lens — it jumps to the target's CANONICAL home (target.id).
-                          onRevealInKb ? (
-                            <RevealInKbButton
-                              onReveal={() => onRevealInKb(target.id)}
-                              label={t('graph.panel.openInKb')}
+                            subtitle: t('graph.drive.itemsCount', {
+                              count:
+                                childFolders(treeContainment, sub.id).length +
+                                childContent(treeContainment, sub.id).length,
+                            }),
+                            layout,
+                            onOpen: () => navigate(sub.id),
+                            onDetails: () => onSelect(sub.id),
+                            sharedBadge: renderAccessBadge(sub.id),
+                            // The "placement = sharing" hint shows only when THIS folder
+                            // itself confers access (a direct grant or a broadcast floor) —
+                            // dropping a node here would share it. A folder that is shared
+                            // only via a granted ANCESTOR gets the badge (above) but not the
+                            // hint (the hint is about what placing INTO this folder does, and
+                            // the ancestor already covers that one level up).
+                            folderHint:
+                              folderShared.direct ||
+                              metaByItem[sub.id]?.visibility === 'space' ||
+                              metaByItem[sub.id]?.visibility ===
+                                'organization' ? (
+                                <SharedFolderHint
+                                  t={t}
+                                  visibility={metaByItem[sub.id]?.visibility}
+                                  grantees={folderGrantees}
+                                />
+                              ) : undefined,
+                            footer: isSharedByMe ? (
+                              <GranteeSummary
+                                t={t}
+                                grantees={
+                                  sharedByMeByResource.get(sub.id) ?? []
+                                }
+                              />
+                            ) : isShared && shareMechanism[sub.id] ? (
+                              <ShareMechanismBadge
+                                t={t}
+                                mechanism={shareMechanism[sub.id]!}
+                              />
+                            ) : undefined,
+                            star: (
+                              <>
+                                <StarButton
+                                  starred={starredSet.has(sub.id)}
+                                  onToggle={() =>
+                                    toggleStar(sub.id, !starredSet.has(sub.id))
+                                  }
+                                  label={t(
+                                    starredSet.has(sub.id)
+                                      ? 'graph.drive.unstar'
+                                      : 'graph.drive.star'
+                                  )}
+                                />
+                                {onRevealInKbAction ? (
+                                  <RevealInKbButton
+                                    onReveal={() => onRevealInKbAction(sub.id)}
+                                    label={t('graph.panel.openInKb')}
+                                  />
+                                ) : null}
+                              </>
+                            ),
+                            actions: (
+                              <NodeActionsMenu
+                                spaceId={spaceId}
+                                t={t}
+                                node={sub}
+                                containment={containment}
+                                currentUserId={currentUserId}
+                                ownerUserId={
+                                  metaByItem[sub.id]?.ownerUserId ?? null
+                                }
+                                capabilities={capabilities}
+                                onMutated={onMutated}
+                                onDetails={() => onSelect(sub.id)}
+                                onCopyToClipboard={onCopyToClipboard}
+                                onOpenInKb={onRevealInKbAction}
+                                triggerClassName={CARD_ACTION_TRIGGER}
+                              />
+                            ),
+                          };
+                          return dndEnabled ? (
+                            <DraggableDroppableFolderCard
+                              key={sub.id}
+                              {...folderCardProps}
+                              dragData={{
+                                type: 'node',
+                                nodeId: sub.id,
+                                title: sub.title,
+                                kind: 'folder',
+                              }}
                             />
-                          ) : undefined
-                        }
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : null}
+                          ) : (
+                            <FolderCard key={sub.id} {...folderCardProps} />
+                          );
+                        })}
+                        {shortcuts.map((target) => (
+                          <FolderCard
+                            key={`sc-${target.id}`}
+                            title={target.title}
+                            subtitle={t('graph.drive.shortcutFolder')}
+                            layout={layout}
+                            shortcut
+                            onOpen={() =>
+                              target.kind === 'folder'
+                                ? navigate(target.id)
+                                : onSelect(target.id)
+                            }
+                            onDetails={() => onSelect(target.id)}
+                            actions={
+                              // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
+                              // the KB lens — it jumps to the target's CANONICAL home (target.id).
+                              onRevealInKb ? (
+                                <RevealInKbButton
+                                  onReveal={() => onRevealInKb(target.id)}
+                                  label={t('graph.panel.openInKb')}
+                                />
+                              ) : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
 
-              {/* files / docs */}
-              {items.length > 0 ? (
-                <>
-                  <SectionLabel className="mt-[18px]">
-                    {t('graph.canvas.files')}
-                  </SectionLabel>
-                  <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-                    {items.map(renderItemCard)}
-                  </div>
+                  {/* files / docs */}
+                  {items.length > 0 ? (
+                    <>
+                      <SectionLabel className="mt-[18px]">
+                        {t('graph.canvas.files')}
+                      </SectionLabel>
+                      <div
+                        className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}
+                      >
+                        {items.map((it) => renderItemCard(it))}
+                      </div>
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              )}
             </>
           )}
 
@@ -1809,6 +1693,15 @@ export function DriveProjectionView({
 // and EVERY kind (folder, document, file) shares this one width, so they line up.
 // Cards left-align; trailing space is fine. Width is generous so longer titles
 // stay readable before they truncate.
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 const GRID_CARD = 'w-[264px] shrink-0';
 const GRID_WRAP = 'flex flex-wrap gap-2.5';
 const LIST_WRAP = 'flex flex-col gap-1.5';
@@ -1830,29 +1723,28 @@ function StarButton({
   label: string;
   alwaysShow?: boolean;
 }) {
+  // Thin domain wrapper over the shared RowActionButton (single source of truth for the
+  // row-action style). `active`/`alwaysShow` force the button visible; otherwise it
+  // hover-reveals like the ⋯ menu. The amber fill (when starred) lives on the icon — the
+  // shared button governs chrome + reveal, not the star's domain treatment. Note the hover
+  // is now the STRONG one (darker fill + foreground), matching the other row actions.
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={label}
+    <RowActionButton
+      label={label}
       aria-pressed={starred}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
-        starred || alwaysShow ? 'opacity-100' : CARD_ACTION_TRIGGER
-      )}
+      onActivate={onToggle}
+      reveal={alwaysShow ? 'always' : 'hover'}
+      active={starred}
+      hint={false}
     >
       <Star
         className={cn(
           'size-4',
-          starred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'
+          starred ? 'fill-amber-400 text-amber-400' : undefined
         )}
         aria-hidden
       />
-    </Button>
+    </RowActionButton>
   );
 }
 
@@ -1860,7 +1752,8 @@ function StarButton({
  * RevealInKbButton — a small inline action that sits next to the star and jumps to this
  * resource's position in the KB containment tree (the 'kb' lens at its parent folder).
  * Hover-revealed like the other card actions; the same affordance lives in the `⋯` menu
- * ("Open in KB") for surfaces without a star.
+ * ("Open in KB") for surfaces without a star. A thin domain wrapper over the shared
+ * RowActionButton (the same `Target` "open in KB" jump the search lens's OpenInKbButton is).
  */
 function RevealInKbButton({
   onReveal,
@@ -1870,21 +1763,47 @@ function RevealInKbButton({
   label: string;
 }) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      aria-label={label}
-      onClick={(event) => {
-        event.stopPropagation();
-        onReveal();
-      }}
-      className={cn(
-        'hover:bg-accent grid size-7 shrink-0 place-items-center rounded-md p-0',
-        CARD_ACTION_TRIGGER
-      )}
+    <RowActionButton
+      label={label}
+      onActivate={onReveal}
+      reveal="hover"
+      hint={false}
     >
-      <Target className="text-muted-foreground size-4" aria-hidden />
-    </Button>
+      <Target className="size-4" aria-hidden />
+    </RowActionButton>
+  );
+}
+
+/**
+ * CardActionRail — the per-card "command" controls (star + `⋯` menu + reveal-in-KB), unified
+ * across EVERY card lens. INVARIANT: the STAR sits at the FAR CORNER in either orientation —
+ * the TOP of the vertical rail (grid, = top-right corner) and the RIGHTMOST of the horizontal
+ * rail (list rows, via `flex-row-reverse`). Grid = vertical (~1 button wide, keeps the title
+ * width); list rows = horizontal + vertically centered so the rail fits the short row.
+ */
+function CardActionRail({
+  star,
+  actions,
+  list = false,
+}: {
+  star?: React.ReactNode;
+  actions?: React.ReactNode;
+  list?: boolean;
+}) {
+  if (!star && !actions) {
+    return null;
+  }
+  return (
+    <div
+      className={
+        list
+          ? 'absolute inset-y-0 right-2 flex flex-row-reverse items-center gap-0.5'
+          : 'absolute top-2 right-2 flex flex-col items-end gap-0.5'
+      }
+    >
+      {star}
+      {actions}
+    </div>
   );
 }
 
@@ -2111,7 +2030,8 @@ function SharedFolderHint({
   return (
     <div className="text-muted-foreground mt-1 flex items-start gap-1.5 text-[11px]">
       <Info className="mt-px size-3 shrink-0" aria-hidden />
-      <span className="whitespace-normal">{text}</span>
+      {/* Clamp so an unusually long hint can never inflate the fixed-height tile. */}
+      <span className="line-clamp-2">{text}</span>
     </div>
   );
 }
@@ -2288,7 +2208,15 @@ function FolderCard({
     >
       <CardTile
         {...open}
-        className={cn('w-full', list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4')}
+        className={cn(
+          'w-full',
+          // INVARIANT: a FIXED, uniform grid-card height across EVERY lens (never grow-to-
+          // content, which drifts row-to-row) — sized to fit a 2-line title + meta + a
+          // footer/hint and the vertical action rail. List rows keep their own height.
+          list
+            ? 'gap-3 px-3.5 py-2.5'
+            : 'h-44 items-start gap-2.5 overflow-hidden p-4'
+        )}
       >
         {shortcut ? (
           <FolderSymlink
@@ -2308,11 +2236,18 @@ function FolderCard({
           />
         )}
         <div className="min-w-0 flex-1 text-left">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{title}</span>
+          <div
+            className={cn(
+              'text-sm font-medium',
+              list ? 'truncate' : 'line-clamp-2 pr-9'
+            )}
+          >
+            {title}
+          </div>
+          <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="truncate">{subtitle}</span>
             {sharedBadge}
           </div>
-          <div className="text-muted-foreground text-xs">{subtitle}</div>
           {folderHint}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
@@ -2323,17 +2258,12 @@ function FolderCard({
           />
         ) : null}
       </CardTile>
-      {star || actions ? (
-        <div className="absolute top-2 right-2 flex items-center gap-0.5">
-          {star}
-          {actions}
-        </div>
-      ) : null}
+      <CardActionRail star={star} actions={actions} list={list} />
     </div>
   );
 }
 
-function ItemCard({
+export function ItemCard({
   t,
   node,
   attributes,
@@ -2347,6 +2277,7 @@ function ItemCard({
   actions,
   footer,
   sharedBadge,
+  when,
   dnd,
 }: {
   t: GraphTranslator;
@@ -2369,6 +2300,8 @@ function ItemCard({
   /** The access-mirror people-icon badge, shown when the node is shared out (ADR-0023
    * §7a) — direct OR via a granted ancestor. Rendered inline beside the title. */
   sharedBadge?: React.ReactNode;
+  /** The "For you" sort timestamp, appended to the meta line (opened / updated time). */
+  when?: string;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;
 }) {
@@ -2409,7 +2342,9 @@ function ItemCard({
         data-selected={selected}
         className={cn(
           'w-full',
-          list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4',
+          list
+            ? 'gap-3 px-3.5 py-2.5'
+            : 'h-44 items-start gap-2.5 overflow-hidden p-4',
           selected ? 'border-ring ring-ring/35 ring-[3px]' : ''
         )}
       >
@@ -2421,22 +2356,25 @@ function ItemCard({
           'aria-hidden': true,
         })}
         <div className="min-w-0 flex-1 text-left">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{node.title}</span>
-            {sharedBadge}
+          <div
+            className={cn(
+              'text-sm font-medium',
+              list ? 'truncate' : 'line-clamp-4 pr-9'
+            )}
+          >
+            {node.title}
           </div>
-          <div className="text-muted-foreground truncate text-xs">
-            {metaLine}
+          <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="truncate">
+              {when ? kindLabel(t, node.kind) : metaLine}
+            </span>
+            {when ? <span className="shrink-0">· {when}</span> : null}
+            {sharedBadge}
           </div>
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
       </CardTile>
-      {star || actions ? (
-        <div className="absolute top-2 right-2 flex items-center gap-0.5">
-          {star}
-          {actions}
-        </div>
-      ) : null}
+      <CardActionRail star={star} actions={actions} list={list} />
     </div>
   );
 }
@@ -2832,7 +2770,7 @@ function useDriveRowDnd(row: DriveRow): {
 // ── list view (table) ─────────────────────────────────────────────────────
 
 /** One Drive row for the table view — a folder, a shortcut, or a content item. */
-type DriveRow = {
+export type DriveRow = {
   id: string;
   node: LensNode;
   rowKind: 'folder' | 'shortcut' | 'item';
@@ -2848,13 +2786,19 @@ type DriveRow = {
 };
 
 /**
- * DriveListTable — the LIST layout: the same folders/shortcuts/files rendered as a
- * sortable table (the generic {@link DataTable}) instead of stretched cards. Row
- * interaction matches the cards (single → Details, double → open). Columns are
- * domain/i18n here; the generic table base lives in `@workspace/ui` and is ready to
- * grow (pagination / filtering / column visibility / selection) for richer screens.
+ * LensListTable — the parameterizable LIST layout (ADR-0025): a node-set rendered as a
+ * sortable table (the generic {@link DataTable}) instead of cards, with every
+ * cross-cutting column assembled from optional flags/slots so EVERY lens — KB browse,
+ * the flat filter lenses, and (Phase B) the lexical-search list/tree — renders through
+ * the ONE table. Row interaction matches the cards (single → Details, double → open).
+ * Columns are domain/i18n here; the generic table base lives in `@workspace/ui`.
+ *
+ * Optional slots default OFF/identity so the existing Drive call site is byte-identical:
+ * `snippet` adds a trailing matched-excerpt column (only search supplies it), and
+ * `expansion: 'always'` renders the tree fully-unfolded with no collapse (search's
+ * advanced view) instead of the collapsible browse tree.
  */
-function DriveListTable({
+export function LensListTable({
   rows,
   t,
   metaByItem,
@@ -2865,8 +2809,10 @@ function DriveListTable({
   recentOpenedAt,
   defaultSorting,
   tree = false,
+  expansion = 'collapsible',
   dndEnabled = false,
   sharedBadgeFor,
+  snippet,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -2878,17 +2824,28 @@ function DriveListTable({
   recentOpenedAt: Record<string, string> | null;
   /** Initial column sort (Recent → viewed-desc; otherwise name-asc). */
   defaultSorting: { id: string; desc: boolean }[];
-  starredSet: Set<string>;
-  onToggleStar: (nodeId: string, next: boolean) => void;
+  /** The starred set + toggle. OPTIONAL (ADR-0025 §1 `star?`): supplied → a leading star
+   * column; OMITTED (default OFF, fail-safe) → no star column at all. The structural
+   * lenses pass it; the lexical-search list omits it (a ranked hit list has no star). */
+  starredSet?: Set<string>;
+  onToggleStar?: (nodeId: string, next: boolean) => void;
   /** Browse tree: folders expand inline (a chevron + depth indent in the name cell,
    * `subRows` drive the children). Off → a flat table. */
   tree?: boolean;
+  /** Tree expansion mode. `'collapsible'` (default) = the Drive browse tree (opens
+   * collapsed, expands on demand). `'always'` = a fully-unfolded tree with no collapse
+   * intent — the search advanced list. Ignored when `tree` is false. */
+  expansion?: 'collapsible' | 'always';
   /** Wire rows as drag sources / folder rows as drop targets (move = re-parent).
    * Only in 'kb' browse — flat lenses are read-only digests. */
   dndEnabled?: boolean;
   /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
    * out — rendered in the name cell so the list mirrors the grid cards. */
   sharedBadgeFor?: (node: LensNode) => React.ReactNode;
+  /** OPTIONAL trailing column slot rendering a per-row excerpt (the search snippet) —
+   * a localized header plus a per-row cell renderer. Absent (default) → no snippet
+   * column, so non-search lenses are unchanged (only the search config supplies it). */
+  snippet?: { header: string; cell: (node: LensNode) => React.ReactNode };
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
@@ -2908,31 +2865,37 @@ function DriveListTable({
             },
           ]
         : []),
-      {
-        id: 'star',
-        header: '',
-        enableSorting: false,
-        // Shortcuts are symlinks, not nodes — nothing to star.
-        cell: ({ row }) =>
-          row.original.rowKind === 'shortcut' ? null : (
-            <StarButton
-              alwaysShow
-              starred={starredSet.has(row.original.node.id)}
-              onToggle={() =>
-                onToggleStar(
-                  row.original.node.id,
-                  !starredSet.has(row.original.node.id)
-                )
-              }
-              label={t(
-                starredSet.has(row.original.node.id)
-                  ? 'graph.drive.unstar'
-                  : 'graph.drive.star'
-              )}
-            />
-          ),
-        meta: { cellClassName: 'w-10' },
-      },
+      // OPTIONAL leading star column (ADR-0025 §1 `star?`) — present only when a starred
+      // set + toggle are supplied (the structural lenses); omitted for the search list.
+      ...(starredSet && onToggleStar
+        ? [
+            {
+              id: 'star',
+              header: '',
+              enableSorting: false,
+              // Shortcuts are symlinks, not nodes — nothing to star.
+              cell: ({ row }: { row: { original: DriveRow } }) =>
+                row.original.rowKind === 'shortcut' ? null : (
+                  <StarButton
+                    alwaysShow
+                    starred={starredSet.has(row.original.node.id)}
+                    onToggle={() =>
+                      onToggleStar(
+                        row.original.node.id,
+                        !starredSet.has(row.original.node.id)
+                      )
+                    }
+                    label={t(
+                      starredSet.has(row.original.node.id)
+                        ? 'graph.drive.unstar'
+                        : 'graph.drive.star'
+                    )}
+                  />
+                ),
+              meta: { cellClassName: 'w-10' },
+            } satisfies ColumnDef<DriveRow>,
+          ]
+        : []),
       {
         id: 'name',
         accessorFn: (r) => r.node.title,
@@ -3001,9 +2964,7 @@ function DriveListTable({
         id: 'type',
         accessorFn: (r) => kindLabel(t, r.node.kind),
         header: t('graph.table.type'),
-        cell: ({ getValue }) => (
-          <span className="text-muted-foreground">{getValue() as string}</span>
-        ),
+        cell: ({ row }) => typeCell(t, row.original.node.kind),
         meta: { cellClassName: 'w-32' },
       },
       {
@@ -3028,16 +2989,23 @@ function DriveListTable({
         header: t(
           recentOpenedAt ? 'graph.table.viewed' : 'graph.table.modified'
         ),
-        cell: ({ getValue }) => {
-          const v = getValue() as string;
-          return (
-            <span className="text-muted-foreground">
-              {v ? new Date(v).toLocaleDateString() : '—'}
-            </span>
-          );
-        },
+        cell: ({ getValue }) =>
+          modifiedCell((getValue() as string) || undefined),
         meta: { cellClassName: 'w-32' },
       },
+      // OPTIONAL snippet column (search only) — a trailing matched-excerpt slot. Absent
+      // by default, so non-search lenses render the original column set unchanged.
+      ...(snippet
+        ? [
+            {
+              id: 'snippet',
+              enableSorting: false,
+              header: snippet.header,
+              cell: ({ row }: { row: { original: DriveRow } }) =>
+                snippet.cell(row.original.node),
+            },
+          ]
+        : []),
       {
         id: 'actions',
         header: '',
@@ -3065,6 +3033,7 @@ function DriveListTable({
       recentOpenedAt,
       tree,
       sharedBadgeFor,
+      snippet,
     ]
   );
 
@@ -3079,6 +3048,9 @@ function DriveListTable({
       // rank keeps folders above files at EVERY level (direction-stable). Flat lenses
       // pass neither → the flat group-order block applies instead.
       getSubRows={tree ? (r) => r.subRows : undefined}
+      // Search's advanced tree opens fully-unfolded (`expansion: 'always'`); the Drive
+      // browse tree stays collapsible. No-op when `tree` is false.
+      defaultExpanded={tree && expansion === 'always'}
       pinnedSort={tree ? 'group' : undefined}
       // Folders + shortcuts (0) always sort as a block above files (1); the
       // column sort applies within each group, so they never interleave.

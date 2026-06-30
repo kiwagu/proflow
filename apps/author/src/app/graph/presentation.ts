@@ -29,6 +29,26 @@ export function iconForKind(kind: string): LucideIcon {
   return KIND_ICON[kind] ?? FileText;
 }
 
+/**
+ * kind → ACTIVATION behaviour: what happens when a user picks a node (command palette,
+ * search lens, Drive card). Declared HERE in ONE place so every surface dispatches
+ * identically and a NEW node kind only needs an entry here (or falls back to `inspect`) —
+ * no per-kind `if (kind === 'text')` chains scattered across the surfaces:
+ *   - `navigate`: jump INTO the node as a KB location (containers — `folder`, future kinds)
+ *   - `read`:     open the node in the reader (documents — `text`, future kinds)
+ *   - `inspect`:  open the shared Details panel (leaf resources — file/video/link/tag, DEFAULT)
+ */
+export type NodeActivation = 'navigate' | 'read' | 'inspect';
+
+const KIND_ACTIVATION: Record<string, NodeActivation> = {
+  folder: 'navigate',
+  text: 'read',
+};
+
+export function activationForKind(kind: string): NodeActivation {
+  return KIND_ACTIVATION[kind] ?? 'inspect';
+}
+
 /** kind → i18n label via LITERAL keys (no dynamic-key indirection in views). */
 export function kindLabel(t: GraphTranslator, kind: string): string {
   switch (kind) {

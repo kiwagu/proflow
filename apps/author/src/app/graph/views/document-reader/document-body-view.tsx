@@ -4,12 +4,21 @@ import { RichText } from '@payloadcms/richtext-lexical/react';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import * as React from 'react';
 
+import { DocumentTitle } from './document-title';
+import './rich-content.css';
+
 /**
  * DocumentBodyView — the ONE read-mode container for a Lexical body: the centred
  * reading column + Payload's `RichText` serializer (so formatting, lists,
  * headings, uploads/attachments all render via Payload's own converters) or an
  * honest empty state. Shared so the document reader and the version preview show
  * a body in the IDENTICAL surface — one renderer, one look.
+ *
+ * The serializer output is wrapped in `.rich-content` (see `rich-content.css`),
+ * which mirrors the Payload Lexical editor's content typography 1:1 so a body
+ * looks identical whether you READ it here or EDIT it on `/author/doc/[nodeId]`.
+ * (`prose` was a no-op — `@tailwindcss/typography` is not installed — so the body
+ * fell back to browser defaults and drifted from the editor.)
  */
 
 /** The Lexical editor-state shape the `bodies` richText field stores. */
@@ -42,13 +51,11 @@ export function DocumentBodyView({
 }) {
   return (
     <article className="mx-auto w-full max-w-[720px] px-6 py-10">
-      {title ? (
-        <h1 className="mb-6 text-3xl font-bold tracking-tight">{title}</h1>
-      ) : null}
+      {title ? <DocumentTitle title={title} /> : null}
       {isEmptyLexical(body) ? (
         <EmptyState>{emptyLabel}</EmptyState>
       ) : (
-        <div className="prose dark:prose-invert max-w-none">
+        <div className="rich-content">
           <RichText data={body as never} />
         </div>
       )}

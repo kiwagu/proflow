@@ -1,8 +1,12 @@
 import config from '@payload-config';
-// SHARED BASELINE: this exact CSS stack (author-tailwind THEN @payloadcms/next/css)
-// is also loaded by the workbench read surface `app/graph/layout.tsx`, so the
-// shared `WorkbenchChrome` + toolbars render identically read↔edit. Keep the two
-// in sync — diverging the stacks re-introduces the read↔edit drift.
+// This is the Payload EDIT surface: it loads `@payloadcms/next/css` (the full admin
+// baseline, incl. the bundled Lexical typography) because it mounts the real Payload
+// editor under `RootLayout`. The `/graph` READ surface DELIBERATELY does NOT load this
+// — it is an independent shadcn surface, and Payload's global resets leak onto it (the
+// command-palette focus frame, shrunk fonts). The reader instead mirrors the editor's
+// Lexical CONTENT typography via the scoped `rich-content.css`
+// (`app/graph/views/document-reader/`), so a body looks identical read↔edit WITHOUT
+// dragging the admin baseline onto `/graph`. Do NOT "re-sync" the two CSS stacks.
 import '../../author-tailwind.css';
 import '@payloadcms/next/css';
 import { handleServerFunctions, RootLayout } from '@payloadcms/next/layouts';

@@ -9,11 +9,13 @@
  * client view, and this spec proves they MIRROR it (ADR-0023 §7 — `badge ≡ panel-summary
  * ≡ access predicate`, never divergent), now as the three mutually-exclusive states:
  *
- *   - GLOBE (broadcast) — the EFFECTIVE floor is space/organization (own OR inherited via
- *     a broadcast-floor ancestor folder). Outranks people.
+ *   - GLOBE (broadcast) — flagged ONLY for an ORGANIZATION-wide broadcast (wider than the
+ *     space). SPACE-FIRST refinement (ADR-0023 §7a): a SPACE-wide broadcast is the TYPICAL
+ *     KB audience, so it shows NO badge — a clean card reads as "shared with the space";
+ *     the panel still names the "Space" floor. Broadcast outranks people.
  *   - PEOPLE (targeted) — the node is in the owner's outbound grant set (per-user OR
  *     cohort, direct OR via a granted ancestor), AND not broadcast.
- *   - NONE (private) — neither broadcast nor granted (the absence is the signal).
+ *   - NONE (private) — neither broadcast nor granted: a personal node, flagged with a LOCK.
  *
  * The cases, over the SHARED `CONTAINMENT_INHERITANCE_SCENARIO` catalog (via
  * `seedContainmentInheritanceFixture` — no inline tree):
@@ -22,11 +24,13 @@
  *       "Inherited from Shared Folder" (no direct grantee line).
  *   (C) PRIVATE, un-shared (`Private Unshared Doc`)               → NEITHER badge nor a
  *       shared/inherited summary (the panel says "private only").
- *   (D) BROADCAST DIRECT (`Floor Folder`, visibility=space)       → globe + panel Space floor.
- *   (E) BROADCAST INHERITED (`Floor Own Child Doc`, under it)      → globe + panel
+ *   (D) BROADCAST DIRECT (`Floor Folder`, visibility=space)       → NO badge (space-first
+ *       blank) + panel "Space" floor.
+ *   (E) BROADCAST INHERITED (`Floor Own Child Doc`, under it)      → NO badge + panel
  *       "Broadcast to Space via Floor Folder".
  *   (F) COHORT (`Cohort Folder`, scope→Cohort A)                  → people + panel cohort
- *       grantee (the extended `sharedByMe` cohort-by-me path).
+ *       grantee, counted/labelled as a COHORT ("Shared with 1 cohort", not "person") —
+ *       the extended `sharedByMe` cohort-by-me path.
  *
  * Rendered AS THE OWNER (`admin` = the grantor): the badge + panel Access summary are the
  * owner's mirror of the grants THEY authored (`kbData.sharedByMe`, SSR-seeded under the
@@ -240,27 +244,27 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
     }
   });
 
-  test('(D) a space-FLOOR resource shows the GLOBE badge (broadcast) AND the panel Space floor', async ({
+  test('(D) a space-FLOOR resource shows NO badge (space-first blank) AND the panel Space floor', async ({
     browser,
   }) => {
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     try {
       const page = await pageFor(context, fx.owner, tenant.spaceId);
       await gotoDriveRoot(page);
+      await expect(card(page, FLOOR_FOLDER)).toBeVisible({ timeout: 30_000 });
 
-      // Tier 1 — the GLOBE badge names the broadcast scope ("Visible to everyone in this
-      // space"), distinct from the people badge: broadcast OUTRANKS targeted.
+      // Tier 1 — SPACE-FIRST (ADR-0023 §7a): a space-wide broadcast is the typical KB
+      // audience, so a clean card IS the signal — neither a GLOBE (that's reserved for the
+      // wider organization-wide broadcast) NOR a people "Shared with" badge.
       await expect(
-        page.getByLabel(/Visible to everyone in this space/i).first()
-      ).toBeVisible({ timeout: 30_000 });
-
-      // The space-floor folder must NOT also carry a people "Shared with" badge — globe
-      // wins (mutually exclusive states).
+        card(page, FLOOR_FOLDER).getByLabel(/Visible to everyone/i)
+      ).toHaveCount(0);
       await expect(
         card(page, FLOOR_FOLDER).getByLabel(/Shared with/i)
       ).toHaveCount(0);
 
-      // Tier 2 — the panel Access floor reads "Space" (the at-a-glance broadcast state).
+      // Tier 2 — the panel Access floor still reads "Space" (the at-a-glance broadcast
+      // state): the badge is blank, but the panel names the floor — badge ≡ panel.
       await openDetailsPanel(page, FLOOR_FOLDER);
       const panel = page.getByRole('complementary', { name: FLOOR_FOLDER });
       await expect(panel.getByText('Space', { exact: true })).toBeVisible();
@@ -269,7 +273,7 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
     }
   });
 
-  test('(E) a child under a space-floor folder shows the GLOBE badge AND the panel "Broadcast … via {folder}" line (floor inheritance)', async ({
+  test('(E) a child under a space-floor folder shows NO badge AND the panel "Broadcast … via {folder}" line (floor inheritance)', async ({
     browser,
   }) => {
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -284,16 +288,15 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
         timeout: 30_000,
       });
 
-      // Tier 1 — the child carries the GLOBE purely via its broadcast-floor ANCESTOR. The
-      // Hint names the scope + the broadcasting folder.
+      // Tier 1 — the child is broadcast purely via its space-floor ANCESTOR, which under
+      // SPACE-FIRST (ADR-0023 §7a) is the typical audience → a clean card, NO globe (the
+      // inherited space broadcast is blank, exactly like its parent folder).
       await expect(
-        page
-          .getByLabel(/Visible to everyone in this space via Floor Folder/i)
-          .first()
-      ).toBeVisible({ timeout: 30_000 });
+        card(page, FLOOR_OWN_CHILD).getByLabel(/Visible to everyone/i)
+      ).toHaveCount(0);
 
-      // Tier 2 — the panel expresses the SAME chain as a "Broadcast to Space via {folder}"
-      // line (parallel to the per-user "Inherited from" line).
+      // Tier 2 — the panel still expresses the SAME chain as a "Broadcast to Space via
+      // {folder}" line (parallel to the per-user "Inherited from" line): badge ≡ panel.
       await openDetailsPanel(page, FLOOR_OWN_CHILD);
       const panel = page.getByRole('complementary', { name: FLOOR_OWN_CHILD });
       await expect(
@@ -325,12 +328,13 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
 
       // Tier 2 — the cohort appears in the bounded grantee list by its scope name (the
       // extended `sharedByMe` cohort-by-me path), labelling the audience as the group. The
-      // grantee summary header ("Shared with 1 person") confirms the cohort lands as an
-      // audience entry; the EXACT-text match on the cohort name targets the grantee list
-      // item (the cohort name standalone), not the description blurb that merely mentions it.
+      // summary header counts/labels it as a COHORT — "Shared with 1 cohort", NOT "person"
+      // (cohorts are a distinct audience kind, ADR-0020 / the cohort-vs-people fix). The
+      // EXACT-text match on the cohort name targets the grantee list item (the cohort name
+      // standalone), not the description blurb that merely mentions it.
       await openDetailsPanel(page, COHORT_FOLDER);
       const panel = page.getByRole('complementary', { name: COHORT_FOLDER });
-      await expect(panel.getByText(/Shared with 1 person/i)).toBeVisible();
+      await expect(panel.getByText(/Shared with 1 cohort/i)).toBeVisible();
       await expect(panel.getByText(COHORT_A, { exact: true })).toBeVisible();
     } finally {
       await context.close();

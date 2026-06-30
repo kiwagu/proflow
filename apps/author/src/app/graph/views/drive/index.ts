@@ -1,1 +1,1 @@
-export { DriveProjectionView } from './drive-projection.view';
+export { DriveProjectionView, ItemCard } from './drive-projection.view';
