@@ -225,6 +225,16 @@ export function DriveProjectionView({
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
+  // Locale/timezone date strings (`formatWhen`) differ between the server and the browser, so
+  // the "For you" sort dates render CLIENT-ONLY: `useSyncExternalStore` reports `false` on the
+  // server snapshot and `true` on the client — SSR + first hydration emit no date (no mismatch),
+  // then it appears.
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+
   // Stable references for the empty fallbacks so the `containment`/`shortcuts`
   // memos below don't recompute every render (a fresh `[]` would invalidate them).
   const containmentEdges = React.useMemo(
@@ -1220,7 +1230,7 @@ export function DriveProjectionView({
         layout={layout}
         selected={item.id === selectedId}
         sharedBadge={renderAccessBadge(item.id)}
-        when={whenIso ? formatWhen(whenIso) : undefined}
+        when={whenIso && mounted ? formatWhen(whenIso) : undefined}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
