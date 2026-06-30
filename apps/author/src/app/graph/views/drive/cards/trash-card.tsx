@@ -2,6 +2,7 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import { CardTile } from '@workspace/ui/components/card-tile';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
 import { cn } from '@workspace/ui/lib/utils';
 import { RotateCcw, Trash2 } from 'lucide-react';
@@ -83,18 +84,18 @@ export function TrashCard({
 
   return (
     <>
-      {/* A trashed node is NOT clickable (no open/navigate) — so this is a plain
-          surface DIV, not the clickable CardTile (which is a <button> and would
-          nest the Restore/Purge buttons). Same card tokens, no hover-to-ring.
+      {/* A trashed node is NOT clickable (no open/navigate) — so this is the
+          non-interactive CardTile (a plain surface <div>, not the clickable
+          <button> path which would nest the Restore/Purge buttons). Same card
+          tokens, no hover-to-ring.
 
           List = one horizontal row [icon][title flex-1][actions]. Grid is a fixed
           264px card: the two TEXT actions + icon would squeeze the flex-1 title to
           ~zero and hide it, so grid STACKS — [icon + title] on top, the actions on
           their own justify-end row beneath — keeping the title fully readable. */}
-      <div
+      <CardTile
+        interactive={false}
         className={cn(
-          'bg-card flex border shadow-xs',
-          'rounded-lg',
           list
             ? 'w-full items-center gap-3 px-3.5 py-2.5'
             : cn(GRID_CARD, 'flex-col gap-2.5 p-4')
@@ -149,7 +150,7 @@ export function TrashCard({
             {t('graph.trash.purge')}
           </Button>
         </div>
-      </div>
+      </CardTile>
 
       <ConfirmDialog
         open={confirmPurge}

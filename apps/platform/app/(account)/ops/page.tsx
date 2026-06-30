@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from '@workspace/ui/components/card';
 import { FieldError } from '@workspace/ui/components/field';
+import { BorderedRow } from '@workspace/ui/components/platform/bordered-row';
 import { Skeleton } from '@workspace/ui/components/skeleton';
 import {
   PLATFORM_LOCALE_COOKIE,
@@ -410,9 +411,24 @@ async function OperatorConsoleContent() {
                           {orgSpaces.map((space) => {
                             const isCurrent = activeSpaceId === space.id;
                             return (
-                              <li
+                              <BorderedRow
                                 key={space.id}
-                                className="border-border flex items-center justify-between gap-3 rounded-md border p-3"
+                                as="li"
+                                actions={
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    {isCurrent ? (
+                                      <Badge variant="secondary">
+                                        {t('superAdmin.support.currentBadge')}
+                                      </Badge>
+                                    ) : null}
+                                    <SupportSpaceActivateButton
+                                      spaceId={space.id}
+                                      label={t(
+                                        'superAdmin.support.openSpaceSettings'
+                                      )}
+                                    />
+                                  </div>
+                                }
                               >
                                 <div className="flex min-w-0 flex-col gap-1">
                                   <span className="font-medium">
@@ -422,20 +438,7 @@ async function OperatorConsoleContent() {
                                     {space.slug}
                                   </span>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                  {isCurrent ? (
-                                    <Badge variant="secondary">
-                                      {t('superAdmin.support.currentBadge')}
-                                    </Badge>
-                                  ) : null}
-                                  <SupportSpaceActivateButton
-                                    spaceId={space.id}
-                                    label={t(
-                                      'superAdmin.support.openSpaceSettings'
-                                    )}
-                                  />
-                                </div>
-                              </li>
+                              </BorderedRow>
                             );
                           })}
                         </ul>

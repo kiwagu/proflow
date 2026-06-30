@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
+import { BorderedRow } from '@workspace/ui/components/platform/bordered-row';
 
 import type { PlatformPendingSpaceInvite } from '@/lib/platform-shell.types';
 import { acceptSpaceInviteAction } from '@/lib/space-invite.accept.actions';
@@ -33,9 +34,28 @@ export function ProfileWorkspaceInvitesClient({
       </p>
       <ul className="flex flex-col gap-2">
         {invites.map((inv) => (
-          <li
+          <BorderedRow
             key={inv.id}
-            className="border-border bg-background flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+            as="li"
+            className="bg-background flex-wrap gap-2"
+            actions={
+              <Button
+                type="button"
+                size="sm"
+                disabled={busyToken === inv.token}
+                onClick={() => {
+                  void (async () => {
+                    setBusyToken(inv.token);
+                    const res = await acceptSpaceInviteAction(inv.token);
+                    setBusyToken(null);
+                    if (!res.ok) return;
+                    router.refresh();
+                  })();
+                }}
+              >
+                Accept
+              </Button>
+            }
           >
             <div className="flex min-w-0 flex-col gap-0.5 text-sm">
               <span className="font-medium">{inv.spaceName}</span>
@@ -44,23 +64,7 @@ export function ProfileWorkspaceInvitesClient({
                 Role: {inv.roleLabel}
               </span>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busyToken === inv.token}
-              onClick={() => {
-                void (async () => {
-                  setBusyToken(inv.token);
-                  const res = await acceptSpaceInviteAction(inv.token);
-                  setBusyToken(null);
-                  if (!res.ok) return;
-                  router.refresh();
-                })();
-              }}
-            >
-              Accept
-            </Button>
-          </li>
+          </BorderedRow>
         ))}
       </ul>
     </div>
