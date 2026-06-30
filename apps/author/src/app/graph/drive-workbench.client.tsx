@@ -29,7 +29,7 @@ import {
 import { CommandPalette } from './command-palette/command-palette';
 import { CommandPaletteTrigger } from './command-palette/command-palette-trigger';
 import { useCommandPalette } from './command-palette/use-command-palette';
-import { DriveProjectionView } from './views/drive/drive-projection.view';
+import { DriveProjectionView } from './views/drive';
 import { SearchView, type SearchSelection } from './views/search/search.view';
 import { DocumentReader } from './views/document-reader/document-reader.view';
 import { useEditLauncher } from './views/document-reader/use-edit-launcher';

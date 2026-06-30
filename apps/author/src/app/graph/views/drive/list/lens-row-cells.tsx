@@ -7,9 +7,9 @@ import { iconForKind, kindLabel, ownerLabel } from '@/app/graph/presentation';
 /**
  * lens-row-cells — the per-column CELL CONTENT shared by EVERY lens list/tree row, so
  * the name (kind icon + title), type, owner and modified renderings can never drift
- * between the Drive list table (`drive-projection.view.tsx` `DriveListTable`) and any
- * future lens that renders the same row-set (the lexical-search table/tree, ADR-0025
- * Step 0). One source of truth for each cell + its em-dash fallbacks.
+ * between the Drive list table (`LensListTable`) and any future lens that renders the
+ * same row-set (the lexical-search table/tree, ADR-0025 Step 0). One source of truth
+ * for each cell + its em-dash fallbacks.
  *
  * Each helper is a pure `(…) => ReactNode` over the shared row shape; the WRAPPING (a
  * TanStack `ColumnDef.cell` vs a bare `<TableCell>`, the tree chevron, the shortcut

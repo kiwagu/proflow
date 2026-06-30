@@ -15,7 +15,7 @@ import {
   ItemCard,
   LensListTable,
   type DriveRow,
-} from '@/app/graph/views/drive/drive-projection.view';
+} from '@/app/graph/views/drive';
 import { DriveSidebar } from '@/app/graph/views/drive/drive-sidebar';
 import {
   LayoutToggle,
