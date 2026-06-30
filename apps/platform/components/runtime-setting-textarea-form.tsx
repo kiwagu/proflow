@@ -1,23 +1,19 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useState } from 'react';
 import type { RuntimeSettingScope } from '@workspace/settings-runtime';
-import { Button } from '@workspace/ui/components/button';
 import {
   Field,
   FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
 } from '@workspace/ui/components/field';
-import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
+import { SettingsMutationFormShell } from '@workspace/ui/components/platform/settings-mutation-form';
 import { Textarea } from '@workspace/ui/components/textarea';
+import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 
-import {
-  mutateRuntimeSettingAction,
-  type MutateRuntimeSettingResult,
-} from '@/lib/runtime-settings.actions';
+import { mutateRuntimeSettingAction } from '@/lib/runtime-settings.actions';
 
 type RuntimeSettingTextareaFormProps = {
   currentValue: string;
@@ -47,10 +43,7 @@ export function RuntimeSettingTextareaForm({
   testId,
 }: RuntimeSettingTextareaFormProps) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [value, setValue] = useState(currentValue);
-  const [submitState, setSubmitState] =
-    useState<MutateRuntimeSettingResult | null>(null);
 
   // Re-sync the editable draft to a NEW server value during render (e.g. after a
   // saved mutation revalidates `currentValue`) — the "adjust state when a prop
@@ -59,85 +52,45 @@ export function RuntimeSettingTextareaForm({
     setValue(currentValue);
   }
 
-  useEffect(() => {
-    if (!submitState?.ok) {
-      return undefined;
-    }
-
-    const refreshTimeout = window.setTimeout(() => {
-      router.refresh();
-    }, 300);
-
-    return () => {
-      window.clearTimeout(refreshTimeout);
-    };
-  }, [router, submitState]);
-
   return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        startTransition(() => {
-          void mutateRuntimeSettingAction({
-            scope,
-            scopeId,
-            key: settingKey,
-            rawValue: value,
-            mode: 'set',
-            revalidatePath,
-          }).then((result) => {
-            setSubmitState(result);
-          });
-        });
-      }}
-      noValidate
+    <SettingsMutationFormShell
+      onSubmit={() =>
+        mutateRuntimeSettingAction({
+          scope,
+          scopeId,
+          key: settingKey,
+          rawValue: value,
+          mode: 'set',
+          revalidatePath,
+        })
+      }
+      onRefresh={router.refresh}
+      submitLabel={submitLabel}
+      successMessage={successMessage}
+      testId={testId}
     >
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor={testId}>{fieldLabel}</FieldLabel>
-          <Textarea
-            id={testId}
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setSubmitState(null);
-            }}
-            rows={rows}
-            className="min-h-32 font-mono text-xs"
-            data-testid={testId}
-            disabled={isPending}
-          />
-          {description ? (
-            <FieldDescription>{description}</FieldDescription>
-          ) : null}
-        </Field>
-      </FieldGroup>
-
-      {submitState?.ok ? (
-        <p className="text-primary text-sm" data-testid={`${testId}-success`}>
-          {successMessage}
-        </p>
-      ) : null}
-
-      {submitState && !submitState.ok ? (
-        <FieldError
-          className="text-destructive text-sm"
-          data-testid={`${testId}-error`}
-        >
-          {submitState.message}
-        </FieldError>
-      ) : null}
-
-      <div>
-        <Button
-          type="submit"
-          disabled={isPending}
-          data-testid={`${testId}-submit`}
-        >
-          {submitLabel}
-        </Button>
-      </div>
-    </form>
+      {({ isPending, clearStatus }) => (
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={testId}>{fieldLabel}</FieldLabel>
+            <Textarea
+              id={testId}
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                clearStatus();
+              }}
+              rows={rows}
+              className="min-h-32 font-mono text-xs"
+              data-testid={testId}
+              disabled={isPending}
+            />
+            {description ? (
+              <FieldDescription>{description}</FieldDescription>
+            ) : null}
+          </Field>
+        </FieldGroup>
+      )}
+    </SettingsMutationFormShell>
   );
 }

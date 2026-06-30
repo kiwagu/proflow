@@ -2,9 +2,9 @@
 
 import { RichText } from '@payloadcms/richtext-lexical/react';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { DocumentTitle } from '@workspace/ui/components/platform/document-title';
 import * as React from 'react';
 
-import { DocumentTitle } from './document-title';
 import './rich-content.css';
 
 /**

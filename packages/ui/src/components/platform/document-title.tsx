@@ -3,15 +3,15 @@
 import { cn } from '@workspace/ui/lib/utils';
 
 /**
- * The ONE document-title heading, shared by the READ view (`document-body-view`) and the
- * WRITE view (the doc-editor), so the title looks identical in both (WYSIWYG, no read↔edit
- * drift). Rendered in the SAME serif as the body content (`rich-content.css`) so the whole
- * document — title + body — reads as one authored piece, distinct from the shadcn chrome.
+ * The ONE document-title heading, shared by a READ view and a WRITE (inline-edit) view so the
+ * title looks identical in both (WYSIWYG, no read↔edit drift). Rendered in the SAME serif as
+ * the body content so the whole document — title + body — reads as one authored piece, distinct
+ * from the surrounding chrome.
  *
- * The typography utilities are `!important`: on the WRITE surface Payload's admin CSS is
- * UNLAYERED and would otherwise beat the plain Tailwind utilities (font-family + weight +
- * size), so important keeps the title serif/bold/large in BOTH read and edit. Harmless on
- * the read surface (nothing competes there).
+ * The typography utilities are `!important`: on a WRITE surface an UNLAYERED admin CSS could
+ * otherwise beat the plain Tailwind utilities (font-family + weight + size), so important keeps
+ * the title serif/bold/large in BOTH read and edit. Harmless on the read surface (nothing
+ * competes there). Generic and i18n-free: any accessible label is a resolved string prop.
  */
 const TITLE_CLASS = 'font-serif! text-3xl! font-bold! tracking-tight';
 
@@ -27,23 +27,24 @@ export function DocumentTitle({
 }
 
 /**
- * Editable title — the WRITE view. The document title is the NODE title (outside the Lexical
- * body), edited inline here and persisted by the caller (`onCommit`) via the existing rename
- * route. A controlled input styled to look IDENTICAL to the static heading (so editing is
- * WYSIWYG with reading); the editor owns the value. Commits on blur and on Enter; Escape
- * reverts (the caller resets the value).
+ * Editable title — the WRITE view. A controlled input styled to look IDENTICAL to the static
+ * heading (so editing is WYSIWYG with reading); the caller owns the value and persists it.
+ * Commits on blur and on Enter; Escape reverts (the caller resets the value). The accessible
+ * name is passed in via `ariaLabel` (no i18n inside the lib).
  */
 export function EditableDocumentTitle({
   value,
   onChange,
   onCommit,
   onRevert,
+  ariaLabel,
   className,
 }: {
   value: string;
   onChange: (next: string) => void;
   onCommit: () => void;
   onRevert: () => void;
+  ariaLabel: string;
   className?: string;
 }) {
   return (
@@ -61,7 +62,7 @@ export function EditableDocumentTitle({
           event.currentTarget.blur();
         }
       }}
-      aria-label="Document title"
+      aria-label={ariaLabel}
       className={cn(
         'mb-6 w-full border-0 bg-transparent py-0 outline-none',
         TITLE_CLASS,

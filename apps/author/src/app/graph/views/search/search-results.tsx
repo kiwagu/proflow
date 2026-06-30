@@ -2,9 +2,9 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { GRID_WRAP } from '@workspace/ui/components/platform/card-action-rail';
 
 import { LensListTable } from '@/app/graph/views/drive';
-import { GRID_WRAP } from '@/app/graph/views/drive/cards/card-rail';
 import {
   LensTreeGrid,
   type LensTreeNode,

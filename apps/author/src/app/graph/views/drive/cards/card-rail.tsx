@@ -6,21 +6,16 @@ import { cn } from '@workspace/ui/lib/utils';
 import { Star, Target } from 'lucide-react';
 import * as React from 'react';
 
-// Grid = flex-wrap of FIXED-width cards (NOT a `1fr` grid): card width must stay
-// constant whether the Details panel is open or closed — `1fr`/`minmax` would
-// restretch every card when the available width changes, so the icons/tiles
-// visibly jump. With a fixed basis (`shrink-0` so two-up rows never squeeze), a
-// width change only reflows the column COUNT (pure flex), never the card size —
-// and EVERY kind (folder, document, file) shares this one width, so they line up.
-// Cards left-align; trailing space is fine. Width is generous so longer titles
-// stay readable before they truncate.
-export const GRID_CARD = 'w-[264px] shrink-0';
-export const GRID_WRAP = 'flex flex-wrap gap-2.5';
-export const LIST_WRAP = 'flex flex-col gap-1.5';
-
-// Hover-reveal classes for a card's `⋯` action trigger (stays visible while open).
-export const CARD_ACTION_TRIGGER =
-  'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100';
+// The card-action rail + its layout constants are generic (opaque `ReactNode` slots,
+// no domain coupling) and now live in @workspace/ui; re-exported here so the cards barrel
+// and the existing call-sites keep importing them from card-rail.
+export {
+  CARD_ACTION_TRIGGER,
+  CardActionRail,
+  GRID_CARD,
+  GRID_WRAP,
+  LIST_WRAP,
+} from '@workspace/ui/components/platform/card-action-rail';
 
 // The single-vs-double-click "open" controller and the dnd-kit ref-merge helper now
 // live in @workspace/ui/hooks; re-exported here so the cards barrel keeps its surface.
@@ -108,39 +103,6 @@ export function RevealInKbButton({
     >
       <Target className="size-4" aria-hidden />
     </RowActionButton>
-  );
-}
-
-/**
- * CardActionRail — the per-card "command" controls (star + `⋯` menu + reveal-in-KB), unified
- * across EVERY card lens. INVARIANT: the STAR sits at the FAR CORNER in either orientation —
- * the TOP of the vertical rail (grid, = top-right corner) and the RIGHTMOST of the horizontal
- * rail (list rows, via `flex-row-reverse`). Grid = vertical (~1 button wide, keeps the title
- * width); list rows = horizontal + vertically centered so the rail fits the short row.
- */
-export function CardActionRail({
-  star,
-  actions,
-  list = false,
-}: {
-  star?: React.ReactNode;
-  actions?: React.ReactNode;
-  list?: boolean;
-}) {
-  if (!star && !actions) {
-    return null;
-  }
-  return (
-    <div
-      className={
-        list
-          ? 'absolute inset-y-0 right-2 flex flex-row-reverse items-center gap-0.5'
-          : 'absolute top-2 right-2 flex flex-col items-end gap-0.5'
-      }
-    >
-      {star}
-      {actions}
-    </div>
   );
 }
 

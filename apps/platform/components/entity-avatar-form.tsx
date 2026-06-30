@@ -1,10 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useState } from 'react';
 
-import { Button } from '@workspace/ui/components/button';
-import { FieldError } from '@workspace/ui/components/field';
+import { SettingsMutationFormShell } from '@workspace/ui/components/platform/settings-mutation-form';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 
 import { EntityAvatarUpload } from '@/components/entity-avatar-upload';
@@ -33,11 +32,7 @@ export function EntityAvatarForm({
   onSubmit,
 }: EntityAvatarFormProps) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [avatarUrl, setAvatarUrl] = useState(currentValue ?? '');
-  const [submitState, setSubmitState] = useState<AvatarMutationResult | null>(
-    null
-  );
 
   // Re-sync the editable draft to a NEW server value during render (e.g. after a
   // saved mutation revalidates `currentValue`) — the "adjust state when a prop
@@ -46,69 +41,27 @@ export function EntityAvatarForm({
     setAvatarUrl(currentValue ?? '');
   }
 
-  useEffect(() => {
-    if (!submitState?.ok) {
-      return undefined;
-    }
-
-    const refreshTimeout = window.setTimeout(() => {
-      router.refresh();
-    }, 300);
-
-    return () => {
-      window.clearTimeout(refreshTimeout);
-    };
-  }, [router, submitState]);
-
   return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        startTransition(() => {
-          void onSubmit(avatarUrl).then((result) => {
-            setSubmitState(result);
-          });
-        });
-      }}
-      noValidate
+    <SettingsMutationFormShell
+      onSubmit={() => onSubmit(avatarUrl)}
+      onRefresh={router.refresh}
+      submitLabel={submitLabel}
+      successMessage={successMessage}
+      testId={testId}
     >
-      <EntityAvatarUpload
-        value={avatarUrl || undefined}
-        onChange={(value) => {
-          setAvatarUrl(value);
-          setSubmitState(null);
-        }}
-        entityId={entityId}
-        scopePrefix={scopePrefix}
-        nestedPath={nestedPath}
-        disabled={isPending}
-      />
-
-      {submitState?.ok ? (
-        <p className="text-primary text-sm" data-testid={`${testId}-success`}>
-          {successMessage}
-        </p>
-      ) : null}
-
-      {submitState && !submitState.ok ? (
-        <FieldError
-          className="text-destructive text-sm"
-          data-testid={`${testId}-error`}
-        >
-          {submitState.message}
-        </FieldError>
-      ) : null}
-
-      <div>
-        <Button
-          type="submit"
+      {({ isPending, clearStatus }) => (
+        <EntityAvatarUpload
+          value={avatarUrl || undefined}
+          onChange={(value) => {
+            setAvatarUrl(value);
+            clearStatus();
+          }}
+          entityId={entityId}
+          scopePrefix={scopePrefix}
+          nestedPath={nestedPath}
           disabled={isPending}
-          data-testid={`${testId}-submit`}
-        >
-          {submitLabel}
-        </Button>
-      </div>
-    </form>
+        />
+      )}
+    </SettingsMutationFormShell>
   );
 }

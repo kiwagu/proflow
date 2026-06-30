@@ -14,6 +14,10 @@ import {
 import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
 import { Field, FieldGroup, FieldLabel } from '@workspace/ui/components/field';
 import { Input } from '@workspace/ui/components/input';
+import {
+  CheckboxGroupField,
+  toggleGroupKey,
+} from '@workspace/ui/components/platform/checkbox-group-field';
 import { RoleBadgeList } from '@workspace/ui/components/platform/role-badge-list';
 import { Separator } from '@workspace/ui/components/separator';
 import { Textarea } from '@workspace/ui/components/textarea';
@@ -21,7 +25,6 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import type { PlatformRoleCatalogRow } from '@/lib/platform-role-catalog.actions';
 
 import type { RoleDraft, Translator } from './role-catalog.schema';
-import { PermissionField, togglePermissionKey } from './permission-field';
 
 /**
  * Confirm-gate wiring for a destructive action (system variant). When present,
@@ -236,18 +239,21 @@ export function RoleRow({
                     />
                   </Field>
 
-                  <PermissionField
+                  <CheckboxGroupField
                     fieldIdPrefix={`${permissionFieldIdPrefix}-${role.id}`}
                     legend={t('roleCatalog.permission.legend')}
                     description={t('roleCatalog.permission.editDescription')}
-                    permissionCatalogKeys={permissionCatalogKeys}
-                    selectedPermissionKeys={editingDraft.permissionKeys}
-                    onTogglePermission={(permissionKey, checked) => {
+                    items={permissionCatalogKeys.map((key) => ({
+                      key,
+                      label: key,
+                    }))}
+                    selectedKeys={editingDraft.permissionKeys}
+                    onToggle={(permissionKey, checked) => {
                       onEditingDraftChange((current) =>
                         current
                           ? {
                               ...current,
-                              permissionKeys: togglePermissionKey(
+                              permissionKeys: toggleGroupKey(
                                 current.permissionKeys,
                                 permissionKey,
                                 checked

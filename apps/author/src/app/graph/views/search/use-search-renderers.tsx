@@ -2,6 +2,7 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { type SearchResultItem } from '@workspace/knowledge-contracts';
+import { SearchSnippet } from '@workspace/ui/components/platform/search-snippet';
 import * as React from 'react';
 
 import type { LensNode } from '@/app/graph/containment';
@@ -10,7 +11,6 @@ import { ItemCard, type DriveRow } from '@/app/graph/views/drive';
 import { OpenInKbButton } from './open-in-kb-button';
 import type { SearchActivation } from './use-search-activation';
 import type { SearchResultsState } from './use-search-results';
-import { SearchSnippet } from './search-snippet';
 import type { SearchTreeNode } from './search-tree';
 
 /**
@@ -98,6 +98,7 @@ export function useSearchRenderers({
               snippet={item.snippet}
               term={trimmed}
               variant="block"
+              testId="drive-search-snippet"
             />
           ) : null
         }
@@ -199,7 +200,12 @@ export function useSearchRenderers({
       cell: (node: LensNode) => {
         const snippet = hitById.get(node.id)?.snippet;
         return snippet ? (
-          <SearchSnippet snippet={snippet} term={trimmed} variant="inline" />
+          <SearchSnippet
+            snippet={snippet}
+            term={trimmed}
+            variant="inline"
+            testId="drive-search-snippet"
+          />
         ) : (
           <span className="text-muted-foreground/60">—</span>
         );

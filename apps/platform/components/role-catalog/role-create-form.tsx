@@ -8,6 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import {
+  CheckboxGroupField,
+  toggleGroupKey,
+} from '@workspace/ui/components/platform/checkbox-group-field';
 import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
 import {
   Field,
@@ -23,7 +27,6 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import type { RoleCatalogMutateResult } from '@/lib/platform-role-catalog.actions';
 
 import type { RoleFormSchema, Translator } from './role-catalog.schema';
-import { PermissionField, togglePermissionKey } from './permission-field';
 
 export type RoleCreateFormCopy = Readonly<{
   cardTitle: string;
@@ -243,15 +246,18 @@ export function RoleCreateForm({
             </form.Field>
 
             <Field data-invalid={createPermissionKeys.length === 0}>
-              <PermissionField
+              <CheckboxGroupField
                 fieldIdPrefix={fieldIdPrefix}
                 legend={t('roleCatalog.permission.legend')}
                 description={t('roleCatalog.permission.description')}
-                permissionCatalogKeys={permissionCatalogKeys}
-                selectedPermissionKeys={createPermissionKeys}
-                onTogglePermission={(permissionKey, checked) => {
+                items={permissionCatalogKeys.map((key) => ({
+                  key,
+                  label: key,
+                }))}
+                selectedKeys={createPermissionKeys}
+                onToggle={(permissionKey, checked) => {
                   setCreatePermissionKeys((current) =>
-                    togglePermissionKey(current, permissionKey, checked)
+                    toggleGroupKey(current, permissionKey, checked)
                   );
                 }}
               />
