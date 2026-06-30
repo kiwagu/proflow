@@ -8,8 +8,7 @@ import {
 } from '@/lib/space-invite.accept.server';
 
 export type AcceptSpaceInviteResult =
-  | { ok: true; spaceId: string }
-  | { ok: false; message: string };
+  { ok: true; spaceId: string } | { ok: false; message: string };
 
 export async function acceptSpaceInviteAction(
   token: string

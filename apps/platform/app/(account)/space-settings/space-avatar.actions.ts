@@ -27,8 +27,7 @@ const spaceAvatarSchema = z
   .strict();
 
 export type UpdateSpaceAvatarResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 export async function updateSpaceAvatarAction(
   values: z.input<typeof spaceAvatarSchema>

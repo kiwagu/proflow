@@ -26,8 +26,7 @@ type FeatureFlagCheckboxFormProps = {
   description?: string;
   fieldLabel: string;
   featureKey:
-    | PlatformFeatureFlagRuntimeSettingKey
-    | PlatformEntitlementRuntimeSettingKey;
+    PlatformFeatureFlagRuntimeSettingKey | PlatformEntitlementRuntimeSettingKey;
   revalidatePath: string;
   scope: 'global' | 'organization' | 'space';
   scopeId: string | null;

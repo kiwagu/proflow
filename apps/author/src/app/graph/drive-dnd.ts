@@ -92,8 +92,7 @@ export type DriveDragData = {
 
 /** A drop target — a folder node, or the breadcrumb "top level" affordance. */
 export type DriveDropData =
-  | { type: 'folder'; folderId: string }
-  | { type: 'root' };
+  { type: 'folder'; folderId: string } | { type: 'root' };
 
 /** The DROP intent the workbench acts on: move (default) or copy (modifier held). */
 export type DriveDropIntent = 'move' | 'copy';
@@ -130,8 +129,7 @@ export const driveCollision: CollisionDetection = (args) => {
     c: (typeof hits)[number]
   ): DriveDropData['type'] | undefined => {
     const container = c.data?.droppableContainer as
-      | { data?: { current?: DriveDropData } }
-      | undefined;
+      { data?: { current?: DriveDropData } } | undefined;
     return container?.data?.current?.type;
   };
   const folder = hits.find((c) => typeOf(c) === 'folder');

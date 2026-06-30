@@ -136,8 +136,7 @@ export type ListOrganizationCustomRolesResult =
   | { ok: false; message: string };
 
 export type RoleCatalogMutateResult =
-  | { ok: true; roleId: string }
-  | { ok: false; message: string };
+  { ok: true; roleId: string } | { ok: false; message: string };
 
 function normalizePermissionKeys(permissionKeys: readonly string[]): string[] {
   return [

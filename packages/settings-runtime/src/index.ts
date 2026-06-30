@@ -21,12 +21,7 @@ export type RuntimeSettingValueType = z.infer<
 >;
 
 export type JsonValue =
-  | null
-  | string
-  | number
-  | boolean
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  null | string | number | boolean | JsonValue[] | { [key: string]: JsonValue };
 
 export const PLATFORM_LOCALES = ['en', 'es'] as const;
 

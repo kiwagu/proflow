@@ -33,8 +33,7 @@ export type ListSpaceMemberRoleAssignmentsResult =
   | { ok: false; message: string };
 
 export type SetSpaceMemberRoleResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 const setSpaceMemberRoleSchema = z
   .object({

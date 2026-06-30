@@ -56,8 +56,7 @@ export async function applyIdentityLifecycleEvent(
   });
 
   const existing = docs[0] as
-    | { id: string | number; supabaseSub?: string | null }
-    | undefined;
+    { id: string | number; supabaseSub?: string | null } | undefined;
 
   if (existing) {
     if (String(existing.id) !== entityId) {

@@ -35,8 +35,7 @@ const runtimeSettingMutationSchema = z
   .strict();
 
 export type MutateRuntimeSettingResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 function mapRuntimeSettingError(message?: string): string {
   if (!message) {

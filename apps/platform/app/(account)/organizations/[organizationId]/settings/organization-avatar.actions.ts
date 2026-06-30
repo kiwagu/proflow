@@ -26,8 +26,7 @@ const organizationAvatarSchema = z
   .strict();
 
 export type UpdateOrganizationAvatarResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 export async function updateOrganizationAvatarAction(
   values: z.input<typeof organizationAvatarSchema>
