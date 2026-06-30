@@ -1208,7 +1208,7 @@ export function DriveProjectionView({
 
   // One content card, reused by the flat items grid and the "For you" home sections.
   // In 'kb' browse it is a drag source (re-parent on drop); flat lenses render plain.
-  const renderItemCard = (item: LensNode) => {
+  const renderItemCard = (item: LensNode, whenIso?: string) => {
     const card = (
       <ItemCard
         key={item.id}
@@ -1220,6 +1220,7 @@ export function DriveProjectionView({
         layout={layout}
         selected={item.id === selectedId}
         sharedBadge={renderAccessBadge(item.id)}
+        when={whenIso ? formatWhen(whenIso) : undefined}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
@@ -1298,12 +1299,16 @@ export function DriveProjectionView({
   // "For you" — a personal digest: two sections of content cards. Shown instead of the
   // browse tree / flat list when scope='home'. Respects the grid/list toggle (cards vs
   // list rows); the sortable TABLE is browse-only — it does not fit a 2-section digest.
-  const homeSection = (label: string, nodes: LensNode[]) =>
+  const homeSection = (
+    label: string,
+    nodes: LensNode[],
+    whenOf: (node: LensNode) => string | undefined
+  ) =>
     nodes.length > 0 ? (
       <>
         <SectionLabel className="mt-[18px] first:mt-0">{label}</SectionLabel>
         <div className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}>
-          {nodes.map(renderItemCard)}
+          {nodes.map((node) => renderItemCard(node, whenOf(node)))}
         </div>
       </>
     ) : null;
@@ -1339,10 +1344,15 @@ export function DriveProjectionView({
           <EmptyState>{t('graph.drive.homeEmpty')}</EmptyState>
         ) : (
           <>
-            {homeSection(t('graph.drive.homeJumpBackIn'), jumpBackNodes)}
+            {homeSection(
+              t('graph.drive.homeJumpBackIn'),
+              jumpBackNodes,
+              (n) => openedAtById[n.id]
+            )}
             {homeSection(
               t('graph.drive.homeRecentlyUpdated'),
-              recentlyUpdatedNodes
+              recentlyUpdatedNodes,
+              (n) => metaByItem[n.id]?.lastModifiedAt
             )}
           </>
         )
@@ -1485,17 +1495,25 @@ export function DriveProjectionView({
                               />
                             ) : undefined,
                             star: (
-                              <StarButton
-                                starred={starredSet.has(sub.id)}
-                                onToggle={() =>
-                                  toggleStar(sub.id, !starredSet.has(sub.id))
-                                }
-                                label={t(
-                                  starredSet.has(sub.id)
-                                    ? 'graph.drive.unstar'
-                                    : 'graph.drive.star'
-                                )}
-                              />
+                              <>
+                                <StarButton
+                                  starred={starredSet.has(sub.id)}
+                                  onToggle={() =>
+                                    toggleStar(sub.id, !starredSet.has(sub.id))
+                                  }
+                                  label={t(
+                                    starredSet.has(sub.id)
+                                      ? 'graph.drive.unstar'
+                                      : 'graph.drive.star'
+                                  )}
+                                />
+                                {onRevealInKbAction ? (
+                                  <RevealInKbButton
+                                    onReveal={() => onRevealInKbAction(sub.id)}
+                                    label={t('graph.panel.openInKb')}
+                                  />
+                                ) : null}
+                              </>
                             ),
                             actions: (
                               <NodeActionsMenu
@@ -1569,7 +1587,7 @@ export function DriveProjectionView({
                       <div
                         className={layout === 'grid' ? GRID_WRAP : LIST_WRAP}
                       >
-                        {items.map(renderItemCard)}
+                        {items.map((it) => renderItemCard(it))}
                       </div>
                     </>
                   ) : null}
@@ -1665,6 +1683,15 @@ export function DriveProjectionView({
 // and EVERY kind (folder, document, file) shares this one width, so they line up.
 // Cards left-align; trailing space is fine. Width is generous so longer titles
 // stay readable before they truncate.
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 const GRID_CARD = 'w-[264px] shrink-0';
 const GRID_WRAP = 'flex flex-wrap gap-2.5';
 const LIST_WRAP = 'flex flex-col gap-1.5';
@@ -1734,6 +1761,39 @@ function RevealInKbButton({
     >
       <Target className="size-4" aria-hidden />
     </RowActionButton>
+  );
+}
+
+/**
+ * CardActionRail — the per-card "command" controls (star + `⋯` menu + reveal-in-KB), unified
+ * across EVERY card lens. INVARIANT: the STAR sits at the FAR CORNER in either orientation —
+ * the TOP of the vertical rail (grid, = top-right corner) and the RIGHTMOST of the horizontal
+ * rail (list rows, via `flex-row-reverse`). Grid = vertical (~1 button wide, keeps the title
+ * width); list rows = horizontal + vertically centered so the rail fits the short row.
+ */
+function CardActionRail({
+  star,
+  actions,
+  list = false,
+}: {
+  star?: React.ReactNode;
+  actions?: React.ReactNode;
+  list?: boolean;
+}) {
+  if (!star && !actions) {
+    return null;
+  }
+  return (
+    <div
+      className={
+        list
+          ? 'absolute inset-y-0 right-2 flex flex-row-reverse items-center gap-0.5'
+          : 'absolute top-2 right-2 flex flex-col items-end gap-0.5'
+      }
+    >
+      {star}
+      {actions}
+    </div>
   );
 }
 
@@ -1960,7 +2020,8 @@ function SharedFolderHint({
   return (
     <div className="text-muted-foreground mt-1 flex items-start gap-1.5 text-[11px]">
       <Info className="mt-px size-3 shrink-0" aria-hidden />
-      <span className="whitespace-normal">{text}</span>
+      {/* Clamp so an unusually long hint can never inflate the fixed-height tile. */}
+      <span className="line-clamp-2">{text}</span>
     </div>
   );
 }
@@ -2137,7 +2198,15 @@ function FolderCard({
     >
       <CardTile
         {...open}
-        className={cn('w-full', list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4')}
+        className={cn(
+          'w-full',
+          // INVARIANT: a FIXED, uniform grid-card height across EVERY lens (never grow-to-
+          // content, which drifts row-to-row) — sized to fit a 2-line title + meta + a
+          // footer/hint and the vertical action rail. List rows keep their own height.
+          list
+            ? 'gap-3 px-3.5 py-2.5'
+            : 'h-44 items-start gap-2.5 overflow-hidden p-4'
+        )}
       >
         {shortcut ? (
           <FolderSymlink
@@ -2157,11 +2226,18 @@ function FolderCard({
           />
         )}
         <div className="min-w-0 flex-1 text-left">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{title}</span>
+          <div
+            className={cn(
+              'text-sm font-medium',
+              list ? 'truncate' : 'line-clamp-2 pr-9'
+            )}
+          >
+            {title}
+          </div>
+          <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="truncate">{subtitle}</span>
             {sharedBadge}
           </div>
-          <div className="text-muted-foreground text-xs">{subtitle}</div>
           {folderHint}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
@@ -2172,12 +2248,7 @@ function FolderCard({
           />
         ) : null}
       </CardTile>
-      {star || actions ? (
-        <div className="absolute top-2 right-2 flex items-center gap-0.5">
-          {star}
-          {actions}
-        </div>
-      ) : null}
+      <CardActionRail star={star} actions={actions} list={list} />
     </div>
   );
 }
@@ -2196,6 +2267,7 @@ export function ItemCard({
   actions,
   footer,
   sharedBadge,
+  when,
   dnd,
 }: {
   t: GraphTranslator;
@@ -2218,6 +2290,8 @@ export function ItemCard({
   /** The access-mirror people-icon badge, shown when the node is shared out (ADR-0023
    * §7a) — direct OR via a granted ancestor. Rendered inline beside the title. */
   sharedBadge?: React.ReactNode;
+  /** The "For you" sort timestamp, appended to the meta line (opened / updated time). */
+  when?: string;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;
 }) {
@@ -2258,7 +2332,9 @@ export function ItemCard({
         data-selected={selected}
         className={cn(
           'w-full',
-          list ? 'gap-3 px-3.5 py-2.5' : 'gap-2.5 p-4',
+          list
+            ? 'gap-3 px-3.5 py-2.5'
+            : 'h-44 items-start gap-2.5 overflow-hidden p-4',
           selected ? 'border-ring ring-ring/35 ring-[3px]' : ''
         )}
       >
@@ -2270,22 +2346,25 @@ export function ItemCard({
           'aria-hidden': true,
         })}
         <div className="min-w-0 flex-1 text-left">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium">{node.title}</span>
-            {sharedBadge}
+          <div
+            className={cn(
+              'text-sm font-medium',
+              list ? 'truncate' : 'line-clamp-4 pr-9'
+            )}
+          >
+            {node.title}
           </div>
-          <div className="text-muted-foreground truncate text-xs">
-            {metaLine}
+          <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="truncate">
+              {when ? kindLabel(t, node.kind) : metaLine}
+            </span>
+            {when ? <span className="shrink-0">· {when}</span> : null}
+            {sharedBadge}
           </div>
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
       </CardTile>
-      {star || actions ? (
-        <div className="absolute top-2 right-2 flex items-center gap-0.5">
-          {star}
-          {actions}
-        </div>
-      ) : null}
+      <CardActionRail star={star} actions={actions} list={list} />
     </div>
   );
 }
