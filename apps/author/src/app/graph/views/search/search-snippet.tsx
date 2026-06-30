@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { HighlightedText } from './highlight-text';
+import { HighlightedText } from '@workspace/ui/components/highlight-text';
 
 /**
  * SearchSnippet — the matched-excerpt presentation shared by the lexical-search lens's

@@ -8,10 +8,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Checkbox } from '@workspace/ui/components/checkbox';
+import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -259,27 +258,19 @@ export function RoleCreateForm({
             </Field>
 
             {confirm ? (
-              <Field orientation="horizontal">
-                <Checkbox
-                  id={confirm.inputId}
-                  checked={createConfirmed}
-                  onCheckedChange={(value) =>
-                    setCreateConfirmed(value === true)
-                  }
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor={confirm.inputId}>
-                    {confirm.label}
-                  </FieldLabel>
-                </FieldContent>
-              </Field>
+              <ConfirmCheckboxField
+                inputId={confirm.inputId}
+                checked={createConfirmed}
+                onCheckedChange={setCreateConfirmed}
+                label={confirm.label}
+              />
             ) : null}
           </FieldGroup>
 
           {catalogError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {catalogError}
-            </p>
+            </FieldError>
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">

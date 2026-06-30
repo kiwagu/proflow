@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@workspace/ui/components/dialog';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
+import { FieldError } from '@workspace/ui/components/field';
 import { Hint } from '@workspace/ui/components/hint';
 import { Input } from '@workspace/ui/components/input';
 import { AsyncSearchPicker } from '@workspace/ui/components/platform/async-search-picker';
@@ -130,9 +131,9 @@ export function ShareDialog({
         </DialogHeader>
 
         {loadFailed ? (
-          <p className="text-destructive text-sm" role="alert">
+          <FieldError className="text-destructive text-sm">
             {t('graph.share.loadError')}
-          </p>
+          </FieldError>
         ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col gap-5">

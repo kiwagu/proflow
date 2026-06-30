@@ -156,9 +156,9 @@ export function OrganizationBootstrapForm({
         </form.Field>
       </FieldGroup>
       {submitState && !submitState.ok ? (
-        <p className="text-destructive text-sm" role="alert">
+        <FieldError className="text-destructive text-sm">
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
       <Button type="submit">Create organization and space</Button>
     </form>

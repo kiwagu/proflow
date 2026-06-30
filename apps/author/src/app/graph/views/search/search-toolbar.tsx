@@ -69,7 +69,12 @@ export function SearchToolbar({
       {/* The grid/list LAYOUT toggle — the SAME control the Drive lenses carry. The layout
           axis is ORTHOGONAL to the lens-view axis: all four {flat,advanced}×{grid,list}
           combinations render. */}
-      <LayoutToggle t={t} layout={layout} onLayoutChange={onLayoutChange} />
+      <LayoutToggle
+        layout={layout}
+        onLayoutChange={onLayoutChange}
+        gridLabel={t('graph.drive.layoutGrid')}
+        listLabel={t('graph.drive.layoutList')}
+      />
     </div>
   );
 }

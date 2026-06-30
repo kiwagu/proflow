@@ -1,6 +1,7 @@
 'use client';
 
 import { RowActionButton } from '@workspace/ui/components/platform/row-action-button';
+import { SectionLabel as UiSectionLabel } from '@workspace/ui/components/section-label';
 import { cn } from '@workspace/ui/lib/utils';
 import { Star, Target } from 'lucide-react';
 import * as React from 'react';
@@ -21,62 +22,10 @@ export const LIST_WRAP = 'flex flex-col gap-1.5';
 export const CARD_ACTION_TRIGGER =
   'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100';
 
-// Single vs double click on a card (the Google-Drive split): single click opens
-// the shared Details panel, double click OPENS the node (folder → navigate in,
-// document → read-view). A lone click defers to Details on a short timer so a
-// double-click can cancel it — opening never flashes the Details panel first.
-// Keyboard Enter on the card button fires a `detail === 0` click, so it lands on
-// Details (the safe, reversible action); opening by keyboard is one Enter further,
-// from the panel.
-//
-// Discrimination is on the click's running count (`event.detail`), NOT the separate
-// `dblclick` event: the 2nd click of a pair arrives as `detail === 2` and Opens
-// directly. Relying on `dblclick` was fragile — the browser drops it whenever a
-// re-render swaps the card element between the two clicks (e.g. the reader's
-// focus-refetch firing after the editor round-trip), which silently degraded the
-// split. There is also no long-lived "armed" flag to wedge: each click cancels and
-// reschedules its own pending Details, so the split can never fall back to
-// open-on-single-click.
-const CARD_DOUBLE_CLICK_MS = 250;
-
-export function useCardOpen(onDetails: () => void, onOpen: () => void) {
-  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancel = React.useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
-  React.useEffect(() => cancel, [cancel]);
-  return {
-    onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-      if (event.detail > 1) {
-        cancel(); // 2nd click of a pair → Open, drop the pending Details.
-        onOpen();
-        return;
-      }
-      cancel();
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        onDetails();
-      }, CARD_DOUBLE_CLICK_MS);
-    },
-  };
-}
-
-/** Merge dnd-kit's draggable + droppable refs onto one element (folders are both). */
-export function useMergedRef(
-  a?: (el: HTMLElement | null) => void,
-  b?: (el: HTMLElement | null) => void
-) {
-  return React.useCallback(
-    (el: HTMLElement | null) => {
-      a?.(el);
-      b?.(el);
-    },
-    [a, b]
-  );
-}
+// The single-vs-double-click "open" controller and the dnd-kit ref-merge helper now
+// live in @workspace/ui/hooks; re-exported here so the cards barrel keeps its surface.
+export { useCardOpen } from '@workspace/ui/hooks/use-card-open';
+export { useMergedRef } from '@workspace/ui/hooks/use-merged-ref';
 
 /** Drag/drop wiring a card applies to its outer wrapper (the workbench owns the
  * DndContext; the cards just mark themselves draggable / droppable). */
@@ -203,13 +152,8 @@ export function SectionLabel({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        'text-muted-foreground mb-2 text-xs font-semibold tracking-[0.04em] uppercase',
-        className
-      )}
-    >
+    <UiSectionLabel className={cn('mb-2', className)}>
       {children}
-    </div>
+    </UiSectionLabel>
   );
 }

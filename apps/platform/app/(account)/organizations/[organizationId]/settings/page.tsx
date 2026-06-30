@@ -11,6 +11,7 @@ import {
   RUNTIME_SETTING_KEYS,
 } from '@workspace/settings-runtime';
 import { Button } from '@workspace/ui/components/button';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 
 import {
   getSpaceSettingsLocaleOptions,
@@ -36,7 +37,7 @@ import { cookies, headers } from 'next/headers';
 function OrganizationSettingsFallback() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
-      <div className="bg-muted/50 h-48 w-full animate-pulse rounded-xl" />
+      <Skeleton className="bg-muted/50 h-48 w-full rounded-xl" />
     </div>
   );
 }

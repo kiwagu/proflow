@@ -1,14 +1,13 @@
 'use client';
 
 import { Button } from '@workspace/ui/components/button';
-import { Checkbox } from '@workspace/ui/components/checkbox';
+import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
 import {
   Field,
-  FieldContent,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
-  FieldTitle,
 } from '@workspace/ui/components/field';
 import { Input } from '@workspace/ui/components/input';
 import { Textarea } from '@workspace/ui/components/textarea';
@@ -105,26 +104,23 @@ export function PlatformSuperAdminGrantForm({
             )}
           </form.Field>
 
-          <Field orientation="horizontal">
-            <Checkbox
-              id="grant-platform-super-admin-confirm"
-              aria-labelledby="platform-super-admin-grant-confirm-label"
-              data-testid="platform-super-admin-grant-confirm"
-              checked={confirmed}
-              onCheckedChange={(value) => onConfirmedChange(value === true)}
-            />
-            <FieldContent>
-              <FieldTitle id="platform-super-admin-grant-confirm-label">
-                {t('superAdmin.platformAdmins.grant.confirm')}
-              </FieldTitle>
-            </FieldContent>
-          </Field>
+          <ConfirmCheckboxField
+            inputId="grant-platform-super-admin-confirm"
+            labelAs="title"
+            labelId="platform-super-admin-grant-confirm-label"
+            checked={confirmed}
+            onCheckedChange={onConfirmedChange}
+            label={t('superAdmin.platformAdmins.grant.confirm')}
+            checkboxProps={{
+              'data-testid': 'platform-super-admin-grant-confirm',
+            }}
+          />
         </FieldGroup>
 
         {catalogError ? (
-          <p className="text-destructive text-sm" role="alert">
+          <FieldError className="text-destructive text-sm">
             {catalogError}
-          </p>
+          </FieldError>
         ) : null}
         {successMessage ? (
           <p className="text-sm text-emerald-700" role="status">

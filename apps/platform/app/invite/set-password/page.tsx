@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import { SpaceInviteSetPasswordClient } from '@/app/invite/set-password/space-invite.set-password.client';
 import { createClient } from '@/lib/supabase/server';
 
@@ -25,8 +26,8 @@ function SetPasswordFallback() {
           <CardDescription className="sr-only">Loading</CardDescription>
         </CardHeader>
         <CardContent>
-          <div
-            className="bg-muted/50 h-24 w-full animate-pulse rounded-md"
+          <Skeleton
+            className="bg-muted/50 h-24 w-full rounded-md"
             aria-hidden
           />
         </CardContent>

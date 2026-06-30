@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
+import { FieldError } from '@workspace/ui/components/field';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 
 import { EntityAvatarUpload } from '@/components/entity-avatar-upload';
@@ -91,13 +92,12 @@ export function EntityAvatarForm({
       ) : null}
 
       {submitState && !submitState.ok ? (
-        <p
+        <FieldError
           className="text-destructive text-sm"
           data-testid={`${testId}-error`}
-          role="alert"
         >
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
 
       <div>

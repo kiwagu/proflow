@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { FieldError } from '@workspace/ui/components/field';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import {
   PLATFORM_LOCALE_COOKIE,
   defaultPlatformFeatureFlags,
@@ -53,7 +55,7 @@ import { cookies, headers } from 'next/headers';
 function OperatorConsoleFallback() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
-      <div className="bg-muted/50 h-48 w-full animate-pulse rounded-xl" />
+      <Skeleton className="bg-muted/50 h-48 w-full rounded-xl" />
     </div>
   );
 }
@@ -456,14 +458,14 @@ async function OperatorConsoleContent() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {globalRolesError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {globalRolesError}
-            </p>
+            </FieldError>
           ) : null}
           {permissionCatalogError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {permissionCatalogError}
-            </p>
+            </FieldError>
           ) : null}
           <GlobalSystemRoleCatalogClient
             roles={globalRoles}

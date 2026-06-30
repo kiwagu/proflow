@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from '@workspace/ui/components/card';
 import { Badge } from '@workspace/ui/components/badge';
+import { LabeledStatusRow } from '@workspace/ui/components/platform/labeled-status-row';
 
 import type { PlatformFeatureFlagResolution } from '@/lib/runtime-settings.server';
 import {
@@ -42,13 +43,10 @@ export function SpaceFeatureVisibilitySection({
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-2">
-          <div
-            className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
+          <LabeledStatusRow
+            label={t('spaceSettings.featureVisibility.organizationGateLabel')}
             data-testid={`space-feature-visibility-organization-gate-${spaceId}`}
           >
-            <span className="text-sm font-medium">
-              {t('spaceSettings.featureVisibility.organizationGateLabel')}
-            </span>
             <Badge
               variant={feature.organizationValue ? 'secondary' : 'outline'}
             >
@@ -57,31 +55,25 @@ export function SpaceFeatureVisibilitySection({
                 t
               )}
             </Badge>
-          </div>
+          </LabeledStatusRow>
 
-          <div
-            className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
+          <LabeledStatusRow
+            label={t('spaceSettings.featureVisibility.spaceActivationLabel')}
             data-testid={`space-feature-visibility-space-activation-${spaceId}`}
           >
-            <span className="text-sm font-medium">
-              {t('spaceSettings.featureVisibility.spaceActivationLabel')}
-            </span>
             <Badge variant={feature.spaceValue ? 'secondary' : 'outline'}>
               {resolveFeatureStateBadgeLabel(Boolean(feature.spaceValue), t)}
             </Badge>
-          </div>
+          </LabeledStatusRow>
 
-          <div
-            className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
+          <LabeledStatusRow
+            label={t('spaceSettings.featureVisibility.resolutionSourceLabel')}
             data-testid={`space-feature-visibility-source-${spaceId}`}
           >
-            <span className="text-sm font-medium">
-              {t('spaceSettings.featureVisibility.resolutionSourceLabel')}
-            </span>
             <span className="text-muted-foreground text-right text-sm">
               {resolveFeatureSourceLabel(feature.source, t)}
             </span>
-          </div>
+          </LabeledStatusRow>
         </div>
       </CardContent>
     </Card>

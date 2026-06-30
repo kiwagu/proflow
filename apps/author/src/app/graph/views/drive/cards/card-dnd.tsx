@@ -1,12 +1,12 @@
 'use client';
 
 import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { useMergedRef } from '@workspace/ui/hooks/use-merged-ref';
 import { cn } from '@workspace/ui/lib/utils';
 import * as React from 'react';
 
 import { usePaneId, useDriveDragState } from '@/app/graph/drive-dnd';
 import type { DriveDragData, DriveDropData } from '@/app/graph/drive-dnd';
-import { useMergedRef } from '@/app/graph/views/drive/cards/card-rail';
 import { FolderCard } from '@/app/graph/views/drive/cards/folder-card';
 import { ItemCard } from '@/app/graph/views/drive/cards/item-card';
 

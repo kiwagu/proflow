@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 
 import {
   acceptSpaceInviteForSession,
@@ -33,8 +34,8 @@ function InviteAcceptFallback() {
           <CardDescription className="sr-only">Loading invite</CardDescription>
         </CardHeader>
         <CardContent>
-          <div
-            className="bg-muted/50 h-24 w-full animate-pulse rounded-md"
+          <Skeleton
+            className="bg-muted/50 h-24 w-full rounded-md"
             aria-hidden
           />
         </CardContent>

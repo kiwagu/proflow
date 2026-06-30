@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { FieldError } from '@workspace/ui/components/field';
 
 import { OrganizationRoleCatalogClient } from '@/app/(account)/space-settings/organization-role-catalog';
 import type { SpaceSettingsLocale } from '@/app/(account)/space-settings/space-settings.i18n';
@@ -36,9 +37,9 @@ export function SpaceOrgRolesSection({
       </CardHeader>
       <CardContent>
         {errorMessage ? (
-          <p className="text-destructive text-sm" role="alert">
+          <FieldError className="text-destructive text-sm">
             {errorMessage}
-          </p>
+          </FieldError>
         ) : (
           <OrganizationRoleCatalogClient
             organizationId={organizationId}

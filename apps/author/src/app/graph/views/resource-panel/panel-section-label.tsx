@@ -1,17 +1,17 @@
 import * as React from 'react';
 
+import { SectionLabel } from '@workspace/ui/components/section-label';
+
 /**
  * PanelSectionLabel — the uppercase, icon-led header shared by every ResourcePanel
- * section (Access / Description / Versions). It is the `text-muted-foreground flex
- * items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase` cluster that
- * each section re-declared inline; promoting it keeps the rendered header IDENTICAL
- * while removing the triplicated className (ui-primitive-hygiene). Icon + label are the
- * caller's (passed as children) — mechanism only.
+ * section (Access / Description / Versions). A thin app-local alias over the shared
+ * `SectionLabel` primitive that fixes the panel's flex+gap layout; icon + label are
+ * the caller's (passed as children).
  */
 export function PanelSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
+    <SectionLabel className="flex items-center gap-1.5">
       {children}
-    </div>
+    </SectionLabel>
   );
 }

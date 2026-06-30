@@ -4,6 +4,7 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 
 import { LensListTable } from '@/app/graph/views/drive';
+import { GRID_WRAP } from '@/app/graph/views/drive/cards/card-rail';
 import {
   LensTreeGrid,
   type LensTreeNode,
@@ -11,8 +12,6 @@ import {
 
 import type { SearchRenderers } from './use-search-renderers';
 import type { SearchResultsState } from './use-search-results';
-
-const GRID_WRAP = 'flex flex-wrap gap-2.5';
 
 // A stable empty default-sorting reference — the search list keeps the server rank order
 // (no column default sort), and a fresh literal each render would thrash the table's memo.

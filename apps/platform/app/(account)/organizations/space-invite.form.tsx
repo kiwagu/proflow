@@ -200,9 +200,9 @@ export function SpaceInviteForm({
       </FieldGroup>
 
       {submitState.kind === 'error' ? (
-        <p className="text-destructive text-sm" role="alert">
+        <FieldError className="text-destructive text-sm">
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
 
       <Button type="submit" size="sm" className="w-fit">

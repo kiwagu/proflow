@@ -1,6 +1,8 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 
+import { Skeleton } from '@workspace/ui/components/skeleton';
+
 import { userNeedsOrganizationBootstrap } from '@/lib/platform-org-bootstrap-gate';
 import { ensureInitialPlatformSuperAdminForUser } from '@/lib/super-admin.bootstrap.server';
 import { createClient } from '@/lib/supabase/server';
@@ -11,12 +13,9 @@ import { OrganizationBootstrapForm } from './organization.bootstrap.form';
 function OnboardingFallback() {
   return (
     <main className="mx-auto flex max-w-lg flex-col gap-6 p-6">
-      <div
-        className="bg-muted/50 h-40 w-full animate-pulse rounded-xl"
-        aria-hidden
-      />
-      <div
-        className="bg-muted/50 h-[280px] w-full animate-pulse rounded-xl"
+      <Skeleton className="bg-muted/50 h-40 w-full rounded-xl" aria-hidden />
+      <Skeleton
+        className="bg-muted/50 h-[280px] w-full rounded-xl"
         aria-hidden
       />
     </main>

@@ -3,6 +3,7 @@
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
+import { SectionLabel } from '@workspace/ui/components/section-label';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   Clock,
@@ -233,9 +234,9 @@ export function DriveSidebar({
           );
         })}
         <div className="bg-border my-2 h-px" />
-        <div className="text-muted-foreground px-2 py-1 text-[11px] font-semibold tracking-[0.04em] uppercase">
+        <SectionLabel density="compact" className="px-2 py-1">
           {t('graph.drive.sections')}
-        </div>
+        </SectionLabel>
         {roots.map((root) => (
           <Button
             key={root.id}

@@ -7,18 +7,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Checkbox } from '@workspace/ui/components/checkbox';
 import {
   Collapsible,
   CollapsibleContent,
 } from '@workspace/ui/components/collapsible';
-import {
-  Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
-} from '@workspace/ui/components/field';
+import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
+import { Field, FieldGroup, FieldLabel } from '@workspace/ui/components/field';
 import { Input } from '@workspace/ui/components/input';
+import { RoleBadgeList } from '@workspace/ui/components/platform/role-badge-list';
 import { Separator } from '@workspace/ui/components/separator';
 import { Textarea } from '@workspace/ui/components/textarea';
 
@@ -141,29 +137,22 @@ export function RoleRow({
         {role.description ? (
           <p className="text-muted-foreground text-sm">{role.description}</p>
         ) : null}
-        <div className="flex flex-wrap gap-1">
-          {role.permissionKeys.map((permissionKey) => (
-            <Badge key={`${role.id}-${permissionKey}`} variant="outline">
-              {permissionKey}
-            </Badge>
-          ))}
-        </div>
+        <RoleBadgeList
+          roles={role.permissionKeys.map((permissionKey) => ({
+            key: permissionKey,
+            label: permissionKey,
+          }))}
+          keyPrefix={role.id}
+          variant="outline"
+        />
 
         {confirmArchive && !role.archivedAt ? (
-          <Field orientation="horizontal">
-            <Checkbox
-              id={confirmArchive.inputId}
-              checked={confirmArchive.checked}
-              onCheckedChange={(value) =>
-                confirmArchive.onChange(value === true)
-              }
-            />
-            <FieldContent>
-              <FieldLabel htmlFor={confirmArchive.inputId}>
-                {confirmArchive.label}
-              </FieldLabel>
-            </FieldContent>
-          </Field>
+          <ConfirmCheckboxField
+            inputId={confirmArchive.inputId}
+            checked={confirmArchive.checked}
+            onCheckedChange={confirmArchive.onChange}
+            label={confirmArchive.label}
+          />
         ) : null}
 
         {confirmArchive && !role.archivedAt ? (
@@ -270,20 +259,12 @@ export function RoleRow({
                   />
 
                   {confirmEdit ? (
-                    <Field orientation="horizontal">
-                      <Checkbox
-                        id={confirmEdit.inputId}
-                        checked={confirmEdit.checked}
-                        onCheckedChange={(value) =>
-                          confirmEdit.onChange(value === true)
-                        }
-                      />
-                      <FieldContent>
-                        <FieldLabel htmlFor={confirmEdit.inputId}>
-                          {confirmEdit.label}
-                        </FieldLabel>
-                      </FieldContent>
-                    </Field>
+                    <ConfirmCheckboxField
+                      inputId={confirmEdit.inputId}
+                      checked={confirmEdit.checked}
+                      onCheckedChange={confirmEdit.onChange}
+                      label={confirmEdit.label}
+                    />
                   ) : null}
                 </FieldGroup>
 

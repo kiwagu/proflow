@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { FieldError } from '@workspace/ui/components/field';
 
 import {
   archiveGlobalSystemRoleAction,
@@ -222,9 +223,9 @@ export function GlobalSystemRoleCatalogClient({
       </Card>
 
       {catalogError ? (
-        <p className="text-destructive text-sm" role="alert">
+        <FieldError className="text-destructive text-sm">
           {catalogError}
-        </p>
+        </FieldError>
       ) : null}
 
       <PermissionCatalogCard

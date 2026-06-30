@@ -1,35 +1,31 @@
 import * as React from 'react';
 
 /**
- * Client-side snippet highlight for the lexical-search consumers (ADR-0024 §3a).
- * Extracted from the Drive search lens so EVERY consumer (the lens, the command
- * palette, …) underlines the matched term the SAME way — behaviour is verbatim from
- * the original lens hand-roll. The server already did the real lexical matching +
- * ranking + snippet extraction; this fold is purely so the term we visually `<mark>`
- * inside the plain-text snippet matches the same case/accent-insensitive boundaries
- * the lexical fold used (so `egerie` highlights inside `Égérie`, `getting` inside
- * `Getting`, `превет`-class folds). It is a presentation approximation, never a fence.
+ * Client-side snippet highlight for lexical-search consumers. Generic and
+ * context-free: it takes a plain `text` and a `term` and wraps each
+ * case/accent-insensitive occurrence in `<mark>`, emitting REACT NODES (never
+ * `dangerouslySetInnerHTML`, so a snippet can never inject markup — the data layer
+ * ships PLAIN text). The fold is a presentation approximation so the term we visually
+ * `<mark>` matches the same case/accent-insensitive boundaries a lexical fold uses
+ * (so `egerie` highlights inside `Égérie`, `getting` inside `Getting`, Cyrillic
+ * folds). It is never a fence.
  */
 
 /**
- * Fold a string the way the server's `kb.search_normalize` does (lower + strip
- * accents). NFD + combining-mark strip mirrors `unaccent(lower(...))` for the Latin +
- * Cyrillic cases the search corpus covers.
+ * Fold a string by lowercasing and stripping accents. NFD + combining-mark strip
+ * mirrors `unaccent(lower(...))` for the Latin + Cyrillic cases search corpora cover.
  */
-function foldForHighlight(value: string): string {
+export function foldForHighlight(value: string): string {
   // U+0300–U+036F = the combining diacritical marks NFD splits accents into; drop them
-  // to fold `é→e`, `ё→е`-class (the unaccent(lower(...)) approximation, §3a/§3c).
+  // to fold `é→e`, `ё→е`-class (the unaccent(lower(...)) approximation).
   return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
 /**
  * HighlightedText — render `text` with each case/accent-insensitive occurrence of
- * `term` wrapped in `<mark>`, emitting REACT NODES (never `dangerouslySetInnerHTML`,
- * so a snippet can never inject markup — the data layer ships PLAIN text). Matching
- * runs over the folded forms (so accents/case fold) but the ORIGINAL substring is
- * rendered, preserving the snippet's real casing/accents. A term that does not occur
- * (e.g. a fuzzy/typo hit whose exact letters aren't in the excerpt) renders the text
- * unmarked — the row is still a valid ranked result, just with nothing to underline.
+ * `term` wrapped in `<mark>`. Matching runs over the folded forms (so accents/case
+ * fold) but the ORIGINAL substring is rendered, preserving the snippet's real
+ * casing/accents. A term that does not occur renders the text unmarked.
  */
 export function HighlightedText({
   text,

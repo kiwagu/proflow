@@ -1033,7 +1033,12 @@ export function DriveProjectionView({
             entitled={advancedStructuralEntitled}
           />
         ) : null}
-        <LayoutToggle t={t} layout={layout} onLayoutChange={applyLayout} />
+        <LayoutToggle
+          layout={layout}
+          onLayoutChange={applyLayout}
+          gridLabel={t('graph.drive.layoutGrid')}
+          listLabel={t('graph.drive.layoutList')}
+        />
         {onToggleSplit && scope === 'kb' ? (
           <Hint
             label={t(

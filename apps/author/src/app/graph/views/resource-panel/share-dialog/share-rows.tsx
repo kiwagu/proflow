@@ -5,11 +5,13 @@ import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
+import { SectionLabel as UiSectionLabel } from '@workspace/ui/components/section-label';
 import { Users, X } from 'lucide-react';
 import * as React from 'react';
 
 /** Uppercase section label with a leading icon — the Share dialog's three audience
- * controls (floor / who-has-access / add) are each titled with this. */
+ * controls (floor / who-has-access / add) are each titled with this. A thin alias over
+ * the shared `SectionLabel` primitive fixing the dialog's flex+gap layout. */
 export function SectionLabel({
   icon,
   children,
@@ -18,10 +20,9 @@ export function SectionLabel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
-      {icon}
+    <UiSectionLabel className="flex items-center gap-1.5" icon={icon}>
       {children}
-    </div>
+    </UiSectionLabel>
   );
 }
 

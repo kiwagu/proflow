@@ -11,6 +11,7 @@ import { Checkbox } from '@workspace/ui/components/checkbox';
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from '@workspace/ui/components/field';
@@ -124,13 +125,12 @@ export function FeatureFlagCheckboxForm({
       ) : null}
 
       {submitState && !submitState.ok ? (
-        <p
+        <FieldError
           className="text-destructive text-sm"
           data-testid={`${testId}-error`}
-          role="alert"
         >
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
 
       <div>

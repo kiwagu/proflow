@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 
 import { Badge } from '@workspace/ui/components/badge';
+import { FieldError } from '@workspace/ui/components/field';
 import {
   Card,
   CardContent,
@@ -79,9 +80,9 @@ export function PlatformSuperAdminClient({
         </div>
 
         {loadError ? (
-          <p className="text-destructive text-sm" role="alert">
+          <FieldError className="text-destructive text-sm">
             {loadError}
-          </p>
+          </FieldError>
         ) : null}
 
         <div className="flex flex-col gap-3">

@@ -7,6 +7,7 @@ import { Button } from '@workspace/ui/components/button';
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from '@workspace/ui/components/field';
@@ -169,13 +170,12 @@ export function RuntimeSettingSelectForm({
       ) : null}
 
       {submitState && !submitState.ok ? (
-        <p
+        <FieldError
           className="text-destructive text-sm"
           data-testid={`${testId}-error`}
-          role="alert"
         >
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
 
       <div>

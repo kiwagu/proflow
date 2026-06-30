@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
+import { FieldError } from '@workspace/ui/components/field';
 import {
   Card,
   CardContent,
@@ -144,9 +145,9 @@ export function InviteMagicCallbackClient({
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {message ? (
-          <p className="text-destructive text-sm" role="alert">
+          <FieldError className="text-destructive text-sm">
             {message}
-          </p>
+          </FieldError>
         ) : null}
         <Button asChild variant="outline">
           <Link href="/" prefetch={false}>

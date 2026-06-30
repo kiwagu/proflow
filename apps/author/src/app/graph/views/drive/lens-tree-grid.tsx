@@ -1,5 +1,6 @@
 'use client';
 
+import { SectionLabel } from '@workspace/ui/components/section-label';
 import { ChevronRight } from 'lucide-react';
 import * as React from 'react';
 
@@ -129,7 +130,10 @@ function PathBreadcrumb({
 }) {
   const FolderIcon = iconForKind('folder');
   return (
-    <div className="text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold tracking-[0.02em] uppercase">
+    <SectionLabel
+      density="tight"
+      className="flex flex-wrap items-center gap-x-1 gap-y-0.5"
+    >
       {path.map((node, idx) => (
         <React.Fragment key={node.id}>
           {idx > 0 ? (
@@ -149,6 +153,6 @@ function PathBreadcrumb({
           </button>
         </React.Fragment>
       ))}
-    </div>
+    </SectionLabel>
   );
 }

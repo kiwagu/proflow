@@ -9,13 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Checkbox } from '@workspace/ui/components/checkbox';
+import { ConfirmCheckboxField } from '@workspace/ui/components/confirm-checkbox-field';
 import {
   Field,
-  FieldContent,
   FieldDescription,
+  FieldError,
   FieldLabel,
-  FieldTitle,
 } from '@workspace/ui/components/field';
 import { Textarea } from '@workspace/ui/components/textarea';
 
@@ -153,29 +152,22 @@ export function PlatformSuperAdminRow({
               </FieldDescription>
             </Field>
 
-            <Field orientation="horizontal">
-              <Checkbox
-                id={`platform-super-admin-revoke-confirm-${superAdmin.userId}`}
-                aria-labelledby={`platform-super-admin-revoke-confirm-label-${superAdmin.userId}`}
-                checked={revokeConfirmed}
-                onCheckedChange={(value) =>
-                  onRevokeConfirmedChange(value === true)
-                }
-                data-testid={`platform-super-admin-revoke-confirm-${superAdmin.userId}`}
-              />
-              <FieldContent>
-                <FieldTitle
-                  id={`platform-super-admin-revoke-confirm-label-${superAdmin.userId}`}
-                >
-                  {t('superAdmin.platformAdmins.revoke.confirm')}
-                </FieldTitle>
-              </FieldContent>
-            </Field>
+            <ConfirmCheckboxField
+              inputId={`platform-super-admin-revoke-confirm-${superAdmin.userId}`}
+              labelAs="title"
+              labelId={`platform-super-admin-revoke-confirm-label-${superAdmin.userId}`}
+              checked={revokeConfirmed}
+              onCheckedChange={onRevokeConfirmedChange}
+              label={t('superAdmin.platformAdmins.revoke.confirm')}
+              checkboxProps={{
+                'data-testid': `platform-super-admin-revoke-confirm-${superAdmin.userId}`,
+              }}
+            />
 
             {revokeError ? (
-              <p className="text-destructive text-sm" role="alert">
+              <FieldError className="text-destructive text-sm">
                 {revokeError}
-              </p>
+              </FieldError>
             ) : null}
 
             <div className="flex flex-wrap items-center gap-2">
