@@ -1,7 +1,6 @@
 'use client';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
-import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import {
   Dialog,
@@ -15,10 +14,7 @@ import {
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
 import { Hint } from '@workspace/ui/components/hint';
 import { Input } from '@workspace/ui/components/input';
-import {
-  AsyncSearchPicker,
-  type AsyncSearchPage,
-} from '@workspace/ui/components/platform/async-search-picker';
+import { AsyncSearchPicker } from '@workspace/ui/components/platform/async-search-picker';
 import {
   Select,
   SelectContent,
@@ -26,22 +22,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@workspace/ui/components/select';
-import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
-import { Check, Link2, Search, UserRound, Users, X } from 'lucide-react';
-import * as React from 'react';
+import { Check, Link2, Search, UserRound, Users } from 'lucide-react';
 
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 import type {
   GrantableMember,
-  GrantableMembersPage,
   ResourceFloor,
-  ScopeChoice,
-  UserGrant,
 } from '@/app/graph/graph-data.types';
-import type {
-  CohortShareBody,
-  UserShareBody,
-} from '@/app/graph/visibility/route';
+
+import { CohortRow, OwnerRow, PersonRow, SectionLabel } from './share-rows';
+import { useShare } from './use-share';
 
 /**
  * ShareDialog — the ONE Share surface (ADR-0019 Fork 6). It folds the THREE
@@ -60,51 +50,11 @@ import type {
  * reverts on the reload. "Copy link" is pure navigation (Fork 4) — it grants
  * nothing; the recipient still needs access.
  *
- * Bodies are typed from the route's exported zod contracts
- * ({@link CohortShareBody} / {@link UserShareBody}) — never redefined here
+ * The share STATE + grant/revoke/floor/fetch engine lives in {@link useShare}; this
+ * component is the presentation shell — it renders the rows and wires the hook.
+ * Bodies are typed from the route's exported zod contracts — never redefined here
  * (zod-schema-first-contracts).
  */
-
-type ShareData = {
-  floor: ResourceFloor | null;
-  choices: ScopeChoice[];
-  grants: UserGrant[];
-  // The route's `members` is ONE keyset page (ADR-0021 Part A): { items, nextCursor,
-  // total }. The reusable `AsyncSearchPicker` (Wave 1b) consumes the full page —
-  // cursor-paged, with a "+N more" count + "Show more". The floor/cohort load reads
-  // `members` for nothing now (the picker fetches its own pages); it rides along.
-  members: GrantableMembersPage;
-};
-
-/** Page size for the people-picker (ADR-0021 §A3 — a small fixed page of 5 that
- * invites narrowing by typing; the server hard-caps at 50). */
-const MEMBERS_PAGE_SIZE = 5;
-
-const EMPTY_PAGE: GrantableMembersPage = {
-  items: [],
-  nextCursor: null,
-  total: 0,
-};
-
-const EMPTY_DATA: ShareData = {
-  floor: null,
-  choices: [],
-  grants: [],
-  members: EMPTY_PAGE,
-};
-
-async function send(
-  body: unknown,
-  method: 'POST' | 'PATCH' | 'DELETE'
-): Promise<boolean> {
-  const res = await fetch('/author/graph/visibility', {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.ok;
-}
-
 export function ShareDialog({
   t,
   spaceId,
@@ -128,174 +78,29 @@ export function ShareDialog({
   /** Re-resolve the canvas after any grant change (a grant widens who can see it). */
   onMutated: () => void;
 }) {
-  const [data, setData] = React.useState<ShareData | null>(null);
-  const [loadFailed, setLoadFailed] = React.useState(false);
-  const [working, setWorking] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
-  // Bumped after every grant/revoke to REMOUNT the picker (`key`), forcing it back
-  // to page 1 for a fresh blank-query starter list — the just-granted person drops
-  // out (the directory already excludes them server-side via p_exclude, ADR-0021 A5).
-  const [pickerEpoch, setPickerEpoch] = React.useState(0);
-  // Local client-side filter over the ASSIGNED list (grants + cohorts) — surfaced only
-  // when the assigned set is large (>10) so a long audience stays scannable, no server
-  // round-trip (the owner row is always kept).
-  const [assignedQuery, setAssignedQuery] = React.useState('');
-  // A share mutation re-resolves the canvas (and `router.refresh()`es), which would
-  // re-mount this dialog and close it mid-task. Defer that refresh to dialog CLOSE so
-  // several people can be assigned in one sitting; the dialog's own `reload()` still
-  // reflects each grant immediately.
-  const mutatedRef = React.useRef(false);
-
-  const buildUrl = React.useCallback(
-    (params: { q?: string; cursor?: string | null } = {}) => {
-      const search = new URLSearchParams({
-        space_id: spaceId,
-        node_id: node.id,
-      });
-      const trimmed = params.q?.trim();
-      if (trimmed) {
-        search.set('q', trimmed);
-      }
-      if (params.cursor) {
-        search.set('cursor', params.cursor);
-      }
-      search.set('limit', String(MEMBERS_PAGE_SIZE));
-      return `/author/graph/visibility?${search.toString()}`;
-    },
-    [spaceId, node.id]
-  );
-
-  // One page of grantable members for the AsyncSearchPicker. The route returns the
-  // full Share payload; we extract ONLY the `members` keyset page (the floor/cohort/
-  // grant slices are untouched by paging — they are reloaded by `reload()` after a
-  // mutation, never by the picker). A failed fetch yields an empty page (no leak).
-  const fetchMembersPage = React.useCallback(
-    async (
-      q: string,
-      cursor: string | null
-    ): Promise<AsyncSearchPage<GrantableMember>> => {
-      const res = await fetch(buildUrl({ q, cursor }));
-      if (!res.ok) {
-        return { items: [], nextCursor: null, total: 0 };
-      }
-      const payload = (await res.json()) as ShareData;
-      const page: GrantableMembersPage = payload.members ?? EMPTY_PAGE;
-      return {
-        items: page.items,
-        nextCursor: page.nextCursor,
-        total: page.total,
-      };
-    },
-    [buildUrl]
-  );
-
-  const reload = React.useCallback(async () => {
-    const res = await fetch(buildUrl());
-    if (res.ok) {
-      const next = (await res.json()) as ShareData;
-      setData(next);
-      setLoadFailed(false);
-    } else {
-      setData(EMPTY_DATA);
-      setLoadFailed(true);
-    }
-  }, [buildUrl]);
-
-  // Reset the dialog to its starter state on the closed→open transition — adjusted
-  // during render ("you might not need an effect"), not in an effect. This remounts
-  // the picker (epoch bump) and clears any prior audience/flags so a stale set never
-  // shows after a grant elsewhere.
-  if (useValueChanged(open) && open) {
-    setData(null);
-    setLoadFailed(false);
-    setCopied(false);
-    setAssignedQuery('');
-    setPickerEpoch((e) => e + 1);
-  }
-
-  // Genuine load effect: (re)fetch the audience while the dialog is open (and again
-  // if the query changes), so the visible set is always fresh. It also clears the
-  // deferred-refresh flag on open (a ref write — only valid here, not in render).
-  // `reload` only setStates AFTER an awaited fetch, so this is not the synchronous
-  // cascade the rule guards against.
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-    mutatedRef.current = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async setState (post-fetch) inside an owned data-load effect
-    void reload();
-  }, [open, reload]);
-
-  // Each mutation goes through the landed route, then reloads the audience AND
-  // re-resolves the canvas (a grant changes who can see the node). A failed
-  // (RLS-rejected) write is a clean no-op — the reload simply shows the unchanged
-  // state, no fence leak.
-  async function mutate(
-    body: unknown,
-    method: 'POST' | 'PATCH' | 'DELETE'
-  ): Promise<void> {
-    setWorking(true);
-    await send(body, method);
-    // Reload the full audience (floor/cohorts/grants), then remount the picker so it
-    // refetches page 1 — the granted person drops out (the directory excludes them
-    // server-side via p_exclude, ADR-0021 A5).
-    await reload();
-    setPickerEpoch((e) => e + 1);
-    setWorking(false);
-    // Mark dirty; the canvas refresh is flushed once on close (handleOpenChange) so the
-    // dialog stays open across multiple assignments.
-    mutatedRef.current = true;
-  }
-
-  // Flush the deferred canvas refresh exactly once, when the dialog actually closes.
-  function handleOpenChange(next: boolean): void {
-    if (!next && mutatedRef.current) {
-      mutatedRef.current = false;
-      onMutated();
-    }
-    onOpenChange(next);
-  }
-
-  function changeFloor(next: ResourceFloor): void {
-    void mutate({ resourceId: node.id, visibility: next }, 'PATCH');
-  }
-
-  function linkCohort(scopeId: string): void {
-    const body: CohortShareBody = {
-      grantType: 'cohort',
-      resourceId: node.id,
-      scopeId,
-    };
-    void mutate(body, 'POST');
-  }
-
-  function unlinkCohort(scopeId: string): void {
-    const body: CohortShareBody = {
-      grantType: 'cohort',
-      resourceId: node.id,
-      scopeId,
-    };
-    void mutate(body, 'DELETE');
-  }
-
-  function grantUser(userId: string): void {
-    const body: UserShareBody = {
-      grantType: 'user',
-      resourceId: node.id,
-      userId,
-    };
-    void mutate(body, 'POST');
-  }
-
-  function revokeUser(userId: string): void {
-    const body: UserShareBody = {
-      grantType: 'user',
-      resourceId: node.id,
-      userId,
-    };
-    void mutate(body, 'DELETE');
-  }
+  const {
+    data,
+    loadFailed,
+    working,
+    copied,
+    pickerEpoch,
+    assignedQuery,
+    setAssignedQuery,
+    floor,
+    availableCohorts,
+    linkedCohorts,
+    showAssignedSearch,
+    shownGrants,
+    shownCohorts,
+    fetchMembersPage,
+    handleOpenChange,
+    changeFloor,
+    linkCohort,
+    unlinkCohort,
+    grantUser,
+    revokeUser,
+    markCopied,
+  } = useShare({ spaceId, open, node, onOpenChange, onMutated });
 
   // Copy link — PURE navigation (Fork 4). A deep-link to the node in the Drive
   // (`?doc=<id>`); it grants nothing, RLS re-evaluates access at open time.
@@ -303,34 +108,12 @@ export function ShareDialog({
     const url = `${window.location.origin}${AUTHOR_BASE_PATH}/graph?doc=${encodeURIComponent(node.id)}`;
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      markCopied();
     } catch {
       // Clipboard blocked (insecure context / denied) — no-op; the affordance is
       // a convenience, never load-bearing.
     }
   }
-
-  const floor = data?.floor ?? null;
-  const linkedCohorts = (data?.choices ?? []).filter((c) => c.linked);
-  const availableCohorts = (data?.choices ?? []).filter((c) => !c.linked);
-  const grants = data?.grants ?? [];
-
-  // Local filter over the assigned list — only offered past 10 assignees. The owner row
-  // is never filtered (it is the anchor, not an "assignee").
-  const assignedCount = grants.length + linkedCohorts.length;
-  const showAssignedSearch = assignedCount > 10;
-  const aq = assignedQuery.trim().toLowerCase();
-  const shownGrants = aq
-    ? grants.filter(
-        (g) =>
-          g.displayName.toLowerCase().includes(aq) ||
-          (g.email?.toLowerCase().includes(aq) ?? false)
-      )
-    : grants;
-  const shownCohorts = aq
-    ? linkedCohorts.filter((c) => c.name.toLowerCase().includes(aq))
-    : linkedCohorts;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -548,135 +331,5 @@ export function ShareDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function SectionLabel({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-[0.04em] uppercase">
-      {icon}
-      {children}
-    </div>
-  );
-}
-
-/** Owner row — always shown, read-only (the owner can never lose their own node). */
-function OwnerRow({
-  t,
-  ownerUserId,
-  currentUserId,
-}: {
-  t: GraphTranslator;
-  ownerUserId: string | null;
-  currentUserId: string | null;
-}) {
-  const isYou = ownerUserId != null && ownerUserId === currentUserId;
-  const name = isYou ? t('graph.panel.ownerYou') : t('graph.panel.ownerMember');
-  return (
-    <li className="flex items-center gap-2.5 rounded-md px-1 py-1.5">
-      <EntityAvatar name={name} className="size-7" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">{name}</span>
-        <span className="text-muted-foreground text-xs">
-          {t('graph.share.ownerRow')}
-        </span>
-      </div>
-    </li>
-  );
-}
-
-/** One per-user grant row — avatar + name (+ email disambiguator) + provenance +
- * a Revoke control. `email` is the secondary line resolved by the co-member
- * directory (ADR-0020); provenance moves into the avatar tooltip so the row keeps
- * to two lines (name + email). */
-function PersonRow({
-  name,
-  email,
-  subtitle,
-  onRevoke,
-  revokeLabel,
-  disabled,
-}: {
-  name: string;
-  email: string | null;
-  subtitle: string;
-  onRevoke: () => void;
-  revokeLabel: string;
-  disabled: boolean;
-}) {
-  return (
-    <li className="hover:bg-muted/50 flex items-center gap-2.5 rounded-md px-1 py-1.5">
-      <Hint label={subtitle}>
-        <EntityAvatar name={name} className="size-7" />
-      </Hint>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">{name}</span>
-        <span className="text-muted-foreground truncate text-xs">
-          {email ?? subtitle}
-        </span>
-      </div>
-      <Hint label={revokeLabel}>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="text-muted-foreground hover:text-destructive shrink-0"
-          disabled={disabled}
-          onClick={onRevoke}
-          aria-label={revokeLabel}
-        >
-          <X className="size-4" aria-hidden />
-        </Button>
-      </Hint>
-    </li>
-  );
-}
-
-/** One cohort grant row — folded in from the old Visibility section. */
-function CohortRow({
-  name,
-  badge,
-  onRevoke,
-  revokeLabel,
-  disabled,
-}: {
-  name: string;
-  badge: string;
-  onRevoke: () => void;
-  revokeLabel: string;
-  disabled: boolean;
-}) {
-  return (
-    <li className="hover:bg-muted/50 flex items-center gap-2.5 rounded-md px-1 py-1.5">
-      <span
-        aria-hidden
-        className="bg-muted text-muted-foreground grid size-7 shrink-0 place-items-center rounded-full"
-      >
-        <Users className="size-3.5" />
-      </span>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate text-sm font-medium">{name}</span>
-        <Badge variant="secondary" className="shrink-0">
-          {badge}
-        </Badge>
-      </div>
-      <Hint label={revokeLabel}>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="text-muted-foreground hover:text-destructive shrink-0"
-          disabled={disabled}
-          onClick={onRevoke}
-          aria-label={revokeLabel}
-        >
-          <X className="size-4" aria-hidden />
-        </Button>
-      </Hint>
-    </li>
   );
 }
