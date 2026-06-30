@@ -22,7 +22,7 @@ import {
 } from '@workspace/settings-runtime';
 
 import { GlobalSystemRoleCatalogClient } from './global-system-role-catalog';
-import { PlatformSuperAdminClient } from './platform-super-admin.client';
+import { PlatformSuperAdminClient } from './platform-super-admin';
 import { SupportSpaceActivateButton } from './support-space-activate-button.client';
 import { FeatureFlagCheckboxForm } from '@/components/feature-flag-checkbox-form';
 import { RuntimeSettingSelectForm } from '@/components/runtime-setting-select-form';
