@@ -2,15 +2,6 @@ import { connection } from 'next/server';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@workspace/ui/components/card';
-import { Badge } from '@workspace/ui/components/badge';
 import { Skeleton } from '@workspace/ui/components/skeleton';
 import {
   PLATFORM_LOCALE_COOKIE,
@@ -18,11 +9,6 @@ import {
   RUNTIME_SETTING_KEYS,
 } from '@workspace/settings-runtime';
 
-import { SpaceInviteManagerClient } from '@/app/(account)/organizations/space-invite.manager.client';
-import { OrganizationRoleCatalogClient } from '@/app/(account)/space-settings/organization-role-catalog';
-import { SpaceAvatarForm } from '@/app/(account)/space-settings/space-avatar-form';
-import { SpaceMemberRolesClient } from '@/app/(account)/space-settings/space-member-roles.client';
-import { RuntimeSettingSelectForm } from '@/components/runtime-setting-select-form';
 import {
   listAccessibleSpacesForUser,
   readActiveSpaceIdFromCookies,
@@ -38,7 +24,6 @@ import {
   resolvePlatformFeatureFlagResolutionsForSession,
   resolveScopedPlatformLocaleValue,
   resolvePlatformLocaleForSession,
-  type PlatformFeatureFlagResolutionSource,
 } from '@/lib/runtime-settings.server';
 import { listSpaceMemberRoleAssignmentsAction } from '@/lib/space-member-role.actions';
 import type { SpaceMemberRoleAssignmentRow } from '@/lib/space-member-role.actions';
@@ -47,74 +32,21 @@ import { createClient } from '@/lib/supabase/server';
 import {
   getSpaceSettingsLocaleOptions,
   getServerSpaceSettingsTranslator,
-  getSpaceSettingsTranslator,
 } from '@/app/(account)/space-settings/space-settings.i18n';
+import {
+  getRoleInfo,
+  resolveSpaceAdminDelegationRows,
+} from '@/app/(account)/space-settings/space-settings.helpers';
+import {
+  SpaceAvatarSection,
+  SpaceDelegationPolicySection,
+  SpaceFeatureVisibilitySection,
+  SpaceInvitesSection,
+  SpaceMemberRolesSection,
+  SpaceOrgRolesSection,
+  SpaceRuntimeSettingsSection,
+} from '@/app/(account)/space-settings/sections';
 import { cookies, headers } from 'next/headers';
-
-const delegatedDomainUserPermissionKeys = [
-  'space.users.create',
-  'space.users.read',
-  'space.users.update',
-  'space.users.delete',
-] as const;
-
-type DelegatedDomainUserOperation =
-  (typeof delegatedDomainUserPermissionKeys)[number];
-
-function resolveSpaceAdminDelegationRows(permissionKeys: readonly string[]) {
-  const grantedKeys = new Set(permissionKeys);
-  return delegatedDomainUserPermissionKeys.map((key) => ({
-    key,
-    allowed: grantedKeys.has(key),
-  }));
-}
-
-function getRoleInfo(
-  role:
-    | { key: string | null; label: string | null }
-    | { key: string | null; label: string | null }[]
-    | null
-    | undefined
-): { key: string | null; label: string | null } {
-  const row = Array.isArray(role) ? role[0] : role;
-  const key =
-    typeof row?.key === 'string' && row.key.length > 0 ? row.key : null;
-  const label =
-    typeof row?.label === 'string' && row.label.length > 0 ? row.label : null;
-  return { key, label };
-}
-
-function resolveFeatureStateBadgeLabel(
-  enabled: boolean,
-  t: ReturnType<typeof getSpaceSettingsTranslator>
-) {
-  return enabled
-    ? t('spaceSettings.featureVisibility.state.enabled')
-    : t('spaceSettings.featureVisibility.state.disabled');
-}
-
-function resolveFeatureSourceLabel(
-  source: PlatformFeatureFlagResolutionSource,
-  t: ReturnType<typeof getSpaceSettingsTranslator>
-) {
-  if (source === 'organization_disabled') {
-    return t('spaceSettings.featureVisibility.source.organizationDisabled');
-  }
-
-  if (source === 'space_enabled') {
-    return t('spaceSettings.featureVisibility.source.spaceEnabled');
-  }
-
-  if (source === 'space_disabled') {
-    return t('spaceSettings.featureVisibility.source.spaceDisabled');
-  }
-
-  if (source === 'organization') {
-    return t('spaceSettings.featureVisibility.source.organization');
-  }
-
-  return t('spaceSettings.featureVisibility.source.globalDefault');
-}
 
 function SpaceSettingsFallback() {
   return (
@@ -301,21 +233,6 @@ async function SpaceSettingsContent() {
     spaceAdminPermissionKeys
   );
 
-  function getDelegationOperationLabel(
-    operation: DelegatedDomainUserOperation
-  ) {
-    if (operation === 'space.users.create') {
-      return t('spaceSettings.delegation.operations.create');
-    }
-    if (operation === 'space.users.read') {
-      return t('spaceSettings.delegation.operations.read');
-    }
-    if (operation === 'space.users.update') {
-      return t('spaceSettings.delegation.operations.update');
-    }
-    return t('spaceSettings.delegation.operations.delete');
-  }
-
   const { data: pendingRows } = await supabase
     .from('space_invites')
     .select(
@@ -348,254 +265,65 @@ async function SpaceSettingsContent() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{spaceRow.name}</CardTitle>
-          <CardDescription>
-            {t('spaceSettings.slug', { slug: spaceRow.slug })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <div>
-              <p className="text-sm font-medium">
-                {t('spaceSettings.avatar.title')}
-              </p>
-              <p className="text-muted-foreground text-sm">
-                {t('spaceSettings.avatar.description')}
-              </p>
-            </div>
-            <SpaceAvatarForm
-              spaceId={spaceRow.id}
-              currentValue={spaceRow.avatar_url ?? null}
-              submitLabel={t('runtimeSettings.actions.save')}
-              successMessage={t('runtimeSettings.messages.saved')}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <SpaceAvatarSection
+        spaceId={spaceRow.id}
+        spaceName={spaceRow.name}
+        spaceSlug={spaceRow.slug}
+        avatarUrl={spaceRow.avatar_url ?? null}
+        t={t}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{spaceRow.name}</CardTitle>
-          <CardDescription>
-            {t('spaceSettings.slug', { slug: spaceRow.slug })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SpaceInviteManagerClient
-            spaceId={spaceRow.id}
-            spaceName={spaceRow.name}
-            spaceSlug={spaceRow.slug}
-            locale={locale}
-            invitableRoles={invitableRoles}
-            pendingInvites={pendingInvites}
-          />
-        </CardContent>
-      </Card>
+      <SpaceInvitesSection
+        spaceId={spaceRow.id}
+        spaceName={spaceRow.name}
+        spaceSlug={spaceRow.slug}
+        locale={locale}
+        invitableRoles={invitableRoles}
+        pendingInvites={pendingInvites}
+        t={t}
+      />
 
-      <Card data-testid={`space-language-card-${spaceRow.id}`}>
-        <CardHeader>
-          <CardTitle>
-            {t('runtimeSettings.platformLocale.title.space')}
-          </CardTitle>
-          <CardDescription>
-            {t('runtimeSettings.platformLocale.description.space')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RuntimeSettingSelectForm
-            allowInherit
-            currentValue={resolveScopedPlatformLocaleValue(scopedLocale, {
-              allowInherit: true,
-              source: 'space scope',
-            })}
-            fieldLabel={t('runtimeSettings.platformLocale.fieldLabel')}
-            inheritOptionLabel={t(
-              'runtimeSettings.platformLocale.inherit.space'
-            )}
-            revalidatePath="/space-settings"
-            scope="space"
-            scopeId={spaceRow.id}
-            settingKey={RUNTIME_SETTING_KEYS.platformLocale}
-            submitLabel={t('runtimeSettings.actions.save')}
-            successMessage={t('runtimeSettings.messages.saved')}
-            options={localeOptions}
-            testId="space-platform-locale"
-          />
-        </CardContent>
-      </Card>
+      <SpaceRuntimeSettingsSection
+        spaceId={spaceRow.id}
+        currentValue={resolveScopedPlatformLocaleValue(scopedLocale, {
+          allowInherit: true,
+          source: 'space scope',
+        })}
+        localeOptions={localeOptions}
+        t={t}
+      />
 
-      <Card data-testid={`space-feature-visibility-${spaceRow.id}`}>
-        <CardHeader>
-          <CardTitle>{t('spaceSettings.featureVisibility.title')}</CardTitle>
-          <CardDescription>
-            {t('spaceSettings.featureVisibility.description')}
-          </CardDescription>
-          <CardAction>
-            <Badge
-              data-testid={`space-feature-visibility-effective-${spaceRow.id}`}
-              variant={
-                organizationSettingsFeature.effectiveValue
-                  ? 'default'
-                  : 'secondary'
-              }
-            >
-              {resolveFeatureStateBadgeLabel(
-                organizationSettingsFeature.effectiveValue,
-                t
-              )}
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-2">
-            <div
-              className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
-              data-testid={`space-feature-visibility-organization-gate-${spaceRow.id}`}
-            >
-              <span className="text-sm font-medium">
-                {t('spaceSettings.featureVisibility.organizationGateLabel')}
-              </span>
-              <Badge
-                variant={
-                  organizationSettingsFeature.organizationValue
-                    ? 'secondary'
-                    : 'outline'
-                }
-              >
-                {resolveFeatureStateBadgeLabel(
-                  Boolean(organizationSettingsFeature.organizationValue),
-                  t
-                )}
-              </Badge>
-            </div>
+      <SpaceFeatureVisibilitySection
+        spaceId={spaceRow.id}
+        feature={organizationSettingsFeature}
+        t={t}
+      />
 
-            <div
-              className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
-              data-testid={`space-feature-visibility-space-activation-${spaceRow.id}`}
-            >
-              <span className="text-sm font-medium">
-                {t('spaceSettings.featureVisibility.spaceActivationLabel')}
-              </span>
-              <Badge
-                variant={
-                  organizationSettingsFeature.spaceValue
-                    ? 'secondary'
-                    : 'outline'
-                }
-              >
-                {resolveFeatureStateBadgeLabel(
-                  Boolean(organizationSettingsFeature.spaceValue),
-                  t
-                )}
-              </Badge>
-            </div>
+      <SpaceMemberRolesSection
+        spaceId={spaceRow.id}
+        locale={locale}
+        roleOptions={invitableRoles}
+        members={memberRoleRows}
+        errorMessage={memberRolesError}
+        t={t}
+      />
 
-            <div
-              className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
-              data-testid={`space-feature-visibility-source-${spaceRow.id}`}
-            >
-              <span className="text-sm font-medium">
-                {t('spaceSettings.featureVisibility.resolutionSourceLabel')}
-              </span>
-              <span className="text-muted-foreground text-right text-sm">
-                {resolveFeatureSourceLabel(
-                  organizationSettingsFeature.source,
-                  t
-                )}
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('spaceSettings.memberRoles.title')}</CardTitle>
-          <CardDescription>
-            {t('spaceSettings.memberRoles.description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {memberRolesError ? (
-            <p className="text-destructive text-sm" role="alert">
-              {memberRolesError}
-            </p>
-          ) : (
-            <SpaceMemberRolesClient
-              spaceId={spaceRow.id}
-              locale={locale}
-              roleOptions={invitableRoles}
-              members={memberRoleRows}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      <Card data-testid={`space-delegation-policy-${spaceRow.id}`}>
-        <CardHeader>
-          <CardTitle>{t('spaceSettings.delegation.title')}</CardTitle>
-          <CardDescription>
-            {t('spaceSettings.delegation.description')}
-          </CardDescription>
-          <CardAction>
-            <Badge variant="outline">
-              {t('spaceSettings.delegation.denyByDefault')}
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {delegationPolicyError ? (
-            <p className="text-destructive text-sm" role="alert">
-              {delegationPolicyError}
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {spaceAdminDelegationRows.map((row) => (
-                <div
-                  key={row.key}
-                  className="bg-muted/30 border-border flex items-center justify-between rounded-md border px-3 py-2"
-                  data-testid={`space-delegation-policy-row-${row.key.replaceAll('.', '-')}`}
-                >
-                  <span className="text-sm font-medium">
-                    {getDelegationOperationLabel(row.key)}
-                  </span>
-                  <Badge variant={row.allowed ? 'secondary' : 'outline'}>
-                    {row.allowed
-                      ? t('spaceSettings.delegation.status.allowed')
-                      : t('spaceSettings.delegation.status.denied')}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <SpaceDelegationPolicySection
+        spaceId={spaceRow.id}
+        rows={spaceAdminDelegationRows}
+        errorMessage={delegationPolicyError}
+        t={t}
+      />
 
       {canManageRoleCatalog ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('spaceSettings.orgRoles.title')}</CardTitle>
-            <CardDescription>
-              {t('spaceSettings.orgRoles.description')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {customRolesError ? (
-              <p className="text-destructive text-sm" role="alert">
-                {customRolesError}
-              </p>
-            ) : (
-              <OrganizationRoleCatalogClient
-                organizationId={String(spaceRow.organization_id)}
-                roles={customRoles}
-                permissionCatalogKeys={permissionCatalogKeys}
-                locale={locale}
-              />
-            )}
-          </CardContent>
-        </Card>
+        <SpaceOrgRolesSection
+          organizationId={String(spaceRow.organization_id)}
+          roles={customRoles}
+          permissionCatalogKeys={permissionCatalogKeys}
+          locale={locale}
+          errorMessage={customRolesError}
+          t={t}
+        />
       ) : null}
     </div>
   );
