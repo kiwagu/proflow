@@ -21,7 +21,7 @@ import {
   runtimeLogLevelValues,
 } from '@workspace/settings-runtime';
 
-import { GlobalSystemRoleCatalogClient } from './global-system-role-catalog.client';
+import { GlobalSystemRoleCatalogClient } from './global-system-role-catalog';
 import { PlatformSuperAdminClient } from './platform-super-admin.client';
 import { SupportSpaceActivateButton } from './support-space-activate-button.client';
 import { FeatureFlagCheckboxForm } from '@/components/feature-flag-checkbox-form';
