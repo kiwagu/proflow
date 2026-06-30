@@ -29,8 +29,7 @@ const featureFlagMutationSchema = z
   .strict();
 
 export type MutatePlatformFeatureFlagResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 function mapFeatureFlagError(message?: string): string {
   if (!message) {

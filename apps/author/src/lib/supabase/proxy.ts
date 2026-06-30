@@ -30,9 +30,7 @@ const PAYLOAD_TENANT_COOKIE = 'payload-tenant';
 const PAYLOAD_TENANT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 type PayloadTenantSync =
-  | { kind: 'none' }
-  | { kind: 'clear' }
-  | { kind: 'set'; value: string };
+  { kind: 'none' } | { kind: 'clear' } | { kind: 'set'; value: string };
 
 type ActiveSpaceOptions = {
   activeSpaceIds: Set<string>;

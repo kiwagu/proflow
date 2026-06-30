@@ -3,8 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 
 export type ExchangeInviteMagicCallbackResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 /**
  * Finishes PKCE magic-link sign-in; sets auth cookies for the platform origin.

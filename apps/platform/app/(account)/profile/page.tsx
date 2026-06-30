@@ -16,6 +16,7 @@ import {
   FieldGroup,
   FieldTitle,
 } from '@workspace/ui/components/field';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import { TwoColumnLayout } from '@workspace/ui/components/two-column-layout';
 import {
   PLATFORM_LOCALE_COOKIE,
@@ -45,7 +46,7 @@ import type { ProfileFormValues } from './profile.schema';
 function ProfileFallback() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
-      <div className="bg-muted/50 h-[420px] w-full animate-pulse rounded-xl" />
+      <Skeleton className="bg-muted/50 h-[420px] w-full rounded-xl" />
     </div>
   );
 }

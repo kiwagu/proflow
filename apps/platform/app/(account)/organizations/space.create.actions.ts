@@ -18,8 +18,7 @@ import {
 } from './space.create.schema';
 
 export type SpaceCreateResult =
-  | { ok: true; spaceId: string }
-  | { ok: false; message: string };
+  { ok: true; spaceId: string } | { ok: false; message: string };
 
 export async function createSpaceAction(
   values: SpaceCreateFormValues,

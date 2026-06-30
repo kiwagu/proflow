@@ -1,7 +1,7 @@
 import { loadGraphMessages } from '@workspace/i18n-catalogs/graph';
 import type { ProjectionResult } from '@workspace/knowledge-contracts';
 
-import { DriveWorkbench } from './drive-workbench.client';
+import { DriveWorkbench } from './drive-workbench';
 import {
   DEFAULT_LENS_PROJECTION_ID,
   loadContainmentForest,

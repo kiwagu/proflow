@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 
 type PageProps = {
   searchParams: Promise<{ reason?: string }>;
@@ -43,8 +44,8 @@ function InviteErrorFallback() {
           <CardDescription className="sr-only">Loading</CardDescription>
         </CardHeader>
         <CardContent>
-          <div
-            className="bg-muted/50 h-16 w-full animate-pulse rounded-md"
+          <Skeleton
+            className="bg-muted/50 h-16 w-full rounded-md"
             aria-hidden
           />
         </CardContent>

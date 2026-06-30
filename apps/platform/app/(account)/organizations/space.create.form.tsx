@@ -210,9 +210,9 @@ export function SpaceCreateForm({ orgOptions, locale }: SpaceCreateFormProps) {
       </FieldGroup>
 
       {submitState && !submitState.ok && submitState.message ? (
-        <p className="text-destructive text-sm" role="alert">
+        <FieldError className="text-destructive text-sm">
           {submitState.message}
-        </p>
+        </FieldError>
       ) : null}
       {submitState?.ok ? (
         <p className="text-primary text-sm font-medium" role="status">

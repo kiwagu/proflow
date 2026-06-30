@@ -4,10 +4,10 @@ import { RenderLexical } from '@payloadcms/richtext-lexical/client';
 import type { DefaultTypedEditorState } from '@payloadcms/richtext-lexical';
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import { EditableDocumentTitle } from '@workspace/ui/components/platform/document-title';
 import { ArrowLeft, Check, Send } from 'lucide-react';
 import * as React from 'react';
 
-import { EditableDocumentTitle } from '@/app/graph/views/document-reader/document-title';
 import { WorkbenchChrome } from '@/app/graph/workbench-chrome';
 import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
 
@@ -151,6 +151,7 @@ export function DocEditorClient({
             onChange={setTitleValue}
             onCommit={commitTitle}
             onRevert={revertTitle}
+            ariaLabel="Document title"
             className="pl-[3rem]"
           />
           <RenderLexical

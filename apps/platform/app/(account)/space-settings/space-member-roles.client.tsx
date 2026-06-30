@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import {
   Card,
@@ -12,7 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Field, FieldLabel } from '@workspace/ui/components/field';
+import { Field, FieldError, FieldLabel } from '@workspace/ui/components/field';
+import { RoleBadgeList } from '@workspace/ui/components/platform/role-badge-list';
 import { cn } from '@workspace/ui/lib/utils';
 
 import {
@@ -69,9 +69,7 @@ export function SpaceMemberRolesClient({
       data-testid={`space-member-roles-${spaceId}`}
     >
       {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
+        <FieldError className="text-destructive text-sm">{error}</FieldError>
       ) : null}
 
       {members.map((member) => {
@@ -98,22 +96,16 @@ export function SpaceMemberRolesClient({
                 <p className="text-muted-foreground text-xs font-medium uppercase">
                   {t('memberRoles.currentRoles')}
                 </p>
-                {member.assignedRoles.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {member.assignedRoles.map((role) => (
-                      <Badge
-                        key={`${member.userId}-${role.key}`}
-                        variant="outline"
-                      >
-                        {role.label}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    {t('memberRoles.noneAssigned')}
-                  </p>
-                )}
+                <RoleBadgeList
+                  roles={member.assignedRoles}
+                  keyPrefix={member.userId}
+                  variant="outline"
+                  emptyFallback={
+                    <p className="text-muted-foreground text-sm">
+                      {t('memberRoles.noneAssigned')}
+                    </p>
+                  }
+                />
               </div>
 
               <Field>

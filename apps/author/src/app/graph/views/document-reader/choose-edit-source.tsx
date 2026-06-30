@@ -10,8 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@workspace/ui/components/dialog';
+import { OptionCard } from '@workspace/ui/components/platform/option-card';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
-import { cn } from '@workspace/ui/lib/utils';
 import { BookCheck, FilePen } from 'lucide-react';
 import * as React from 'react';
 
@@ -62,14 +62,14 @@ export function ChooseEditSourceDialog({
           aria-label={t('graph.reader.editChooseTitle')}
           className="flex flex-col gap-2"
         >
-          <SourceOption
+          <OptionCard
             selected={selected === 'published'}
             onSelect={() => setSelected('published')}
             icon={<BookCheck className="size-4" aria-hidden />}
             title={t('graph.reader.editFromPublished')}
           />
           {drafts.map((d) => (
-            <SourceOption
+            <OptionCard
               key={d.id}
               selected={selected === d.id}
               onSelect={() => setSelected(d.id)}
@@ -90,54 +90,5 @@ export function ChooseEditSourceDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function SourceOption({
-  selected,
-  onSelect,
-  icon,
-  title,
-  subtitle,
-}: {
-  selected: boolean;
-  onSelect: () => void;
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      className={cn(
-        'border-border flex h-auto items-center justify-start gap-3 rounded-md border px-3 py-2.5 text-left font-normal transition-colors',
-        selected
-          ? 'border-ring ring-ring/35 ring-[3px] hover:bg-transparent'
-          : 'hover:bg-accent'
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          'grid size-4 shrink-0 place-items-center rounded-full border',
-          selected ? 'border-primary' : 'border-muted-foreground/50'
-        )}
-      >
-        {selected ? <span className="bg-primary size-2 rounded-full" /> : null}
-      </span>
-      <span className="text-muted-foreground">{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{title}</span>
-        {subtitle ? (
-          <span className="text-muted-foreground block truncate text-xs">
-            {subtitle}
-          </span>
-        ) : null}
-      </span>
-    </Button>
   );
 }

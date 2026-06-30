@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "bun run ./scripts/build-capped.ts",
+    "refactor:scan": "bun run ./scripts/find-refactor-candidates.ts",
     "build:libs": "turbo run build --filter=\"./packages/*\"",
     "db:types": "make db-types",
     "db:types:check": "make db-types && git diff --exit-code -- packages/db/src/database.types.ts",

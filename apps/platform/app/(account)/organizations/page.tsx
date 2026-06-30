@@ -11,9 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
+import { RoleBadgeList } from '@workspace/ui/components/platform/role-badge-list';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import { PLATFORM_LOCALE_COOKIE } from '@workspace/settings-runtime';
 
 import { getIsSuperAdminForUser } from '@/lib/platform-nav-roles';
@@ -74,7 +75,7 @@ type OrgRow = {
 function OrganizationsFallback() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
-      <div className="bg-muted/50 h-48 w-full animate-pulse rounded-xl" />
+      <Skeleton className="bg-muted/50 h-48 w-full rounded-xl" />
     </div>
   );
 }
@@ -318,19 +319,12 @@ async function OrganizationsContent() {
                     </Button>
                   </CardAction>
                 ) : null}
-                {orgRoles.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {orgRoles.map((role) => (
-                      <Badge
-                        key={`org-${org.id}-${role.key}`}
-                        variant="secondary"
-                        className="text-[11px]"
-                      >
-                        {role.label}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
+                <RoleBadgeList
+                  roles={orgRoles}
+                  keyPrefix={`org-${org.id}`}
+                  className="mt-2"
+                  badgeClassName="text-[11px]"
+                />
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground mb-2 text-xs font-medium uppercase">
@@ -376,19 +370,12 @@ async function OrganizationsContent() {
                               {s.slug}
                             </span>
                           </div>
-                          {spaceRoles.length > 0 ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {spaceRoles.map((role) => (
-                                <Badge
-                                  key={`${s.id}-${role.key}`}
-                                  variant="secondary"
-                                  className="text-[11px]"
-                                >
-                                  {role.label}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : null}
+                          <RoleBadgeList
+                            roles={spaceRoles}
+                            keyPrefix={s.id}
+                            className="mt-1"
+                            badgeClassName="text-[11px]"
+                          />
                         </li>
                       );
                     })

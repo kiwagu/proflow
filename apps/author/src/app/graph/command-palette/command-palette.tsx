@@ -13,6 +13,7 @@ import {
   CommandShortcut,
 } from '@workspace/ui/components/command';
 import { EmptyState } from '@workspace/ui/components/empty-state';
+import { HighlightedText } from '@workspace/ui/components/highlight-text';
 import * as React from 'react';
 
 import {
@@ -20,7 +21,6 @@ import {
   iconForKind,
   kindLabel,
 } from '@/app/graph/presentation';
-import { HighlightedText } from '@/app/graph/views/search/highlight-text';
 import { useLexicalSearch } from '@/app/graph/views/search/use-lexical-search';
 
 /**

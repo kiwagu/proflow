@@ -12,6 +12,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
+import { FieldError } from '@workspace/ui/components/field';
+import { BorderedRow } from '@workspace/ui/components/platform/bordered-row';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import {
   PLATFORM_LOCALE_COOKIE,
   defaultPlatformFeatureFlags,
@@ -21,8 +24,8 @@ import {
   runtimeLogLevelValues,
 } from '@workspace/settings-runtime';
 
-import { GlobalSystemRoleCatalogClient } from './global-system-role-catalog.client';
-import { PlatformSuperAdminClient } from './platform-super-admin.client';
+import { GlobalSystemRoleCatalogClient } from './global-system-role-catalog';
+import { PlatformSuperAdminClient } from './platform-super-admin';
 import { SupportSpaceActivateButton } from './support-space-activate-button.client';
 import { FeatureFlagCheckboxForm } from '@/components/feature-flag-checkbox-form';
 import { RuntimeSettingSelectForm } from '@/components/runtime-setting-select-form';
@@ -53,7 +56,7 @@ import { cookies, headers } from 'next/headers';
 function OperatorConsoleFallback() {
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
-      <div className="bg-muted/50 h-48 w-full animate-pulse rounded-xl" />
+      <Skeleton className="bg-muted/50 h-48 w-full rounded-xl" />
     </div>
   );
 }
@@ -408,9 +411,24 @@ async function OperatorConsoleContent() {
                           {orgSpaces.map((space) => {
                             const isCurrent = activeSpaceId === space.id;
                             return (
-                              <li
+                              <BorderedRow
                                 key={space.id}
-                                className="border-border flex items-center justify-between gap-3 rounded-md border p-3"
+                                as="li"
+                                actions={
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    {isCurrent ? (
+                                      <Badge variant="secondary">
+                                        {t('superAdmin.support.currentBadge')}
+                                      </Badge>
+                                    ) : null}
+                                    <SupportSpaceActivateButton
+                                      spaceId={space.id}
+                                      label={t(
+                                        'superAdmin.support.openSpaceSettings'
+                                      )}
+                                    />
+                                  </div>
+                                }
                               >
                                 <div className="flex min-w-0 flex-col gap-1">
                                   <span className="font-medium">
@@ -420,20 +438,7 @@ async function OperatorConsoleContent() {
                                     {space.slug}
                                   </span>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                  {isCurrent ? (
-                                    <Badge variant="secondary">
-                                      {t('superAdmin.support.currentBadge')}
-                                    </Badge>
-                                  ) : null}
-                                  <SupportSpaceActivateButton
-                                    spaceId={space.id}
-                                    label={t(
-                                      'superAdmin.support.openSpaceSettings'
-                                    )}
-                                  />
-                                </div>
-                              </li>
+                              </BorderedRow>
                             );
                           })}
                         </ul>
@@ -456,14 +461,14 @@ async function OperatorConsoleContent() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {globalRolesError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {globalRolesError}
-            </p>
+            </FieldError>
           ) : null}
           {permissionCatalogError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {permissionCatalogError}
-            </p>
+            </FieldError>
           ) : null}
           <GlobalSystemRoleCatalogClient
             roles={globalRoles}

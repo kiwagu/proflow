@@ -22,8 +22,7 @@ export function normalizeLogLevel(level: string): LogLevelName | undefined {
  */
 export function resolveLogLevel(): LogLevelName {
   const explicit = readEnv('LOG_LEVEL')?.toLowerCase() as
-    | LogLevelName
-    | undefined;
+    LogLevelName | undefined;
   if (explicit && ALLOWED.has(explicit)) {
     return explicit;
   }
