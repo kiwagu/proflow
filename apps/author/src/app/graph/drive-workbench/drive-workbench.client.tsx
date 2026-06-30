@@ -20,7 +20,7 @@ import { DriveProjectionView } from '../views/drive';
 import { SearchView } from '../views/search/search.view';
 import { DocumentReader } from '../views/document-reader/document-reader.view';
 import { WorkbenchChrome } from '../workbench-chrome';
-import { ResourcePanel } from '../views/resource-panel/resource-panel';
+import { ResourcePanel } from '../views/resource-panel';
 import type { ResourceFloor } from '../graph-data.types';
 import type {
   DriveScope,

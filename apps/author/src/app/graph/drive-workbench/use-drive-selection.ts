@@ -4,7 +4,7 @@ import type { ProjectionResult } from '@workspace/knowledge-contracts';
 import * as React from 'react';
 
 import type { SearchSelection } from '../views/search/search.view';
-import type { SelectedNode } from '../views/resource-panel/resource-panel';
+import type { SelectedNode } from '../views/resource-panel';
 
 /**
  * Selection / active node for the Drive workbench — the transient Details drawer (NOT a
