@@ -13,9 +13,16 @@
  *   spaces/<space_id>/kb/<node_id>/<object_key>
  *   [1]='spaces'  [2]=space_id  [3]='kb'  [4]=node_id
  *
- * Every policy delegates to private.auth_user_can_access_resource (owner ⊕
- * base+floor/cohort ⊕ per-user grant ⊕ hierarchy ⊕ inherited containment grant),
- * resolving the node by path segment [4] and pinning its space to segment [2].
+ * READ vs WRITE mirror the graph's OWN two fences (asymmetric by design):
+ *   - SELECT (download) delegates to private.auth_user_can_access_resource(..'read')
+ *     (owner ⊕ base+floor/cohort ⊕ per-user grant ⊕ hierarchy ⊕ inherited containment
+ *     grant) — a grantee can READ the bytes, mirroring the node SELECT fence.
+ *   - INSERT/UPDATE/DELETE (write) mirror the `knowledge_resources` UPDATE policy
+ *     EXACTLY: owner-sovereign OR auth_user_can_access_in_space('space.knowledge.update').
+ *     Grants are a READ dimension (ADR-0017 §1.5) and are NOT composed for writes — a
+ *     read-grantee can download but must NOT overwrite/delete the bytes. (ADR-0026
+ *     amended: the read-composition predicate over-grants for writes.)
+ * Every policy resolves the node by path segment [4] and pins its space to segment [2].
  * The r.space_id = segment[2] conjunct is the cross-space isolation belt and MUST
  * appear in every policy. A malformed path (missing/short segments, no matching
  * node) fails CLOSED — the exists() naturally denies.
@@ -67,8 +74,10 @@ with check (
     select 1 from public.knowledge_resources r
     where r.id = (storage.foldername(name))[4]
       and r.space_id = (storage.foldername(name))[2]
-      and private.auth_user_can_access_resource(
-            r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.update')
+      and (
+        r.owner_user_id = (select auth.uid())
+        or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+      )
   )
 );
 
@@ -82,8 +91,10 @@ using (
     select 1 from public.knowledge_resources r
     where r.id = (storage.foldername(name))[4]
       and r.space_id = (storage.foldername(name))[2]
-      and private.auth_user_can_access_resource(
-            r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.update')
+      and (
+        r.owner_user_id = (select auth.uid())
+        or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+      )
   )
 )
 with check (
@@ -94,8 +105,10 @@ with check (
     select 1 from public.knowledge_resources r
     where r.id = (storage.foldername(name))[4]
       and r.space_id = (storage.foldername(name))[2]
-      and private.auth_user_can_access_resource(
-            r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.update')
+      and (
+        r.owner_user_id = (select auth.uid())
+        or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+      )
   )
 );
 
@@ -109,7 +122,9 @@ using (
     select 1 from public.knowledge_resources r
     where r.id = (storage.foldername(name))[4]
       and r.space_id = (storage.foldername(name))[2]
-      and private.auth_user_can_access_resource(
-            r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.update')
+      and (
+        r.owner_user_id = (select auth.uid())
+        or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+      )
   )
 );

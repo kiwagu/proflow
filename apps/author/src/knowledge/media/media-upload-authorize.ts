@@ -85,18 +85,17 @@ export async function authorizeMediaUpload(
   }
 
   // Existence + READ fence (fail-closed): the SELECT is RLS-scoped, so a node the
-  // caller cannot even see yields no row → 404. The node-UPDATE fence is
-  // deliberately NOT re-implemented here — duplicating it would drift from the
-  // composing predicate `private.auth_user_can_access_resource` (owner ⊕ base/floor
-  // ⊕ per-user grant ⊕ hierarchy ⊕ ADR-0023 inherited grant), which is private /
-  // non-REST-callable. Instead the `storage.objects` INSERT policy mirrors
-  // node-update EXACTLY and gates the mint below under the caller's JWT, so a denied
-  // caller is refused there and per-user / inherited-containment grants
-  // (ADR-0019/0023) compose for free — no coarser space-level stand-in that would
-  // wrongly deny a node-level grantee.
+  // caller cannot even see yields no row → 404. Then the node-UPDATE fence, mirroring
+  // the `knowledge_resources` UPDATE policy EXACTLY: owner-sovereign OR the space-level
+  // `space.knowledge.update` verb. Grants are a READ dimension (ADR-0017 §1.5) and are
+  // deliberately NOT composed for WRITES — a read-grantee can download the bytes but
+  // must NOT overwrite/delete them (ADR-0026 amended: the write fence mirrors node-edit,
+  // not the read-composition predicate). The check is side-effect-free (no UPDATE probe
+  // — that would bump `updated_at`/recency); the `storage.objects` INSERT policy enforces
+  // the SAME fence as the backstop at mint.
   const { data: node, error: nodeErr } = await db
     .from('knowledge_resources')
-    .select('id')
+    .select('id,owner_user_id')
     .eq('id', input.nodeId)
     .eq('space_id', input.spaceId)
     .maybeSingle();
@@ -105,6 +104,16 @@ export async function authorizeMediaUpload(
   }
   if (!node?.id) {
     throw new MediaAuthorizeError('Node not found or not accessible.', 404);
+  }
+
+  if (node.owner_user_id !== deps.userId) {
+    const { data: canUpdate, error: verbErr } = await db.rpc(
+      'auth_user_can_access_in_space',
+      { p_space_id: input.spaceId, p_permission_key: 'space.knowledge.update' }
+    );
+    if (verbErr || canUpdate !== true) {
+      throw new MediaAuthorizeError('Node not updatable.', 403);
+    }
   }
 
   const storagePath = buildStoragePath(
