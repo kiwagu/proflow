@@ -56,3 +56,52 @@ export async function setResourceDescription(
   }
   return { node_id: data.node_id, body: data.body };
 }
+
+export type SetResourceMediaInput = {
+  spaceId: string;
+  nodeId: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  originalFilename: string;
+  checksum?: string | null;
+  durationMs?: number | null;
+};
+
+/**
+ * Set/update a node's media metadata (UPSERT by node_id) under the user's RLS
+ * (`space.knowledge.update`), the CONFIRM leg of an upload (ADR-0026 §5): called
+ * ONLY after the bytes have landed in the `kb-media` bucket, so the satellite row
+ * never points at absent bytes. `created_by` comes from `deps.userId`, NEVER the
+ * body. `storage_bucket` defaults to the DB default (`kb-media`). The 1:1 media
+ * satellite serves `file`/`video` (later `image`/`pdf`/`audio`) over one schema.
+ */
+export async function setResourceMedia(
+  input: SetResourceMediaInput,
+  deps: KbAttributeDeps
+): Promise<{ node_id: string; storage_path: string }> {
+  const { db, userId } = deps;
+  const { data, error } = await kbSchema(db)
+    .from('resource_media_meta')
+    .upsert(
+      {
+        node_id: input.nodeId,
+        space_id: input.spaceId,
+        storage_path: input.storagePath,
+        mime_type: input.mimeType,
+        size_bytes: input.sizeBytes,
+        original_filename: input.originalFilename,
+        checksum: input.checksum ?? null,
+        duration_ms: input.durationMs ?? null,
+        created_by: userId,
+      },
+      { onConflict: ON_NODE_ID }
+    )
+    .select('node_id,storage_path')
+    .single();
+  if (error || !data) {
+    // RLS rejection (no update verb / node not accessible) → clean failure.
+    throw new Error(`setResourceMedia: ${error?.message ?? 'no row'}`);
+  }
+  return { node_id: data.node_id, storage_path: data.storage_path };
+}

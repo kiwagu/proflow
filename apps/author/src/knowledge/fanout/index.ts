@@ -52,8 +52,10 @@ export {
 } from './copy-resource.fanout';
 export {
   setResourceDescription,
+  setResourceMedia,
   type KbAttributeDeps,
   type SetResourceDescriptionInput,
+  type SetResourceMediaInput,
 } from './kb-attribute.fanout';
 export {
   setResourceStarred,

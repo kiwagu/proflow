@@ -23,6 +23,46 @@ type SatelliteBase = {
 type DescriptionRow = SatelliteBase & { body: string; created_by: string };
 
 /**
+ * `resource_media_meta` (prefix `kmm`, ADR-0026) — the generic 1:1 media satellite
+ * keyed by `node_id`. Holds the storage pointer + display metadata for a
+ * `file`/`video` (later `image`/`pdf`/`audio`) node; the BYTES live in the private
+ * `kb-media` bucket. `checksum`/`duration_ms` are nullable generic extras.
+ */
+type MediaMetaRow = SatelliteBase & {
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  original_filename: string;
+  checksum: string | null;
+  duration_ms: number | null;
+  created_by: string;
+};
+
+type MediaMetaInsert = {
+  node_id: string;
+  space_id: string;
+  storage_bucket?: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  original_filename: string;
+  checksum?: string | null;
+  duration_ms?: number | null;
+  created_by: string;
+};
+
+type MediaMetaUpdate = {
+  storage_bucket?: string;
+  storage_path?: string;
+  mime_type?: string;
+  size_bytes?: number;
+  original_filename?: string;
+  checksum?: string | null;
+  duration_ms?: number | null;
+};
+
+/**
  * `resource_activity` (prefix `kra`, ADR-0016) — the append-only activity-log
  * spine. NOT the 1:1 `node_id` satellite shape: it is 1:N keyed by `resource_id`,
  * with a `user_id` (per-user open) / `source` discriminator / `event_id` dedupe.
@@ -68,6 +108,11 @@ export type KbDatabase = {
         ResourceActivityRow,
         ResourceActivityInsert,
         never
+      >;
+      resource_media_meta: SatelliteTable<
+        MediaMetaRow,
+        MediaMetaInsert,
+        MediaMetaUpdate
       >;
     };
     Views: { [_ in never]: never };
