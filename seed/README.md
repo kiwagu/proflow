@@ -55,7 +55,7 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`per-user-share`, `knowledge-base`, `search`, `board`, `shared`, `hierarchy`, `trash` —
+`per-user-share`, `knowledge-base`, `search`, `media`, `board`, `shared`, `hierarchy`, `trash` —
 group the scenarios for one capability so the seed stays runnable as the catalog grows. A
 scenario opts into a preset via its `presets` field. `access` is cohort/floor sharing;
 `shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
@@ -135,6 +135,29 @@ highlight on the leaf. The chain is nested via the scenario's `children` (the sa
 surfaces `deepLeafId`/`deepLeafTitle`/`deepLeafTerm` + the `deepChainFolderTitles`/
 `deepChainFolderIds` (outermost first) so a deep-tree advanced-search spec can assert the
 whole path renders.
+`media` is the KB media substrate (ADR-0026 / slice-13): the `knowledge-base` scenario ALSO
+opts into it, making `file`/`video` nodes REAL by uploading a small byte payload through the
+product's OWN signed-upload transport — the materializer authorizes a signed upload URL
+(`/author/graph/media?op=upload-url`), PUTs the bytes to the private `kb-media` bucket via
+`uploadToSignedUrl`, then confirms the `kb.resource_media_meta` (`kmm`) satellite
+(`attribute:'media'`), so both a bucket object AND a satellite row exist, fenced by the SAME
+`storage.objects` / satellite RLS as production (never a service-role / direct-SQL seed). A
+node opts in by declaring a `media: { bytes, mimeType, filename }` payload on a `file`/`video`
+node (the mime must pass `isAllowedMediaMime`; the validator enforces it offline). The corpus
+carries: a real `file` (`kb/file-owned`) + a real `video` (`kb/video-owned`) owned by the
+primary user (the happy path — upload, download the exact bytes, ResourcePanel Media section);
+a PRIVATE file owned by `searcherB` (`kb/file-private-other`, the download RLS-negative); a
+file nested under the ancestor-shared folder (`kb/inherited-file`, the ADR-0023 inherited-grant
+download positive for the grantee); and a REAL file (owner-uploaded bytes) per-user-granted
+to a NODE-ONLY member (`kb/file-node-grant`, granted to `mediaGrantee` — a plain `member`
+WITHOUT space-wide `space.knowledge.update`), which exercises the READ/WRITE ASYMMETRY: the
+per-user grant is a READ dimension, so the grantee CAN download the bytes (the storage-RLS
+SELECT composes grants) but is DENIED an upload (the WRITE fence mirrors node-UPDATE exactly
+— `owner OR space.knowledge.update`, grants NOT composed — so a read-grantee can never
+overwrite another user's file bytes). Bytes egress ONLY via short-lived signed URLs; RLS is
+the sole fence. The ADR-0026 media matrix e2e (`knowledge-media-substrate.e2e.spec.ts`) draws
+this corpus via `seedMediaSubstrateFixture` and drives the REAL `/author/graph/media`
+upload/download transport against REAL Storage.
 
 ## The dictionary
 
@@ -207,6 +230,26 @@ shared fixture — no inline tree — and asserts the match classes (`догов
 `GETTING`) plus the RLS-absence half (a non-grantee's PRIVATE node and another space's node
 stay ABSENT), proving search is a SUBSTRATE capability, not Drive-bound. One corpus, two
 consumers, one dictionary.
+
+The KB media matrix spec (`knowledge-media-substrate.e2e.spec.ts`, ADR-0026 / slice-13, the
+MERGE GATE) draws its corpus from the SAME `knowledge-base` scenario via
+`seedMediaSubstrateFixture`, and drives the REAL upload/download transport against REAL
+Storage through the shared create-vocabulary — `seedClientFor(actor).uploadMediaUrl` /
+`.setMedia` / `.downloadMediaUrl` (the live `/author/graph/media` + `attribute:'media'`
+routes), each RLS-fenced as the acting user. It proves the FUNCTIONAL path (upload → the exact
+bytes round-trip on download → the ResourcePanel Media section) for `file` AND `video`, and the
+SECURITY gate (the bytes inherit the FULL access model because `storage.objects` RLS delegates
+to `auth_user_can_access_resource`): a non-grantee cannot mint a download URL nor fetch the
+object directly, the direct/anon object path fails closed on the private bucket, a cross-space
+node is unreachable, an ancestor-folder grantee downloads the nested file via the inherited
+grant, a non-owner-non-grantee (no space-wide update) cannot mint an UPLOAD URL, and — the
+read/write asymmetry — a NODE-ONLY read-grantee (a per-user grant, no space-wide update) CAN
+download the granted file (read-grant composes on the storage-RLS SELECT) but is DENIED an
+upload of it (the write fence mirrors node-UPDATE exactly — `owner OR space.knowledge.update`,
+grants NOT composed — so a read-grantee can never overwrite the bytes; a direct object write
+also fails and the owner's bytes stay intact). The other-space negative is built in the
+fixture's second tenant (the catalog is single-space). Every denial is proven by RLS, not an
+app filter.
 
 ## Extending the catalog
 

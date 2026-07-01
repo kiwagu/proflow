@@ -25,6 +25,18 @@ export function buildKnowledgeBaseSpec(tagNodeId: string) {
 const KB_TAG = 'Knowledge Base';
 
 /**
+ * Deterministic, few-KB fixture byte payloads for the KB media substrate (ADR-0026).
+ * Plain text (an allowed mime — NOT in the denylist), so the e2e can round-trip the
+ * EXACT bytes on download (assertion 2). Kept tiny — reference content, not a real
+ * asset. Distinct contents per node so a download assertion can prove it fetched the
+ * RIGHT object, not just any object.
+ */
+const FILE_FIXTURE_BYTES =
+  'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n';
+const VIDEO_FIXTURE_BYTES =
+  'ProFlow KB media fixture — a "video" node over the SAME substrate (ADR-0026).\nOne generic satellite + one bucket serves file AND video; the player is a later slice.\n';
+
+/**
  * Knowledge-base scenario — a tagged slice of articles surfaced as a grid, AND the
  * lexical-search corpus (slice-12, ADR-0024). The KB grid shows the canonical
  * projection (tag content with one shared tag, then a saved KB projection selects
@@ -71,13 +83,20 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search — the matched leaf rendered in its fully-expanded ancestor tree at unbounded depth.',
-  presets: ['knowledge-base', 'search'],
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
+  presets: ['knowledge-base', 'search', 'media'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
     // and is the grantee of the inherited-folder positive. `admin` role so base read
     // holds — the access DIMENSION (privacy / inheritance), not the verb, is the subject.
     { ref: 'searcherB', role: 'admin', displayName: 'Searcher Bea' },
+    // A NODE-ONLY grantee for the media read/write asymmetry (ADR-0026, assertions
+    // 11a/11b): a plain `member` (read + create, but NOT `space.knowledge.update`
+    // space-wide). It receives a PER-USER READ grant on `kb/file-node-grant`. That grant
+    // composes into the storage-RLS SELECT (download), so the grantee CAN read the bytes
+    // (11a) — but the WRITE fence is owner-or-space-update and does NOT compose grants, so
+    // the grantee is DENIED an upload URL (11b): a read-grantee cannot overwrite the bytes.
+    { ref: 'mediaGrantee', role: 'member', displayName: 'Milo Media' },
   ],
   tree: [
     {
@@ -122,6 +141,64 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
             'This article is intentionally left out of the knowledge base, so it never appears in the KB grid.',
             'It exists to prove two things at once: the projection selects by tag — only tagged articles show up — and a document can sit in the space as an unpublished draft.'
           ),
+        },
+
+        // ── KB media substrate: real file/video bytes (ADR-0026) ─────────────────
+        // These nodes are made REAL through the product's OWN signed-upload transport:
+        // the materializer authorizes an upload URL, PUTs `media.bytes` to the private
+        // `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kmm` satellite —
+        // so a bucket object AND a satellite row both exist, fenced by the SAME
+        // storage/satellite RLS as production (never a service-role/direct-SQL seed).
+        {
+          // Owned file — the functional happy path (assertions 1–3): owner uploads,
+          // owner downloads the EXACT bytes, the ResourcePanel shows filename/size/mime.
+          ref: 'kb/file-owned',
+          kind: 'file',
+          title: 'Media Handbook (file)',
+          description: 'A real uploaded file — the KB media happy path.',
+          media: {
+            bytes: FILE_FIXTURE_BYTES,
+            mimeType: 'text/plain',
+            filename: 'media-handbook.txt',
+          },
+        },
+        {
+          // Owned video — assertion 4: the SAME substrate (one satellite + one bucket)
+          // serves `video` too. The player is a later slice; upload/download is real now.
+          ref: 'kb/video-owned',
+          kind: 'video',
+          title: 'Intro Clip (video)',
+          description:
+            'A real uploaded video — one substrate serves file & video.',
+          media: {
+            bytes: VIDEO_FIXTURE_BYTES,
+            mimeType: 'text/plain',
+            filename: 'intro-clip.txt',
+          },
+        },
+        {
+          // Read/write asymmetry (assertions 11a/11b): a REAL file owned by `admin`,
+          // PER-USER granted to `mediaGrantee` (a plain `member` WITHOUT space-wide
+          // `space.knowledge.update`). Its bytes are uploaded by the OWNER through the real
+          // path (so a `kmm` row + object exist). The per-user grant is a READ-only
+          // dimension:
+          //  - DOWNLOAD (storage-RLS SELECT composes the grant) → the grantee CAN read the
+          //    bytes (11a);
+          //  - UPLOAD (the WRITE fence = owner-or-space-update, grants NOT composed) → the
+          //    grantee is DENIED (11b) — a read-grantee must never overwrite another user's
+          //    bytes. This is the write-fence regression guard.
+          ref: 'kb/file-node-grant',
+          kind: 'file',
+          title: 'Node-Granted Read Target (file)',
+          description:
+            'A file per-user-granted to a node-only member — the read-grant allows download, the write fence blocks upload.',
+          userGrants: ['mediaGrantee'],
+          media: {
+            bytes:
+              'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
+            mimeType: 'text/plain',
+            filename: 'node-granted-read-target.txt',
+          },
         },
 
         // ── search corpus: the multi-locale match set (ADR-0024 §3) ──────────────
@@ -223,6 +300,26 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
                 'Поиск наследует ту же модель доступа: документ находится в результатах того, кому папка была предоставлена, — наследуемая выдача проходит через поиск.'
               ),
             },
+            {
+              // Inherited-grant DOWNLOAD positive (ADR-0026, assertion 8): a real file
+              // owned by `admin`, nested under the folder shared to `searcherB`. Bea was
+              // NEVER granted this file directly — only its ancestor folder — yet the
+              // inherited-grant disjunct composes through the storage-RLS SELECT, so she
+              // can mint a download URL and fetch the bytes. Bytes are seeded by the
+              // OWNER (admin) through the real upload path.
+              ref: 'kb/inherited-file',
+              kind: 'file',
+              owner: 'admin',
+              title: 'Inherited Lease Attachment (file)',
+              description:
+                'A file inside the shared folder — Bea downloads it via inheritance.',
+              media: {
+                bytes:
+                  'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
+                mimeType: 'text/plain',
+                filename: 'inherited-lease-attachment.txt',
+              },
+            },
           ],
         },
 
@@ -314,6 +411,27 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
         'Это приватная договорённость, принадлежащая другому пользователю. Никому не предоставлен доступ, ничего не опубликовано.',
         'Её заголовок совпадает по префиксу с поисковым запросом, но для не-владельца она отсутствует в результатах: фильтрует строки RLS, а не прикладной фильтр.'
       ),
+    },
+
+    // ── media DOWNLOAD RLS-negative: another user's PRIVATE file (assertion 5) ───
+    // A real file owned by `searcherB`, default (private) visibility, NO grant. Its
+    // bytes DO exist in the bucket (uploaded by its owner through the real path), so a
+    // failed download by `admin` proves the RLS byte fence — not a missing object.
+    // `admin` (a non-grantee) gets NO satellite row → no signed URL; the object path
+    // fetched directly also fails (storage-RLS mirrors node-read).
+    {
+      ref: 'kb/file-private-other',
+      kind: 'file',
+      owner: 'searcherB',
+      title: 'Bea Private Attachment (file)',
+      description:
+        "Bea's private file — its bytes must NOT reach a non-grantee.",
+      media: {
+        bytes:
+          'ProFlow KB media fixture — a PRIVATE file owned by another user (ADR-0026 assertion 5).\nThese bytes exist in the bucket but only the owner (or a grantee) may mint a signed URL.\n',
+        mimeType: 'text/plain',
+        filename: 'bea-private-attachment.txt',
+      },
     },
   ],
   projections: [

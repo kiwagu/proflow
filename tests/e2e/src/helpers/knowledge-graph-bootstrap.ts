@@ -23,6 +23,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { request } from '@playwright/test';
 import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import {
   actorCookieHeader,
@@ -1956,6 +1957,209 @@ export async function seedSearchCorpusFixture(
  * the ephemeral space-B tenant the fixture minted for the other-space negative. */
 export async function teardownSearchCorpusFixture(
   fx: SearchCorpusFixture | undefined
+): Promise<void> {
+  if (fx?.otherSpace?.tenant) {
+    await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);
+  }
+}
+
+// ── ADR-0026 (slice-13): KB media substrate fixture (the merge gate) ─────────
+//
+// The media e2e (`knowledge-media-substrate.e2e.spec.ts`) drives the REAL signed-upload/
+// download transport (`/author/graph/media` + `attribute:'media'`) against REAL Storage,
+// RLS-fenced as each acting user — never a service-role/direct-SQL insert of media. The
+// seeded corpus comes ENTIRELY from the shared `KNOWLEDGE_BASE_SCENARIO` (the `media`
+// preset), so the demo DB and the test make `file`/`video` nodes real the SAME way, through
+// the one create-vocabulary (the materializer's `uploadNodeMedia`: authorize → PUT via
+// `uploadToSignedUrl` → confirm the `kmm` satellite). This wrapper resolves the named node
+// refs + actors + the seeded storage paths (read via the tenant's service client, for the
+// direct-object-fetch negatives), and mints a SECOND tenant for the cross-space negative
+// (assertion 7 — not expressible in the single-space scenario model).
+
+/** The KB bucket the substrate stores bytes in — re-exported so the spec fetches objects
+ * directly (the no-signed-token / anon negatives) against the SAME bucket the seed uses. */
+export const MEDIA_BUCKET = KB_MEDIA_BUCKET;
+
+/** The exact fixture bytes the KB scenario seeds per node (kept in sync with
+ * `knowledge-base.ts`) — the download round-trip (assertion 2) asserts the bytes returned
+ * by the signed URL equal THESE. */
+export const MEDIA_FIXTURE_BYTES = {
+  fileOwned:
+    'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n',
+  videoOwned:
+    'ProFlow KB media fixture — a "video" node over the SAME substrate (ADR-0026).\nOne generic satellite + one bucket serves file AND video; the player is a later slice.\n',
+  inherited:
+    'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
+  nodeGrant:
+    'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
+} as const;
+
+/** The KB media substrate fixture, resolved from the shared `KNOWLEDGE_BASE_SCENARIO`
+ * plus a second tenant for the cross-space negative (ADR-0026 §3). Every `…Id` is a
+ * `knr_…`; storage paths are the seeded `kmm.storage_path` (for the direct-fetch fences). */
+export type MediaSubstrateFixture = {
+  /** Space A — the space the owner (`admin`) authors + downloads in. */
+  spaceId: string;
+  /** The `Knowledge Base` folder that contains the owned file/video — the browser
+   * opens `?folder=<this>` to reach the file card + its ResourcePanel (assertion 3). */
+  kbFolderId: string;
+  /** Owned file (real bytes) — the functional happy path (assertions 1–3). */
+  fileOwnedId: string;
+  fileOwnedPath: string;
+  /** Owned video (real bytes) — one substrate serves file & video (assertion 4). */
+  videoOwnedId: string;
+  videoOwnedPath: string;
+  /** A REAL file (owner-uploaded bytes) per-user-granted to `nodeGrantee` (a node-only
+   * member) — the read/write asymmetry (assertions 11a/11b): the read-grant lets the
+   * grantee DOWNLOAD (11a) but the write fence blocks the grantee's UPLOAD (11b). */
+  nodeGrantFileId: string;
+  /** The seeded storage path of `nodeGrantFile` — for the 11b direct-upload-attempt fence. */
+  nodeGrantFilePath: string;
+  /** Bea's PRIVATE file (real bytes) — the download RLS-negative (assertions 5, 6). */
+  privateOtherFileId: string;
+  privateOtherFilePath: string;
+  /** A file nested under the ancestor-shared folder (real bytes) — the inherited-grant
+   * download positive for `otherOwner` (assertion 8). */
+  inheritedFileId: string;
+  inheritedFilePath: string;
+  /** The owner of the corpus (`admin`) — authors + downloads its own media. */
+  owner: KnowledgeActor;
+  /** A SECOND owner (`searcherB`, `admin` role): owns the private file; the grantee of
+   * the ancestor-shared folder (so its nested file downloads via inheritance). */
+  otherOwner: KnowledgeActor;
+  /** A NODE-ONLY member (`member` role — read + create, NO space-wide update) granted
+   * `nodeGrantFile` per-user: the read-grant lets it DOWNLOAD (11a); the write fence
+   * (owner-or-space-update, grants NOT composed) DENIES its UPLOAD (11b). */
+  nodeGrantee: KnowledgeActor;
+  /** The exact seeded bytes per node (download round-trip, assertion 2). */
+  fixtureBytes: typeof MEDIA_FIXTURE_BYTES;
+  /** Space B — a DIFFERENT space holding a real file the space-A owner cannot reach
+   * (assertion 7 — cross-space download denial). */
+  otherSpace: {
+    tenant: KnowledgeGraphTenant;
+    /** A real file node in space B (owned by that tenant's `granted` actor). */
+    fileId: string;
+  };
+};
+
+/** Read a node's seeded media storage path from the `kb.resource_media_meta` satellite
+ * (service client — a setup/assertion read, NOT the access path under test). */
+async function mediaStoragePath(
+  tenant: KnowledgeGraphTenant,
+  nodeId: string
+): Promise<string> {
+  const { data, error } = await tenant.service
+    .schema('kb')
+    .from('resource_media_meta')
+    .select('storage_path')
+    .eq('node_id', nodeId)
+    .single();
+  if (error || !data?.storage_path) {
+    throw new Error(
+      `media fixture: no kmm.storage_path for ${nodeId} — ${error?.message ?? 'no row'}`
+    );
+  }
+  return data.storage_path;
+}
+
+/**
+ * Materialize the KB media substrate over space A (the shared `KNOWLEDGE_BASE_SCENARIO`,
+ * whose `media` nodes are uploaded through the real transport by the materializer) and mint
+ * a second tenant (space B) carrying one real file for the cross-space negative. Returns the
+ * named refs/actors + storage paths the media matrix asserts against. Pair with
+ * `teardownMediaSubstrateFixture` (it tears down space B).
+ */
+export async function seedMediaSubstrateFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<MediaSubstrateFixture> {
+  const { refs, actors } = await materializeFixture(
+    KNOWLEDGE_BASE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`media fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor) throw new Error(`media fixture: missing actor "${ref}"`);
+    return actor;
+  };
+
+  const fileOwnedId = id('kb/file-owned');
+  const videoOwnedId = id('kb/video-owned');
+  const privateOtherFileId = id('kb/file-private-other');
+  const inheritedFileId = id('kb/inherited-file');
+  const nodeGrantFileId = id('kb/file-node-grant');
+
+  // Space B: a second tenant whose `granted` actor owns one real file the space-A owner
+  // is not a member of — the cross-space download denial (assertion 7). Uploaded through
+  // the SAME real transport so its bytes genuinely exist (denial ≠ missing object).
+  const otherTenant = await bootstrapEphemeralTenant();
+  const otherClient = await seedClientFor(otherTenant.granted);
+  const otherFileId = await otherClient.createNode(
+    otherTenant.spaceId,
+    'file',
+    'Cross-Space File'
+  );
+  const otherContent =
+    'ProFlow KB media fixture — a file in ANOTHER space (ADR-0026 assertion 7).\n';
+  const otherSize = new TextEncoder().encode(otherContent).byteLength;
+  const otherAuth = await otherClient.uploadMediaUrl(
+    otherTenant.spaceId,
+    otherFileId,
+    {
+      mimeType: 'text/plain',
+      sizeBytes: otherSize,
+      filename: 'cross-space.txt',
+    }
+  );
+  const { error: otherUploadErr } = await otherTenant.granted.client.storage
+    .from(KB_MEDIA_BUCKET)
+    .uploadToSignedUrl(
+      otherAuth.storagePath,
+      otherAuth.token ?? '',
+      new Blob([otherContent], { type: 'text/plain' })
+    );
+  if (otherUploadErr) {
+    throw new Error(`media fixture space-B upload: ${otherUploadErr.message}`);
+  }
+  await otherClient.setMedia({
+    spaceId: otherTenant.spaceId,
+    nodeId: otherFileId,
+    storagePath: otherAuth.storagePath,
+    mimeType: 'text/plain',
+    sizeBytes: otherSize,
+    originalFilename: 'cross-space.txt',
+  });
+  await otherClient.dispose();
+
+  return {
+    spaceId: tenant.spaceId,
+    kbFolderId: id('kb/folder'),
+    fileOwnedId,
+    fileOwnedPath: await mediaStoragePath(tenant, fileOwnedId),
+    videoOwnedId,
+    videoOwnedPath: await mediaStoragePath(tenant, videoOwnedId),
+    nodeGrantFileId,
+    nodeGrantFilePath: await mediaStoragePath(tenant, nodeGrantFileId),
+    privateOtherFileId,
+    privateOtherFilePath: await mediaStoragePath(tenant, privateOtherFileId),
+    inheritedFileId,
+    inheritedFilePath: await mediaStoragePath(tenant, inheritedFileId),
+    owner: who('admin'),
+    otherOwner: who('searcherB'),
+    nodeGrantee: who('mediaGrantee'),
+    fixtureBytes: MEDIA_FIXTURE_BYTES,
+    otherSpace: { tenant: otherTenant, fileId: otherFileId },
+  };
+}
+
+/** Tear down the media fixture's SECOND tenant (space B). Space A is the caller's main
+ * tenant (torn down by the spec); here we only release the ephemeral space-B tenant. */
+export async function teardownMediaSubstrateFixture(
+  fx: MediaSubstrateFixture | undefined
 ): Promise<void> {
   if (fx?.otherSpace?.tenant) {
     await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);

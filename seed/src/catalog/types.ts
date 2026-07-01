@@ -95,8 +95,31 @@ export type TextNode = NodeBase & {
   workflowKey?: string;
 };
 
+/**
+ * A small, deterministic byte payload uploaded through the REAL media transport
+ * (ADR-0026): the materializer creates the bodyless node, authorizes a signed
+ * upload URL (`/author/graph/media?op=upload-url`), PUTs these bytes to the private
+ * `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kb.resource_media_meta`
+ * satellite (`attribute:'media'`). NEVER a service-role insert / direct SQL — the
+ * bytes are born the product's way so the `storage.objects` + satellite RLS is the
+ * fence exactly as in production. Keep the payload tiny (a few KB) — it is reference
+ * content, not a real asset.
+ */
+export type MediaPayload = {
+  /** The literal file bytes as a UTF-8 string (small text/`text-like` fixture). */
+  bytes: string;
+  /** Declared MIME (must pass `isAllowedMediaMime` — not in the denylist). */
+  mimeType: string;
+  /** Display filename (metadata only; NEVER the storage path). */
+  filename: string;
+};
+
 export type BodylessNode = NodeBase & {
   kind: 'link' | 'file' | 'video';
+  /** For `file`/`video`: a byte payload uploaded through the real media path so a
+   * `kmm` satellite row + a `kb-media` object both exist (ADR-0026). Omit for a
+   * bodyless stub (a `link`, or a `file`/`video` with no bytes yet). */
+  media?: MediaPayload;
 };
 
 export type SeedNode = FolderNode | TextNode | BodylessNode;

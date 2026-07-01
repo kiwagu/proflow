@@ -17,6 +17,7 @@
   "dependencies": {
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
+    "@workspace/knowledge-contracts": "workspace:*",
     "cross-env": "catalog:",
     "dotenv": "catalog:",
     "tsx": "catalog:"

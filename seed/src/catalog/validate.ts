@@ -1,3 +1,5 @@
+import { isAllowedMediaMime } from '@workspace/knowledge-contracts';
+
 import type { SeedNode, SeedScenario } from './types.js';
 
 /**
@@ -87,6 +89,26 @@ export function validateScenario(s: SeedScenario): string[] {
       for (const rev of n.revisions ?? []) {
         if (!isLexical(rev)) fail(`node "${n.ref}" has a non-Lexical revision`);
       }
+    }
+    // Media payload (ADR-0026): only file/video carry bytes; the declared mime must
+    // pass the same denylist gate the upload authorizer enforces, else the live
+    // upload would 400 — catch it offline.
+    if (n.kind === 'file' || n.kind === 'video') {
+      const media = n.media;
+      if (media) {
+        if (!media.bytes) fail(`node "${n.ref}" media has empty bytes`);
+        if (!media.filename)
+          fail(`node "${n.ref}" media has an empty filename`);
+        if (!media.mimeType) {
+          fail(`node "${n.ref}" media has an empty mimeType`);
+        } else if (!isAllowedMediaMime(media.mimeType)) {
+          fail(
+            `node "${n.ref}" media mimeType "${media.mimeType}" is not allowed (in the denylist)`
+          );
+        }
+      }
+    } else if ('media' in n && n.media) {
+      fail(`node "${n.ref}" (kind "${n.kind}") cannot carry a media payload`);
     }
   }
   const nodeOk = (ref: string, where: string): void => {

@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import type { SeedClient } from '../engine/http.js';
 import type { SeedActor, SeedTenant } from '../engine/types.js';
-import type { SeedNode, SeedScenario } from './types.js';
+import type { BodylessNode, SeedNode, SeedScenario } from './types.js';
 
 /**
  * Caller-supplied wiring: how to build an HTTP client for an actor (CLI → fetch;
@@ -195,6 +196,21 @@ export async function materializeScenario(
         node.title,
         parentFolderId
       );
+      // A `file`/`video` node with a byte payload becomes REAL through the SAME
+      // upload transport the product drives (ADR-0026): authorize a signed upload
+      // URL under the OWNER's RLS, PUT the bytes to the private `kb-media` bucket via
+      // `uploadToSignedUrl` on the owner's storage client, then confirm the
+      // `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
+      if ((node.kind === 'file' || node.kind === 'video') && node.media) {
+        await uploadNodeMedia(
+          scenario.id,
+          spaceId,
+          node,
+          nodeId,
+          c,
+          db(ownerRef)
+        );
+      }
     }
     refs.set(node.ref, nodeId);
 
@@ -302,6 +318,64 @@ export async function materializeScenario(
   }
 
   return { scenarioId: scenario.id, refs, actors };
+}
+
+/**
+ * Drive a `file`/`video` node's byte payload through the REAL media transport
+ * (ADR-0026), exactly as the product's create flow does — the seed never inserts a
+ * media object or `kmm` row via service-role / direct SQL:
+ *   1. authorize a signed UPLOAD url (`media?op=upload-url`) under the OWNER's RLS
+ *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` +
+ *      upload `token`;
+ *   2. PUT the bytes to the private `kb-media` bucket via `uploadToSignedUrl` on the
+ *      owner's storage-js client (the canonical signed-upload idiom);
+ *   3. confirm the `kb.resource_media_meta` satellite (`attribute:'media'`) — written
+ *      ONLY after a successful PUT, so a failed upload leaves NO row (poc-no-fallbacks).
+ * So both the demo tenant and the e2e fixtures get a genuine object + satellite whose
+ * access is fenced by the SAME `storage.objects` / satellite RLS as production.
+ */
+async function uploadNodeMedia(
+  scenarioId: string,
+  spaceId: string,
+  node: BodylessNode,
+  nodeId: string,
+  client: SeedClient,
+  ownerDb: SupabaseClient
+): Promise<void> {
+  const media = node.media;
+  if (!media) return;
+  const bytes = new TextEncoder().encode(media.bytes);
+  const declared = {
+    mimeType: media.mimeType,
+    sizeBytes: bytes.byteLength,
+    filename: media.filename,
+  };
+
+  const authorize = await client.uploadMediaUrl(spaceId, nodeId, declared);
+  if (!authorize.storagePath || !authorize.token) {
+    throw new Error(
+      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath/token`
+    );
+  }
+
+  const blob = new Blob([bytes], { type: media.mimeType });
+  const { error: uploadError } = await ownerDb.storage
+    .from(KB_MEDIA_BUCKET)
+    .uploadToSignedUrl(authorize.storagePath, authorize.token, blob);
+  if (uploadError) {
+    throw new Error(
+      `${scenarioId} media "${node.ref}": PUT to ${KB_MEDIA_BUCKET} failed — ${uploadError.message}`
+    );
+  }
+
+  await client.setMedia({
+    spaceId,
+    nodeId,
+    storagePath: authorize.storagePath,
+    mimeType: media.mimeType,
+    sizeBytes: bytes.byteLength,
+    originalFilename: media.filename,
+  });
 }
 
 function collectTagTitles(nodes: SeedNode[]): string[] {
