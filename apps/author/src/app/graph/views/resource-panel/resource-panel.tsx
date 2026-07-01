@@ -19,6 +19,7 @@ import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
 import { AccessSection } from './access-section';
 import { EditableDescription } from './editable-description';
+import { MediaSection } from './media-section';
 import { sendJson } from './panel-fetch';
 import { VersionsSection } from './versions-section';
 
@@ -37,11 +38,13 @@ import { VersionsSection } from './versions-section';
  * sections:
  *   - header (kind + title) + the `⋯` action menu (Share lives here now)
  *   - editable, RAG-bound description (kb satellite)
+ *   - media (ADR-0026 — filename / size / mime + Download, when the node has bytes)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
  * mocked — Law 3 / poc-no-fallbacks): tags / related / mini-graph (need the
- * neighborhood resolver), media (kb satellites), status transition, suggested links
- * (a RAG mock), view-in-graph (the graph view). They return with their backend.
+ * neighborhood resolver), per-kind media preview/player (image thumb / pdf / video
+ * player — Phase 2), status transition, suggested links (a RAG mock), view-in-graph
+ * (the graph view). They return with their backend.
  *
  * Purely presentational: it POSTs to the landed RLS routes; RLS is the authority.
  */
@@ -216,6 +219,19 @@ export function ResourcePanel({
           disabled={busy}
           onSave={onSaveDescription}
         />
+
+        {/* Media — shown ONLY when the node has confirmed bytes (a media satellite
+            row, ADR-0026); a bodyless file/video stub carries no `media` and the
+            section is omitted (poc-no-fallbacks). Download is server-authorized +
+            signed per click, RLS the fence. */}
+        {attributes?.media ? (
+          <MediaSection
+            t={t}
+            spaceId={spaceId}
+            nodeId={node.id}
+            media={attributes.media}
+          />
+        ) : null}
 
         <AccessSection
           t={t}

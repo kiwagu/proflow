@@ -397,9 +397,10 @@ export async function loadShortcutForest(
  * attribute lives in the dedicated `kb` schema keyed by `node_id`, read under the
  * user's RLS via `kbSchema(db)` (a satellite the user may not read because the
  * parent node is hidden simply does not return — the satellite RLS mirrors node
- * access). Today only `description` is landed; media/link/etc. populate here as
- * their satellites land. Rides alongside the resolved canvas, never extending the
- * frozen `ProjectionResult` contract.
+ * access). Reads the `description` and `media` (ADR-0026) satellites; each rides
+ * alongside the resolved canvas, never extending the frozen `ProjectionResult`
+ * contract. A node with no satellite row simply carries no attribute (empty/absent
+ * → no field, NOT a mock — poc-no-fallbacks).
  */
 export async function loadKbAttributesForItems(
   spaceId: string,
@@ -412,7 +413,7 @@ export async function loadKbAttributesForItems(
   const db = await createRlsClientFromServerCookies();
   // Chunked to keep each `.in('node_id', …)` request URL under the REST gateway
   // limit (see `inChunks` — prevents the 502 Bad Gateway on large spaces).
-  const rows = await inChunks(itemIds, async (chunk) => {
+  const descriptionRows = await inChunks(itemIds, async (chunk) => {
     const { data, error } = await kbSchema(db)
       .from('resource_description')
       .select('node_id,body')
@@ -423,8 +424,46 @@ export async function loadKbAttributesForItems(
     }
     return data ?? [];
   });
-  for (const row of rows) {
+  for (const row of descriptionRows) {
     (map[row.node_id] ??= {}).description = row.body;
+  }
+
+  // The media satellite (ADR-0026) — MIRRORS the description read above (same RLS
+  // client, same `.in('node_id', chunk)`, same `kb` accessor). A `kmm` row means the
+  // node has confirmed bytes; its absence means none (no `media` field, poc-no-
+  // fallbacks). The card meta line reads size/duration/mime; the ResourcePanel Media
+  // section additionally reads `storagePath` (echoed on download-authorize) +
+  // `originalFilename` (display only). The bytes themselves egress ONLY via the
+  // server-authorized signed URL — never a public URL, never read here.
+  const mediaRows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await kbSchema(db)
+      .from('resource_media_meta')
+      .select(
+        'node_id,storage_path,mime_type,size_bytes,original_filename,duration_ms'
+      )
+      .eq('space_id', spaceId)
+      .in('node_id', chunk);
+    if (error) {
+      throw new Error(`loadKbAttributesForItems (media): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  for (const row of mediaRows) {
+    const r = row as {
+      node_id: string;
+      storage_path: string;
+      mime_type: string;
+      size_bytes: number;
+      original_filename: string;
+      duration_ms: number | null;
+    };
+    (map[r.node_id] ??= {}).media = {
+      byteSize: r.size_bytes,
+      durationMs: r.duration_ms,
+      mimeType: r.mime_type,
+      storagePath: r.storage_path,
+      originalFilename: r.original_filename,
+    };
   }
   return map;
 }

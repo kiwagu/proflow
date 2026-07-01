@@ -98,8 +98,10 @@ export type NodeMediaMeta = {
   linkHost?: string | null;
 };
 
-/** Format a byte size as a human label (prototype meta line). i18n-driven. */
-function formatBytes(t: GraphTranslator, bytes: number): string {
+/** Format a byte size as a human label (prototype meta line). i18n-driven. The
+ * single humanize-bytes helper for the render surface (reused by the ResourcePanel
+ * Media section) — B / KB / MB via the shared `graph.media.*` catalog keys. */
+export function formatBytes(t: GraphTranslator, bytes: number): string {
   if (bytes < 1024) {
     return t('graph.media.bytes', { count: bytes });
   }

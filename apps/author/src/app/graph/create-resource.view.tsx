@@ -1,6 +1,12 @@
 'use client';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
+import {
+  isAllowedMediaMime,
+  KB_MEDIA_BUCKET,
+  MAX_MEDIA_SIZE_BYTES,
+  type MediaUploadAuthorizeResponse,
+} from '@workspace/knowledge-contracts';
 import { Button } from '@workspace/ui/components/button';
 import {
   Dialog,
@@ -21,7 +27,7 @@ import {
 } from '@workspace/ui/components/select';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
-import { Check } from 'lucide-react';
+import { Check, Paperclip, X } from 'lucide-react';
 import * as React from 'react';
 
 import {
@@ -29,7 +35,8 @@ import {
   rootFolders,
   type Containment,
 } from '@/app/graph/containment';
-import { iconForKind } from '@/app/graph/presentation';
+import { formatBytes, iconForKind } from '@/app/graph/presentation';
+import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 /**
  * CreateResource — the prototype CreateModal (slice-11 Ф2 §6), a CENTERED
@@ -38,8 +45,11 @@ import { iconForKind } from '@/app/graph/presentation';
  * optional description. Each kind routes to its landed RLS write route:
  *   text  → text-resources (node + Lexical body, ADR-0002)
  *   link/tag/folder → resources (body-less; folder is a pure container, ADR-0015)
- *   file/video → body-less node + media-meta (real binary upload is a deferred
- *               slice, poc-no-fallbacks — metadata only)
+ *   file/video → body-less node + REAL bytes (ADR-0026): create the node → authorize
+ *               a signed UPLOAD url → PUT the picked file DIRECTLY to Storage → confirm
+ *               the `media` satellite. Order matters: the node exists before the path,
+ *               and the satellite is written ONLY after the upload succeeds (a failed
+ *               upload leaves NO satellite row — poc-no-fallbacks).
  * Containment placement (`parentFolder`) creates a FORWARD `contains` edge; the
  * description is posted to the attributes route AFTER the node is created.
  *
@@ -70,6 +80,25 @@ export type CreateResourceProps = {
 };
 
 const KINDS: CreateKind[] = ['text', 'file', 'video', 'link', 'folder', 'tag'];
+
+/** The kinds whose content IS a real uploaded file (ADR-0026). */
+function kindNeedsMedia(kind: CreateKind): kind is 'file' | 'video' {
+  return kind === 'file' || kind === 'video';
+}
+
+/** Which client-side pre-validation a picked file fails, or null when it passes.
+ * A UX hint only — the server authorizer + storage RLS are the real fence. */
+function mediaValidationError(
+  file: File
+): 'tooLarge' | 'unsupportedType' | null {
+  if (file.size > MAX_MEDIA_SIZE_BYTES) {
+    return 'tooLarge';
+  }
+  if (!isAllowedMediaMime(file.type)) {
+    return 'unsupportedType';
+  }
+  return null;
+}
 
 /** Create-kind label via LITERAL keys (no dynamic-key indirection in views). */
 function createKindLabel(t: GraphTranslator, kind: CreateKind): string {
@@ -107,6 +136,12 @@ export function CreateResource({
   const [description, setDescription] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(false);
+  // The picked media file (file/video kinds) + the client pre-validation verdict.
+  const [file, setFile] = React.useState<File | null>(null);
+  const [mediaError, setMediaError] = React.useState<
+    'tooLarge' | 'unsupportedType' | null
+  >(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Reset/prefill when a new open request arrives — adjust state during render on
   // the request transition ("you might not need an effect"), not in an effect.
@@ -116,6 +151,8 @@ export function CreateResource({
     setParentId(request.parentFolderId ?? '');
     setDescription('');
     setError(false);
+    setFile(null);
+    setMediaError(null);
   }
 
   // Scope the folder picker to the CURRENT level — the folders at the location where
@@ -135,6 +172,26 @@ export function CreateResource({
     [containment, currentParentId]
   );
 
+  function onPickFile(picked: File | null) {
+    setError(false);
+    if (!picked) {
+      setFile(null);
+      setMediaError(null);
+      return;
+    }
+    // Client pre-validation — an instant hint before any network call (the server
+    // authorizer + storage RLS remain the real fence).
+    setMediaError(mediaValidationError(picked));
+    setFile(picked);
+  }
+
+  const needsMedia = kindNeedsMedia(kind);
+  // The media kinds require a valid picked file; other kinds require only a title.
+  const submitDisabled =
+    busy ||
+    title.trim().length === 0 ||
+    (needsMedia && (file === null || mediaError !== null));
+
   async function onSubmit() {
     setBusy(true);
     setError(false);
@@ -143,6 +200,16 @@ export function CreateResource({
       if (!nodeId) {
         setError(true);
         return;
+      }
+      // file/video: upload the bytes + confirm the media satellite AFTER the node
+      // exists (ADR-0026). A failed upload leaves the bodyless node but NO satellite
+      // row (poc-no-fallbacks) — the node simply has no downloadable content yet.
+      if (needsMedia && file) {
+        const uploaded = await uploadMedia(spaceId, nodeId, file);
+        if (!uploaded) {
+          setError(true);
+          return;
+        }
       }
       // description rides on the attributes route after the node exists (the
       // RAG-bound field, stored — vector seam hidden, poc-no-fallbacks).
@@ -209,7 +276,7 @@ export function CreateResource({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && title.trim().length > 0 && !busy) {
+                if (event.key === 'Enter' && !submitDisabled) {
                   event.preventDefault();
                   void onSubmit();
                 }
@@ -219,6 +286,70 @@ export function CreateResource({
               autoFocus
             />
           </div>
+
+          {/* FILE — a plain hidden <input type=file> behind a Button, for the media
+              kinds (file/video). Client pre-validation (size/mime) surfaces an
+              instant hint; the server authorizer + storage RLS are the real fence. */}
+          {needsMedia ? (
+            <div className="flex flex-col gap-2">
+              <Label className={FIELD_LABEL}>{t('graph.media.file')}</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(event) =>
+                  onPickFile(event.target.files?.[0] ?? null)
+                }
+                disabled={busy}
+              />
+              {file ? (
+                <div className="flex items-center gap-2 rounded-md border p-2.5">
+                  <Paperclip
+                    className="text-muted-foreground size-4 shrink-0"
+                    aria-hidden
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm" title={file.name}>
+                      {file.name}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {formatBytes(t, file.size)}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => onPickFile(null)}
+                    disabled={busy}
+                    aria-label={t('graph.media.clearFile')}
+                  >
+                    <X className="size-4" aria-hidden />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  className="w-full justify-start gap-2 border-dashed font-normal shadow-none"
+                >
+                  <Paperclip className="size-4" aria-hidden />
+                  {t('graph.media.pickFile')}
+                </Button>
+              )}
+              {mediaError ? (
+                <p role="alert" className="text-destructive text-xs">
+                  {mediaError === 'tooLarge'
+                    ? t('graph.media.tooLarge', {
+                        max: formatBytes(t, MAX_MEDIA_SIZE_BYTES),
+                      })
+                    : t('graph.media.unsupportedType')}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* FOLDER */}
           {kind !== 'tag' ? (
@@ -290,12 +421,13 @@ export function CreateResource({
               {t('graph.create.cancel')}
             </Button>
           </DialogClose>
-          <Button
-            onClick={onSubmit}
-            disabled={busy || title.trim().length === 0}
-          >
+          <Button onClick={onSubmit} disabled={submitDisabled}>
             <Check className="size-4" aria-hidden />
-            {busy ? t('graph.create.saving') : t('graph.create.submit')}
+            {busy
+              ? needsMedia
+                ? t('graph.media.uploading')
+                : t('graph.create.saving')
+              : t('graph.create.submit')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -368,4 +500,68 @@ async function createNode(
     return null;
   }
   return ((await res.json()) as { node_id: string }).node_id;
+}
+
+/**
+ * Upload a file's BYTES to a node + confirm its media satellite (ADR-0026). Order:
+ *   1. authorize a signed UPLOAD url (`media?op=upload-url`) — the server checks
+ *      node-update under RLS, validates the declared mime/size, and returns the
+ *      short-lived signed url + the SERVER-decided `storagePath` + upload `token`.
+ *   2. PUT the bytes DIRECTLY to Storage via `uploadToSignedUrl(path, token, file)`
+ *      on the browser Supabase client (the canonical signed-upload idiom — it sets
+ *      the correct headers for the signed URL; the server never buffers the bytes).
+ *   3. confirm the `media` satellite (`attribute:'media'` on the attributes route)
+ *      — written ONLY after a successful PUT, so a failed upload leaves NO satellite
+ *      row (poc-no-fallbacks). `createdBy` comes from the SESSION, never the body.
+ * Returns true only when all three succeed; any failure → false (the caller errors).
+ */
+async function uploadMedia(
+  spaceId: string,
+  nodeId: string,
+  file: File
+): Promise<boolean> {
+  const authRes = await fetch('/author/graph/media?op=upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      spaceId,
+      nodeId,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      filename: file.name,
+    }),
+  });
+  if (!authRes.ok) {
+    return false;
+  }
+  const authorize = (await authRes.json()) as MediaUploadAuthorizeResponse;
+  if (!authorize.storagePath || !authorize.token) {
+    return false;
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return false;
+  }
+  const { error: uploadError } = await supabase.storage
+    .from(KB_MEDIA_BUCKET)
+    .uploadToSignedUrl(authorize.storagePath, authorize.token, file);
+  if (uploadError) {
+    return false;
+  }
+
+  const confirmRes = await fetch('/author/graph/attributes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      attribute: 'media',
+      spaceId,
+      nodeId,
+      storagePath: authorize.storagePath,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      originalFilename: file.name,
+    }),
+  });
+  return confirmRes.ok;
 }

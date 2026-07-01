@@ -32,8 +32,10 @@ import type {
  * service-role) and threads it + the KB seed (containment / shortcut forests + node
  * meta + current user id) into the Drive shell. An ungranted user — or no active
  * space — resolves to an empty editor, never an error. RLS/auth is handled upstream
- * by the proxy. (KB satellite attributes — media/link — land in a later pass; until
- * then `attributesByItem` is empty and the meta line falls to "{kind} · {owner}".)
+ * by the proxy. KB satellite attributes ride in `attributesByItem`: `description`
+ * and `media` (ADR-0026 — a node's real file bytes surface as size/mime/filename +
+ * a Download in the ResourcePanel); a node with no satellite row carries no
+ * attribute and the meta line falls to "{kind} · {owner}".
  */
 export const dynamic = 'force-dynamic';
 
