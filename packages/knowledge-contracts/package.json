@@ -13,6 +13,7 @@
     "test:vitest": "bunx vitest run"
   },
   "dependencies": {
+    "@workspace/settings-runtime": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

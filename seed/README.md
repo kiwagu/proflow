@@ -135,13 +135,17 @@ highlight on the leaf. The chain is nested via the scenario's `children` (the sa
 surfaces `deepLeafId`/`deepLeafTitle`/`deepLeafTerm` + the `deepChainFolderTitles`/
 `deepChainFolderIds` (outermost first) so a deep-tree advanced-search spec can assert the
 whole path renders.
-`media` is the KB media substrate (ADR-0026 / slice-13): the `knowledge-base` scenario ALSO
-opts into it, making `file`/`video` nodes REAL by uploading a small byte payload through the
-product's OWN signed-upload transport — the materializer authorizes a signed upload URL
-(`/author/graph/media?op=upload-url`), PUTs the bytes to the private `kb-media` bucket via
-`uploadToSignedUrl`, then confirms the `kb.resource_media_meta` (`kmm`) satellite
-(`attribute:'media'`), so both a bucket object AND a satellite row exist, fenced by the SAME
-`storage.objects` / satellite RLS as production (never a service-role / direct-SQL seed). A
+`media` is the KB media substrate (ADR-0026 / slice-13; slice-14 resumable/TUS switch): the
+`knowledge-base` scenario ALSO opts into it, making `file`/`video` nodes REAL by uploading a
+small byte payload through the product's OWN transport — the materializer authorizes the
+upload (`/author/graph/media?op=upload-url`), which returns the SERVER-decided `storagePath`
+only (the single-PUT signed-url/token leg was removed with the resumable switch), uploads the
+bytes to that path in the private `kb-media` bucket under the owner's session (the product
+client uses resumable TUS; the seed runs in Node with tiny fixtures, so it uses the storage-js
+STANDARD `upload` — same `storage.objects` INSERT RLS fence, no `tus-js-client` dep), then
+confirms the `kb.resource_media_meta` (`kmm`) satellite (`attribute:'media'`), so both a bucket
+object AND a satellite row exist, fenced by the SAME `storage.objects` / satellite RLS as
+production (never a service-role / direct-SQL seed). A
 node opts in by declaring a `media: { bytes, mimeType, filename }` payload on a `file`/`video`
 node (the mime must pass `isAllowedMediaMime`; the validator enforces it offline). The corpus
 carries: a real `file` (`kb/file-owned`) + a real `video` (`kb/video-owned`) owned by the

@@ -1,3 +1,7 @@
+import {
+  MEDIA_MAX_UPLOAD_DEFAULT_BYTES,
+  MEDIA_MAX_UPLOAD_HARD_CAP_BYTES,
+} from '@workspace/settings-runtime';
 import { z } from 'zod';
 
 /**
@@ -54,11 +58,35 @@ export function isAllowedMediaMime(mime: string): boolean {
 }
 
 /**
- * Max upload size — a CODE constant, NOT env (monorepo-env-minimalism). Mirrors
- * `supabase/config.toml` [storage] `file_size_limit = "50MiB"` and the `kb-media`
- * bucket's own `file_size_limit`. 50 MiB = 52428800 bytes.
+ * Upload-size limits — layered SOFT-over-HARD (ADR-0026 AMENDMENT §A4), CODE
+ * constants, NOT env (monorepo-env-minimalism).
+ *
+ * - `DEFAULT_MAX_UPLOAD_BYTES` (200 MB) is the SOFT default — the registry
+ *   `defaultValue` for `platform.media.max_upload_bytes` when no org/global row is
+ *   set. The EFFECTIVE soft limit is resolved per-org from `runtime_settings`
+ *   (org → global → this default); it is NOT the fence by itself.
+ * - `HARD_MAX_UPLOAD_BYTES` (5 GB) is the HARD system cap — code/infra only, NOT
+ *   org-editable. It mirrors the storage-api `FILE_SIZE_LIMIT` + the `kb-media`
+ *   bucket `file_size_limit` + `config.toml [storage] file_size_limit = "5GiB"`.
+ *   The org soft limit can NEVER exceed it.
+ *
+ * SINGLE SOURCE: both numbers are OWNED by `@workspace/settings-runtime` (the home of
+ * the `platform.media.max_upload_bytes` setting whose `defaultValue`/schema `.max()`
+ * are these). We only RE-EXPORT them here under the media-domain names the KB code +
+ * client already use — no second literal, no drift.
  */
-export const MAX_MEDIA_SIZE_BYTES = 52428800 as const;
+export const DEFAULT_MAX_UPLOAD_BYTES = MEDIA_MAX_UPLOAD_DEFAULT_BYTES; // 200 MB
+export const HARD_MAX_UPLOAD_BYTES = MEDIA_MAX_UPLOAD_HARD_CAP_BYTES; // 5 GiB
+
+/**
+ * Back-compat alias for the previous single `MAX_MEDIA_SIZE_BYTES` constant. It is
+ * NO LONGER the fence — the authorizer reads the RESOLVED per-org limit. Retained
+ * only for the client pre-validation display until the resumable client (later
+ * wave) switches to the resolved value. Points at the SOFT default (200 MB).
+ *
+ * @deprecated Use the resolved org limit (server) / `DEFAULT_MAX_UPLOAD_BYTES`.
+ */
+export const MAX_MEDIA_SIZE_BYTES = DEFAULT_MAX_UPLOAD_BYTES;
 
 /**
  * Signed-URL TTLs — CODE constants, short-lived, NOT env (ADR-0026 §2c). Bytes
@@ -70,9 +98,16 @@ export const MAX_MEDIA_SIZE_BYTES = 52428800 as const;
  * RLS-fenced under the caller (never service-role, never a public URL), so a
  * longer-lived signed URL is an accepted trade-off. This TTL applies to ALL media
  * downloads (image/pdf/video/audio/generic file) — intended.
+ *
+ * The UPLOAD TTL is 6 hours (owner-approved 2026-07-01, ADR-0026 AMENDMENT §A5):
+ * a resumable (TUS) session for a multi-GB file on a modest link can run long, so
+ * the authorize-response validity must cover a realistic worst-case upload
+ * duration. Still a code constant, not env; the byte fence is UNCHANGED (the TUS
+ * session runs under the caller's JWT, fenced by the `storage.objects` INSERT
+ * policy).
  */
 export const MEDIA_DOWNLOAD_URL_TTL_SECONDS = 10800 as const;
-export const MEDIA_UPLOAD_URL_TTL_SECONDS = 120 as const;
+export const MEDIA_UPLOAD_URL_TTL_SECONDS = 21600 as const;
 
 /** The private bucket that holds KB media bytes (ADR-0026 §2a). */
 export const KB_MEDIA_BUCKET = 'kb-media' as const;
@@ -110,7 +145,10 @@ export const mediaUploadAuthorizeRequestSchema = z.object({
   spaceId: z.string().min(1),
   nodeId: z.string().min(1),
   mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative(),
+  // Hard belt: reject anything over the 5 GB system cap at the boundary. The SOFT
+  // per-org limit is enforced in the authorizer against the RESOLVED runtime
+  // setting; this .max() is the code/infra ceiling that can never be exceeded.
+  sizeBytes: z.number().int().nonnegative().max(HARD_MAX_UPLOAD_BYTES),
   filename: z.string().min(1),
 });
 export type MediaUploadAuthorizeRequest = z.infer<
@@ -118,15 +156,16 @@ export type MediaUploadAuthorizeRequest = z.infer<
 >;
 
 /**
- * Upload-authorize response: the short-lived signed UPLOAD url the client PUTs
- * bytes to, plus the SERVER-decided `storagePath` the client must echo back on
- * confirm (`setResourceMedia`) so the satellite path matches the object. `token`
- * is the storage upload token (some clients use `uploadToSignedUrl`).
+ * Upload-authorize response. Control-plane ONLY: it returns the SERVER-decided
+ * `storagePath` (`spaces/<spaceId>/kb/<nodeId>/<serverKey>`) the client uploads the
+ * bytes to via the resumable (TUS) transport under its own session JWT, and echoes
+ * back on confirm (`setResourceMedia`) so the satellite path matches the object. The
+ * server does NOT mint a signed upload URL — the single-PUT leg was removed with the
+ * resumable switch (ADR-0026 §A2/§A5); `storage.objects` INSERT RLS is the fence at
+ * PUT time.
  */
 export const mediaUploadAuthorizeResponseSchema = z.object({
-  signedUrl: z.string().min(1),
   storagePath: z.string().min(1),
-  token: z.string().min(1).optional(),
 });
 export type MediaUploadAuthorizeResponse = z.infer<
   typeof mediaUploadAuthorizeResponseSchema

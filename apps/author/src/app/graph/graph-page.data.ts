@@ -14,6 +14,7 @@ import {
   annotateShareMechanism,
   listResourcesSharedByMe,
 } from '@/knowledge/fanout';
+import { resolveMediaMaxUploadBytes } from '@/knowledge/media/media-limit.resolve';
 import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
@@ -598,4 +599,19 @@ export async function loadShareMechanism(
   }
   const db = await createRlsClientFromServerCookies();
   return annotateShareMechanism({ spaceId, nodeIds: sharedNodeIds }, { db });
+}
+
+/**
+ * The EFFECTIVE per-org max-upload size (bytes) for media uploads in this space
+ * (ADR-0026 AMENDMENT §A3/§A4) — resolved server-side under the user's RLS via the
+ * shared `resolveMediaMaxUploadBytes` (org → global → 200 MB default, clamped to the
+ * 5 GB hard cap). Threaded to the client purely so the CreateResource picker can show
+ * a friendly "too large (max {size})" hint BEFORE any upload starts. It is a UX hint
+ * ONLY — the server authorizer (which re-resolves the same value) + the bucket
+ * `file_size_limit` are the real fences (ADR-0009: RLS/storage the sole authority).
+ * A member reads the public `runtime_settings` row under RLS — NEVER service-role.
+ */
+export async function resolveMaxUploadBytes(spaceId: string): Promise<number> {
+  const db = await createRlsClientFromServerCookies();
+  return resolveMediaMaxUploadBytes(db, spaceId);
 }

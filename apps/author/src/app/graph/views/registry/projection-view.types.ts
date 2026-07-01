@@ -109,6 +109,15 @@ export type KbViewData = {
    * drive the facet chip row. Empty when nothing is shared-with-me.
    */
   shareMechanism: ShareMechanismByItem;
+  /**
+   * The EFFECTIVE per-org max-upload size in BYTES (ADR-0026 AMENDMENT §A3/§A4),
+   * resolved server-side under the user's RLS (org → global → 200 MB default,
+   * clamped to the 5 GB hard cap). Drives the CreateResource picker's client-side
+   * "too large (max {size})" pre-validation — a UX hint ONLY; the server authorizer
+   * (which re-resolves the same value) + the bucket `file_size_limit` are the fences.
+   * Absent (no active space) → the view falls back to `DEFAULT_MAX_UPLOAD_BYTES`.
+   */
+  maxUploadBytes: number;
 };
 
 /**

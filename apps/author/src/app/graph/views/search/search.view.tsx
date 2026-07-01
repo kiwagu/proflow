@@ -170,6 +170,7 @@ export function SearchView({
       folderId={null}
       containment={containment}
       spaceId={spaceId}
+      maxUploadBytes={kbData?.maxUploadBytes}
       onMutated={onMutated}
     />
   );

@@ -2,9 +2,9 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import {
+  DEFAULT_MAX_UPLOAD_BYTES,
   isAllowedMediaMime,
   KB_MEDIA_BUCKET,
-  MAX_MEDIA_SIZE_BYTES,
   type MediaUploadAuthorizeResponse,
 } from '@workspace/knowledge-contracts';
 import { Button } from '@workspace/ui/components/button';
@@ -29,6 +29,7 @@ import { Textarea } from '@workspace/ui/components/textarea';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import { Check, Paperclip, X } from 'lucide-react';
 import * as React from 'react';
+import { Upload as TusUpload } from 'tus-js-client';
 
 import {
   childFolders,
@@ -45,11 +46,15 @@ import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
  * optional description. Each kind routes to its landed RLS write route:
  *   text  → text-resources (node + Lexical body, ADR-0002)
  *   link/tag/folder → resources (body-less; folder is a pure container, ADR-0015)
- *   file/video → body-less node + REAL bytes (ADR-0026): create the node → authorize
- *               a signed UPLOAD url → PUT the picked file DIRECTLY to Storage → confirm
- *               the `media` satellite. Order matters: the node exists before the path,
- *               and the satellite is written ONLY after the upload succeeds (a failed
- *               upload leaves NO satellite row — poc-no-fallbacks).
+ *   file/video → body-less node + REAL bytes (ADR-0026, AMENDMENT §A2): create the
+ *               node → authorize the upload (server checks node-`update` under RLS +
+ *               decides the safe `storagePath`) → RESUMABLE (TUS) upload of the bytes
+ *               DIRECTLY to Storage under the caller's JWT → confirm the `media`
+ *               satellite. Order matters: the node exists before the path, and the
+ *               satellite is written ONLY after the upload succeeds. If ANY
+ *               post-create step fails the just-created node is ROLLED BACK
+ *               (best-effort purge) so no "broken shell" (a bodyless media node with
+ *               no bytes) is left behind — poc-no-fallbacks.
  * Containment placement (`parentFolder`) creates a FORWARD `contains` edge; the
  * description is posted to the attributes route AFTER the node is created.
  *
@@ -71,6 +76,13 @@ export type CreateResourceProps = {
   spaceId: string;
   t: GraphTranslator;
   containment: Containment;
+  /** The EFFECTIVE per-org max-upload size in BYTES (ADR-0026 §A3), resolved
+   * server-side under the user's RLS and threaded here for the client-side
+   * "too large (max {size})" pre-validation hint. A UX hint ONLY — the server
+   * authorizer (which re-resolves the same value) + the bucket `file_size_limit`
+   * are the real fences. Absent (no active space) → falls back to the 200 MB
+   * `DEFAULT_MAX_UPLOAD_BYTES`. */
+  maxUploadBytes?: number;
   /** Open request from the container (header New / New folder), or null when shut. */
   request: CreateRequest | null;
   onOpenChange: (open: boolean) => void;
@@ -81,17 +93,27 @@ export type CreateResourceProps = {
 
 const KINDS: CreateKind[] = ['text', 'file', 'video', 'link', 'folder', 'tag'];
 
+/**
+ * The resumable (TUS) chunk size — 6 MiB, the Supabase storage-api-required
+ * constant for the `/storage/v1/upload/resumable` endpoint (ADR-0026 AMENDMENT
+ * §A2). A CODE constant, NOT env (monorepo-env-minimalism). A sub-chunk (small)
+ * file completes in a single PATCH; there is no size-branch on the client.
+ */
+const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
+
 /** The kinds whose content IS a real uploaded file (ADR-0026). */
 function kindNeedsMedia(kind: CreateKind): kind is 'file' | 'video' {
   return kind === 'file' || kind === 'video';
 }
 
 /** Which client-side pre-validation a picked file fails, or null when it passes.
- * A UX hint only — the server authorizer + storage RLS are the real fence. */
+ * `maxBytes` is the RESOLVED per-org soft limit (ADR-0026 §A3). A UX hint only —
+ * the server authorizer + storage RLS + the bucket cap are the real fence. */
 function mediaValidationError(
-  file: File
+  file: File,
+  maxBytes: number
 ): 'tooLarge' | 'unsupportedType' | null {
-  if (file.size > MAX_MEDIA_SIZE_BYTES) {
+  if (file.size > maxBytes) {
     return 'tooLarge';
   }
   if (!isAllowedMediaMime(file.type)) {
@@ -125,6 +147,7 @@ export function CreateResource({
   spaceId,
   t,
   containment,
+  maxUploadBytes,
   request,
   onOpenChange,
   onCreated,
@@ -141,7 +164,14 @@ export function CreateResource({
   const [mediaError, setMediaError] = React.useState<
     'tooLarge' | 'unsupportedType' | null
   >(null);
+  // The resumable upload progress (0–100), or null when not uploading. Surfaced in
+  // the submit button so a large file gives live feedback (ADR-0026 §A2).
+  const [uploadPercent, setUploadPercent] = React.useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // The EFFECTIVE per-org soft limit (bytes) for the "too large" hint — the
+  // server-resolved value, or the 200 MB default when absent (no active space).
+  const effectiveMaxBytes = maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
 
   // Reset/prefill when a new open request arrives — adjust state during render on
   // the request transition ("you might not need an effect"), not in an effect.
@@ -153,6 +183,7 @@ export function CreateResource({
     setError(false);
     setFile(null);
     setMediaError(null);
+    setUploadPercent(null);
   }
 
   // Scope the folder picker to the CURRENT level — the folders at the location where
@@ -181,7 +212,7 @@ export function CreateResource({
     }
     // Client pre-validation — an instant hint before any network call (the server
     // authorizer + storage RLS remain the real fence).
-    setMediaError(mediaValidationError(picked));
+    setMediaError(mediaValidationError(picked, effectiveMaxBytes));
     setFile(picked);
   }
 
@@ -202,11 +233,27 @@ export function CreateResource({
         return;
       }
       // file/video: upload the bytes + confirm the media satellite AFTER the node
-      // exists (ADR-0026). A failed upload leaves the bodyless node but NO satellite
-      // row (poc-no-fallbacks) — the node simply has no downloadable content yet.
+      // exists (ADR-0026). The node MUST exist first (the storage path + the
+      // `storage.objects` update fence need the nodeId), so we cannot defer its
+      // create. To avoid a "broken shell" (a bodyless media node with no bytes) when
+      // any post-create step fails, we ROLL BACK: on failure — the upload returning
+      // false OR throwing — best-effort PURGE the just-created node before surfacing
+      // the error, leaving NO orphan (not even in Trash). Rollback fires ONLY on
+      // failure; a success never deletes. text/folder/link/tag are unaffected (an
+      // empty draft is valid, not a broken shell).
       if (needsMedia && file) {
-        const uploaded = await uploadMedia(spaceId, nodeId, file);
+        setUploadPercent(0);
+        let uploaded = false;
+        try {
+          uploaded = await uploadMedia(spaceId, nodeId, file, (percent) =>
+            setUploadPercent(percent)
+          );
+        } catch (uploadError) {
+          await purgeOrphanNode(spaceId, nodeId);
+          throw uploadError;
+        }
         if (!uploaded) {
+          await purgeOrphanNode(spaceId, nodeId);
           setError(true);
           return;
         }
@@ -231,6 +278,7 @@ export function CreateResource({
       setError(true);
     } finally {
       setBusy(false);
+      setUploadPercent(null);
     }
   }
 
@@ -343,7 +391,7 @@ export function CreateResource({
                 <p role="alert" className="text-destructive text-xs">
                   {mediaError === 'tooLarge'
                     ? t('graph.media.tooLarge', {
-                        max: formatBytes(t, MAX_MEDIA_SIZE_BYTES),
+                        max: formatBytes(t, effectiveMaxBytes),
                       })
                     : t('graph.media.unsupportedType')}
                 </p>
@@ -425,7 +473,11 @@ export function CreateResource({
             <Check className="size-4" aria-hidden />
             {busy
               ? needsMedia
-                ? t('graph.media.uploading')
+                ? uploadPercent !== null
+                  ? t('graph.media.uploadingProgress', {
+                      percent: String(uploadPercent),
+                    })
+                  : t('graph.media.uploading')
                 : t('graph.create.saving')
               : t('graph.create.submit')}
           </Button>
@@ -503,22 +555,54 @@ async function createNode(
 }
 
 /**
- * Upload a file's BYTES to a node + confirm its media satellite (ADR-0026). Order:
- *   1. authorize a signed UPLOAD url (`media?op=upload-url`) — the server checks
- *      node-update under RLS, validates the declared mime/size, and returns the
- *      short-lived signed url + the SERVER-decided `storagePath` + upload `token`.
- *   2. PUT the bytes DIRECTLY to Storage via `uploadToSignedUrl(path, token, file)`
- *      on the browser Supabase client (the canonical signed-upload idiom — it sets
- *      the correct headers for the signed URL; the server never buffers the bytes).
+ * Best-effort ROLL BACK of a just-created media node whose byte-upload failed —
+ * purge (hard-delete) it so no "broken shell" (a bodyless file/video node with no
+ * satellite) lingers on the canvas OR in Trash. The node was just created and never
+ * populated: it carries no living cross-owner references, so the owner's own purge
+ * via the existing Trash-lens DELETE (`/author/graph/trash`, DELETE = purge) is
+ * clean and direct — no soft-delete-to-Trash detour. REUSES that endpoint's exact
+ * wire shape (`{ spaceId, resourceId }`), not a new route.
+ *
+ * Best-effort by design: a rollback that itself fails must NOT mask or loop over the
+ * original upload error — the caller still surfaces that error. We swallow only this
+ * delete's own failure (a leftover shell is the pre-existing bug, never a regression).
+ */
+async function purgeOrphanNode(spaceId: string, nodeId: string): Promise<void> {
+  try {
+    await fetch('/author/graph/trash', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spaceId, resourceId: nodeId }),
+    });
+  } catch {
+    // Swallow: the original upload error is what the caller surfaces (poc-no-fallbacks).
+  }
+}
+
+/**
+ * Upload a file's BYTES to a node + confirm its media satellite via the RESUMABLE
+ * (TUS) transport (ADR-0026 AMENDMENT §A2). Order:
+ *   1. authorize (`media?op=upload-url`) — the server checks node-update under RLS,
+ *      validates the declared mime/size against the resolved per-org limit, and
+ *      returns the SERVER-decided `storagePath` (`spaces/<spaceId>/kb/<nodeId>/<key>`,
+ *      the object key within the `kb-media` bucket).
+ *   2. RESUMABLE upload of the bytes DIRECTLY to Storage's TUS endpoint
+ *      (`/storage/v1/upload/resumable`) under the CALLER's OWN session JWT (§A2
+ *      option 2). The `storage.objects` INSERT policy (mirroring node-`update`)
+ *      fences the bytes EXACTLY as the single-PUT did — same fence, new transport.
+ *      6 MiB chunks; the server NEVER touches the bytes (no Next.js in the data
+ *      plane, no public URL). A small file completes in one PATCH (no size-branch).
  *   3. confirm the `media` satellite (`attribute:'media'` on the attributes route)
- *      — written ONLY after a successful PUT, so a failed upload leaves NO satellite
- *      row (poc-no-fallbacks). `createdBy` comes from the SESSION, never the body.
- * Returns true only when all three succeed; any failure → false (the caller errors).
+ *      — written ONLY after a successful upload, so a failed upload leaves NO
+ *      satellite row (poc-no-fallbacks). `createdBy` comes from the SESSION.
+ * `onProgress` reports 0–100 for the byte-transfer phase. Returns true only when
+ * every step succeeds; any failure → false (the caller surfaces the error state).
  */
 async function uploadMedia(
   spaceId: string,
   nodeId: string,
-  file: File
+  file: File,
+  onProgress: (percent: number) => void
 ): Promise<boolean> {
   const authRes = await fetch('/author/graph/media?op=upload-url', {
     method: 'POST',
@@ -535,18 +619,34 @@ async function uploadMedia(
     return false;
   }
   const authorize = (await authRes.json()) as MediaUploadAuthorizeResponse;
-  if (!authorize.storagePath || !authorize.token) {
+  if (!authorize.storagePath) {
     return false;
   }
 
+  // The bytes travel under the CALLER's own session JWT (never service-role) — the
+  // same identity `storage.objects` INSERT RLS fences on. Bail if there is no
+  // session / no configured Storage endpoint (fail-closed, poc-no-fallbacks).
   const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
+  const storageBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!supabase || !storageBaseUrl) {
     return false;
   }
-  const { error: uploadError } = await supabase.storage
-    .from(KB_MEDIA_BUCKET)
-    .uploadToSignedUrl(authorize.storagePath, authorize.token, file);
-  if (uploadError) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    return false;
+  }
+
+  const uploaded = await uploadBytesResumable({
+    file,
+    accessToken,
+    endpoint: `${storageBaseUrl}/storage/v1/upload/resumable`,
+    objectName: authorize.storagePath,
+    onProgress,
+  });
+  if (!uploaded) {
     return false;
   }
 
@@ -564,4 +664,61 @@ async function uploadMedia(
     }),
   });
   return confirmRes.ok;
+}
+
+/**
+ * Drive ONE resumable (TUS) upload of `file` to Storage's TUS endpoint and resolve
+ * `true` on success / `false` on any error (ADR-0026 §A2). Bytes go DIRECT to
+ * Storage under the caller's session JWT — never through Next.js, never a public URL.
+ * 6 MiB chunks (`TUS_CHUNK_SIZE`, the Supabase-required constant). `objectName` is
+ * the server-decided path within `KB_MEDIA_BUCKET`; the storage-RLS INSERT policy is
+ * the enforcing fence at PATCH time.
+ */
+function uploadBytesResumable({
+  file,
+  accessToken,
+  endpoint,
+  objectName,
+  onProgress,
+}: {
+  file: File;
+  accessToken: string;
+  endpoint: string;
+  objectName: string;
+  onProgress: (percent: number) => void;
+}): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const upload = new TusUpload(file, {
+      endpoint,
+      chunkSize: TUS_CHUNK_SIZE,
+      // TUS session under the caller's JWT — the storage identity storage.objects
+      // RLS fences on (never service-role). `x-upsert:false` keeps the create honest
+      // (the server-decided path is unique per upload).
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'x-upsert': 'false',
+      },
+      // Supabase storage-api requires the object metadata on the TUS session — the
+      // target bucket + the server-decided object key + the content type.
+      metadata: {
+        bucketName: KB_MEDIA_BUCKET,
+        objectName,
+        contentType: file.type || 'application/octet-stream',
+      },
+      // storage-api validates the declared size against the resumable ceiling.
+      uploadDataDuringCreation: true,
+      // Do not persist resume fingerprints — each create authorizes a fresh path.
+      removeFingerprintOnSuccess: true,
+      onProgress: (bytesSent, bytesTotal) => {
+        const percent =
+          bytesTotal > 0
+            ? Math.min(100, Math.round((bytesSent / bytesTotal) * 100))
+            : 0;
+        onProgress(percent);
+      },
+      onSuccess: () => resolve(true),
+      onError: () => resolve(false),
+    });
+    upload.start();
+  });
 }

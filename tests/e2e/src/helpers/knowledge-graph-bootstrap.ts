@@ -1970,8 +1970,8 @@ export async function teardownSearchCorpusFixture(
 // RLS-fenced as each acting user — never a service-role/direct-SQL insert of media. The
 // seeded corpus comes ENTIRELY from the shared `KNOWLEDGE_BASE_SCENARIO` (the `media`
 // preset), so the demo DB and the test make `file`/`video` nodes real the SAME way, through
-// the one create-vocabulary (the materializer's `uploadNodeMedia`: authorize → PUT via
-// `uploadToSignedUrl` → confirm the `kmm` satellite). This wrapper resolves the named node
+// the one create-vocabulary (the materializer's `uploadNodeMedia`: authorize → upload the
+// bytes to the server path → confirm the `kmm` satellite). This wrapper resolves the named node
 // refs + actors + the seeded storage paths (read via the tenant's service client, for the
 // direct-object-fetch negatives), and mints a SECOND tenant for the cross-space negative
 // (assertion 7 — not expressible in the single-space scenario model).
@@ -2134,11 +2134,10 @@ export async function seedMediaSubstrateFixture(
   );
   const { error: otherUploadErr } = await otherTenant.granted.client.storage
     .from(KB_MEDIA_BUCKET)
-    .uploadToSignedUrl(
-      otherAuth.storagePath,
-      otherAuth.token ?? '',
-      new Blob([otherContent], { type: 'text/plain' })
-    );
+    .upload(otherAuth.storagePath, new TextEncoder().encode(otherContent), {
+      contentType: 'text/plain',
+      upsert: false,
+    });
   if (otherUploadErr) {
     throw new Error(`media fixture space-B upload: ${otherUploadErr.message}`);
   }

@@ -1,12 +1,12 @@
 import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  KB_MEDIA_BUCKET,
-  MAX_MEDIA_SIZE_BYTES,
   isAllowedMediaMime,
   type MediaUploadAuthorizeRequest,
   type MediaUploadAuthorizeResponse,
 } from '@workspace/knowledge-contracts';
+
+import { resolveMediaMaxUploadBytes } from './media-limit.resolve';
 
 /**
  * KB media UPLOAD authorizer — UI-agnostic server module (ADR-0026 §3).
@@ -80,7 +80,15 @@ export async function authorizeMediaUpload(
   if (!isAllowedMediaMime(input.mimeType)) {
     throw new MediaAuthorizeError('Unsupported file type.', 400);
   }
-  if (input.sizeBytes > MAX_MEDIA_SIZE_BYTES) {
+
+  // SOFT limit (ADR-0026 AMENDMENT §A4): the effective per-org max resolved under
+  // the caller's RLS (org → global → default), clamped to the 5 GB hard cap. This
+  // replaces the former hardcoded MAX_MEDIA_SIZE_BYTES — an org admin governs it
+  // via the runtime setting. A breach is a clean 400. The HARD cap is also enforced
+  // at the boundary (request-schema .max) and by storage-api; this is the tunable
+  // soft belt.
+  const maxUploadBytes = await resolveMediaMaxUploadBytes(db, input.spaceId);
+  if (input.sizeBytes > maxUploadBytes) {
     throw new MediaAuthorizeError('File exceeds the maximum size.', 400);
   }
 
@@ -122,22 +130,11 @@ export async function authorizeMediaUpload(
     input.filename
   );
 
-  // Mint with the USER-scoped client (its JWT is the storage identity) — never
-  // service-role. `storage.objects` INSERT RLS mirrors node-update, so a token to a
-  // node the caller cannot update would be refused at PUT time anyway.
-  const { data: signed, error: signErr } = await db.storage
-    .from(KB_MEDIA_BUCKET)
-    .createSignedUploadUrl(storagePath);
-  if (signErr || !signed?.signedUrl) {
-    throw new MediaAuthorizeError(
-      signErr?.message ?? 'Could not mint upload URL.',
-      403
-    );
-  }
-
-  return {
-    signedUrl: signed.signedUrl,
-    storagePath,
-    token: signed.token,
-  };
+  // Control-plane authorization complete. The client uploads the bytes via the
+  // resumable (TUS) transport under its OWN session JWT to this server-decided path;
+  // the `storage.objects` INSERT policy (mirroring node-update) is the fence at PUT
+  // time (ADR-0026 §A2/§A5). The server does NOT mint a signed upload URL — the
+  // single-PUT leg was removed with the resumable switch, so no pointless Storage
+  // round-trip here.
+  return { storagePath };
 }

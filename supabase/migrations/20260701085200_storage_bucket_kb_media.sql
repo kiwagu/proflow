@@ -32,7 +32,10 @@
 
 -- ---------------------------------------------------------------------------
 -- The bucket. PRIVATE (public=false is load-bearing — never true).
--- file_size_limit mirrors supabase/config.toml [storage] 50MiB = 52428800 bytes.
+-- file_size_limit is the HARD per-object system cap = 5 GiB (5368709120 bytes).
+-- This is code/infra config, NOT the soft limit — per-org soft limits live in
+-- runtime_settings (platform.media.max_upload_bytes, default 200 MB) and are the
+-- authorizer's fence; this bucket cap is only the storage-level backstop.
 --
 -- allowed_mime_types = null is a DELIBERATE, owner-approved decision:
 -- "any-except-dangerous". Supabase bucket allowed_mime_types is a POSITIVE
@@ -43,8 +46,8 @@
 -- denylist.
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('kb-media', 'kb-media', false, 52428800, null)
-on conflict (id) do nothing;
+values ('kb-media', 'kb-media', false, 5368709120, null)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 -- ---------------------------------------------------------------------------
 -- storage.objects RLS: mirror the owning node's access via the path segments.

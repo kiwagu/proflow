@@ -1,5 +1,8 @@
 import { loadGraphMessages } from '@workspace/i18n-catalogs/graph';
-import type { ProjectionResult } from '@workspace/knowledge-contracts';
+import {
+  DEFAULT_MAX_UPLOAD_BYTES,
+  type ProjectionResult,
+} from '@workspace/knowledge-contracts';
 
 import { DriveWorkbench } from './drive-workbench';
 import {
@@ -17,6 +20,7 @@ import {
   resolveDefaultLensProjection,
   resolveDriveLayout,
   resolveLensView,
+  resolveMaxUploadBytes,
   resolveSpaceCapabilities,
   resolveSpaceEntitlements,
 } from './graph-page.data';
@@ -126,6 +130,9 @@ export default async function GraphPage({
       trash: { items: [], metaByItem: {} },
       sharedByMe: [],
       shareMechanism: {},
+      // No active space → the resolver cannot run; fall to the 200 MB soft default
+      // (the client pre-validation hint only; the authorizer + bucket cap fence).
+      maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
     };
     return (
       <DriveWorkbench
@@ -165,6 +172,7 @@ export default async function GraphPage({
     capabilities,
     sharedByMe,
     entitlements,
+    maxUploadBytes,
   ] = await Promise.all([
     loadContainmentForest(spaceId),
     loadShortcutForest(spaceId),
@@ -180,6 +188,10 @@ export default async function GraphPage({
     // the verb capabilities, but from a DIFFERENT authority (the platform plan
     // registry, not RLS). Kept ORTHOGONAL: packed as a SIBLING of `capabilities`.
     resolveSpaceEntitlements(spaceId),
+    // The EFFECTIVE per-org max-upload size (ADR-0026 §A3) — resolved under the SAME
+    // user RLS (member read of the public runtime-settings row); the CreateResource
+    // picker uses it for a friendly "too large" hint (the authorizer is the fence).
+    resolveMaxUploadBytes(spaceId),
   ]);
 
   // The "Shared with me" set = visible nodes I do NOT own (the same predicate the
@@ -223,6 +235,7 @@ export default async function GraphPage({
     },
     sharedByMe,
     shareMechanism,
+    maxUploadBytes,
   };
 
   return (

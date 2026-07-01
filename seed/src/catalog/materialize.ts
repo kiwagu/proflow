@@ -197,10 +197,10 @@ export async function materializeScenario(
         parentFolderId
       );
       // A `file`/`video` node with a byte payload becomes REAL through the SAME
-      // upload transport the product drives (ADR-0026): authorize a signed upload
-      // URL under the OWNER's RLS, PUT the bytes to the private `kb-media` bucket via
-      // `uploadToSignedUrl` on the owner's storage client, then confirm the
-      // `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
+      // upload transport the product drives (ADR-0026): authorize the upload under
+      // the OWNER's RLS (server-decided path only), upload the bytes to the private
+      // `kb-media` bucket at that path under the owner's storage client, then confirm
+      // the `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
       if ((node.kind === 'file' || node.kind === 'video') && node.media) {
         await uploadNodeMedia(
           scenario.id,
@@ -322,15 +322,19 @@ export async function materializeScenario(
 
 /**
  * Drive a `file`/`video` node's byte payload through the REAL media transport
- * (ADR-0026), exactly as the product's create flow does — the seed never inserts a
- * media object or `kmm` row via service-role / direct SQL:
- *   1. authorize a signed UPLOAD url (`media?op=upload-url`) under the OWNER's RLS
- *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` +
- *      upload `token`;
- *   2. PUT the bytes to the private `kb-media` bucket via `uploadToSignedUrl` on the
- *      owner's storage-js client (the canonical signed-upload idiom);
+ * (ADR-0026, resumable/TUS switch), exactly as the product's create flow does — the seed
+ * never inserts a media object or `kmm` row via service-role / direct SQL:
+ *   1. authorize the upload (`media?op=upload-url`) under the OWNER's RLS
+ *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` only
+ *      (the single-PUT signed-url/token leg was removed with the resumable switch);
+ *   2. upload the bytes to the private `kb-media` bucket at that server path under the
+ *      OWNER's storage-js client. The PRODUCT uploads via resumable TUS; the seed runs in
+ *      Node (no browser `tus-js-client`) with tiny fixtures, so it uses the storage-js
+ *      STANDARD `upload(storagePath, bytes, { contentType, upsert:false })` — still fenced
+ *      by the SAME `storage.objects` INSERT RLS policy (mirroring node-update), still the
+ *      user's own JWT, never service-role;
  *   3. confirm the `kb.resource_media_meta` satellite (`attribute:'media'`) — written
- *      ONLY after a successful PUT, so a failed upload leaves NO row (poc-no-fallbacks).
+ *      ONLY after a successful upload, so a failure leaves NO row (poc-no-fallbacks).
  * So both the demo tenant and the e2e fixtures get a genuine object + satellite whose
  * access is fenced by the SAME `storage.objects` / satellite RLS as production.
  */
@@ -358,19 +362,24 @@ async function uploadNodeMedia(
   };
 
   const authorize = await client.uploadMediaUrl(spaceId, nodeId, declared);
-  if (!authorize.storagePath || !authorize.token) {
+  if (!authorize.storagePath) {
     throw new Error(
-      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath/token`
+      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath`
     );
   }
 
-  const blob = new Blob([bytes], { type: media.mimeType });
+  // Upload to the SERVER-decided path under the owner's own session (RLS). The product
+  // uses resumable TUS; the seed's tiny fixtures ride the storage-js STANDARD upload —
+  // same `storage.objects` INSERT fence, same JWT, no service-role, no `tus-js-client`.
   const { error: uploadError } = await ownerDb.storage
     .from(KB_MEDIA_BUCKET)
-    .uploadToSignedUrl(authorize.storagePath, authorize.token, blob);
+    .upload(authorize.storagePath, bytes, {
+      contentType: media.mimeType,
+      upsert: false,
+    });
   if (uploadError) {
     throw new Error(
-      `${scenarioId} media "${node.ref}": PUT to ${KB_MEDIA_BUCKET} failed — ${uploadError.message}`
+      `${scenarioId} media "${node.ref}": upload to ${KB_MEDIA_BUCKET} failed — ${uploadError.message}`
     );
   }
 

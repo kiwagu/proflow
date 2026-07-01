@@ -116,6 +116,7 @@
   "graph.media.type": "Type",
   "graph.media.upload": "Upload",
   "graph.media.uploading": "Uploading…",
+  "graph.media.uploadingProgress": "Uploading… {percent}%",
   "graph.media.download": "Download",
   "graph.media.downloading": "Preparing…",
   "graph.media.downloadError": "Could not prepare the download. Please try again.",

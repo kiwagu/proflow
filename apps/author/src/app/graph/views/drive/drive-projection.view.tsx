@@ -775,6 +775,7 @@ export function DriveProjectionView({
       folderId={folderId}
       containment={treeContainment}
       spaceId={spaceId}
+      maxUploadBytes={kbData?.maxUploadBytes}
       onMutated={onMutated}
     />
   );
@@ -1518,6 +1519,7 @@ export function DriveProjectionView({
         spaceId={spaceId}
         t={t}
         containment={containment}
+        maxUploadBytes={kbData?.maxUploadBytes}
         request={createRequest}
         onOpenChange={(open) => {
           if (!open) {

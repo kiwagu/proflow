@@ -12,15 +12,16 @@
  *
  * The corpus comes from the SHARED `KNOWLEDGE_BASE_SCENARIO` catalog (the `media`
  * preset, via `seedMediaSubstrateFixture`), whose `file`/`video` nodes are made real by
- * the materializer through the product's OWN transport (authorize signed upload URL →
- * PUT via `uploadToSignedUrl` → confirm the `kmm` satellite) — so the demo DB and this
+ * the materializer through the product's OWN transport (authorize → upload the bytes to the
+ * server-decided path → confirm the `kmm` satellite; the resumable/TUS switch dropped the
+ * single-PUT signed-url leg) — so the demo DB and this
  * test speak ONE create-vocabulary, never a bespoke seeding path. The transport itself
  * runs through the SAME vocabulary (`seedClientFor(actor).uploadMediaUrl/setMedia/
  * downloadMediaUrl` → the REAL `/author/graph/media` + `attribute:'media'` routes,
  * RLS-fenced as the acting user) against REAL Storage.
  *
  *  Functional (Phase 1):
- *   1  upload to an OWNED node → signed URL; bytes land; `kmm` row present.
+ *   1  upload to an OWNED node → server path authorized; bytes land; `kmm` row present.
  *   2  download that node → signed URL; GET returns the EXACT bytes.
  *   3  ResourcePanel Media section shows filename + humanized size + mime + Download.
  *   3a an IMAGE node (image/png) renders an inline `<img>` preview ABOVE the facts
@@ -31,6 +32,15 @@
  *   3d an AUDIO node (audio/wav) renders an inline `<audio controls>` player ABOVE the
  *       facts. 3c/3d assert the facts + Download REMAIN (the player is additive).
  *   4  upload to a `video` node → same path (one substrate serves file & video).
+ *   4a org-limit round-trip (ADR-0026 §A4): set `platform.media.max_upload_bytes` LOW at
+ *       `organization` scope → the authorizer DENIES (400) an upload exceeding it (the
+ *       resolver reflects the set org value); unset → the same upload is AUTHORIZED again
+ *       (falls back through the cascade to the 200 MB code default).
+ *   4b >50 MiB upload travels the RESUMABLE (TUS) transport end-to-end and lands: a ~60 MiB
+ *       payload is authorized → resumable-uploaded via `tus-js-client` (Node) to the
+ *       server-decided path under the owner's OWN session JWT → confirmed; the `kmm` row
+ *       carries the full ~60 MiB `size_bytes`. PROVES the standard 50 MiB upload cap is
+ *       bypassed via TUS + the raised bucket FILE_SIZE_LIMIT (5 GB) is in effect.
  *
  *  RLS / access (the security gate):
  *   5  non-grantee download URL for another user's PRIVATE file → DENIED; direct
@@ -55,6 +65,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { Upload as TusUpload } from 'tus-js-client';
 import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import {
@@ -68,6 +79,10 @@ import {
   type KnowledgeGraphTenant,
   type MediaSubstrateFixture,
 } from './helpers/knowledge-graph-bootstrap.js';
+import {
+  resetOrganizationMediaMaxUploadBytes,
+  setOrganizationMediaMaxUploadBytes,
+} from './helpers/runtime-settings.js';
 import { resolveAnonKey, resolveSupabaseUrl } from './helpers/test-user.js';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? 'https://proflow.local';
@@ -100,16 +115,16 @@ async function uploadAs(
       sizeBytes,
       filename,
     });
-    expect(auth.signedUrl).toBeTruthy();
+    // Resumable/TUS switch (ADR-0026 §A2): authorize is CONTROL-plane — it returns the
+    // server-decided storagePath ONLY, no signed URL/token. Upload the bytes to that path
+    // under the actor's own session, fenced by the storage.objects INSERT RLS.
     expect(auth.storagePath).toBeTruthy();
-    expect(auth.token).toBeTruthy();
     const { error } = await actor.client.storage
       .from(KB_MEDIA_BUCKET)
-      .uploadToSignedUrl(
-        auth.storagePath,
-        auth.token ?? '',
-        new Blob([content], { type: mimeType })
-      );
+      .upload(auth.storagePath, new TextEncoder().encode(content), {
+        contentType: mimeType,
+        upsert: false,
+      });
     expect(error, error?.message).toBeNull();
     await client.setMedia({
       spaceId,
@@ -122,6 +137,70 @@ async function uploadAs(
   } finally {
     await client.dispose();
   }
+}
+
+/** The resumable (TUS) chunk size — 6 MiB, the Supabase storage-api-required constant for
+ * the `/storage/v1/upload/resumable` endpoint (mirrors the product's `TUS_CHUNK_SIZE`). */
+const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
+
+/** Resolve an actor's RAW Supabase session access_token (the storage identity the TUS
+ * PATCH is fenced on). The actor's `client` is already signed in (in-memory session, no
+ * persistence); fall back to a fresh sign-in if the token isn't reachable. */
+async function actorAccessToken(actor: KnowledgeActor): Promise<string> {
+  const {
+    data: { session },
+  } = await actor.client.auth.getSession();
+  if (session?.access_token) {
+    return session.access_token;
+  }
+  const fresh = createClient(resolveSupabaseUrl(), resolveAnonKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await fresh.auth.signInWithPassword({
+    email: actor.email,
+    password: actor.password,
+  });
+  if (error || !data.session?.access_token) {
+    throw new Error(
+      `actorAccessToken(${actor.email}): ${error?.message ?? 'no session'}`
+    );
+  }
+  return data.session.access_token;
+}
+
+/** Drive ONE resumable (TUS) upload of an in-memory Buffer to Storage's TUS endpoint under
+ * the actor's OWN session JWT — the SAME transport the product's browser client uses
+ * (6 MiB chunks, `x-upsert:false`, `{ bucketName, objectName, contentType }` metadata). The
+ * standard storage-api `.upload()` caps at 50 MiB, so a >50 MiB payload MUST travel here.
+ * Resolves on `onSuccess`; rejects on `onError`. */
+function uploadBytesResumable(opts: {
+  payload: Buffer;
+  accessToken: string;
+  objectName: string;
+  contentType: string;
+}): Promise<void> {
+  const { payload, accessToken, objectName, contentType } = opts;
+  return new Promise<void>((resolve, reject) => {
+    const upload = new TusUpload(payload, {
+      endpoint: `${resolveSupabaseUrl()}/storage/v1/upload/resumable`,
+      chunkSize: TUS_CHUNK_SIZE,
+      uploadSize: payload.byteLength,
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'x-upsert': 'false',
+      },
+      metadata: {
+        bucketName: KB_MEDIA_BUCKET,
+        objectName,
+        contentType,
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      onSuccess: () => resolve(),
+      onError: (error) => reject(error),
+    });
+    upload.start();
+  });
 }
 
 /** Read the `kb.resource_media_meta` satellite row via the tenant service client — a
@@ -219,7 +298,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
 
   // ── Functional (Phase 1) ───────────────────────────────────────────────────
 
-  test('(1) upload to an owned node issues a signed URL, bytes land, and the kmm row is present', async () => {
+  test('(1) upload to an owned node authorizes a server path, bytes land, and the kmm row is present', async () => {
     // The owned file was uploaded by the materializer through the real transport, so a
     // kmm row + a bucket object already exist. Assert the row carries the declared
     // mime/size/path/filename (end-to-end upload + metadata write).
@@ -469,6 +548,145 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       );
       const res = await fetch(signedUrl);
       expect(await res.text()).toBe(content);
+    } finally {
+      await client.dispose();
+    }
+  });
+
+  test('(4a) org-limit round-trip: a low org max DENIES an over-limit upload (400); unset falls back to the 200 MB default', async () => {
+    // The SOFT limit is the org-governed `platform.media.max_upload_bytes` (ADR-0026 §A4),
+    // resolved org → global → 200 MB default under the CALLER's RLS. Drive the round-trip
+    // through the REAL authorizer AS the owner (a legit uploader) — reuse the existing
+    // runtime-settings set path (no reinvented dial).
+    const ORG_LIMIT = 1024; // 1 KiB — a deliberately tiny org ceiling.
+    const OVER_LIMIT = ORG_LIMIT + 1; // just over → must be denied while the row is set.
+
+    // Baseline: with NO org row, a 1 KiB+ upload is well under the 200 MB default → AUTHORIZED.
+    const beforeSet = await mediaOp(fx.owner, 'upload-url', {
+      spaceId: fx.spaceId,
+      nodeId: fx.fileOwnedId,
+      mimeType: 'text/plain',
+      sizeBytes: OVER_LIMIT,
+      filename: 'org-limit-probe.txt',
+    });
+    expect(beforeSet.status).toBe(200);
+
+    try {
+      // Set the org dial LOW. The resolver now returns 1 KiB for uploads in this org's space.
+      await setOrganizationMediaMaxUploadBytes(
+        tenant.organizationId,
+        ORG_LIMIT
+      );
+
+      // An upload EXCEEDING the org limit is denied at the authorizer with a clean 400
+      // (the resolver reflects the set org value; not a storage/RLS error).
+      const denied = await mediaOp(fx.owner, 'upload-url', {
+        spaceId: fx.spaceId,
+        nodeId: fx.fileOwnedId,
+        mimeType: 'text/plain',
+        sizeBytes: OVER_LIMIT,
+        filename: 'org-limit-probe.txt',
+      });
+      expect(denied.status).toBe(400);
+      expect(denied.body?.signedUrl).toBeFalsy();
+
+      // A size AT/under the org limit still authorizes → the limit is the fence, not a block.
+      const allowed = await mediaOp(fx.owner, 'upload-url', {
+        spaceId: fx.spaceId,
+        nodeId: fx.fileOwnedId,
+        mimeType: 'text/plain',
+        sizeBytes: ORG_LIMIT,
+        filename: 'org-limit-ok.txt',
+      });
+      expect(allowed.status).toBe(200);
+    } finally {
+      // Unset → the cascade falls back to the 200 MB default.
+      await resetOrganizationMediaMaxUploadBytes(tenant.organizationId);
+    }
+
+    // After unset, the previously-denied over-limit upload is AUTHORIZED again (default fence).
+    const afterReset = await mediaOp(fx.owner, 'upload-url', {
+      spaceId: fx.spaceId,
+      nodeId: fx.fileOwnedId,
+      mimeType: 'text/plain',
+      sizeBytes: OVER_LIMIT,
+      filename: 'org-limit-probe.txt',
+    });
+    expect(afterReset.status).toBe(200);
+  });
+
+  // ── Large-file (resumable) path — the raised-cap headline ────────────────────
+
+  test('(4b) a >50 MiB upload travels the resumable (TUS) path and lands (raised FILE_SIZE_LIMIT)', async () => {
+    // The headline proof: a ~60 MiB payload EXCEEDS storage-api's STANDARD
+    // single-request cap (UPLOAD_FILE_SIZE_LIMIT_STANDARD=52428800, 50 MiB), so it can
+    // ONLY land via the RESUMABLE (TUS) transport — the SAME path the product's browser
+    // client drives (`/storage/v1/upload/resumable`, 6 MiB chunks, the caller's own
+    // session JWT). The authorizer already ACCEPTS the declared size (under the 200 MB
+    // soft default + 5 GB hard cap); this closes the last gap — driving the BYTES over
+    // TUS from Node via `tus-js-client`. A fresh owned `video` node keeps it isolated.
+    const PAYLOAD_BYTES = 60 * 1024 * 1024; // ~60 MiB — > the 50 MiB standard cap.
+    const CONTENT_TYPE = 'video/mp4';
+    const FILENAME = 'large-clip.mp4';
+
+    const client = await seedClientFor(fx.owner);
+    try {
+      // A dedicated owned video node for this test (isolated from the seeded corpus).
+      const nodeId = await client.createNode(
+        fx.spaceId,
+        'video',
+        'Large Clip (video, >50 MiB)'
+      );
+
+      // 1. Authorize — declare the >50 MiB size + mime; get the server-decided path.
+      const auth = await client.uploadMediaUrl(fx.spaceId, nodeId, {
+        mimeType: CONTENT_TYPE,
+        sizeBytes: PAYLOAD_BYTES,
+        filename: FILENAME,
+      });
+      expect(auth.storagePath).toBeTruthy();
+
+      // 2. Resumable-upload the ~60 MiB payload via TUS under the owner's OWN session JWT
+      //    (an in-memory Buffer — no fixture file). The standard `.upload()` would 413 on
+      //    this size; TUS carries the genuine ~60 MiB over the wire in 6 MiB chunks.
+      const accessToken = await actorAccessToken(fx.owner);
+      const payload = Buffer.alloc(PAYLOAD_BYTES, 'a');
+      await uploadBytesResumable({
+        payload,
+        accessToken,
+        objectName: auth.storagePath,
+        contentType: CONTENT_TYPE,
+      });
+
+      // 3. Confirm — write the `kmm` satellite (only after the bytes landed).
+      await client.setMedia({
+        spaceId: fx.spaceId,
+        nodeId,
+        storagePath: auth.storagePath,
+        mimeType: CONTENT_TYPE,
+        sizeBytes: PAYLOAD_BYTES,
+        originalFilename: FILENAME,
+      });
+
+      // 4. Assert the kmm row carries the full ~60 MiB size — PROVES the 50 MiB standard
+      //    cap was bypassed via the resumable transport (a standard PUT would have 413'd
+      //    before any row could be written).
+      const kmm = await readKmm(tenant, nodeId);
+      expect(kmm, 'kmm row for the large video').not.toBeNull();
+      expect(kmm?.mime_type).toBe(CONTENT_TYPE);
+      expect(kmm?.original_filename).toBe(FILENAME);
+      expect(kmm?.size_bytes).toBe(PAYLOAD_BYTES);
+      expect(kmm?.storage_path).toBe(auth.storagePath);
+
+      // The object genuinely exists at full size in the private bucket (service read —
+      // a setup/assertion check, NOT the access path under test): the download authorizer
+      // + signed URL are already proven by assertion 2; here we confirm the byte count.
+      const { data, error } = await tenant.service.storage
+        .from(KB_MEDIA_BUCKET)
+        .download(auth.storagePath);
+      expect(error, error?.message).toBeNull();
+      const landed = await data?.arrayBuffer();
+      expect(landed?.byteLength).toBe(PAYLOAD_BYTES);
     } finally {
       await client.dispose();
     }

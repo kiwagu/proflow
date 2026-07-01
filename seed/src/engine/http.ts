@@ -101,14 +101,14 @@ export type SearchHit = {
  * hits the caller may see under RLS (the SOLE access fence). */
 export type SearchHits = { items: SearchHit[]; nextCursor?: string };
 
-/** The `/author/graph/media?op=upload-url` result (ADR-0026 §3): the short-lived
- * signed UPLOAD url the caller PUTs bytes to (via `uploadToSignedUrl`), the
- * SERVER-decided `storagePath` the caller echoes back on confirm, and the storage
- * upload `token`. Fails CLOSED (403/404) for a node the caller cannot update/see. */
+/** The `/author/graph/media?op=upload-url` result (ADR-0026 §3, resumable/TUS switch):
+ * CONTROL-plane only — the SERVER-decided `storagePath` (`spaces/<spaceId>/kb/<nodeId>/
+ * <serverKey>`) the caller uploads the bytes to under its OWN session JWT, then echoes
+ * back on confirm (`setMedia`). The single-PUT signed-url leg (`signedUrl`/`token`) was
+ * removed with the resumable transport — `storage.objects` INSERT RLS is the fence at
+ * PUT time. Fails CLOSED (403/404) for a node the caller cannot update/see. */
 export type MediaUploadUrl = {
-  signedUrl: string;
   storagePath: string;
-  token?: string;
 };
 
 /** The `/author/graph/media?op=download-url` result (ADR-0026 §2c): the short-lived
@@ -254,12 +254,13 @@ export type SeedClient = SeedFetcher & {
     term: string,
     opts?: { limit?: number }
   ): Promise<SearchHits>;
-  /** Authorize a signed UPLOAD url for a `file`/`video` node (ADR-0026 §3):
-   * `POST /author/graph/media?op=upload-url`. The server checks node-`update` under
-   * THIS actor's RLS + validates the declared mime/size, then mints the url + the
-   * SERVER-decided `storagePath` + upload `token`. The caller then PUTs the bytes
-   * DIRECTLY to Storage (`uploadToSignedUrl`) — the server never buffers them. A
-   * node the caller cannot update/see fails closed (403/404), never a leak. */
+  /** Authorize an upload for a `file`/`video` node (ADR-0026 §3, resumable/TUS switch):
+   * `POST /author/graph/media?op=upload-url`. The server checks node-`update` under THIS
+   * actor's RLS + validates the declared mime/size, then returns the SERVER-decided
+   * `storagePath` only — CONTROL-plane, no signed URL/token. The caller uploads the bytes
+   * DIRECTLY to Storage under its OWN session (the product client via TUS; the seed via a
+   * standard storage-js `upload`), fenced by the `storage.objects` INSERT policy. A node
+   * the caller cannot update/see fails closed (403/404), never a leak. */
   uploadMediaUrl(
     spaceId: string,
     nodeId: string,
