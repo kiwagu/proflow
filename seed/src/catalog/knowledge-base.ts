@@ -33,23 +33,26 @@ const KB_TAG = 'Knowledge Base';
  */
 const FILE_FIXTURE_BYTES =
   'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n';
-const VIDEO_FIXTURE_BYTES =
-  'ProFlow KB media fixture — a "video" node over the SAME substrate (ADR-0026).\nOne generic satellite + one bucket serves file AND video; the player is a later slice.\n';
 
 /**
- * BINARY fixtures for the inline MIME-driven preview (ADR-0026 Phase 2, increment 1):
- * a genuine tiny image and a genuine minimal PDF, base64-encoded (decoded to the exact
- * binary by the materializer before the signed PUT). They must be REAL renderable bytes
- * — a mangled/utf8-encoded image would fail the `<img>` load and the preview would
- * collapse to null. `image/*` → an inline `<img>`; `application/pdf` → an inline
- * `<iframe>`; the pre-existing `text/plain` files already cover the "no preview" case.
- *  - IMAGE_FIXTURE_B64 — a 1×1 transparent PNG (70 bytes).
- *  - PDF_FIXTURE_B64   — a minimal single-page PDF (552 bytes) reading "ProFlow KB media fixture".
+ * BINARY fixtures for the inline MIME-driven preview (ADR-0026 Phase 2): genuine tiny
+ * renderable/playable assets, base64-encoded (decoded to the exact binary by the
+ * materializer before the signed PUT). They must be REAL bytes — a mangled/utf8-encoded
+ * asset would fail the element's load and the preview would collapse to null.
+ *  - IMAGE_FIXTURE_B64 → `<img>`    (image/png)       — a 1×1 transparent PNG (70 bytes).
+ *  - PDF_FIXTURE_B64   → `<iframe>` (application/pdf)  — a minimal single-page PDF reading "ProFlow KB media fixture".
+ *  - VIDEO_FIXTURE_B64 → `<video>`  (video/mp4)        — a 0.2 s 16×16 H.264 clip (increment 2).
+ *  - AUDIO_FIXTURE_B64 → `<audio>`  (audio/wav)        — a 0.1 s 8 kHz mono PCM tone (increment 2).
+ * The pre-existing `text/plain` file already covers the "no preview" case.
  */
 const IMAGE_FIXTURE_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const PDF_FIXTURE_B64 =
   'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0vUmVzb3VyY2VzPDwvRm9udDw8L0YxIDQgMCBSPj4+Pi9Db250ZW50cyA1IDAgUj4+ZW5kb2JqCjQgMCBvYmo8PC9UeXBlL0ZvbnQvU3VidHlwZS9UeXBlMS9CYXNlRm9udC9IZWx2ZXRpY2E+PmVuZG9iago1IDAgb2JqPDwvTGVuZ3RoIDU4Pj5zdHJlYW0KQlQgL0YxIDE4IFRmIDIwIDEwMCBUZCAoUHJvRmxvdyBLQiBtZWRpYSBmaXh0dXJlKSBUaiBFVAplbmRzdHJlYW0gZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDUyIDAwMDAwIG4gCjAwMDAwMDAxMDEgMDAwMDAgbiAKMDAwMDAwMDIwOSAwMDAwMCBuIAowMDAwMDAwMjcyIDAwMDAwIG4gCnRyYWlsZXI8PC9TaXplIDYvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgozODAKJSVFT0YK';
+const VIDEO_FIXTURE_B64 =
+  'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMUbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAMgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAADIAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAACABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4xMS4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADACg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAG1gAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAAAIAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAAK8AAAAAQAAABRzdGNvAAAAAAAAAAEAAANEAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2Mi4zLjEwMAAAAAhmcmVlAAACxG1kYXQAAAKfBgX//5vcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTUgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAVZYiEAD///uZ1+BTY8h6SxAYgqcOB';
+const AUDIO_FIXTURE_B64 =
+  'UklGRmYDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgATElTVBoAAABJTkZPSVNGVA0AAABMYXZmNjIuMy4xMDAAAGRhdGEgAwAAgYWKjY+PjoqFgHt2cnBwcXV5foSJjY+PjouGgXx3c3BwcXR4fYOIjI+PjoyHgn13c3BwcHN3fYKHjI6Pj4yHgn13c3BwcHN3fYKHjI6Pj46Mh4J8d3NwcHF0eH2DiIyPj46Lh4J8d3NwcHF0eH2DiIyPj46MiIN9eHRxcHBzd3yCh4uOj4+MiIN+eXRxcHBydnuBhoqOj4+NiYR/enVxcHBydXp/hYqNj4+OioWAe3ZycHBxdXl+hImNj4+OioaBe3ZycHBxdHl+g4iMj4+Oi4eCfHdzcHBxdHh9g4iMj4+PjIiCfXh0cXBwc3d8goeLjo+PjIiDfnl0cXBwcnZ7gYaKjo+PjYmEf3p1cXBwcnV6f4WKjY+PjoqFgHt2cnBwcXV5foSJjY+PjouGgXx3c3BwcXR4fYOIjI+PjoyHgn13c3BwcHN3fIKHjI6Pj4yIg314dHFwcHN3fIGGi46Pj42JhH55dXFwcHJ2e4CFio6Pj42KhYB6dXJwcHF1en+EiY2Pj46KhoF7dnJwcHF0eX6DiIyPj46Lh4J8d3NwcHF0eH2CiIyPj4+MiIN9eHRxcHBzd3yCh4uOj4+MiIN+eXRxcHBydnuBhoqOj4+NiYR/enVxcHBydXqAhYqNj4+OioWAenVycHBxdXp/hImNj4+OioaBe3ZycHBxdHl+g4iMj4+Oi4eCfHdzcHBxc3h9g4iMj5CPjIiDfXh0cXBwc3d8gYaLjo+PjYmEfnl1cXBwcnZ7gIWKjo+PjYqFgHp1cnBwcXV6f4SJjY+PjoqGgXt2cnBwcXR5foOIjI+PjouHgnx3c3BwcXR4fYOIjI+PjoyHgn13c3BwcHN3fIKHjI6Pj4yIg314dHFwcHN3fIGGi46Pj42JhH55dXFwcHJ2e4CFio6Pj42KhYB6dXJwcHF1en+EiY2Pj46KhoF7dnJwcHF0eX6DiIyPj46Lh4J8d3NwcHF0eH2CiIyPj4+MiIJ9eHRxcHBzd3yCh4uOj4+MiIN+eXRxcHBydnuBhoqOj4+NiYR/enVxcHBydXo=';
 
 /**
  * Knowledge-base scenario — a tagged slice of articles surfaced as a grid, AND the
@@ -98,7 +101,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png) and a real PDF (application/pdf) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png), a real PDF (application/pdf), a real VIDEO (video/mp4) and a real AUDIO (audio/wav) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`, video/* → an inline `<video controls>` player, audio/* → an inline `<audio controls>` player; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
   presets: ['knowledge-base', 'search', 'media'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
@@ -178,17 +181,41 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           },
         },
         {
-          // Owned video — assertion 4: the SAME substrate (one satellite + one bucket)
-          // serves `video` too. The player is a later slice; upload/download is real now.
+          // Owned video — assertion 4 (the SAME substrate serves `video`) AND the inline
+          // VIDEO PLAYER happy path (ADR-0026 Phase 2, increment 2): a `video/*` mime → the
+          // ResourcePanel Media section renders an inline `<video controls>` (aria-label
+          // "Preview of intro-clip.mp4") ABOVE the facts, minting its URL via the SAME
+          // download authorizer. Real H.264/MP4 bytes (base64) so the player genuinely
+          // loads metadata — a corrupt fixture would trip `onError` → the player collapses.
           ref: 'kb/video-owned',
           kind: 'video',
           title: 'Intro Clip (video)',
           description:
-            'A real uploaded video — one substrate serves file & video.',
+            'A real uploaded video — one substrate serves file & video, with an inline player.',
           media: {
-            bytes: VIDEO_FIXTURE_BYTES,
-            mimeType: 'text/plain',
-            filename: 'intro-clip.txt',
+            bytes: VIDEO_FIXTURE_B64,
+            encoding: 'base64',
+            mimeType: 'video/mp4',
+            filename: 'intro-clip.mp4',
+          },
+        },
+        {
+          // Owned AUDIO — the inline AUDIO PLAYER happy path (ADR-0026 Phase 2, increment
+          // 2): an `audio/*` mime → the Media section renders an inline `<audio controls>`
+          // (aria-label "Preview of intro-tone.wav") ABOVE the facts, again via the SAME
+          // download authorizer. A genuine tiny PCM/WAV tone (base64) so the player has
+          // real bytes to load. Native `<audio>` (like `<img>`/`<video>`) — no covering
+          // @workspace/ui primitive exists.
+          ref: 'kb/file-audio',
+          kind: 'file',
+          title: 'Intro Tone (audio)',
+          description:
+            'A real audio clip — the inline audio player happy path.',
+          media: {
+            bytes: AUDIO_FIXTURE_B64,
+            encoding: 'base64',
+            mimeType: 'audio/wav',
+            filename: 'intro-tone.wav',
           },
         },
         {

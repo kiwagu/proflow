@@ -9,17 +9,18 @@ import { postJson } from './panel-fetch';
 
 /**
  * MediaPreview — the inline, MIME-driven preview shown ABOVE the MediaFacts in the
- * ResourcePanel Media section (ADR-0026 Phase 2, increment 1). The preview is chosen
- * from `media.mimeType`, NOT the node kind: `image/*` → an inline `<img>`,
- * `application/pdf` → a bounded inline `<iframe>`. Any other mime → no preview at all
- * (the caller renders only facts + Download).
+ * ResourcePanel Media section (ADR-0026 Phase 2). The preview is chosen from
+ * `media.mimeType`, NOT the node kind: `image/*` → an inline `<img>`,
+ * `application/pdf` → a bounded inline `<iframe>`, `video/*` → an inline `<video
+ * controls>` player, `audio/*` → an inline `<audio controls>` player. Any other mime
+ * → no preview at all (the caller renders only facts + Download).
  *
  * Egress reuses the SAME short-lived, server-authorized download authorizer as the
  * Download button (`media?op=download-url {spaceId,nodeId}`) — NO public URL, no new
- * endpoint. One URL is minted per node ON MOUNT and loaded once (`loading="lazy"` /
- * single iframe load), so the ~60s TTL is sufficient. RLS is the sole fence: a denied
- * node resolves to null → NO preview is rendered, never a leak (poc-no-fallbacks: a
- * real signed-URL render or nothing).
+ * endpoint. One URL is minted per node ON MOUNT; the download TTL is 3 h so a
+ * range-streamed video/audio session does not expire mid-playback (ADR-0026 §2c). RLS
+ * is the sole fence: a denied node resolves to null → NO preview is rendered, never a
+ * leak (poc-no-fallbacks: a real signed-URL render or nothing).
  */
 export function MediaPreview({
   t,
@@ -97,6 +98,34 @@ export function MediaPreview({
     );
   }
 
+  if (kind === 'video') {
+    return (
+      <video
+        src={signedUrl}
+        controls
+        preload="metadata"
+        aria-label={label}
+        title={label}
+        onError={() => setResolved({ nodeId, error: true })}
+        className="bg-muted max-h-64 w-full rounded-md border"
+      />
+    );
+  }
+
+  if (kind === 'audio') {
+    return (
+      <audio
+        src={signedUrl}
+        controls
+        preload="metadata"
+        aria-label={label}
+        title={label}
+        onError={() => setResolved({ nodeId, error: true })}
+        className="w-full"
+      />
+    );
+  }
+
   return (
     <iframe
       src={signedUrl}
@@ -108,11 +137,14 @@ export function MediaPreview({
 }
 
 /**
- * previewKind — the MIME → preview-element decision. `image/*` and `application/pdf`
- * are the only previewable families in this increment; everything else (video, audio,
- * office docs, unknown) returns null → no preview.
+ * previewKind — the MIME → preview-element decision. `image/*` → `<img>`,
+ * `application/pdf` → `<iframe>`, `video/*` → `<video controls>`, `audio/*` →
+ * `<audio controls>`; everything else (office docs, unknown) returns null → no
+ * preview (facts + Download remain the whole section).
  */
-function previewKind(mimeType: string | null): 'image' | 'pdf' | null {
+function previewKind(
+  mimeType: string | null
+): 'image' | 'pdf' | 'video' | 'audio' | null {
   if (!mimeType) {
     return null;
   }
@@ -121,6 +153,12 @@ function previewKind(mimeType: string | null): 'image' | 'pdf' | null {
   }
   if (mimeType === 'application/pdf') {
     return 'pdf';
+  }
+  if (mimeType.startsWith('video/')) {
+    return 'video';
+  }
+  if (mimeType.startsWith('audio/')) {
+    return 'audio';
   }
   return null;
 }

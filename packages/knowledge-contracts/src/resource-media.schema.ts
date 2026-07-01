@@ -63,8 +63,15 @@ export const MAX_MEDIA_SIZE_BYTES = 52428800 as const;
 /**
  * Signed-URL TTLs — CODE constants, short-lived, NOT env (ADR-0026 §2c). Bytes
  * are re-minted per download/upload; the URL is the only egress.
+ *
+ * The DOWNLOAD TTL is 3 hours (owner-approved 2026-07-01): video/audio stream via
+ * HTTP range requests over a long viewing session, so a 60 s URL would expire
+ * mid-playback and break seeking. The bucket stays PRIVATE and the mint is
+ * RLS-fenced under the caller (never service-role, never a public URL), so a
+ * longer-lived signed URL is an accepted trade-off. This TTL applies to ALL media
+ * downloads (image/pdf/video/audio/generic file) — intended.
  */
-export const MEDIA_DOWNLOAD_URL_TTL_SECONDS = 60 as const;
+export const MEDIA_DOWNLOAD_URL_TTL_SECONDS = 10800 as const;
 export const MEDIA_UPLOAD_URL_TTL_SECONDS = 120 as const;
 
 /** The private bucket that holds KB media bytes (ADR-0026 §2a). */

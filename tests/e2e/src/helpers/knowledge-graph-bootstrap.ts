@@ -1986,8 +1986,6 @@ export const MEDIA_BUCKET = KB_MEDIA_BUCKET;
 export const MEDIA_FIXTURE_BYTES = {
   fileOwned:
     'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n',
-  videoOwned:
-    'ProFlow KB media fixture — a "video" node over the SAME substrate (ADR-0026).\nOne generic satellite + one bucket serves file AND video; the player is a later slice.\n',
   inherited:
     'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
   nodeGrant:
@@ -2006,9 +2004,17 @@ export type MediaSubstrateFixture = {
   /** Owned file (real bytes) — the functional happy path (assertions 1–3). */
   fileOwnedId: string;
   fileOwnedPath: string;
-  /** Owned video (real bytes) — one substrate serves file & video (assertion 4). */
+  /** Owned video (real H.264/MP4 bytes, `video/mp4`) — one substrate serves file &
+   * video (assertion 4) AND the inline `<video controls>` player (ADR-0026 Phase 2,
+   * increment 2). Its filename powers the `aria-label="Preview of <name>"`. */
   videoOwnedId: string;
   videoOwnedPath: string;
+  videoOwnedFilename: string;
+  /** Owned AUDIO (real PCM/WAV bytes, `audio/wav`) — the inline `<audio controls>`
+   * player (ADR-0026 Phase 2, increment 2). Its filename powers the
+   * `aria-label="Preview of <name>"`. */
+  fileAudioId: string;
+  fileAudioFilename: string;
   /** Owned IMAGE (real PNG bytes, `image/png`) — the inline `<img>` preview happy path
    * (ADR-0026 Phase 2, increment 1). Its filename powers the `alt="Preview of <name>"`. */
   fileImageId: string;
@@ -2097,6 +2103,7 @@ export async function seedMediaSubstrateFixture(
 
   const fileOwnedId = id('kb/file-owned');
   const videoOwnedId = id('kb/video-owned');
+  const fileAudioId = id('kb/file-audio');
   const fileImageId = id('kb/file-image');
   const filePdfId = id('kb/file-pdf');
   const privateOtherFileId = id('kb/file-private-other');
@@ -2152,6 +2159,9 @@ export async function seedMediaSubstrateFixture(
     fileOwnedPath: await mediaStoragePath(tenant, fileOwnedId),
     videoOwnedId,
     videoOwnedPath: await mediaStoragePath(tenant, videoOwnedId),
+    videoOwnedFilename: 'intro-clip.mp4',
+    fileAudioId,
+    fileAudioFilename: 'intro-tone.wav',
     fileImageId,
     fileImageFilename: 'media-preview.png',
     filePdfId,

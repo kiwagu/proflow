@@ -26,6 +26,10 @@
  *   3a an IMAGE node (image/png) renders an inline `<img>` preview ABOVE the facts
  *       (ADR-0026 Phase 2, increment 1) — mime-driven, via the SAME download authorizer.
  *   3b a PDF node (application/pdf) renders an inline `<iframe>` preview ABOVE the facts.
+ *   3c a VIDEO node (video/mp4) renders an inline `<video controls>` player ABOVE the
+ *       facts (ADR-0026 Phase 2, increment 2) — same mime-driven download authorizer.
+ *   3d an AUDIO node (audio/wav) renders an inline `<audio controls>` player ABOVE the
+ *       facts. 3c/3d assert the facts + Download REMAIN (the player is additive).
  *   4  upload to a `video` node → same path (one substrate serves file & video).
  *
  *  RLS / access (the security gate):
@@ -350,6 +354,83 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       ).toBeVisible({ timeout: 30_000 });
       // Facts remain (additive): the filename + Download are still present.
       await expect(panel.getByText(fx.filePdfFilename)).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: /Download/i })
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(3c) a VIDEO node renders an inline <video> player ABOVE the facts (mime-driven)', async ({
+    browser,
+  }) => {
+    // ADR-0026 Phase 2, increment 2: a `video/*` mime drives an inline `<video controls>`
+    // player (aria-label "Preview of <filename>") ABOVE the facts, minted via the SAME
+    // single-node download authorizer (no new endpoint, no getPublicUrl). The facts +
+    // Download still show — the player is ADDITIVE.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      const page = await pageFor(context, fx.owner, fx.spaceId);
+      await page.goto(`/author/graph?folder=${fx.kbFolderId}`, {
+        timeout: 60_000,
+      });
+      const title = 'Intro Clip (video)';
+      await expect(card(page, title)).toBeVisible({ timeout: 60_000 });
+      await card(page, title).getByText(title, { exact: true }).click();
+
+      const panel = page.getByRole('complementary', { name: title });
+      const player = panel.locator(
+        `video[aria-label="Preview of ${fx.videoOwnedFilename}"]`
+      );
+      await expect(player).toBeVisible({ timeout: 30_000 });
+      // The player loaded real bytes: metadata (preload="metadata") resolves to a
+      // readyState ≥ 1 (HAVE_METADATA) — a broken src would trip onError → null player.
+      await expect(async () => {
+        const ready = await player.evaluate(
+          (el) => (el as HTMLVideoElement).readyState >= 1
+        );
+        expect(ready).toBe(true);
+      }).toPass({ timeout: 30_000 });
+      // Facts remain (additive): the filename + Download are still present.
+      await expect(panel.getByText(fx.videoOwnedFilename)).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: /Download/i })
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(3d) an AUDIO node renders an inline <audio> player ABOVE the facts (mime-driven)', async ({
+    browser,
+  }) => {
+    // ADR-0026 Phase 2, increment 2: an `audio/*` mime drives an inline `<audio controls>`
+    // player (aria-label "Preview of <filename>") via the SAME download authorizer. The
+    // facts + Download still show — the player is ADDITIVE.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      const page = await pageFor(context, fx.owner, fx.spaceId);
+      await page.goto(`/author/graph?folder=${fx.kbFolderId}`, {
+        timeout: 60_000,
+      });
+      const title = 'Intro Tone (audio)';
+      await expect(card(page, title)).toBeVisible({ timeout: 60_000 });
+      await card(page, title).getByText(title, { exact: true }).click();
+
+      const panel = page.getByRole('complementary', { name: title });
+      const player = panel.locator(
+        `audio[aria-label="Preview of ${fx.fileAudioFilename}"]`
+      );
+      await expect(player).toBeVisible({ timeout: 30_000 });
+      await expect(async () => {
+        const ready = await player.evaluate(
+          (el) => (el as HTMLAudioElement).readyState >= 1
+        );
+        expect(ready).toBe(true);
+      }).toPass({ timeout: 30_000 });
+      // Facts remain (additive): the filename + Download are still present.
+      await expect(panel.getByText(fx.fileAudioFilename)).toBeVisible();
       await expect(
         panel.getByRole('button', { name: /Download/i })
       ).toBeVisible();
