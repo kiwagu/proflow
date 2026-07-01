@@ -14,6 +14,7 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/use-bun-instead-of-node-vite-npm-pnpm-yarn.mdc
 @.cursor/rules/domain-context-first-analysis.mdc
 @.cursor/rules/process-check-rules-skills.mdc
+@.cursor/rules/reuse-first-discovery.mdc
 @.cursor/rules/standard-design-patterns.mdc
 @.cursor/rules/zod-schema-first-contracts.mdc
 @.cursor/rules/ui-i18n-json-required.mdc

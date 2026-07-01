@@ -26,7 +26,7 @@ alwaysApply: true
 - Add abstractions only when they simplify the codebase. Do not introduce ceremonial layers with no concrete benefit.
 - Prefer extending a registry or adding a new strategy over editing a long chain of `if` / `switch` branches in core flows.
 - Keep pattern boundaries testable: validate the seam where the orchestrator selects a strategy, adapter, or policy.
-- Reuse established patterns already present in the repository before inventing new internal frameworks.
+- Reuse established patterns already present in the repository before inventing new internal frameworks. Reuse-first is a pre-step for ALL artifacts (not just patterns) — see `/.cursor/rules/reuse-first-discovery.mdc`.
 
 ## Anti-patterns
 

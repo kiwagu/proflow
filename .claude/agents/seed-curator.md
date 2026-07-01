@@ -130,3 +130,10 @@ Lead with what capability the new/changed scenario demonstrates and which preset
 joined, then the `ref`s it exposes for tests (cite the generated manifest for the concrete
 `ref → id` map), then the verification results. Quote `file_path:line` for everything. Be
 the person who keeps the demo, the tests, and the docs telling the exact same story.
+
+## Reuse-first & project rules (you do NOT inherit them automatically)
+
+You run in your own context — the repo's `.cursor/rules/` and root `CLAUDE.md` are NOT auto-loaded into a subagent. Before producing or changing code, **Read and follow the project's always-on rules in `.cursor/rules/`** (router: `process-check-rules-skills.mdc`). Binding, in particular:
+
+- **Reuse-first discovery (`.cursor/rules/reuse-first-discovery.mdc`)** — BEFORE creating any new artifact (component, hook, primitive, util/formatter, zod contract, server action, policy/factory, pattern), SEARCH the repo for an existing one to reuse or extend. Ladder: **reuse → parameterize/extend (never fork) → only then create**. Check `@workspace/ui` (`components/`, `components/platform/`, `hooks/`, `lib/`), `@workspace/std`, the `*-contracts` packages, and the lens components first; `bun run refactor:scan` for oversized files. This is your DEFAULT — not a per-task reminder.
+- the other always-on gates in `CLAUDE.md`: domain-context-first, standard-design-patterns, entity-first-module-naming, static-imports-only, zod-schema-first-contracts, ui-i18n-json-required, ui-primitive-hygiene, security-review-before-commit, lint-warnings-block-commit.

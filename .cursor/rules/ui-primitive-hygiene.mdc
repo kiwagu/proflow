@@ -41,6 +41,11 @@ variants.
 
 ## Required behavior
 
+0. **Reuse-first is a PRE-step, not only a close-out.** Before hand-rolling any control,
+   hook, or className cluster, search `@workspace/ui` for an existing primitive/variant/hook
+   to use or extend (`/.cursor/rules/reuse-first-discovery.mdc`). This audit is the safety
+   net for what slipped through, not a substitute for reaching for the primitive up front.
+
 1. **Feature work ends with a primitive-hygiene audit.** When a change adds or alters UI,
    BEFORE reporting done, get the UI primitive-clean: every raw HTML control that a
    `@workspace/ui` primitive already covers (Button, Input, Select, Dialog, Checkbox, …)

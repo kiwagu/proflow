@@ -41,6 +41,7 @@ For migrations, RLS policies, database functions, or SQL style, enter through th
 - Before implementing feature work, refactors, or configuration changes — and especially **before commits** — quickly review relevant workspace guidance:
   - `.cursor/rules/` (project-specific constraints, conventions, security notes — e.g. `nextjs-blocking-routes-suspense.mdc` for Next.js 16 `Suspense` + dynamic pages; `notifications-central-email.mdc` for outbound email / SMTP; `monorepo-env-minimalism.mdc` for when to add shared `process.env` names)
   - applicable skill packs (when the change matches a skill area: shadcn UI, Next shells + Supabase auth, Payload auth bridge, e2e workflow, Supabase edge functions, etc.)
+- **Before writing any NEW artifact** (component, hook, primitive, util, contract, server action, policy, pattern), first SCAN the repo for an existing one to reuse or extend — reuse-first is a mandatory pre-step, not a prompt the user should have to give. See `/.cursor/rules/reuse-first-discovery.mdc`.
 - For growing codepaths, explicitly choose a standard pattern before adding more branches: prefer `strategy + registry`, `adapter`, `policy object`, `factory`, or another named pattern that keeps responsibilities separated.
 - If you ask the agent for help on a topic, the agent should load the relevant rule/skill context first to avoid missing project-specific constraints.
 

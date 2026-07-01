@@ -1,0 +1,76 @@
+---
+description: "Use when: about to introduce ANY new artifact (component, hook, primitive, util/formatter, zod contract, server action, policy/factory, pattern) at ANY layer — FIRST search the repo for an existing one to reuse or extend, BEFORE writing new. Reuse-first is the default; never wait to be told."
+alwaysApply: true
+---
+
+# Reuse-first discovery — scan before you build
+
+## Pyramid Layer
+
+- Layer: L0 process gate. Runs at the START of any feature/refactor, before new code exists.
+
+## Use This When
+
+- The moment a task implies a NEW artifact of any kind — a component, sub-component,
+  hook, primitive, util/formatter/sorter, zod contract, server action, policy/factory,
+  or a recurring UI shape — at ANY layer (UI, application, domain, infrastructure).
+
+## Stop Here If
+
+- Stop once you have EITHER found an existing artifact to reuse/extend, OR confirmed by
+  actually searching that none fits and named where the new one belongs.
+
+## Descend To (the WHERE / HOW, per layer — this rule owns the WHEN/WHY)
+
+- UI primitives & components: `shadcn-patterns-required.mdc`, `ui-primitive-hygiene.mdc`,
+  the shadcn skill — look in `packages/ui/src/components/` + `components/platform/`.
+- Feature / render components (the graph lens): `lens-feature-component-reuse.mdc`,
+  `standard-design-patterns.mdc` (render layer).
+- Patterns / abstractions: `standard-design-patterns.mdc`.
+- Contracts: `zod-schema-first-contracts.mdc`.
+- Domain / application sources of truth: `domain-context-first-analysis.mdc`.
+- Text sort/format: `text-sorting-centralized.mdc` (`@workspace/std`).
+- Oversized files / God-modules to split or reuse from: `bun run refactor:scan`.
+
+## Core rule
+
+- **Before writing a new artifact, you MUST first SEARCH the repo for an existing one that
+  already does it (or most of it).** This is the default and it is AUTOMATIC — the user
+  should never have to say "reuse what already exists." Producing new code without having
+  looked is a process violation, not a style preference.
+- **Decision ladder, in order:** `reuse as-is` → `extend / parameterize an existing one`
+  (parameterize-don't-fork) → `only then create new`. "Create new" is the LAST resort, and
+  when you reach it you state what you searched for and why nothing fit.
+- This applies across **all layers**, not just visual primitives: hooks, utils, sorters,
+  formatters, zod contracts, policy/factory helpers, server actions, and feature renderers.
+
+## Concrete discovery moves (do these — do not hand-wave "looks new")
+
+- Grep by **name** AND by **shape** (the props / markup / logic signature), **across
+  modules** — the existing implementation usually lives in a DIFFERENT file than where you
+  need it, so a per-file glance misses it. Compare across the surface.
+- Check the shared homes FIRST: `packages/ui/src/components/` (generic),
+  `packages/ui/src/components/platform/` (app-flavoured), `packages/ui/src/hooks/`,
+  `packages/ui/src/lib/`, `@workspace/std`, the `*-contracts` packages, and the lens
+  components.
+- A recurring className cluster or a repeated multi-line stateful pattern is, by default,
+  ONE shared variant/hook that already exists or should — search before re-rolling it
+  (see `ui-primitive-hygiene.mdc`).
+
+## Placement when you genuinely must create new
+
+- Domain-free generic → `packages/ui/src/components/` (or `hooks/` / `lib/`).
+- App-flavoured, presentational, props-driven, i18n-free → `packages/ui/src/components/platform/`.
+- Domain-coupled (i18n, RLS/node shapes, kind icons, business labels, server-action
+  wiring) → app-local. Pass resolved strings/callbacks as props; never pull `t`/translators
+  / domain types / framework internals into `@workspace/ui`.
+
+## Anti-patterns
+
+- Hand-rolling a control / hook / util / contract that already exists shared.
+- Forking or copy-pasting an existing component instead of parameterizing it (a slot/prop
+  defaulting to current behavior — never a parallel renderer).
+- **Waiting for the user to point out the existing solution.** The scan is YOUR default
+  obligation; needing to be told to reuse is the failure this rule exists to remove.
+- "I'll search later" — discovery is a PRE-step. Retrofitting reuse after the fork is
+  written is the expensive path this rule prevents.
