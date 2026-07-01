@@ -9,10 +9,11 @@ import type { LensNode } from '@/app/graph/containment';
 import type { KbAttributes, NodeMeta } from '@/app/graph/graph-data.types';
 import {
   formatNodeMeta,
-  iconForKind,
+  iconForMedia,
   kindLabel,
   ownerLabel,
 } from '@/app/graph/presentation';
+import { MediaFacts } from '@/app/graph/views/media-facts';
 import type { DriveLayout } from '@/app/graph/views/drive/layout-toggle';
 import {
   CardActionRail,
@@ -84,6 +85,15 @@ export function ItemCard({
       owner: ownerLabel(t, meta?.ownerUserId, currentUserId),
     });
 
+  // A file/video with confirmed bytes shows its metadata as a compact key/value
+  // block in the (otherwise empty) grid-card body — Type / Size / Filename, all from
+  // the `resource_media_meta` satellite. Grid-only (a list row is one line), but shown
+  // on EVERY grid lens (KB / Starred / Recent / Shared / Search) so a file's card is
+  // identical everywhere; the recency "when" timestamp is appended below the facts, not
+  // swapped in. A bodyless stub carries no `media` → the plain meta line renders
+  // (poc-no-fallbacks).
+  const mediaRows = !list && attributes?.media ? attributes.media : null;
+
   return (
     <div
       ref={dnd?.setRef}
@@ -106,7 +116,7 @@ export function ItemCard({
           selected ? 'border-ring ring-ring/35 ring-[3px]' : ''
         )}
       >
-        {React.createElement(iconForKind(node.kind), {
+        {React.createElement(iconForMedia(node.kind, media.mimeType), {
           className: cn(
             'text-muted-foreground',
             list ? 'size-[18px]' : 'size-[22px]'
@@ -117,18 +127,34 @@ export function ItemCard({
           <div
             className={cn(
               'text-sm font-medium',
-              list ? 'truncate' : 'line-clamp-4 pr-9'
+              list
+                ? 'truncate'
+                : mediaRows
+                  ? 'line-clamp-2 pr-9'
+                  : 'line-clamp-4 pr-9'
             )}
           >
             {node.title}
           </div>
-          <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-            <span className="truncate">
-              {when ? kindLabel(t, node.kind) : metaLine}
-            </span>
-            {when ? <span className="shrink-0">· {when}</span> : null}
-            {sharedBadge}
-          </div>
+          {mediaRows ? (
+            <div className="mt-1.5">
+              <MediaFacts t={t} media={mediaRows} />
+              {when || sharedBadge ? (
+                <div className="text-muted-foreground mt-1 flex min-w-0 items-center gap-1.5 text-xs">
+                  {when ? <span className="shrink-0">{when}</span> : null}
+                  {sharedBadge}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+              <span className="truncate">
+                {when ? kindLabel(t, node.kind) : metaLine}
+              </span>
+              {when ? <span className="shrink-0">· {when}</span> : null}
+              {sharedBadge}
+            </div>
+          )}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
         </div>
       </CardTile>

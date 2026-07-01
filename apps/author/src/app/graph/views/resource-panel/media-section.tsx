@@ -1,11 +1,12 @@
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import type { MediaDownloadResponse } from '@workspace/knowledge-contracts';
 import { Button } from '@workspace/ui/components/button';
-import { Download, Paperclip } from 'lucide-react';
+import { Download } from 'lucide-react';
 import * as React from 'react';
 
-import { formatBytes } from '@/app/graph/presentation';
 import type { KbAttributes } from '@/app/graph/graph-data.types';
+import { iconForMedia } from '@/app/graph/presentation';
+import { MediaFacts } from '@/app/graph/views/media-facts';
 
 import { PanelSectionLabel } from './panel-section-label';
 import { postJson } from './panel-fetch';
@@ -24,8 +25,10 @@ import { postJson } from './panel-fetch';
  * it. The URL is NEVER cached — re-minted per click (short TTL). RLS is the sole
  * fence; a denied caller gets no URL (null) → a disabled/errored state, never a leak.
  *
- * Purely presentational: no per-kind preview/player (Phase 2). Layout mirrors the
- * Access / Description section idioms (PanelSectionLabel + a muted meta line).
+ * Purely presentational: no per-kind preview/player (Phase 2). The facts (type / size /
+ * filename) render through the shared `MediaFacts` — the SAME view the Drive/search
+ * cards use — so the media presentation has one source; the panel adds the section
+ * label (with the type-aware icon) + the Download action around it.
  */
 export function MediaSection({
   t,
@@ -40,8 +43,6 @@ export function MediaSection({
 }) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(false);
-
-  const size = media.byteSize != null ? formatBytes(t, media.byteSize) : null;
 
   async function onDownload() {
     setBusy(true);
@@ -64,23 +65,14 @@ export function MediaSection({
   return (
     <section className="flex flex-col gap-2.5">
       <PanelSectionLabel>
-        <Paperclip className="size-3" aria-hidden />
+        {React.createElement(iconForMedia('file', media.mimeType), {
+          className: 'size-3',
+          'aria-hidden': true,
+        })}
         {t('graph.media.section')}
       </PanelSectionLabel>
 
-      <div className="flex flex-col gap-1">
-        <span
-          className="truncate text-sm font-medium"
-          title={media.originalFilename}
-        >
-          {media.originalFilename}
-        </span>
-        <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-          {size ? <span>{size}</span> : null}
-          {size ? <span aria-hidden>·</span> : null}
-          <span className="truncate">{media.mimeType}</span>
-        </div>
-      </div>
+      <MediaFacts t={t} media={media} />
 
       <div>
         <Button

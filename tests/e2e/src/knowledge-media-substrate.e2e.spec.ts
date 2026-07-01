@@ -271,11 +271,13 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       const panel = page.getByRole('complementary', {
         name: FILE_OWNED_TITLE,
       });
-      // The Media section: filename, mime, and a Download control.
+      // The Media section (shared MediaFacts view): filename + size are visible text;
+      // the raw mime is the tooltip on the friendly type label (e.g. "PLAIN"), so it is
+      // asserted via title. Plus the Download control.
       await expect(panel.getByText(FILE_OWNED_FILENAME)).toBeVisible({
         timeout: 30_000,
       });
-      await expect(panel.getByText(FILE_OWNED_MIME)).toBeVisible();
+      await expect(panel.getByTitle(FILE_OWNED_MIME)).toBeVisible();
       await expect(
         panel.getByRole('button', { name: /Download/i })
       ).toBeVisible();

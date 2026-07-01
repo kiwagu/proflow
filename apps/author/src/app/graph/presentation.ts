@@ -1,8 +1,12 @@
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import {
+  FileArchive,
   FileText,
+  Film,
   Folder,
+  Image,
   Link,
+  Music,
   Paperclip,
   PlayCircle,
   Tag,
@@ -27,6 +31,57 @@ const KIND_ICON: Record<string, LucideIcon> = {
 
 export function iconForKind(kind: string): LucideIcon {
   return KIND_ICON[kind] ?? FileText;
+}
+
+/**
+ * A type-aware icon for a media node (`file`/`video`): the MIME's family picks a
+ * recognizable glyph (image / audio / video / pdf / archive) so a card telegraphs
+ * WHAT the file is at a glance, not a generic paperclip. Data-driven over the mime
+ * family — a new kind/subtype needs no new branch. Falls back to the kind icon when
+ * there is no mime (bodyless stub) or a non-media kind.
+ */
+export function iconForMedia(
+  kind: string,
+  mimeType: string | null | undefined
+): LucideIcon {
+  if (!mimeType) {
+    return iconForKind(kind);
+  }
+  const mime = mimeType.toLowerCase();
+  if (mime.startsWith('image/')) {
+    return Image;
+  }
+  if (mime.startsWith('audio/')) {
+    return Music;
+  }
+  if (mime.startsWith('video/')) {
+    return Film;
+  }
+  if (mime === 'application/pdf') {
+    return FileText;
+  }
+  if (/(zip|tar|gzip|compressed|x-7z|x-rar)/.test(mime)) {
+    return FileArchive;
+  }
+  return iconForKind(kind);
+}
+
+/**
+ * A short, human type label derived from a MIME type — `image/png` → `PNG`,
+ * `application/pdf` → `PDF`, `image/svg+xml` → `SVG`, the OOXML tree's
+ * `…wordprocessingml.document` → `DOCUMENT`. Base format wins over the `+suffix`
+ * (svg over xml); the vnd tree collapses to its last segment. Falls back to the
+ * capitalized primary type when the subtype token is too long to be a tidy badge.
+ */
+export function mediaTypeLabel(mimeType: string): string {
+  const [primary = '', subtypeRaw = ''] = mimeType.toLowerCase().split('/');
+  const token = subtypeRaw.replace(/^x-/, '').split('+')[0].split('.').pop();
+  if (token && token.length >= 2 && token.length <= 8) {
+    return token.toUpperCase();
+  }
+  return primary
+    ? primary.charAt(0).toUpperCase() + primary.slice(1)
+    : mimeType;
 }
 
 /**
