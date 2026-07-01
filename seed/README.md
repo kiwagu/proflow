@@ -146,6 +146,11 @@ node opts in by declaring a `media: { bytes, mimeType, filename }` payload on a 
 node (the mime must pass `isAllowedMediaMime`; the validator enforces it offline). The corpus
 carries: a real `file` (`kb/file-owned`) + a real `video` (`kb/video-owned`) owned by the
 primary user (the happy path — upload, download the exact bytes, ResourcePanel Media section);
+a real IMAGE (`kb/file-image`, `image/png`) and a real PDF (`kb/file-pdf`, `application/pdf`)
+whose bytes are genuine base64-decoded binaries — the inline MIME-driven PREVIEW (ADR-0026
+Phase 2, increment 1): `image/*` → an inline `<img>`, `application/pdf` → an inline `<iframe>`
+(the `text/plain` files already cover the no-preview case), minted via the SAME single-node
+download authorizer as Download (no new endpoint);
 a PRIVATE file owned by `searcherB` (`kb/file-private-other`, the download RLS-negative); a
 file nested under the ancestor-shared folder (`kb/inherited-file`, the ADR-0023 inherited-grant
 download positive for the grantee); and a REAL file (owner-uploaded bytes) per-user-granted

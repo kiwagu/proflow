@@ -106,8 +106,17 @@ export type TextNode = NodeBase & {
  * content, not a real asset.
  */
 export type MediaPayload = {
-  /** The literal file bytes as a UTF-8 string (small text/`text-like` fixture). */
+  /** The literal file bytes. By default (`encoding` omitted / `'utf8'`) this is a
+   * small text/`text-like` fixture encoded as UTF-8. For a BINARY fixture (a real
+   * image or PDF whose bytes must render in the inline preview — ADR-0026 Phase 2),
+   * set `encoding: 'base64'` and put the base64-encoded bytes here; the materializer
+   * decodes them to the exact binary before the signed PUT, so the object holds a
+   * genuine renderable asset (a corrupt/utf8-mangled image would fail the `<img>`
+   * load and the preview would collapse to null). */
   bytes: string;
+  /** How `bytes` is encoded. `'utf8'` (default) = the string IS the content;
+   * `'base64'` = decode to binary first (for images/PDFs). */
+  encoding?: 'utf8' | 'base64';
   /** Declared MIME (must pass `isAllowedMediaMime` — not in the denylist). */
   mimeType: string;
   /** Display filename (metadata only; NEVER the storage path). */

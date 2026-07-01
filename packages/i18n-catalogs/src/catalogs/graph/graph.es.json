@@ -119,6 +119,8 @@
   "graph.media.download": "Descargar",
   "graph.media.downloading": "Preparando…",
   "graph.media.downloadError": "No se pudo preparar la descarga. Inténtalo de nuevo.",
+  "graph.media.preview": "Vista previa",
+  "graph.media.previewAlt": "Vista previa de {name}",
   "graph.media.replace": "Reemplazar",
   "graph.media.tooLarge": "El archivo es demasiado grande (máx. {max}).",
   "graph.media.unsupportedType": "Este tipo de archivo no es compatible.",

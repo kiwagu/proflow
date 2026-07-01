@@ -97,6 +97,15 @@ export function validateScenario(s: SeedScenario): string[] {
       const media = n.media;
       if (media) {
         if (!media.bytes) fail(`node "${n.ref}" media has empty bytes`);
+        if (
+          media.encoding !== undefined &&
+          media.encoding !== 'utf8' &&
+          media.encoding !== 'base64'
+        ) {
+          fail(
+            `node "${n.ref}" media encoding "${media.encoding}" is invalid (utf8 | base64)`
+          );
+        }
         if (!media.filename)
           fail(`node "${n.ref}" media has an empty filename`);
         if (!media.mimeType) {

@@ -8,6 +8,7 @@ import type { KbAttributes } from '@/app/graph/graph-data.types';
 import { iconForMedia } from '@/app/graph/presentation';
 import { MediaFacts } from '@/app/graph/views/media-facts';
 
+import { MediaPreview } from './media-preview';
 import { PanelSectionLabel } from './panel-section-label';
 import { postJson } from './panel-fetch';
 
@@ -25,7 +26,9 @@ import { postJson } from './panel-fetch';
  * it. The URL is NEVER cached — re-minted per click (short TTL). RLS is the sole
  * fence; a denied caller gets no URL (null) → a disabled/errored state, never a leak.
  *
- * Purely presentational: no per-kind preview/player (Phase 2). The facts (type / size /
+ * An inline MIME-driven preview (ADR-0026 Phase 2, increment 1) renders ABOVE the
+ * facts for `image/*` and `application/pdf` via `MediaPreview` (reusing the SAME
+ * download-authorize URL); any other mime shows no preview. The facts (type / size /
  * filename) render through the shared `MediaFacts` — the SAME view the Drive/search
  * cards use — so the media presentation has one source; the panel adds the section
  * label (with the type-aware icon) + the Download action around it.
@@ -71,6 +74,8 @@ export function MediaSection({
         })}
         {t('graph.media.section')}
       </PanelSectionLabel>
+
+      <MediaPreview t={t} spaceId={spaceId} nodeId={nodeId} media={media} />
 
       <MediaFacts t={t} media={media} />
 

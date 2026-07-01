@@ -37,6 +37,21 @@ const VIDEO_FIXTURE_BYTES =
   'ProFlow KB media fixture — a "video" node over the SAME substrate (ADR-0026).\nOne generic satellite + one bucket serves file AND video; the player is a later slice.\n';
 
 /**
+ * BINARY fixtures for the inline MIME-driven preview (ADR-0026 Phase 2, increment 1):
+ * a genuine tiny image and a genuine minimal PDF, base64-encoded (decoded to the exact
+ * binary by the materializer before the signed PUT). They must be REAL renderable bytes
+ * — a mangled/utf8-encoded image would fail the `<img>` load and the preview would
+ * collapse to null. `image/*` → an inline `<img>`; `application/pdf` → an inline
+ * `<iframe>`; the pre-existing `text/plain` files already cover the "no preview" case.
+ *  - IMAGE_FIXTURE_B64 — a 1×1 transparent PNG (70 bytes).
+ *  - PDF_FIXTURE_B64   — a minimal single-page PDF (552 bytes) reading "ProFlow KB media fixture".
+ */
+const IMAGE_FIXTURE_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const PDF_FIXTURE_B64 =
+  'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0vUmVzb3VyY2VzPDwvRm9udDw8L0YxIDQgMCBSPj4+Pi9Db250ZW50cyA1IDAgUj4+ZW5kb2JqCjQgMCBvYmo8PC9UeXBlL0ZvbnQvU3VidHlwZS9UeXBlMS9CYXNlRm9udC9IZWx2ZXRpY2E+PmVuZG9iago1IDAgb2JqPDwvTGVuZ3RoIDU4Pj5zdHJlYW0KQlQgL0YxIDE4IFRmIDIwIDEwMCBUZCAoUHJvRmxvdyBLQiBtZWRpYSBmaXh0dXJlKSBUaiBFVAplbmRzdHJlYW0gZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDUyIDAwMDAwIG4gCjAwMDAwMDAxMDEgMDAwMDAgbiAKMDAwMDAwMDIwOSAwMDAwMCBuIAowMDAwMDAwMjcyIDAwMDAwIG4gCnRyYWlsZXI8PC9TaXplIDYvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgozODAKJSVFT0YK';
+
+/**
  * Knowledge-base scenario — a tagged slice of articles surfaced as a grid, AND the
  * lexical-search corpus (slice-12, ADR-0024). The KB grid shows the canonical
  * projection (tag content with one shared tag, then a saved KB projection selects
@@ -83,7 +98,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png) and a real PDF (application/pdf) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
   presets: ['knowledge-base', 'search', 'media'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
@@ -174,6 +189,41 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
             bytes: VIDEO_FIXTURE_BYTES,
             mimeType: 'text/plain',
             filename: 'intro-clip.txt',
+          },
+        },
+        {
+          // Owned IMAGE — the inline preview happy path (ADR-0026 Phase 2, increment 1):
+          // an `image/*` mime → the ResourcePanel Media section renders an inline `<img>`
+          // (alt "Preview of media-preview.png") ABOVE the facts, minting its URL via the
+          // SAME single-node download authorizer. Real PNG bytes (base64) so the image
+          // genuinely LOADS — a corrupt fixture would trip `onError` → the preview would
+          // collapse to null and the assertion would fail.
+          ref: 'kb/file-image',
+          kind: 'file',
+          title: 'Media Preview Image (file)',
+          description: 'A real PNG — the inline image preview happy path.',
+          media: {
+            bytes: IMAGE_FIXTURE_B64,
+            encoding: 'base64',
+            mimeType: 'image/png',
+            filename: 'media-preview.png',
+          },
+        },
+        {
+          // Owned PDF — the inline preview PDF path (ADR-0026 Phase 2, increment 1): an
+          // `application/pdf` mime → the Media section renders a bounded inline `<iframe>`
+          // (title "Preview of media-preview.pdf") ABOVE the facts, again via the SAME
+          // download authorizer. A genuine minimal single-page PDF (base64) so the iframe
+          // has real bytes to render.
+          ref: 'kb/file-pdf',
+          kind: 'file',
+          title: 'Media Preview PDF (file)',
+          description: 'A real PDF — the inline PDF preview path.',
+          media: {
+            bytes: PDF_FIXTURE_B64,
+            encoding: 'base64',
+            mimeType: 'application/pdf',
+            filename: 'media-preview.pdf',
           },
         },
         {

@@ -2009,6 +2009,14 @@ export type MediaSubstrateFixture = {
   /** Owned video (real bytes) — one substrate serves file & video (assertion 4). */
   videoOwnedId: string;
   videoOwnedPath: string;
+  /** Owned IMAGE (real PNG bytes, `image/png`) — the inline `<img>` preview happy path
+   * (ADR-0026 Phase 2, increment 1). Its filename powers the `alt="Preview of <name>"`. */
+  fileImageId: string;
+  fileImageFilename: string;
+  /** Owned PDF (real bytes, `application/pdf`) — the inline `<iframe>` preview path
+   * (ADR-0026 Phase 2, increment 1). Its filename powers the `title="Preview of <name>"`. */
+  filePdfId: string;
+  filePdfFilename: string;
   /** A REAL file (owner-uploaded bytes) per-user-granted to `nodeGrantee` (a node-only
    * member) — the read/write asymmetry (assertions 11a/11b): the read-grant lets the
    * grantee DOWNLOAD (11a) but the write fence blocks the grantee's UPLOAD (11b). */
@@ -2089,6 +2097,8 @@ export async function seedMediaSubstrateFixture(
 
   const fileOwnedId = id('kb/file-owned');
   const videoOwnedId = id('kb/video-owned');
+  const fileImageId = id('kb/file-image');
+  const filePdfId = id('kb/file-pdf');
   const privateOtherFileId = id('kb/file-private-other');
   const inheritedFileId = id('kb/inherited-file');
   const nodeGrantFileId = id('kb/file-node-grant');
@@ -2142,6 +2152,10 @@ export async function seedMediaSubstrateFixture(
     fileOwnedPath: await mediaStoragePath(tenant, fileOwnedId),
     videoOwnedId,
     videoOwnedPath: await mediaStoragePath(tenant, videoOwnedId),
+    fileImageId,
+    fileImageFilename: 'media-preview.png',
+    filePdfId,
+    filePdfFilename: 'media-preview.pdf',
     nodeGrantFileId,
     nodeGrantFilePath: await mediaStoragePath(tenant, nodeGrantFileId),
     privateOtherFileId,

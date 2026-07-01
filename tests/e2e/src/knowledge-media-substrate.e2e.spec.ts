@@ -23,6 +23,9 @@
  *   1  upload to an OWNED node → signed URL; bytes land; `kmm` row present.
  *   2  download that node → signed URL; GET returns the EXACT bytes.
  *   3  ResourcePanel Media section shows filename + humanized size + mime + Download.
+ *   3a an IMAGE node (image/png) renders an inline `<img>` preview ABOVE the facts
+ *       (ADR-0026 Phase 2, increment 1) — mime-driven, via the SAME download authorizer.
+ *   3b a PDF node (application/pdf) renders an inline `<iframe>` preview ABOVE the facts.
  *   4  upload to a `video` node → same path (one substrate serves file & video).
  *
  *  RLS / access (the security gate):
@@ -278,6 +281,75 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
         timeout: 30_000,
       });
       await expect(panel.getByTitle(FILE_OWNED_MIME)).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: /Download/i })
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(3a) an IMAGE node renders an inline <img> preview ABOVE the facts (mime-driven)', async ({
+    browser,
+  }) => {
+    // ADR-0026 Phase 2, increment 1: an `image/*` mime drives an inline `<img>` in the
+    // Media section (alt "Preview of <filename>"), minted via the SAME single-node
+    // download authorizer. The facts (filename) still show — the preview is ADDITIVE.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      const page = await pageFor(context, fx.owner, fx.spaceId);
+      await page.goto(`/author/graph?folder=${fx.kbFolderId}`, {
+        timeout: 60_000,
+      });
+      const title = 'Media Preview Image (file)';
+      await expect(card(page, title)).toBeVisible({ timeout: 60_000 });
+      await card(page, title).getByText(title, { exact: true }).click();
+
+      const panel = page.getByRole('complementary', { name: title });
+      const preview = panel.getByRole('img', {
+        name: `Preview of ${fx.fileImageFilename}`,
+      });
+      await expect(preview).toBeVisible({ timeout: 30_000 });
+      // The preview loaded real bytes (not a broken image → onError would null it out).
+      await expect(async () => {
+        const complete = await preview.evaluate(
+          (el) =>
+            (el as HTMLImageElement).complete &&
+            (el as HTMLImageElement).naturalWidth > 0
+        );
+        expect(complete).toBe(true);
+      }).toPass({ timeout: 30_000 });
+      // Facts remain (additive): the filename + Download are still present.
+      await expect(panel.getByText(fx.fileImageFilename)).toBeVisible();
+      await expect(
+        panel.getByRole('button', { name: /Download/i })
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('(3b) a PDF node renders an inline <iframe> preview ABOVE the facts (mime-driven)', async ({
+    browser,
+  }) => {
+    // ADR-0026 Phase 2, increment 1: an `application/pdf` mime drives a bounded inline
+    // `<iframe>` (title "Preview of <filename>") via the SAME download authorizer.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      const page = await pageFor(context, fx.owner, fx.spaceId);
+      await page.goto(`/author/graph?folder=${fx.kbFolderId}`, {
+        timeout: 60_000,
+      });
+      const title = 'Media Preview PDF (file)';
+      await expect(card(page, title)).toBeVisible({ timeout: 60_000 });
+      await card(page, title).getByText(title, { exact: true }).click();
+
+      const panel = page.getByRole('complementary', { name: title });
+      await expect(
+        panel.locator(`iframe[title="Preview of ${fx.filePdfFilename}"]`)
+      ).toBeVisible({ timeout: 30_000 });
+      // Facts remain (additive): the filename + Download are still present.
+      await expect(panel.getByText(fx.filePdfFilename)).toBeVisible();
       await expect(
         panel.getByRole('button', { name: /Download/i })
       ).toBeVisible();

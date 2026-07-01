@@ -344,7 +344,13 @@ async function uploadNodeMedia(
 ): Promise<void> {
   const media = node.media;
   if (!media) return;
-  const bytes = new TextEncoder().encode(media.bytes);
+  // A binary fixture (image / PDF for the inline preview) carries base64 bytes that
+  // must be decoded to the exact binary before the PUT — a UTF-8 re-encode would
+  // mangle it and the preview would fail to load. A text fixture is UTF-8 as-is.
+  const bytes =
+    media.encoding === 'base64'
+      ? Uint8Array.from(Buffer.from(media.bytes, 'base64'))
+      : new TextEncoder().encode(media.bytes);
   const declared = {
     mimeType: media.mimeType,
     sizeBytes: bytes.byteLength,
