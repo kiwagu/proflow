@@ -100,3 +100,23 @@ has RLS enabled (no `0002`), and the storage policies delegate to the existing
 new lint kind**. The count sits within the documented `~17` baseline band (RPC count
 drifts as features land; the invariant is "no new lint kind, no new residue", which
 holds).
+
+## 2026-07-02 — KB media shared-blob substrate (ADR-0027): +1 accepted 0029
+
+The rewritten `20260701085100_kb_resource_media_meta.sql` adds two `SECURITY
+DEFINER` functions in `kb`:
+
+- `kb.media_blob_refcount_apply()` — trigger-only (the sole writer of
+  `media_blob.refcount`). `EXECUTE` is **revoked** from `public/anon/authenticated`
+  in the migration (trigger firing never checks the caller's `EXECUTE`), so it does
+  NOT appear on the REST surface. Fixed, not absorbed.
+- `kb.media_blob_set_checksum(text, text)` — **accepted `0029` residue (+1)**. It
+  must be `authenticated`-callable by design: the confirm step writes the
+  client-computed sha256 onto the caller's OWN blob (guarded inside the function:
+  `uploaded_by = auth.uid()` AND write-once `checksum is null`; a non-uploader call
+  is a silent no-op). `SECURITY DEFINER` is required because blob `UPDATE` is
+  deliberately not granted to `authenticated` (the refcount/byte lifecycle is
+  trigger/reaper-owned). `anon` is revoked. Same Bucket B′ shape as the accepted
+  own-verdict helpers.
+
+No other new lint kind; the `kb.media_blob` table has RLS enabled from birth.
