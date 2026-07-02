@@ -10,7 +10,6 @@ import {
 import { Button } from '@workspace/ui/components/button';
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -170,6 +169,19 @@ export function CreateResource({
   // the submit button so a large file gives live feedback (ADR-0026 §A2).
   const [uploadPercent, setUploadPercent] = React.useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // The live resumable (TUS) upload while bytes are in flight — held so a mid-upload
+  // dialog close / Cancel can `abort(true)` it (TUS terminate → DELETEs the
+  // server-side partial). Null when no transfer is running.
+  const activeUploadRef = React.useRef<TusUpload | null>(null);
+  // The just-created media node awaiting its bytes — held so a mid-upload close/cancel
+  // can roll it back (purge) deterministically from the close handler, NOT via the
+  // detached onSubmit promise. Null outside the create→upload window.
+  const pendingNodeIdRef = React.useRef<string | null>(null);
+  // True while a deliberate cancel is in flight — the close handler owns the abort +
+  // rollback, so the STILL-PENDING onSubmit promise (whose upload now resolves false
+  // via the abort) must NOT re-purge or flash an error on the closed dialog. Reset on
+  // every fresh submit.
+  const canceledRef = React.useRef(false);
 
   // The EFFECTIVE per-org soft limit (bytes) for the "too large" hint — the
   // server-resolved value, or the 200 MB default when absent (no active space).
@@ -225,14 +237,44 @@ export function CreateResource({
     title.trim().length === 0 ||
     (needsMedia && (file === null || mediaError !== null));
 
+  /**
+   * Abort a still in-flight resumable upload AND roll back its just-created node,
+   * then reset the transient upload state. Fired DETERMINISTICALLY from the close
+   * handler / Cancel (never left to the detached onSubmit promise) so a mid-upload
+   * Esc / overlay-click / ✕ / Cancel leaves NO server-side partial and NO orphan
+   * node. Best-effort + fail-safe: `abort(true)` (TUS terminate → DELETEs the
+   * partial) and the node purge are both swallow-guarded so a cancel never throws.
+   */
+  function cancelInFlightUpload() {
+    const upload = activeUploadRef.current;
+    const nodeId = pendingNodeIdRef.current;
+    canceledRef.current = true;
+    activeUploadRef.current = null;
+    pendingNodeIdRef.current = null;
+    if (upload) {
+      void upload.abort(true).catch(() => {});
+    }
+    if (nodeId) {
+      void purgeOrphanNode(spaceId, nodeId);
+    }
+    setBusy(false);
+    setUploadPercent(null);
+  }
+
   async function onSubmit() {
     setBusy(true);
     setError(false);
+    canceledRef.current = false;
     try {
       const nodeId = await createNode(spaceId, kind, title.trim(), parentId);
       if (!nodeId) {
         setError(true);
         return;
+      }
+      // Track the just-created media node so a mid-upload close/cancel can roll it
+      // back deterministically (cleared on every settle in the finally).
+      if (needsMedia && file) {
+        pendingNodeIdRef.current = nodeId;
       }
       // file/video: upload the bytes + confirm the media satellite AFTER the node
       // exists (ADR-0026). The node MUST exist first (the storage path + the
@@ -247,12 +289,28 @@ export function CreateResource({
         setUploadPercent(0);
         let uploaded = false;
         try {
-          uploaded = await uploadMedia(spaceId, nodeId, file, (percent) =>
-            setUploadPercent(percent)
+          uploaded = await uploadMedia(
+            spaceId,
+            nodeId,
+            file,
+            (percent) => setUploadPercent(percent),
+            (upload) => {
+              activeUploadRef.current = upload;
+            }
           );
         } catch (uploadError) {
+          // A deliberate cancel already aborted + rolled back from the close handler —
+          // do NOT re-purge or surface an error on the (now closed) dialog.
+          if (canceledRef.current) {
+            return;
+          }
           await purgeOrphanNode(spaceId, nodeId);
           throw uploadError;
+        }
+        // Same: if the upload resolved false because the user canceled (the abort
+        // fires onError → false), the close handler already handled cleanup.
+        if (canceledRef.current) {
+          return;
         }
         if (!uploaded) {
           await purgeOrphanNode(spaceId, nodeId);
@@ -279,13 +337,32 @@ export function CreateResource({
     } catch {
       setError(true);
     } finally {
+      // The upload has SETTLED (success/error/rollback already handled) — clear the
+      // in-flight refs so a later close/Cancel never re-aborts or re-purges a node
+      // that is done. cancelInFlightUpload only acts while these are live.
+      activeUploadRef.current = null;
+      pendingNodeIdRef.current = null;
       setBusy(false);
       setUploadPercent(null);
     }
   }
 
+  /**
+   * The dialog's close authority (Esc / overlay-click / ✕ / Cancel all funnel
+   * here via `onOpenChange(false)`). If a resumable upload is still in flight when
+   * the dialog closes, ABORT it + roll back its node FIRST (cancelInFlightUpload)
+   * so a mid-upload close never leaves a server-side partial or an orphan node,
+   * THEN propagate the close to the container. Opening passes straight through.
+   */
+  function onDialogOpenChange(next: boolean) {
+    if (!next && busy) {
+      cancelInFlightUpload();
+    }
+    onOpenChange(next);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onDialogOpenChange}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t('graph.create.title')}</DialogTitle>
@@ -491,11 +568,19 @@ export function CreateResource({
         </div>
 
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={busy}>
-              {t('graph.create.cancel')}
-            </Button>
-          </DialogClose>
+          {/* Cancel routes through the dialog close authority: while an upload is in
+              flight it ABORTS the resumable transfer + rolls back the node (a real
+              cancel affordance during a long upload), otherwise it just closes. Only
+              disabled for a brief non-upload `busy` (a non-media save in progress). */}
+          <Button
+            variant="outline"
+            onClick={() => onDialogOpenChange(false)}
+            disabled={busy && !(needsMedia && uploadPercent !== null)}
+          >
+            {busy && needsMedia && uploadPercent !== null
+              ? t('graph.media.cancelUpload')
+              : t('graph.create.cancel')}
+          </Button>
           <Button onClick={onSubmit} disabled={submitDisabled}>
             {busy ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -629,7 +714,8 @@ async function uploadMedia(
   spaceId: string,
   nodeId: string,
   file: File,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
+  onRegister?: (upload: TusUpload | null) => void
 ): Promise<boolean> {
   const authRes = await fetch('/author/graph/media?op=upload-url', {
     method: 'POST',
@@ -672,6 +758,7 @@ async function uploadMedia(
     endpoint: `${storageBaseUrl}/storage/v1/upload/resumable`,
     objectName: authorize.storagePath,
     onProgress,
+    onRegister,
   });
   if (!uploaded) {
     return false;
@@ -707,12 +794,17 @@ function uploadBytesResumable({
   endpoint,
   objectName,
   onProgress,
+  onRegister,
 }: {
   file: File;
   accessToken: string;
   endpoint: string;
   objectName: string;
   onProgress: (percent: number) => void;
+  /** Hand the live `Upload` back to the caller so it can `abort(true)` a still
+   * in-flight transfer (dialog closed / Cancel pressed mid-upload). Passed the
+   * instance on start and `null` once the upload settles (success/error). */
+  onRegister?: (upload: TusUpload | null) => void;
 }): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const upload = new TusUpload(file, {
@@ -743,9 +835,25 @@ function uploadBytesResumable({
             : 0;
         onProgress(percent);
       },
-      onSuccess: () => resolve(true),
-      onError: () => resolve(false),
+      onSuccess: () => {
+        onRegister?.(null);
+        resolve(true);
+      },
+      // On ANY transport error, best-effort TERMINATE the resumable session
+      // (`abort(true)` sends the TUS DELETE that removes the server-side partial —
+      // the `storage.s3_multipart_uploads` row + uploaded parts) BEFORE resolving
+      // false, so an errored upload never orphans an incomplete multipart. Fail-safe:
+      // a failing abort must not throw or hang (swallowed), and the resolve always
+      // fires from `.finally`.
+      onError: () => {
+        onRegister?.(null);
+        void upload
+          .abort(true)
+          .catch(() => {})
+          .finally(() => resolve(false));
+      },
     });
+    onRegister?.(upload);
     upload.start();
   });
 }
