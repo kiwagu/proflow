@@ -973,4 +973,105 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
     expect(after.data).toBeNull();
     expect(after.error).not.toBeNull();
   });
+
+  // ── ADR-0027 security fences (the /security-review negatives) ───────────────
+  test('(13) kmm reference-smuggling is DENIED — a member cannot reference a blob it cannot read', async () => {
+    // The revocation-bypass negative: a member (node-only, no space-wide update)
+    // must NOT be able to point their OWN node's media reference at ANOTHER owner's
+    // PRIVATE blob (same space) and thereby self-grant download. The kmm INSERT
+    // blob-readability fence (private.auth_user_can_read_media_blob) closes it.
+    const attacker = fx.nodeGrantee; // read + create, NOT a grantee of the private file
+    const client = await seedClientFor(attacker);
+    try {
+      // The private blob the attacker cannot read (owned by otherOwner).
+      const { data: victimKmm } = await tenant.service
+        .schema('kb')
+        .from('resource_media_meta')
+        .select('blob_id')
+        .eq('node_id', fx.privateOtherFileId)
+        .single();
+      const victimBlobId = (victimKmm as { blob_id: string }).blob_id;
+      expect(victimBlobId).toBeTruthy();
+
+      // The attacker's OWN node (owner-sovereign → passes the node-update half of
+      // the kmm fence; the blob half is what must deny).
+      const smuggleNodeId = await client.createNode(
+        fx.spaceId,
+        'file',
+        'Smuggle Attempt (file)'
+      );
+
+      // Confirm a kmm reference to the victim blob → MUST be denied (non-2xx).
+      let denied = false;
+      try {
+        await client.setMedia({
+          spaceId: fx.spaceId,
+          nodeId: smuggleNodeId,
+          blobId: victimBlobId,
+          originalFilename: 'stolen.txt',
+        });
+      } catch {
+        denied = true;
+      }
+      expect(
+        denied,
+        'kmm reference to an unreadable blob must be rejected'
+      ).toBe(true);
+
+      // Fence proven at the source: no reference row was created for the attacker's node.
+      expect(await readKmm(tenant, smuggleNodeId)).toBeNull();
+
+      // And a download URL for the attacker's node fails closed (no reference → no bytes).
+      const dl = await mediaOp(attacker, 'download-url', {
+        spaceId: fx.spaceId,
+        nodeId: smuggleNodeId,
+      });
+      expect(dl.status).toBeGreaterThanOrEqual(400);
+      expect(dl.body?.signedUrl).toBeFalsy();
+    } finally {
+      await client.dispose();
+    }
+  });
+
+  test('(14) a member cannot reserve a blob at an arbitrary bucket/path (reaper arbitrary-delete fence)', async () => {
+    // Without the media_blob bucket/path CHECKs a member could insert a 0-ref blob
+    // row naming ANOTHER bucket/object (e.g. a victim's avatar in the public `media`
+    // bucket); the service-role reconcile reaper would later delete it. The CHECKs
+    // make such a row unstorable at the source.
+    const attacker = fx.nodeGrantee;
+
+    // (a) cross-bucket: bucket='media', path=a victim avatar → rejected.
+    const crossBucket = await attacker.client
+      .schema('kb')
+      .from('media_blob')
+      .insert({
+        space_id: fx.spaceId,
+        storage_bucket: 'media',
+        storage_path: 'avatars/00000000-0000-0000-0000-000000000000/avatar.png',
+        mime_type: 'image/png',
+        size_bytes: 0,
+        uploaded_by: attacker.userId,
+      });
+    expect(
+      crossBucket.error,
+      'a blob row on another bucket must be rejected'
+    ).not.toBeNull();
+
+    // (b) in-bucket but path NOT scoped to this row's space/id → rejected too.
+    const crossPath = await attacker.client
+      .schema('kb')
+      .from('media_blob')
+      .insert({
+        space_id: fx.spaceId,
+        storage_bucket: KB_MEDIA_BUCKET,
+        storage_path: `spaces/${fx.otherSpace.tenant.spaceId}/kb/blobs/kmb_forged/x.bin`,
+        mime_type: 'application/octet-stream',
+        size_bytes: 0,
+        uploaded_by: attacker.userId,
+      });
+    expect(
+      crossPath.error,
+      'a blob row whose path escapes its own space/id must be rejected'
+    ).not.toBeNull();
+  });
 });

@@ -101,12 +101,13 @@ export async function setResourceMedia(
   }
 
   if (input.checksum) {
-    // Best-effort: silently no-ops unless the caller is the blob's uploader and
-    // the checksum is still unset (write-once).
-    await kbSchema(db).rpc('media_blob_set_checksum', {
-      p_blob_id: input.blobId,
-      p_checksum: input.checksum,
-    });
+    // Best-effort write-once checksum on the caller's OWN blob — a column-scoped
+    // UPDATE (only `checksum` is grantable) fenced by RLS to the uploader's
+    // not-yet-set blob. A non-uploader / already-set row simply matches no row.
+    await kbSchema(db)
+      .from('media_blob')
+      .update({ checksum: input.checksum })
+      .eq('id', input.blobId);
   }
 
   return { node_id: data.node_id, blob_id: data.blob_id };

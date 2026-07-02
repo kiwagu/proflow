@@ -72,6 +72,7 @@ export const MEDIA_REAP_GRACE_MS = 24 * 60 * 60 * 1000;
 
 export type ReconcileBlob = {
   id: string;
+  space_id: string;
   refcount: number;
   storage_bucket: string;
   storage_path: string;
@@ -81,8 +82,13 @@ export type ReconcileBlob = {
 export type ReconcilePlan = {
   /** blobId → true count, for stored refcounts that diverged (heal). */
   refcountFixes: Array<{ blobId: string; refcount: number }>;
-  /** Dead blobs (0 actual refs, past grace): remove object, then the row. */
-  blobReaps: Array<{ blobId: string; bucket: string; path: string }>;
+  /**
+   * Dead blobs (0 actual refs, past grace): drop the row; also remove the
+   * object when `path` is non-null (a kb-media path scoped to the blob). `path`
+   * is null for a malformed row we refuse to hand to storage.remove() — the row
+   * is still dropped, but NO bytes are touched.
+   */
+  blobReaps: Array<{ blobId: string; bucket: string; path: string | null }>;
   /** Objects with NO blob row (past grace): remove via the storage API. */
   strayObjectPaths: string[];
 };
@@ -117,11 +123,31 @@ export function planReconcile(input: {
       refcountFixes.push({ blobId: blob.id, refcount: actual });
     }
     if (actual === 0 && pastGrace(blob.created_at)) {
-      blobReaps.push({
-        blobId: blob.id,
-        bucket: blob.storage_bucket,
-        path: blob.storage_path,
-      });
+      // Defence-in-depth (ADR-0027 security fix): the reaper deletes under
+      // service-role (RLS-blind), so it NEVER trusts the row's stored bucket —
+      // it removes ONLY from kb-media and ONLY a path scoped to this blob's own
+      // space + id. The DB CHECK (media_blob_bucket_pinned / _path_scoped) makes a
+      // malformed row unstorable; this is the belt in case one ever exists.
+      const expectedPrefix = `spaces/${blob.space_id}/kb/blobs/${blob.id}/`;
+      if (
+        blob.storage_bucket === KB_MEDIA_BUCKET &&
+        blob.storage_path.startsWith(expectedPrefix)
+      ) {
+        blobReaps.push({
+          blobId: blob.id,
+          bucket: KB_MEDIA_BUCKET,
+          path: blob.storage_path,
+        });
+      }
+      // else: still drop the dead row (below), but touch NO bytes — a
+      // path/bucket we refuse to hand to storage.remove().
+      else {
+        blobReaps.push({
+          blobId: blob.id,
+          bucket: KB_MEDIA_BUCKET,
+          path: null,
+        });
+      }
     }
   }
 
@@ -154,7 +180,7 @@ export async function runMediaReconcileSweep(
 
   const { data: blobRows, error: blobsErr } = await kb
     .from('media_blob')
-    .select('id,refcount,storage_bucket,storage_path,created_at');
+    .select('id,space_id,refcount,storage_bucket,storage_path,created_at');
   if (blobsErr) {
     throw new Error(`media reconcile: blobs read — ${blobsErr.message}`);
   }
@@ -200,10 +226,13 @@ export async function runMediaReconcileSweep(
   for (const reap of plan.blobReaps) {
     // Object first (an abandoned reservation has none — remove() failing is
     // fine), then the row; FK RESTRICT is naturally satisfied (0 references).
-    try {
-      await service.storage.from(reap.bucket).remove([reap.path]);
-    } catch {
-      // Best-effort — a missing object must not keep the dead row alive.
+    // `path === null` = a malformed/mistrusted row: drop the row, touch NO bytes.
+    if (reap.path !== null) {
+      try {
+        await service.storage.from(reap.bucket).remove([reap.path]);
+      } catch {
+        // Best-effort — a missing object must not keep the dead row alive.
+      }
     }
     const { error } = await kb
       .from('media_blob')

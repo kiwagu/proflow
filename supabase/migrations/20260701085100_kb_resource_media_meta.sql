@@ -50,7 +50,18 @@ create table kb.media_blob (
   provenance_author_id uuid null,
   uploaded_by uuid not null,
   created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now())
+  updated_at timestamptz not null default timezone('utc', now()),
+  -- The byte-address is STRUCTURALLY pinned to this blob's own space + id in the
+  -- kb-media bucket (ADR-0027). Without this, the INSERT policy's "deliberately
+  -- loose" reservation would let a member write an arbitrary bucket/path into a
+  -- row the SERVICE-ROLE reconcile reaper later feeds to storage.remove() — a
+  -- cross-bucket/cross-tenant arbitrary-delete primitive (e.g. another user's
+  -- avatar in the public `media` bucket). These checks make such a row
+  -- unstorable; the reaper hard-pins the bucket too (defence-in-depth).
+  constraint media_blob_bucket_pinned check (storage_bucket = 'kb-media'),
+  constraint media_blob_path_scoped check (
+    starts_with(storage_path, 'spaces/' || space_id || '/kb/blobs/' || id || '/')
+  )
 );
 
 comment on table kb.media_blob is
@@ -184,39 +195,21 @@ after insert or update or delete on kb.resource_media_meta
 for each row execute function kb.media_blob_refcount_apply();
 
 -- ---------------------------------------------------------------------------
--- checksum setter — write-once, uploader-only (SECURITY DEFINER because blob
--- UPDATE is deliberately NOT granted to authenticated; the checksum is the one
--- caller-supplied field written after upload, kept cheap for B2 dedup later).
 -- ---------------------------------------------------------------------------
-create or replace function kb.media_blob_set_checksum(p_blob_id text, p_checksum text)
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  update kb.media_blob
-  set checksum = p_checksum
-  where id = p_blob_id
-    and uploaded_by = (select auth.uid())
-    and checksum is null;
-end;
-$$;
-
-comment on function kb.media_blob_set_checksum(text, text) is
-  'Write-once checksum set by the blob''s own uploader (SECURITY DEFINER: blob UPDATE is not granted to authenticated). Best-effort — silently no-op when not the uploader or already set.';
-
-revoke all on function kb.media_blob_set_checksum(text, text) from public, anon;
-grant execute on function kb.media_blob_set_checksum(text, text) to authenticated, service_role;
-
--- ---------------------------------------------------------------------------
--- RLS — kb.media_blob. Reads are reference-fenced; writes are NOT granted to
--- authenticated at all (refcount is trigger-owned; blob-row deletion at
--- refcount 0 is the service_role reconcile reaper's job, ADR-0027 §7).
+-- RLS — kb.media_blob. Reads are reference-fenced. The ONLY authenticated write
+-- is the write-once checksum on the caller's OWN blob (a COLUMN-scoped UPDATE
+-- grant + the policy below — NOT a SECURITY DEFINER RPC, so no advisor surface).
+-- refcount is trigger-owned (no column grant → untouchable by authenticated);
+-- blob-row deletion at refcount 0 is the service_role reconcile reaper's job
+-- (ADR-0027 §7).
 -- ---------------------------------------------------------------------------
 alter table kb.media_blob enable row level security;
 revoke all on kb.media_blob from public;
 grant select, insert on kb.media_blob to authenticated;
+-- The ONLY mutable column for authenticated: the write-once checksum (B2 dedup
+-- seed). Column-scoped so refcount/path/etc. stay immutable to the client; the
+-- UPDATE policy fences it to the uploader's own not-yet-set blob.
+grant update (checksum) on kb.media_blob to authenticated;
 -- service_role bypasses RLS but still needs the privilege for the reconcile reaper.
 grant select, insert, update, delete on kb.media_blob to service_role;
 
@@ -249,9 +242,62 @@ with check (
   and public.auth_user_can_access_in_space(space_id, 'space.knowledge.read')
 );
 
+-- UPDATE: write-once checksum by the blob's OWN uploader. The column grant limits
+-- WHICH columns (only `checksum`); this policy limits WHICH rows (own + not yet
+-- set — `checksum is null` in USING enforces write-once: a set row is invisible to
+-- the UPDATE → silent no-op). refcount/path can never be touched (no column grant).
+create policy "kb_media_blob update checksum write-once by uploader"
+on kb.media_blob for update to authenticated
+using (
+  uploaded_by = (select auth.uid())
+  and checksum is null
+)
+with check (
+  uploaded_by = (select auth.uid())
+);
+
+-- ---------------------------------------------------------------------------
+-- Blob-readability helper — the fence for a kmm reference INSERT/UPDATE.
+--
+-- SECURITY DEFINER (RLS-blind), in `private` (NOT REST-exposed → no advisor
+-- surface). Mirrors the blob SELECT policy EXACTLY: the caller may reference a
+-- blob iff they uploaded it (the reservation invariant — the normal confirm
+-- path) OR they already hold a READABLE reference to it (the shallow-copy path,
+-- whose source node they can read). Without this, the kmm INSERT policy fences
+-- only the NODE, so a member could confirm/re-point their OWN node's kmm at
+-- ANOTHER member's blob (same space) they cannot read — and the blob/storage
+-- SELECT policies grant bytes to any readable-reference holder, self-granting
+-- read to protected content (a revocation bypass, ADR-0027). This closes it.
+-- ---------------------------------------------------------------------------
+create or replace function private.auth_user_can_read_media_blob(p_blob_id text)
+returns boolean
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  select
+    exists (
+      select 1 from kb.media_blob b
+      where b.id = p_blob_id
+        and b.uploaded_by = (select auth.uid())
+    )
+    or exists (
+      select 1
+      from kb.resource_media_meta k
+      join public.knowledge_resources r on r.id = k.node_id
+      where k.blob_id = p_blob_id
+        and private.auth_user_can_access_resource(
+              r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.read')
+    );
+$function$;
+
+comment on function private.auth_user_can_read_media_blob(text) is
+  'True iff the caller may reference a kb.media_blob: uploaded it (reservation) OR holds a readable reference (copy). The kmm INSERT/UPDATE blob fence (ADR-0027) — mirrors the blob SELECT policy; SECURITY DEFINER so it is RLS-blind over kmm.';
+
 -- ---------------------------------------------------------------------------
 -- RLS — kb.resource_media_meta: mirror the parent node's access
--- (read = read; write = update) — unchanged in shape from ADR-0026.
+-- (read = read; write = update) — unchanged in shape from ADR-0026, PLUS a
+-- blob-readability conjunct on the write WITH CHECKs (ADR-0027).
 -- ---------------------------------------------------------------------------
 alter table kb.resource_media_meta enable row level security;
 revoke all on kb.resource_media_meta from public;
@@ -273,6 +319,7 @@ create policy "kb_media_meta insert mirrors node update"
 on kb.resource_media_meta for insert to authenticated
 with check (
   resource_media_meta.created_by = (select auth.uid())
+  and private.auth_user_can_read_media_blob(resource_media_meta.blob_id)
   and exists (
     select 1 from public.knowledge_resources r
     where r.id = resource_media_meta.node_id
@@ -290,7 +337,8 @@ using (
   )
 )
 with check (
-  exists (
+  private.auth_user_can_read_media_blob(resource_media_meta.blob_id)
+  and exists (
     select 1 from public.knowledge_resources r
     where r.id = resource_media_meta.node_id
       and private.auth_user_can_access_resource(r.id, r.space_id, r.owner_user_id, r.visibility, 'space.knowledge.update')

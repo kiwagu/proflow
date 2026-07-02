@@ -149,14 +149,7 @@ export type KbDatabase = {
       >;
     };
     Views: { [_ in never]: never };
-    Functions: {
-      // Write-once checksum on the caller's OWN blob (SECURITY DEFINER — blob
-      // UPDATE is not granted; silently no-ops for a non-uploader / already-set).
-      media_blob_set_checksum: {
-        Args: { p_blob_id: string; p_checksum: string };
-        Returns: undefined;
-      };
-    };
+    Functions: { [_ in never]: never };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };
