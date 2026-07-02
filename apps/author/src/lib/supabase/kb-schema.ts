@@ -24,42 +24,63 @@ type DescriptionRow = SatelliteBase & { body: string; created_by: string };
 
 /**
  * `resource_media_meta` (prefix `kmm`, ADR-0026) — the generic 1:1 media satellite
- * keyed by `node_id`. Holds the storage pointer + display metadata for a
- * `file`/`video` (later `image`/`pdf`/`audio`) node; the BYTES live in the private
- * `kb-media` bucket. `checksum`/`duration_ms` are nullable generic extras.
+ * keyed by `node_id` — since ADR-0027 a thin REFERENCE `{node_id → blob_id}` to a
+ * shared `media_blob` plus the per-reference display filename. Byte-intrinsic
+ * metadata lives on the blob; the BYTES live in the private `kb-media` bucket.
  */
 type MediaMetaRow = SatelliteBase & {
-  storage_bucket: string;
-  storage_path: string;
-  mime_type: string;
-  size_bytes: number;
+  blob_id: string;
   original_filename: string;
-  checksum: string | null;
-  duration_ms: number | null;
   created_by: string;
 };
 
 type MediaMetaInsert = {
   node_id: string;
   space_id: string;
-  storage_bucket?: string;
-  storage_path: string;
-  mime_type: string;
-  size_bytes: number;
+  blob_id: string;
   original_filename: string;
-  checksum?: string | null;
-  duration_ms?: number | null;
   created_by: string;
 };
 
 type MediaMetaUpdate = {
-  storage_bucket?: string;
-  storage_path?: string;
-  mime_type?: string;
-  size_bytes?: number;
+  blob_id?: string;
   original_filename?: string;
+};
+
+/**
+ * `media_blob` (prefix `kmb`, ADR-0027) — the immutable, reference-counted byte
+ * record N kmm references share. `refcount` is trigger-owned (read-only here);
+ * UPDATE/DELETE are not granted to `authenticated` at all — the app only INSERTs
+ * a reservation (authorize) and SELECTs (download/purge decisions). The FK-less
+ * `provenance_author_id` is the display-only "zero author".
+ */
+type MediaBlobRow = {
+  id: string;
+  space_id: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum: string | null;
+  duration_ms: number | null;
+  refcount: number;
+  provenance_author_id: string | null;
+  uploaded_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type MediaBlobInsert = {
+  id: string;
+  space_id: string;
+  storage_bucket?: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
   checksum?: string | null;
   duration_ms?: number | null;
+  provenance_author_id?: string | null;
+  uploaded_by: string;
 };
 
 /**
@@ -114,9 +135,17 @@ export type KbDatabase = {
         MediaMetaInsert,
         MediaMetaUpdate
       >;
+      media_blob: SatelliteTable<MediaBlobRow, MediaBlobInsert, never>;
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      // Write-once checksum on the caller's OWN blob (SECURITY DEFINER — blob
+      // UPDATE is not granted; silently no-ops for a non-uploader / already-set).
+      media_blob_set_checksum: {
+        Args: { p_blob_id: string; p_checksum: string };
+        Returns: undefined;
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

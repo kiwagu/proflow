@@ -1,10 +1,13 @@
 import type { Database } from '@workspace/db';
+import { createEntityId } from '@workspace/entity-id';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isAllowedMediaMime,
   type MediaUploadAuthorizeRequest,
   type MediaUploadAuthorizeResponse,
 } from '@workspace/knowledge-contracts';
+
+import { kbSchema } from '@/lib/supabase/kb-schema';
 
 import { resolveMediaMaxUploadBytes } from './media-limit.resolve';
 
@@ -57,14 +60,20 @@ function safeExtension(filename: string): string {
   return /^[a-z0-9]{1,12}$/.test(ext) ? `.${ext}` : '';
 }
 
-/** `spaces/<spaceId>/kb/<nodeId>/<serverKey>` — the ADR-0026 §2a path convention. */
+/**
+ * `spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>` — the ADR-0027 §2a
+ * blob-addressed, node-agnostic path. The blob id is a FOLDER segment
+ * (`storage.foldername()` excludes the terminal filename, and every
+ * `storage.objects` policy resolves the blob via segment [5]); the server key
+ * stays the filename so the object keeps a safe extension.
+ */
 function buildStoragePath(
   spaceId: string,
-  nodeId: string,
+  blobId: string,
   filename: string
 ): string {
   const serverKey = `${crypto.randomUUID()}${safeExtension(filename)}`;
-  return `spaces/${spaceId}/kb/${nodeId}/${serverKey}`;
+  return `spaces/${spaceId}/kb/blobs/${blobId}/${serverKey}`;
 }
 
 /**
@@ -124,17 +133,35 @@ export async function authorizeMediaUpload(
     }
   }
 
-  const storagePath = buildStoragePath(
-    input.spaceId,
-    input.nodeId,
-    input.filename
-  );
+  // Reserve the blob (ADR-0027 §3): the byte record must EXIST before the PUT —
+  // the `storage.objects` INSERT policy authorizes ONLY the uploader's own
+  // refcount-0 reservation. The id is minted here (the blob-addressed path embeds
+  // it, so a DB-generated default can't work). `provenance_author_id` = the
+  // uploader (the "zero author" starts as the physical creator); a reservation
+  // that never confirms stays refcount-0 with no kmm → the reconcile reaper's job.
+  const blobId = createEntityId('kmb');
+  const storagePath = buildStoragePath(input.spaceId, blobId, input.filename);
+  const { error: blobErr } = await kbSchema(db)
+    .from('media_blob')
+    .insert({
+      id: blobId,
+      space_id: input.spaceId,
+      storage_path: storagePath,
+      mime_type: input.mimeType,
+      size_bytes: input.sizeBytes,
+      duration_ms: input.durationMs ?? null,
+      provenance_author_id: deps.userId,
+      uploaded_by: deps.userId,
+    });
+  if (blobErr) {
+    throw new MediaAuthorizeError('Upload not authorized.', 403);
+  }
 
   // Control-plane authorization complete. The client uploads the bytes via the
-  // resumable (TUS) transport under its OWN session JWT to this server-decided path;
-  // the `storage.objects` INSERT policy (mirroring node-update) is the fence at PUT
-  // time (ADR-0026 §A2/§A5). The server does NOT mint a signed upload URL — the
-  // single-PUT leg was removed with the resumable switch, so no pointless Storage
-  // round-trip here.
-  return { storagePath };
+  // resumable (TUS) transport under its OWN session JWT to this server-decided
+  // path; the `storage.objects` INSERT policy (the fresh-upload window: the
+  // caller's own unreferenced reservation) is the fence at PUT time. The server
+  // does NOT mint a signed upload URL. `blobId` is echoed back on confirm — the
+  // kmm reference points at the blob, never at a raw path.
+  return { storagePath, blobId };
 }

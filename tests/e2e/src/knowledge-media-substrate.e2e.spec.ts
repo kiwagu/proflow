@@ -136,9 +136,7 @@ async function uploadAs(
     await client.setMedia({
       spaceId,
       nodeId,
-      storagePath: auth.storagePath,
-      mimeType,
-      sizeBytes,
+      blobId: auth.blobId,
       originalFilename: filename,
     });
   } finally {
@@ -222,13 +220,32 @@ async function readKmm(
   original_filename: string;
   storage_path: string;
 } | null> {
+  // ADR-0027: the kmm row is a reference; byte-intrinsic fields live on the blob.
+  // Return the SAME combined shape the matrix asserts on.
   const { data } = await tenant.service
     .schema('kb')
     .from('resource_media_meta')
-    .select('mime_type,size_bytes,original_filename,storage_path')
+    .select('original_filename,blob_id')
     .eq('node_id', nodeId)
     .maybeSingle();
-  return data ?? null;
+  if (!data?.blob_id) {
+    return null;
+  }
+  const { data: blob } = await tenant.service
+    .schema('kb')
+    .from('media_blob')
+    .select('mime_type,size_bytes,storage_path')
+    .eq('id', data.blob_id)
+    .maybeSingle();
+  if (!blob) {
+    return null;
+  }
+  return {
+    mime_type: blob.mime_type,
+    size_bytes: blob.size_bytes,
+    original_filename: data.original_filename,
+    storage_path: blob.storage_path,
+  };
 }
 
 /** POST a media op AS `actor` and return the raw status + parsed body — the unit the
@@ -669,9 +686,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       await client.setMedia({
         spaceId: fx.spaceId,
         nodeId,
-        storagePath: auth.storagePath,
-        mimeType: CONTENT_TYPE,
-        sizeBytes: PAYLOAD_BYTES,
+        blobId: auth.blobId,
         originalFilename: FILENAME,
       });
 

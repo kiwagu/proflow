@@ -362,9 +362,9 @@ async function uploadNodeMedia(
   };
 
   const authorize = await client.uploadMediaUrl(spaceId, nodeId, declared);
-  if (!authorize.storagePath) {
+  if (!authorize.storagePath || !authorize.blobId) {
     throw new Error(
-      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath`
+      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath/blobId`
     );
   }
 
@@ -386,9 +386,7 @@ async function uploadNodeMedia(
   await client.setMedia({
     spaceId,
     nodeId,
-    storagePath: authorize.storagePath,
-    mimeType: media.mimeType,
-    sizeBytes: bytes.byteLength,
+    blobId: authorize.blobId,
     originalFilename: media.filename,
   });
 }
