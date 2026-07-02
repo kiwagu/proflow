@@ -83,6 +83,13 @@ type MediaBlobInsert = {
   uploaded_by: string;
 };
 
+// UPDATE is service-role-only in practice (not granted to authenticated; the
+// reconcile reaper heals refcount drift) — typed here so the reaper stays clean.
+type MediaBlobUpdate = {
+  refcount?: number;
+  checksum?: string | null;
+};
+
 /**
  * `resource_activity` (prefix `kra`, ADR-0016) — the append-only activity-log
  * spine. NOT the 1:1 `node_id` satellite shape: it is 1:N keyed by `resource_id`,
@@ -135,7 +142,11 @@ export type KbDatabase = {
         MediaMetaInsert,
         MediaMetaUpdate
       >;
-      media_blob: SatelliteTable<MediaBlobRow, MediaBlobInsert, never>;
+      media_blob: SatelliteTable<
+        MediaBlobRow,
+        MediaBlobInsert,
+        MediaBlobUpdate
+      >;
     };
     Views: { [_ in never]: never };
     Functions: {
