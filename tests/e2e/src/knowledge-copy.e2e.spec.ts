@@ -1,6 +1,6 @@
 /**
  * Deep-copy acceptance — the regression net for `POST /author/graph/copy` (the
- * `copyResourceSubtree` fan-out). Two tests chosen to catch the highest-risk
+ * `copyResourceSubtree` fan-out). Three tests chosen to catch the highest-risk
  * failures:
  *
  *  1. DEEP INTEGRITY: copying a folder duplicates its whole `contains` subtree —
@@ -10,6 +10,10 @@
  *  2. FAIL-CLOSED (ADR-0017): a member copying someone else's SPACE-shared tree
  *     gets their OWN PRIVATE drafts — the source's audience is never re-broadcast.
  *     This is the security-critical property of copy, so it gets its own test.
+ *  3. SHALLOW MEDIA COPY (ADR-0027): copying a file node adds a NEW kmm reference
+ *     to the SAME immutable blob (refcount 2, zero byte movement), the copy
+ *     downloads for real, purging one copy leaves the shared bytes alive
+ *     (refcount-gated reap), and purging the LAST reference reaps the object.
  *
  * Driven over HTTP through the SHARED seed client; the deep-copy input is the shared
  * `drive-copy-chain` catalog fixture (one dictionary for seed + tests). Runtime
@@ -17,6 +21,7 @@
  * read back with service-role (bypasses RLS) — the body lives in Payload, but the
  * `body_ref` bridge is in Postgres, so body cloning is provable here without Mongo.
  */
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 import { DRIVE_COPY_CHAIN_SCENARIO } from '@workspace/seed';
 import { expect, test } from '@playwright/test';
 
@@ -181,5 +186,105 @@ test.describe('@full knowledge deep-copy', () => {
 
     await ownerApi.dispose();
     await memberApi.dispose();
+  });
+
+  test('shallow media copy: shared blob, zero byte movement, refcount-gated reap (ADR-0027)', async () => {
+    const api = await seedClientFor(tenant.granted);
+    const kb = () => tenant.service.schema('kb');
+
+    // A real file node with real bytes through the real transport
+    // (authorize → reservation → PUT → confirm).
+    const content =
+      'ProFlow ADR-0027 shallow-copy fixture — one blob, many references.\n';
+    const bytes = new TextEncoder().encode(content);
+    const sourceId = await api.createNode(
+      tenant.spaceId,
+      'file',
+      'Copy Semantics (file)'
+    );
+    const auth = await api.uploadMediaUrl(tenant.spaceId, sourceId, {
+      mimeType: 'text/plain',
+      sizeBytes: bytes.byteLength,
+      filename: 'copy-semantics.txt',
+    });
+    expect(auth.blobId).toBeTruthy();
+    const { error: putErr } = await tenant.granted.client.storage
+      .from(KB_MEDIA_BUCKET)
+      .upload(auth.storagePath, bytes, {
+        contentType: 'text/plain',
+        upsert: false,
+      });
+    expect(putErr, putErr?.message).toBeNull();
+    await api.setMedia({
+      spaceId: tenant.spaceId,
+      nodeId: sourceId,
+      blobId: auth.blobId,
+      originalFilename: 'copy-semantics.txt',
+    });
+
+    // (a) Copy the file node → a NEW kmm reference on the SAME blob; refcount 2;
+    //     the copy genuinely downloads the shared bytes (an independent file in UX).
+    const copied = await api.copy(tenant.spaceId, sourceId, {
+      targetFolderId: null,
+      rootTitle: 'Copy Semantics (file) (copy)',
+    });
+    const { data: copyKmm } = await kb()
+      .from('resource_media_meta')
+      .select('blob_id,original_filename')
+      .eq('node_id', copied.nodeId)
+      .single();
+    expect(copyKmm?.blob_id).toBe(auth.blobId);
+    expect(copyKmm?.original_filename).toBe('copy-semantics.txt');
+    const refcountAfterCopy = await blobRefcount(auth.blobId);
+    expect(refcountAfterCopy).toBe(2);
+    const copyDownload = await api.downloadMediaUrl(
+      tenant.spaceId,
+      copied.nodeId
+    );
+    const copyBody = await (await fetch(copyDownload.signedUrl)).text();
+    expect(copyBody).toBe(content);
+
+    // (b) Purge the SOURCE — the shared bytes must SURVIVE (refcount-gated reap:
+    //     the purge holds 1 of 2 references, so the object is NOT removed).
+    await api.trash(tenant.spaceId, sourceId);
+    await api.purge(tenant.spaceId, sourceId);
+    expect(await blobRefcount(auth.blobId)).toBe(1);
+    const survivorDownload = await api.downloadMediaUrl(
+      tenant.spaceId,
+      copied.nodeId
+    );
+    const survivorBody = await (await fetch(survivorDownload.signedUrl)).text();
+    expect(survivorBody).toBe(content);
+
+    // (c) Purge the COPY — the LAST reference goes, the object is reaped.
+    await api.trash(tenant.spaceId, copied.nodeId);
+    await api.purge(tenant.spaceId, copied.nodeId);
+    expect(await blobRefcount(auth.blobId)).toBe(0);
+    const { data: reaped, error: reapedErr } = await tenant.service.storage
+      .from(KB_MEDIA_BUCKET)
+      .download(await blobPath(auth.blobId));
+    expect(reaped).toBeNull();
+    expect(reapedErr).not.toBeNull();
+
+    await api.dispose();
+
+    /** The trigger-owned authoritative refcount (service read — assertion only). */
+    async function blobRefcount(blobId: string): Promise<number> {
+      const { data } = await kb()
+        .from('media_blob')
+        .select('refcount')
+        .eq('id', blobId)
+        .single();
+      return (data as { refcount: number } | null)?.refcount ?? -1;
+    }
+    /** The blob's storage path (the blob ROW survives at refcount 0 for the reaper). */
+    async function blobPath(blobId: string): Promise<string> {
+      const { data } = await kb()
+        .from('media_blob')
+        .select('storage_path')
+        .eq('id', blobId)
+        .single();
+      return (data as { storage_path: string } | null)?.storage_path ?? '';
+    }
   });
 });
