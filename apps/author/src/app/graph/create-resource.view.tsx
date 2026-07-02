@@ -18,6 +18,8 @@ import {
 } from '@workspace/ui/components/dialog';
 import { Input } from '@workspace/ui/components/input';
 import { Label } from '@workspace/ui/components/label';
+import { Progress } from '@workspace/ui/components/progress';
+import { cn } from '@workspace/ui/lib/utils';
 import {
   Select,
   SelectContent,
@@ -27,7 +29,7 @@ import {
 } from '@workspace/ui/components/select';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
-import { Check, Paperclip, X } from 'lucide-react';
+import { Check, Loader2, Paperclip, X } from 'lucide-react';
 import * as React from 'react';
 import { Upload as TusUpload } from 'tus-js-client';
 
@@ -375,7 +377,32 @@ export function CreateResource({
                     <X className="size-4" aria-hidden />
                   </Button>
                 </div>
-              ) : (
+              ) : null}
+              {file ? (
+                // Reserve the bar+caption height as soon as a file is picked so the modal
+                // does NOT grow the moment the upload starts and the bar appears — it's
+                // laid out but `invisible` until then (visibility keeps the space).
+                <div
+                  className={cn(
+                    'flex flex-col gap-1.5',
+                    busy && uploadPercent !== null ? undefined : 'invisible'
+                  )}
+                  aria-hidden={!(busy && uploadPercent !== null)}
+                >
+                  <Progress
+                    value={uploadPercent ?? 0}
+                    aria-label={t('graph.media.uploadingProgress', {
+                      percent: String(uploadPercent ?? 0),
+                    })}
+                  />
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    {t('graph.media.uploadingProgress', {
+                      percent: String(uploadPercent ?? 0),
+                    })}
+                  </span>
+                </div>
+              ) : null}
+              {!file ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -386,7 +413,7 @@ export function CreateResource({
                   <Paperclip className="size-4" aria-hidden />
                   {t('graph.media.pickFile')}
                 </Button>
-              )}
+              ) : null}
               {mediaError ? (
                 <p role="alert" className="text-destructive text-xs">
                   {mediaError === 'tooLarge'
@@ -470,14 +497,14 @@ export function CreateResource({
             </Button>
           </DialogClose>
           <Button onClick={onSubmit} disabled={submitDisabled}>
-            <Check className="size-4" aria-hidden />
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Check className="size-4" aria-hidden />
+            )}
             {busy
               ? needsMedia
-                ? uploadPercent !== null
-                  ? t('graph.media.uploadingProgress', {
-                      percent: String(uploadPercent),
-                    })
-                  : t('graph.media.uploading')
+                ? t('graph.media.uploading')
                 : t('graph.create.saving')
               : t('graph.create.submit')}
           </Button>
