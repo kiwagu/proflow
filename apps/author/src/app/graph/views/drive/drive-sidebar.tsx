@@ -137,6 +137,9 @@ export type DriveSidebarProps = {
   containment: Containment;
   /** Active space id — the `CreateResource` write target. */
   spaceId?: string;
+  /** The EFFECTIVE per-org max-upload size in bytes (ADR-0026 §A3), threaded to the
+   * `CreateResource` picker for its client-side "too large" pre-validation hint. */
+  maxUploadBytes?: number;
   /** Re-resolve after a create (the workbench refreshes). */
   onMutated: () => void;
 };
@@ -154,6 +157,7 @@ export function DriveSidebar({
   folderId,
   containment,
   spaceId,
+  maxUploadBytes,
   onMutated,
 }: DriveSidebarProps) {
   const [createRequest, setCreateRequest] =
@@ -267,6 +271,7 @@ export function DriveSidebar({
           spaceId={spaceId}
           t={t}
           containment={containment}
+          maxUploadBytes={maxUploadBytes}
           request={createRequest}
           onOpenChange={(open) => {
             if (!open) {

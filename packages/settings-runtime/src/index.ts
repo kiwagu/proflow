@@ -259,6 +259,34 @@ export function isPlatformEntitlementRuntimeSettingKey(
   );
 }
 
+// --- Media upload limit -----------------------------------------------------
+// The org-configurable MAX-UPLOAD size for KB media (ADR-0026 AMENDMENT §A3).
+// A `platform.*` infrastructure dial (operator config), NOT a KB-app domain
+// attribute — so it is NOT a `space.knowledge.*` verb and NOT a `kb.*` row; it
+// reuses this runtime-settings registry verbatim (org scope + numeric value_type
+// + audited RPC + admin RLS already exist).
+//
+// SOFT default 200 MB (209715200); HARD system cap 5 GB (5368709120). The HARD cap
+// is the SINGLE SOURCE `HARD_MAX_UPLOAD_BYTES` in `@workspace/knowledge-contracts`
+// (mirrored to the bucket file_size_limit + storage-api FILE_SIZE_LIMIT +
+// config.toml). This constant MUST equal it; a drift would let the write-time
+// `.max()` disagree with the storage/authorizer cap. The resolver clamps to the
+// same value at read time as belt-and-braces.
+// Exported so the platform org-settings UI (MB↔bytes number form + hard-cap
+// client validation) reads the SAME soft default / hard cap that the write-time
+// schema `.max()` enforces — one source, no drift.
+// CANONICAL SOURCE for both numbers. @workspace/knowledge-contracts re-exports these
+// as DEFAULT_MAX_UPLOAD_BYTES / HARD_MAX_UPLOAD_BYTES (the media-domain names the KB
+// authorizer + client use) — defined ONCE here, no second literal, no drift.
+export const MEDIA_MAX_UPLOAD_DEFAULT_BYTES = 209715200; // 200 MB (soft default)
+export const MEDIA_MAX_UPLOAD_HARD_CAP_BYTES = 5368709120; // 5 GiB (hard system cap)
+
+const mediaMaxUploadBytesSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(MEDIA_MAX_UPLOAD_HARD_CAP_BYTES);
+
 export const RUNTIME_SETTING_KEYS = {
   platformLocale: 'platform.locale',
   runtimeLogLevel: 'runtime.log_level',
@@ -270,6 +298,7 @@ export const RUNTIME_SETTING_KEYS = {
     PLATFORM_ENTITLEMENT_SETTING_KEYS[
       PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView
     ],
+  mediaMaxUploadBytes: 'platform.media.max_upload_bytes',
 } as const;
 
 export type RuntimeSettingKey =
@@ -317,6 +346,20 @@ const runtimeSettingDefinitions: Record<
       ],
     schema: platformFeatureFlagBooleanSchema,
   },
+  [RUNTIME_SETTING_KEYS.mediaMaxUploadBytes]: {
+    key: RUNTIME_SETTING_KEYS.mediaMaxUploadBytes,
+    valueType: 'number',
+    // org is the editable governance scope; global lets the operator move the
+    // platform-wide default without a code change. space/user deliberately excluded.
+    allowedScopes: ['global', 'organization'],
+    // isPublic: an uploader (org MEMBER) must READ the resolved limit for client
+    // pre-validation; writes stay org-admin-only via the RPC's own authz.
+    isPublic: true,
+    defaultValue: MEDIA_MAX_UPLOAD_DEFAULT_BYTES,
+    // .max = the 5 GB hard cap → WRITE-time rejection of an over-cap value via
+    // serializeRuntimeSettingInput. First real user of the number value_type.
+    schema: mediaMaxUploadBytesSchema,
+  },
 };
 
 export function getRuntimeSettingDefinition(
@@ -356,6 +399,18 @@ function normalizeRuntimeSettingInput(
     if (trimmed === 'false') {
       return false;
     }
+  }
+
+  if (definition.valueType === 'number' && typeof input === 'string') {
+    const trimmed = input.trim();
+    if (trimmed.length === 0) {
+      return input;
+    }
+
+    const parsed = Number(trimmed);
+    // Return the number when the string is a clean numeric; else pass the raw
+    // string through so the schema surfaces the validation error (fail-closed).
+    return Number.isFinite(parsed) ? parsed : input;
   }
 
   if (definition.valueType !== 'json') {

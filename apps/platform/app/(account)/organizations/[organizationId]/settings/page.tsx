@@ -31,6 +31,7 @@ import {
   OrganizationEntitlementsSection,
   OrganizationFeatureRolloutSection,
   OrganizationLocaleSection,
+  OrganizationMediaUploadLimitSection,
 } from '@/app/(account)/organizations/[organizationId]/settings/sections';
 import { cookies, headers } from 'next/headers';
 
@@ -73,6 +74,7 @@ async function OrganizationSettingsContent({
     scopedLocale,
     organizationFeatureValue,
     advancedStructuralViewValue,
+    mediaMaxUploadValue,
     spacesResult,
   ] = await Promise.all([
     getIsSuperAdminForUser(supabase, uid),
@@ -102,6 +104,12 @@ async function OrganizationSettingsContent({
       organizationId,
       RUNTIME_SETTING_KEYS.platformEntitlementAdvancedStructuralView
     ),
+    getScopedRuntimeSettingValue(
+      supabase,
+      'organization',
+      organizationId,
+      RUNTIME_SETTING_KEYS.mediaMaxUploadBytes
+    ),
     supabase
       .from('spaces')
       .select('id,name,slug')
@@ -127,6 +135,8 @@ async function OrganizationSettingsContent({
       : defaultPlatformEntitlements[
           PLATFORM_ENTITLEMENT_KEYS.advancedStructuralView
         ];
+  const mediaMaxUploadBytes =
+    typeof mediaMaxUploadValue === 'number' ? mediaMaxUploadValue : null;
   const spaces = spacesResult.data ?? [];
   const spaceIds = spaces.map((space) => space.id);
   const spaceFeatureSettings =
@@ -204,6 +214,12 @@ async function OrganizationSettingsContent({
         advancedStructuralViewEnabled={advancedStructuralViewEnabled}
         spaces={spaces}
         spaceAdvancedStructuralViewValues={spaceAdvancedStructuralViewValues}
+        t={t}
+      />
+
+      <OrganizationMediaUploadLimitSection
+        organizationId={organizationId}
+        currentBytes={mediaMaxUploadBytes}
         t={t}
       />
 

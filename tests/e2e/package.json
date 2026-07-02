@@ -36,6 +36,7 @@
     "mongodb": "^7.3.0",
     "pg": "catalog:",
     "tsx": "catalog:",
+    "tus-js-client": "^4.3.1",
     "typescript": "catalog:",
     "zod": "catalog:"
   }

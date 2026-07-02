@@ -130,6 +130,11 @@ export function SearchView({
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
+  // The cross-lens "Only files" filter (ADR-0026 render) — ONE chip on EVERY lens shelf by
+  // construction. State lives here (mirroring the Drive lens); the shared `isUploadedArtifact`
+  // predicate narrows the flat result set inside `useSearchResults`.
+  const [uploadedOnly, setUploadedOnly] = React.useState(false);
+
   const results = useSearchResults({
     spaceId,
     initialTerm,
@@ -137,6 +142,7 @@ export function SearchView({
     kbData,
     containment,
     lensView,
+    uploadedOnly,
     onTermChange,
   });
 
@@ -170,6 +176,7 @@ export function SearchView({
       folderId={null}
       containment={containment}
       spaceId={spaceId}
+      maxUploadBytes={kbData?.maxUploadBytes}
       onMutated={onMutated}
     />
   );
@@ -192,6 +199,8 @@ export function SearchView({
           lensView={lensView}
           onLensViewChange={onLensViewChange}
           advancedStructuralEntitled={results.advancedStructuralEntitled}
+          uploadedOnly={uploadedOnly}
+          onUploadedOnlyChange={setUploadedOnly}
         />
       }
       main={

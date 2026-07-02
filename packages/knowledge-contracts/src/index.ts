@@ -114,3 +114,26 @@ export {
   type BodyBridgeEventName,
   type BodyRef,
 } from './body-bridge.schema.js';
+
+export {
+  DANGEROUS_MIME_TYPES,
+  DEFAULT_MAX_UPLOAD_BYTES,
+  HARD_MAX_UPLOAD_BYTES,
+  KB_MEDIA_BUCKET,
+  MAX_MEDIA_SIZE_BYTES,
+  MEDIA_DOWNLOAD_URL_TTL_SECONDS,
+  MEDIA_UPLOAD_URL_TTL_SECONDS,
+  isAllowedMediaMime,
+  mediaDownloadResponseSchema,
+  mediaUploadAuthorizeRequestSchema,
+  mediaUploadAuthorizeResponseSchema,
+  parseMediaUploadAuthorizeRequest,
+  parseSetResourceMediaRequest,
+  resourceMediaMetaSchema,
+  setResourceMediaRequestSchema,
+  type MediaDownloadResponse,
+  type MediaUploadAuthorizeRequest,
+  type MediaUploadAuthorizeResponse,
+  type ResourceMediaMeta,
+  type SetResourceMediaRequest,
+} from './resource-media.schema.js';

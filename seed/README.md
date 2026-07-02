@@ -55,7 +55,7 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`per-user-share`, `knowledge-base`, `search`, `board`, `shared`, `hierarchy`, `trash` —
+`per-user-share`, `knowledge-base`, `search`, `media`, `board`, `shared`, `hierarchy`, `trash` —
 group the scenarios for one capability so the seed stays runnable as the catalog grows. A
 scenario opts into a preset via its `presets` field. `access` is cohort/floor sharing;
 `shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
@@ -135,6 +135,40 @@ highlight on the leaf. The chain is nested via the scenario's `children` (the sa
 surfaces `deepLeafId`/`deepLeafTitle`/`deepLeafTerm` + the `deepChainFolderTitles`/
 `deepChainFolderIds` (outermost first) so a deep-tree advanced-search spec can assert the
 whole path renders.
+`media` is the KB media substrate (ADR-0026 / slice-13; slice-14 resumable/TUS switch): the
+`knowledge-base` scenario ALSO opts into it, making `file`/`video` nodes REAL by uploading a
+small byte payload through the product's OWN transport — the materializer authorizes the
+upload (`/author/graph/media?op=upload-url`), which returns the SERVER-decided `storagePath`
+only (the single-PUT signed-url/token leg was removed with the resumable switch), uploads the
+bytes to that path in the private `kb-media` bucket under the owner's session (the product
+client uses resumable TUS; the seed runs in Node with tiny fixtures, so it uses the storage-js
+STANDARD `upload` — same `storage.objects` INSERT RLS fence, no `tus-js-client` dep), then
+confirms the `kb.resource_media_meta` (`kmm`) satellite (`attribute:'media'`), so both a bucket
+object AND a satellite row exist, fenced by the SAME `storage.objects` / satellite RLS as
+production (never a service-role / direct-SQL seed). A
+node opts in by declaring a `media: { bytes, mimeType, filename }` payload on a `file`/`video`
+node (the mime must pass `isAllowedMediaMime`; the validator enforces it offline). The corpus
+carries: a real `file` (`kb/file-owned`) + a real `video` (`kb/video-owned`) owned by the
+primary user (the happy path — upload, download the exact bytes, ResourcePanel Media section);
+a real IMAGE (`kb/file-image`, `image/png`) and a real PDF (`kb/file-pdf`, `application/pdf`)
+whose bytes are genuine base64-decoded binaries — the inline MIME-driven PREVIEW (ADR-0026
+Phase 2, increment 1): `image/*` → an inline `<img>`, `application/pdf` → an inline `<iframe>`
+(the `text/plain` files already cover the no-preview case), minted via the SAME single-node
+download authorizer as Download (no new endpoint);
+a PRIVATE file owned by `searcherB` (`kb/file-private-other`, the download RLS-negative); a
+file nested under the ancestor-shared folder (`kb/inherited-file`, the ADR-0023 inherited-grant
+download positive for the grantee); and a REAL file (owner-uploaded bytes) per-user-granted
+to a NODE-ONLY member (`kb/file-node-grant`, granted to `mediaGrantee` — a plain `member`
+WITHOUT space-wide `space.knowledge.update`), which exercises the READ/WRITE ASYMMETRY: the
+per-user grant is a READ dimension, so the grantee CAN download the bytes (the storage-RLS
+SELECT composes grants) but is DENIED an upload (the WRITE fence mirrors node-UPDATE exactly
+— `owner OR space.knowledge.update`, grants NOT composed — so a read-grantee can never
+overwrite another user's file bytes); and a REAL confirmed file (`kb/file-purge-reap`)
+reserved for the trash → purge lifecycle — purging it best-effort reaps its `kb-media` object
+(the ADR-0026 touch-item). Bytes egress ONLY via short-lived signed URLs; RLS is
+the sole fence. The ADR-0026 media matrix e2e (`knowledge-media-substrate.e2e.spec.ts`) draws
+this corpus via `seedMediaSubstrateFixture` and drives the REAL `/author/graph/media`
+upload/download transport against REAL Storage.
 
 ## The dictionary
 
@@ -207,6 +241,63 @@ shared fixture — no inline tree — and asserts the match classes (`догов
 `GETTING`) plus the RLS-absence half (a non-grantee's PRIVATE node and another space's node
 stay ABSENT), proving search is a SUBSTRATE capability, not Drive-bound. One corpus, two
 consumers, one dictionary.
+
+The Drive size-&-filter render spec (`knowledge-drive-size-filter.e2e.spec.ts`, ADR-0026
+render) draws its whole tree from the shared `drive-size-filter` fixture (an e2e-only
+scenario, `drive` + `media` presets) via `seedDriveSizeFilterFixture` — never an inline
+`createFolder`/`createDoc`/upload tree — so the demo vocabulary and the test build the
+known-byte-size tree the SAME way, through the one create-vocabulary (its `file`/`video`
+bytes ride the SAME real media-upload transport as the media substrate, so the artifacts
+carry real `media` satellites with `byteSize` — the "Only files" predicate requires a real
+satellite, not a byte-less stub). The fixture is a small containment tree — a media branch
+(a nested folder with a 512 B file + a 512 B video, so the folder sums to exactly 1 KB), a
+media-less "empty" branch (a folder with only a text doc), and loose text/link leaves — plus
+the three artifacts/doc `starred` so the FLAT Starred lens carries a mix. The spec (KB browse
+LIST layout, forced via the `drive-layout=list` cookie) asserts the three behaviours purely in
+the browser over the resolved canvas + `kbData`: (1) the Size column — a file/video shows its
+humanized `byteSize` ("512 B"), a folder shows the recursive VISIBLE-descendant sum
+("1 KB" = 512 + 512, the arithmetic proof; a media-less folder sums to "0 B"), a non-artifact
+LEAF (text/link) shows "—"; (2) the "Only files" chip
+(`aria-pressed`) in TREE mode PRUNES the containment to branches holding ≥1 artifact (the
+media branch survives, the empty branch + loose leaves drop); (3) the same chip in FLAT mode
+(the Starred lens) keeps ONLY uploaded artifacts (the two files stay, the starred doc drops).
+It is purely presentational — no new endpoint, no resolver change.
+
+The SAME `drive-size-filter` fixture ALSO backs the SEARCH-lens variant of that chip
+(`knowledge-search-size-filter.e2e.spec.ts`, ADR-0026 render): the "Only files" chip now lives
+on EVERY lens shelf via the shared `LensToolbar`, and on Search it FUNCTIONALLY filters the
+result set (a flat leaf list) with the SAME `isUploadedArtifact` predicate. The fixture carries
+two loose leaves sharing ONE distinctive title token (`Falcon`) — a REAL uploaded file
+(`size/search-file`, an artifact) and a plain text node (`size/search-doc`, a non-artifact) — so
+a single browser search for `Falcon` (POST `/author/graph/search`, RLS-fenced as the owner)
+returns BOTH; toggling the chip ON keeps the file and drops the note (the chip filters, not just
+renders). The search leaves are loose at the root + NOT starred, so the Drive folder-sum + Starred
+proofs above are untouched. One fixture, two consumers (the Drive lenses + the Search lens), one
+dictionary.
+
+The KB media matrix spec (`knowledge-media-substrate.e2e.spec.ts`, ADR-0026 / slice-13, the
+MERGE GATE) draws its corpus from the SAME `knowledge-base` scenario via
+`seedMediaSubstrateFixture`, and drives the REAL upload/download transport against REAL
+Storage through the shared create-vocabulary — `seedClientFor(actor).uploadMediaUrl` /
+`.setMedia` / `.downloadMediaUrl` (the live `/author/graph/media` + `attribute:'media'`
+routes), each RLS-fenced as the acting user. It proves the FUNCTIONAL path (upload → the exact
+bytes round-trip on download → the ResourcePanel Media section) for `file` AND `video`, and the
+SECURITY gate (the bytes inherit the FULL access model because `storage.objects` RLS delegates
+to `auth_user_can_access_resource`): a non-grantee cannot mint a download URL nor fetch the
+object directly, the direct/anon object path fails closed on the private bucket, a cross-space
+node is unreachable, an ancestor-folder grantee downloads the nested file via the inherited
+grant, a non-owner-non-grantee (no space-wide update) cannot mint an UPLOAD URL, and — the
+read/write asymmetry — a NODE-ONLY read-grantee (a per-user grant, no space-wide update) CAN
+download the granted file (read-grant composes on the storage-RLS SELECT) but is DENIED an
+upload of it (the write fence mirrors node-UPDATE exactly — `owner OR space.knowledge.update`,
+grants NOT composed — so a read-grantee can never overwrite the bytes; a direct object write
+also fails and the owner's bytes stay intact). It ALSO proves the PURGE REAP (the ADR-0026
+touch-item): trashing then purging a confirmed media node (the resource DELETE then the
+trash-route DELETE, both through the shared create-vocabulary — `seedClientFor(actor).trash` /
+`.purge`) best-effort reaps its `kb-media` object, so after the purge the object no longer
+resolves and the `kmm` satellite is gone. The other-space negative is built in the
+fixture's second tenant (the catalog is single-space). Every denial is proven by RLS, not an
+app filter.
 
 ## Extending the catalog
 

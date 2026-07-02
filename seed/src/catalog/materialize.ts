@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import type { SeedClient } from '../engine/http.js';
 import type { SeedActor, SeedTenant } from '../engine/types.js';
-import type { SeedNode, SeedScenario } from './types.js';
+import type { BodylessNode, SeedNode, SeedScenario } from './types.js';
 
 /**
  * Caller-supplied wiring: how to build an HTTP client for an actor (CLI → fetch;
@@ -195,6 +196,21 @@ export async function materializeScenario(
         node.title,
         parentFolderId
       );
+      // A `file`/`video` node with a byte payload becomes REAL through the SAME
+      // upload transport the product drives (ADR-0026): authorize the upload under
+      // the OWNER's RLS (server-decided path only), upload the bytes to the private
+      // `kb-media` bucket at that path under the owner's storage client, then confirm
+      // the `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
+      if ((node.kind === 'file' || node.kind === 'video') && node.media) {
+        await uploadNodeMedia(
+          scenario.id,
+          spaceId,
+          node,
+          nodeId,
+          c,
+          db(ownerRef)
+        );
+      }
     }
     refs.set(node.ref, nodeId);
 
@@ -302,6 +318,79 @@ export async function materializeScenario(
   }
 
   return { scenarioId: scenario.id, refs, actors };
+}
+
+/**
+ * Drive a `file`/`video` node's byte payload through the REAL media transport
+ * (ADR-0026, resumable/TUS switch), exactly as the product's create flow does — the seed
+ * never inserts a media object or `kmm` row via service-role / direct SQL:
+ *   1. authorize the upload (`media?op=upload-url`) under the OWNER's RLS
+ *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` only
+ *      (the single-PUT signed-url/token leg was removed with the resumable switch);
+ *   2. upload the bytes to the private `kb-media` bucket at that server path under the
+ *      OWNER's storage-js client. The PRODUCT uploads via resumable TUS; the seed runs in
+ *      Node (no browser `tus-js-client`) with tiny fixtures, so it uses the storage-js
+ *      STANDARD `upload(storagePath, bytes, { contentType, upsert:false })` — still fenced
+ *      by the SAME `storage.objects` INSERT RLS policy (mirroring node-update), still the
+ *      user's own JWT, never service-role;
+ *   3. confirm the `kb.resource_media_meta` satellite (`attribute:'media'`) — written
+ *      ONLY after a successful upload, so a failure leaves NO row (poc-no-fallbacks).
+ * So both the demo tenant and the e2e fixtures get a genuine object + satellite whose
+ * access is fenced by the SAME `storage.objects` / satellite RLS as production.
+ */
+async function uploadNodeMedia(
+  scenarioId: string,
+  spaceId: string,
+  node: BodylessNode,
+  nodeId: string,
+  client: SeedClient,
+  ownerDb: SupabaseClient
+): Promise<void> {
+  const media = node.media;
+  if (!media) return;
+  // A binary fixture (image / PDF for the inline preview) carries base64 bytes that
+  // must be decoded to the exact binary before the PUT — a UTF-8 re-encode would
+  // mangle it and the preview would fail to load. A text fixture is UTF-8 as-is.
+  const bytes =
+    media.encoding === 'base64'
+      ? Uint8Array.from(Buffer.from(media.bytes, 'base64'))
+      : new TextEncoder().encode(media.bytes);
+  const declared = {
+    mimeType: media.mimeType,
+    sizeBytes: bytes.byteLength,
+    filename: media.filename,
+  };
+
+  const authorize = await client.uploadMediaUrl(spaceId, nodeId, declared);
+  if (!authorize.storagePath) {
+    throw new Error(
+      `${scenarioId} media "${node.ref}": upload authorize returned no storagePath`
+    );
+  }
+
+  // Upload to the SERVER-decided path under the owner's own session (RLS). The product
+  // uses resumable TUS; the seed's tiny fixtures ride the storage-js STANDARD upload —
+  // same `storage.objects` INSERT fence, same JWT, no service-role, no `tus-js-client`.
+  const { error: uploadError } = await ownerDb.storage
+    .from(KB_MEDIA_BUCKET)
+    .upload(authorize.storagePath, bytes, {
+      contentType: media.mimeType,
+      upsert: false,
+    });
+  if (uploadError) {
+    throw new Error(
+      `${scenarioId} media "${node.ref}": upload to ${KB_MEDIA_BUCKET} failed — ${uploadError.message}`
+    );
+  }
+
+  await client.setMedia({
+    spaceId,
+    nodeId,
+    storagePath: authorize.storagePath,
+    mimeType: media.mimeType,
+    sizeBytes: bytes.byteLength,
+    originalFilename: media.filename,
+  });
 }
 
 function collectTagTitles(nodes: SeedNode[]): string[] {

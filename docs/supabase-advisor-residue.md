@@ -85,3 +85,18 @@ name) — neither closes an exploit, and both must stay REST-reachable to functi
 
 These ~17 are the documented baseline: a new migration should not increase the
 count, and any NEW lint of a different kind must be fixed, not absorbed here.
+
+## 2026-07-01 — KB media substrate Phase 0 (ADR-0026): no new residue
+
+Migrations `20260701085100_kb_resource_media_meta.sql` (the `kb.resource_media_meta`
+satellite) and `20260701085200_storage_bucket_kb_media.sql` (the private `kb-media`
+bucket + four `storage.objects` policies) were applied. `get_advisors({ type:
+"security" })` afterward returned **18 lints, ALL `0029`**
+(`authenticated_security_definer_function_executable`) — the same pre-existing
+Bucket A / Bucket B′ functions listed above, **zero of them new**. The new satellite
+has RLS enabled (no `0002`), and the storage policies delegate to the existing
+`private.auth_user_can_access_resource` predicate rather than adding any new
+`SECURITY DEFINER` surface — so Phase 0 added **no new residue** and introduced **no
+new lint kind**. The count sits within the documented `~17` baseline band (RPC count
+drifts as features land; the invariant is "no new lint kind, no new residue", which
+holds).

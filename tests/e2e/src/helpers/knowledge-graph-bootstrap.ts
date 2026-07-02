@@ -23,6 +23,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { request } from '@playwright/test';
 import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import {
   actorCookieHeader,
@@ -38,12 +39,15 @@ import {
   createActor,
   DIRECTORY_PICKER_SCENARIO,
   DIRECTORY_PICKER_DISPLAY_NAMES,
+  DRIVE_SIZE_FILTER_SCENARIO,
   KNOWLEDGE_BASE_SCENARIO,
   makeSeedClient,
   materializeScenario,
   PER_USER_SHARE_SCENARIO,
   resolveRoleIds,
   SHARE_MECHANISM_SCENARIO,
+  SIZE_FILTER_BYTES,
+  SIZE_FILTER_FOLDER_SUM,
   slug,
   teardownTenant,
   type MaterializedScenario,
@@ -1960,4 +1964,365 @@ export async function teardownSearchCorpusFixture(
   if (fx?.otherSpace?.tenant) {
     await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);
   }
+}
+
+// ── ADR-0026 (slice-13): KB media substrate fixture (the merge gate) ─────────
+//
+// The media e2e (`knowledge-media-substrate.e2e.spec.ts`) drives the REAL signed-upload/
+// download transport (`/author/graph/media` + `attribute:'media'`) against REAL Storage,
+// RLS-fenced as each acting user — never a service-role/direct-SQL insert of media. The
+// seeded corpus comes ENTIRELY from the shared `KNOWLEDGE_BASE_SCENARIO` (the `media`
+// preset), so the demo DB and the test make `file`/`video` nodes real the SAME way, through
+// the one create-vocabulary (the materializer's `uploadNodeMedia`: authorize → upload the
+// bytes to the server path → confirm the `kmm` satellite). This wrapper resolves the named node
+// refs + actors + the seeded storage paths (read via the tenant's service client, for the
+// direct-object-fetch negatives), and mints a SECOND tenant for the cross-space negative
+// (assertion 7 — not expressible in the single-space scenario model).
+
+/** The KB bucket the substrate stores bytes in — re-exported so the spec fetches objects
+ * directly (the no-signed-token / anon negatives) against the SAME bucket the seed uses. */
+export const MEDIA_BUCKET = KB_MEDIA_BUCKET;
+
+/** The exact fixture bytes the KB scenario seeds per node (kept in sync with
+ * `knowledge-base.ts`) — the download round-trip (assertion 2) asserts the bytes returned
+ * by the signed URL equal THESE. */
+export const MEDIA_FIXTURE_BYTES = {
+  fileOwned:
+    'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n',
+  inherited:
+    'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
+  nodeGrant:
+    'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
+} as const;
+
+/** The KB media substrate fixture, resolved from the shared `KNOWLEDGE_BASE_SCENARIO`
+ * plus a second tenant for the cross-space negative (ADR-0026 §3). Every `…Id` is a
+ * `knr_…`; storage paths are the seeded `kmm.storage_path` (for the direct-fetch fences). */
+export type MediaSubstrateFixture = {
+  /** Space A — the space the owner (`admin`) authors + downloads in. */
+  spaceId: string;
+  /** The `Knowledge Base` folder that contains the owned file/video — the browser
+   * opens `?folder=<this>` to reach the file card + its ResourcePanel (assertion 3). */
+  kbFolderId: string;
+  /** Owned file (real bytes) — the functional happy path (assertions 1–3). */
+  fileOwnedId: string;
+  fileOwnedPath: string;
+  /** Owned video (real H.264/MP4 bytes, `video/mp4`) — one substrate serves file &
+   * video (assertion 4) AND the inline `<video controls>` player (ADR-0026 Phase 2,
+   * increment 2). Its filename powers the `aria-label="Preview of <name>"`. */
+  videoOwnedId: string;
+  videoOwnedPath: string;
+  videoOwnedFilename: string;
+  /** Owned AUDIO (real PCM/WAV bytes, `audio/wav`) — the inline `<audio controls>`
+   * player (ADR-0026 Phase 2, increment 2). Its filename powers the
+   * `aria-label="Preview of <name>"`. */
+  fileAudioId: string;
+  fileAudioFilename: string;
+  /** Owned IMAGE (real PNG bytes, `image/png`) — the inline `<img>` preview happy path
+   * (ADR-0026 Phase 2, increment 1). Its filename powers the `alt="Preview of <name>"`. */
+  fileImageId: string;
+  fileImageFilename: string;
+  /** Owned PDF (real bytes, `application/pdf`) — the inline `<iframe>` preview path
+   * (ADR-0026 Phase 2, increment 1). Its filename powers the `title="Preview of <name>"`. */
+  filePdfId: string;
+  filePdfFilename: string;
+  /** A REAL file (owner-uploaded bytes) per-user-granted to `nodeGrantee` (a node-only
+   * member) — the read/write asymmetry (assertions 11a/11b): the read-grant lets the
+   * grantee DOWNLOAD (11a) but the write fence blocks the grantee's UPLOAD (11b). */
+  nodeGrantFileId: string;
+  /** The seeded storage path of `nodeGrantFile` — for the 11b direct-upload-attempt fence. */
+  nodeGrantFilePath: string;
+  /** A REAL confirmed file reserved for the trash → purge lifecycle (ADR-0026 touch-item):
+   * the media matrix e2e trashes it, purges it via the trash-route DELETE, and asserts
+   * `purgeResource` best-effort reaps its `kb-media` object (the object stops resolving). */
+  purgeReapFileId: string;
+  /** The seeded storage path of `purgeReapFile` — the object the purge must reap. */
+  purgeReapFilePath: string;
+  /** Bea's PRIVATE file (real bytes) — the download RLS-negative (assertions 5, 6). */
+  privateOtherFileId: string;
+  privateOtherFilePath: string;
+  /** A file nested under the ancestor-shared folder (real bytes) — the inherited-grant
+   * download positive for `otherOwner` (assertion 8). */
+  inheritedFileId: string;
+  inheritedFilePath: string;
+  /** The owner of the corpus (`admin`) — authors + downloads its own media. */
+  owner: KnowledgeActor;
+  /** A SECOND owner (`searcherB`, `admin` role): owns the private file; the grantee of
+   * the ancestor-shared folder (so its nested file downloads via inheritance). */
+  otherOwner: KnowledgeActor;
+  /** A NODE-ONLY member (`member` role — read + create, NO space-wide update) granted
+   * `nodeGrantFile` per-user: the read-grant lets it DOWNLOAD (11a); the write fence
+   * (owner-or-space-update, grants NOT composed) DENIES its UPLOAD (11b). */
+  nodeGrantee: KnowledgeActor;
+  /** The exact seeded bytes per node (download round-trip, assertion 2). */
+  fixtureBytes: typeof MEDIA_FIXTURE_BYTES;
+  /** Space B — a DIFFERENT space holding a real file the space-A owner cannot reach
+   * (assertion 7 — cross-space download denial). */
+  otherSpace: {
+    tenant: KnowledgeGraphTenant;
+    /** A real file node in space B (owned by that tenant's `granted` actor). */
+    fileId: string;
+  };
+};
+
+/** Read a node's seeded media storage path from the `kb.resource_media_meta` satellite
+ * (service client — a setup/assertion read, NOT the access path under test). */
+async function mediaStoragePath(
+  tenant: KnowledgeGraphTenant,
+  nodeId: string
+): Promise<string> {
+  const { data, error } = await tenant.service
+    .schema('kb')
+    .from('resource_media_meta')
+    .select('storage_path')
+    .eq('node_id', nodeId)
+    .single();
+  if (error || !data?.storage_path) {
+    throw new Error(
+      `media fixture: no kmm.storage_path for ${nodeId} — ${error?.message ?? 'no row'}`
+    );
+  }
+  return data.storage_path;
+}
+
+/**
+ * Materialize the KB media substrate over space A (the shared `KNOWLEDGE_BASE_SCENARIO`,
+ * whose `media` nodes are uploaded through the real transport by the materializer) and mint
+ * a second tenant (space B) carrying one real file for the cross-space negative. Returns the
+ * named refs/actors + storage paths the media matrix asserts against. Pair with
+ * `teardownMediaSubstrateFixture` (it tears down space B).
+ */
+export async function seedMediaSubstrateFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<MediaSubstrateFixture> {
+  const { refs, actors } = await materializeFixture(
+    KNOWLEDGE_BASE_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`media fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor) throw new Error(`media fixture: missing actor "${ref}"`);
+    return actor;
+  };
+
+  const fileOwnedId = id('kb/file-owned');
+  const videoOwnedId = id('kb/video-owned');
+  const fileAudioId = id('kb/file-audio');
+  const fileImageId = id('kb/file-image');
+  const filePdfId = id('kb/file-pdf');
+  const privateOtherFileId = id('kb/file-private-other');
+  const inheritedFileId = id('kb/inherited-file');
+  const nodeGrantFileId = id('kb/file-node-grant');
+  const purgeReapFileId = id('kb/file-purge-reap');
+
+  // Space B: a second tenant whose `granted` actor owns one real file the space-A owner
+  // is not a member of — the cross-space download denial (assertion 7). Uploaded through
+  // the SAME real transport so its bytes genuinely exist (denial ≠ missing object).
+  const otherTenant = await bootstrapEphemeralTenant();
+  const otherClient = await seedClientFor(otherTenant.granted);
+  const otherFileId = await otherClient.createNode(
+    otherTenant.spaceId,
+    'file',
+    'Cross-Space File'
+  );
+  const otherContent =
+    'ProFlow KB media fixture — a file in ANOTHER space (ADR-0026 assertion 7).\n';
+  const otherSize = new TextEncoder().encode(otherContent).byteLength;
+  const otherAuth = await otherClient.uploadMediaUrl(
+    otherTenant.spaceId,
+    otherFileId,
+    {
+      mimeType: 'text/plain',
+      sizeBytes: otherSize,
+      filename: 'cross-space.txt',
+    }
+  );
+  const { error: otherUploadErr } = await otherTenant.granted.client.storage
+    .from(KB_MEDIA_BUCKET)
+    .upload(otherAuth.storagePath, new TextEncoder().encode(otherContent), {
+      contentType: 'text/plain',
+      upsert: false,
+    });
+  if (otherUploadErr) {
+    throw new Error(`media fixture space-B upload: ${otherUploadErr.message}`);
+  }
+  await otherClient.setMedia({
+    spaceId: otherTenant.spaceId,
+    nodeId: otherFileId,
+    storagePath: otherAuth.storagePath,
+    mimeType: 'text/plain',
+    sizeBytes: otherSize,
+    originalFilename: 'cross-space.txt',
+  });
+  await otherClient.dispose();
+
+  return {
+    spaceId: tenant.spaceId,
+    kbFolderId: id('kb/folder'),
+    fileOwnedId,
+    fileOwnedPath: await mediaStoragePath(tenant, fileOwnedId),
+    videoOwnedId,
+    videoOwnedPath: await mediaStoragePath(tenant, videoOwnedId),
+    videoOwnedFilename: 'intro-clip.mp4',
+    fileAudioId,
+    fileAudioFilename: 'intro-tone.wav',
+    fileImageId,
+    fileImageFilename: 'media-preview.png',
+    filePdfId,
+    filePdfFilename: 'media-preview.pdf',
+    nodeGrantFileId,
+    nodeGrantFilePath: await mediaStoragePath(tenant, nodeGrantFileId),
+    purgeReapFileId,
+    purgeReapFilePath: await mediaStoragePath(tenant, purgeReapFileId),
+    privateOtherFileId,
+    privateOtherFilePath: await mediaStoragePath(tenant, privateOtherFileId),
+    inheritedFileId,
+    inheritedFilePath: await mediaStoragePath(tenant, inheritedFileId),
+    owner: who('admin'),
+    otherOwner: who('searcherB'),
+    nodeGrantee: who('mediaGrantee'),
+    fixtureBytes: MEDIA_FIXTURE_BYTES,
+    otherSpace: { tenant: otherTenant, fileId: otherFileId },
+  };
+}
+
+/** Tear down the media fixture's SECOND tenant (space B). Space A is the caller's main
+ * tenant (torn down by the spec); here we only release the ephemeral space-B tenant. */
+export async function teardownMediaSubstrateFixture(
+  fx: MediaSubstrateFixture | undefined
+): Promise<void> {
+  if (fx?.otherSpace?.tenant) {
+    await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);
+  }
+}
+
+// ── ADR-0026 render: "Only files" filter + list Size column fixture ───────────
+//
+// The size/filter render e2e (`knowledge-drive-size-filter.e2e.spec.ts`) drives the
+// cross-lens "Only files" (uploaded-artifacts) filter + the list-view Size column purely
+// in the browser over the resolved canvas + `kbData`. Its tree — a media branch with two
+// nested 512-byte artifacts (→ the folder sums to 1 KB), an empty (media-less) branch, and
+// loose text/link leaves — comes ENTIRELY from the shared `DRIVE_SIZE_FILTER_SCENARIO`
+// catalog entry (via `materializeFixture`), whose `file`/`video` bytes travel the SAME real
+// upload transport the media substrate uses (so the artifacts have real `media` satellites
+// with `byteSize`; the predicate requires a real satellite, not a byte-less stub). The demo
+// DB and this spec name the SAME nodes through the one create-vocabulary — no inline
+// `createFolder`/`createDoc`/upload tree.
+
+/** The seeded size/filter titles the render spec's DOM assertions key on — kept in sync
+ * with `DRIVE_SIZE_FILTER_SCENARIO`. */
+export const SIZE_FILTER_TITLES = {
+  root: 'Size Root',
+  mediaBranch: 'Media Branch',
+  nested: 'Nested Media',
+  fileSmall: 'Report A (file)',
+  videoSmall: 'Clip B (video)',
+  emptyBranch: 'Empty Branch',
+  docInside: 'Branch Notes',
+  looseDoc: 'Loose Note',
+  looseLink: 'Loose Link',
+  /** The SEARCH-lens "Only files" positive — a real uploaded file sharing the `Falcon`
+   * search token (kept under "Only files" on the search shelf). */
+  searchFile: 'Falcon Report (file)',
+  /** The SEARCH-lens "Only files" negative — a plain text note sharing the SAME token
+   * (dropped under "Only files" on the search shelf). */
+  searchDoc: 'Falcon Memo',
+} as const;
+
+/** The distinctive title token both search-target leaves share — a single search for it
+ * returns the artifact (`searchFile`) AND the non-artifact (`searchDoc`), so toggling
+ * "Only files" on the search shelf can drop the latter while keeping the former. */
+export const SIZE_FILTER_SEARCH_TERM = 'Falcon';
+
+/** The size/filter render fixture, resolved from the shared `DRIVE_SIZE_FILTER_SCENARIO`.
+ * Every `…Id` is a `knr_…`; the byte sizes are the EXACT seeded values so the spec can
+ * assert the humanized Size cells + the folder-sum arithmetic (512 + 512 = 1024 → "1 KB"). */
+export type DriveSizeFilterFixture = {
+  /** The space the browse tree is scoped to (`?folder=` navigation). */
+  spaceId: string;
+  /** The fixture root folder — the browser opens `?folder=<this>` to reach the tree. */
+  rootId: string;
+  /** The media branch (survives "Only files"; Size = its recursive descendant sum). */
+  mediaBranchId: string;
+  /** The innermost folder directly holding the two 512-byte artifacts (Size = 1 KB). */
+  nestedId: string;
+  /** A real 512-byte file — its own Size cell "512 B"; a folder-sum member; artifact. */
+  fileSmallId: string;
+  /** A real 512-byte video — its own Size cell "512 B"; a folder-sum member; artifact. */
+  videoSmallId: string;
+  /** A folder with only a text doc — DROPS under "Only files"; Size "0 B" (empty sum). */
+  emptyBranchId: string;
+  /** The text doc inside the empty branch — Size "—"; drops under "Only files". */
+  docInsideId: string;
+  /** A loose text leaf — Size "—"; drops under "Only files". */
+  looseDocId: string;
+  /** A loose link leaf — Size "—"; drops under "Only files". */
+  looseLinkId: string;
+  /** A real uploaded file sharing the `Falcon` search token — the SEARCH-lens "Only files"
+   * positive (a search hit that SURVIVES the chip). */
+  searchFileId: string;
+  /** A plain text node sharing the SAME token — the SEARCH-lens "Only files" negative (a
+   * search hit that DROPS under the chip). */
+  searchDocId: string;
+  /** The distinctive search token both search-target leaves share (`Falcon`). */
+  searchTerm: string;
+  /** The exact seeded artifact byte sizes (`fileSmall` / `videoSmall` = 512 each). */
+  bytes: typeof SIZE_FILTER_BYTES;
+  /** The folder-sum of the nested branch (1024 B → "1 KB") — the arithmetic assertion. */
+  folderSum: typeof SIZE_FILTER_FOLDER_SUM;
+  /** The seeded titles the DOM assertions key on. */
+  titles: typeof SIZE_FILTER_TITLES;
+  /** The owner (`admin`) that authored + can see the whole tree — the acting user. */
+  owner: KnowledgeActor;
+};
+
+/**
+ * Materialize the size/filter scenario over an existing tenant and project its refs onto
+ * the render-spec shape. The folders, the containment, and the two real uploaded artifacts
+ * are already CREATED by `materializeFixture` through the runtime RLS path + the real media
+ * transport (the materializer's `uploadNodeMedia`); this only names the pieces the spec
+ * asserts against. Single-space (no second tenant needed — the fixture is a pure render
+ * proof over one owner's tree).
+ */
+export async function seedDriveSizeFilterFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<DriveSizeFilterFixture> {
+  const { refs, actors } = await materializeFixture(
+    DRIVE_SIZE_FILTER_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`size-filter fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor) throw new Error(`size-filter fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    rootId: id('size/root'),
+    mediaBranchId: id('size/media-branch'),
+    nestedId: id('size/nested'),
+    fileSmallId: id('size/file-small'),
+    videoSmallId: id('size/video-small'),
+    emptyBranchId: id('size/empty-branch'),
+    docInsideId: id('size/doc-inside'),
+    looseDocId: id('size/loose-doc'),
+    looseLinkId: id('size/loose-link'),
+    searchFileId: id('size/search-file'),
+    searchDocId: id('size/search-doc'),
+    searchTerm: SIZE_FILTER_SEARCH_TERM,
+    bytes: SIZE_FILTER_BYTES,
+    folderSum: SIZE_FILTER_FOLDER_SUM,
+    titles: SIZE_FILTER_TITLES,
+    owner: who('admin'),
+  };
 }

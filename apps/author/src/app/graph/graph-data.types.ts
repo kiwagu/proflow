@@ -38,11 +38,22 @@ export type KbAttributes = {
   provenance?: 'human' | 'imported' | 'ai';
   /** External URL + host for `kind=link`. */
   link?: { url: string; host: string | null };
-  /** File size / video duration / mime for `kind=file|video`. */
+  /**
+   * Real media satellite (`kb.resource_media_meta`, ADR-0026) for `kind=file|video`
+   * — present ONLY when the node has confirmed bytes (a `kmm` row), absent otherwise
+   * (poc-no-fallbacks: no mock fill). The card meta line reads `byteSize`/`durationMs`/
+   * `mimeType`; the ResourcePanel Media section additionally needs `storagePath` (echoed
+   * on download-authorize) + `originalFilename` (the display name, never the storage
+   * path). `byteSize` mirrors the satellite `size_bytes`.
+   */
   media?: {
     byteSize: number | null;
     durationMs: number | null;
     mimeType: string | null;
+    /** `spaces/<spaceId>/kb/<nodeId>/<serverKey>` — the object the download URL signs. */
+    storagePath: string;
+    /** The display filename (satellite `original_filename`); NEVER the storage path. */
+    originalFilename: string;
   };
   /** Real view counter (server-incremented on open). */
   viewCount?: number;

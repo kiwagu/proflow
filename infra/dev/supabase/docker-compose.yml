@@ -352,7 +352,13 @@ services:
       DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       STORAGE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
       REQUEST_ALLOW_X_FORWARDED_PATH: "true"
-      FILE_SIZE_LIMIT: 52428800
+      # HARD system cap = 5 GiB (5368709120). The general/resumable (TUS) ceiling.
+      # Soft per-org limits live in runtime_settings (default 200 MB); this is the
+      # code/infra backstop only. UPLOAD_FILE_SIZE_LIMIT_STANDARD keeps the legacy
+      # single-PUT path modest (moot once the client is resumable — a belt).
+      FILE_SIZE_LIMIT: 5368709120
+      UPLOAD_FILE_SIZE_LIMIT: 5368709120
+      UPLOAD_FILE_SIZE_LIMIT_STANDARD: 52428800
       STORAGE_BACKEND: file
       # S3 bucket when using S3 backend, directory name when using 'file'
       GLOBAL_S3_BUCKET: ${GLOBAL_S3_BUCKET}

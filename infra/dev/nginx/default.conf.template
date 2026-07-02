@@ -70,6 +70,15 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    # KB media large uploads (ADR-0026 amendment / slice-14): the edge must allow a
+    # request body up to the 5 GiB HARD cap, else nginx's DEFAULT 1 MB limit 413s the
+    # resumable (TUS) POST/PATCH before it reaches Kong→storage-api. Resumable chunks
+    # are ~6 MiB, but creation-with-upload can carry a whole small-but->1 MB file in
+    # one POST — so cap at the system max, not the chunk size. Stream, don't buffer the
+    # body to disk, so multi-GB uploads don't fill the proxy.
+    client_max_body_size 5g;
+    proxy_request_buffering off;
+
     location / {
         if ($request_method = OPTIONS) {
             add_header Access-Control-Allow-Origin $supabase_cors_origin;

@@ -2,7 +2,12 @@ import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import * as React from 'react';
 
 import type { NodeMeta } from '@/app/graph/graph-data.types';
-import { iconForKind, kindLabel, ownerLabel } from '@/app/graph/presentation';
+import {
+  formatBytes,
+  iconForKind,
+  kindLabel,
+  ownerLabel,
+} from '@/app/graph/presentation';
 
 /**
  * lens-row-cells — the per-column CELL CONTENT shared by EVERY lens list/tree row, so
@@ -80,6 +85,25 @@ export function modifiedCell(value: string | undefined): React.ReactNode {
   return (
     <span className="text-muted-foreground">
       {value ? new Date(value).toLocaleDateString() : '—'}
+    </span>
+  );
+}
+
+/**
+ * Size = a humanized byte count (uploaded file/video → its own bytes; folder → the
+ * recursive sum of its VISIBLE descendant media), or an em dash when the node carries
+ * no media (text/link/tag, or a byte-less folder). `bytes == null` → "—"; the caller
+ * (the view) resolves the value from the shared folder-size index / leaf attributes so
+ * this cell is pure formatting. i18n-driven via the shared `formatBytes` (no new byte
+ * strings).
+ */
+export function sizeCell(
+  t: GraphTranslator,
+  bytes: number | null
+): React.ReactNode {
+  return (
+    <span className="text-muted-foreground tabular-nums">
+      {bytes == null ? '—' : formatBytes(t, bytes)}
     </span>
   );
 }

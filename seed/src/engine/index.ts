@@ -32,6 +32,8 @@ export {
   type Floor,
   type GrantableMember,
   type GrantableMembersPage,
+  type MediaDownloadUrl,
+  type MediaUploadUrl,
   type NodeKind,
   type PurgeResult,
   type SearchHit,

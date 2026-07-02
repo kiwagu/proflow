@@ -3,12 +3,15 @@
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { GRID_WRAP } from '@workspace/ui/components/platform/card-action-rail';
+import * as React from 'react';
 
+import type { LensNode } from '@/app/graph/containment';
 import { LensListTable } from '@/app/graph/views/drive';
 import {
   LensTreeGrid,
   type LensTreeNode,
 } from '@/app/graph/views/drive/lens-tree-grid';
+import { artifactBytes } from '@/app/graph/views/drive/uploaded-artifacts';
 
 import type { SearchRenderers } from './use-search-renderers';
 import type { SearchResultsState } from './use-search-results';
@@ -51,7 +54,22 @@ export function SearchResults({
     metaByItem,
     currentUserId,
   } = results;
+  const { attributesByItem } = results;
   const { renderCard, renderTreeLeaf, listRows, snippetSlot } = renderers;
+
+  // The Size column for the shared list table (ADR-0026 render) — a leaf's own uploaded-
+  // artifact bytes, off the SAME `artifactBytes` helper the Drive lens uses (one meaning of
+  // "size" across lenses). Search results are mostly flat leaves; a folder in the advanced
+  // ancestor tree lacks a recursive size context here, so it shows "—" (deliberate — the
+  // recursive folder-size roll-up is Drive-only; search does not walk a full containment
+  // slice). Consistent LEAF sizes across lenses is the win.
+  const sizeOf = React.useCallback(
+    (node: LensNode): number | null =>
+      node.kind === 'folder'
+        ? null
+        : artifactBytes(node, attributesByItem[node.id]),
+    [attributesByItem]
+  );
 
   // The shared list table — the ONE place the {flat | advanced} × list axis renders, with
   // the search snippet column + the reveal action per row. `tree`/`expansion:'always'`
@@ -72,6 +90,9 @@ export function SearchResults({
         recentOpenedAt={null}
         defaultSorting={SEARCH_LIST_NO_SORT}
         snippet={snippetSlot}
+        // The Size column — a leaf's own artifact bytes (folders "—"), off the shared
+        // `artifactBytes`, so the size column reads consistently across lenses.
+        sizeOf={sizeOf}
       />
     </div>
   );

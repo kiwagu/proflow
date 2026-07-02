@@ -1,4 +1,7 @@
-import type { ProjectionResult } from '@workspace/knowledge-contracts';
+import {
+  DEFAULT_MAX_UPLOAD_BYTES,
+  type ProjectionResult,
+} from '@workspace/knowledge-contracts';
 import { loadGraphMessages } from '@workspace/i18n-catalogs/graph';
 import { cleanup, fireEvent, render, screen } from '../test-utils';
 import * as React from 'react';
@@ -102,6 +105,7 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
       trash: { items: [], metaByItem: {} },
       sharedByMe: [],
       shareMechanism: {},
+      maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
     },
   };
 }
@@ -200,6 +204,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
         trash: { items: [], metaByItem: {} },
         sharedByMe: [],
         shareMechanism: {},
+        maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
       },
     });
     render(<DriveProjectionView {...props} />);
@@ -238,6 +243,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},
+            maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
           },
         })}
       />
@@ -272,6 +278,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},
+            maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
           },
         })}
       />
@@ -511,6 +518,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
             trash: { items: [], metaByItem: {} },
             sharedByMe: [],
             shareMechanism: {},
+            maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
           },
         })}
       />

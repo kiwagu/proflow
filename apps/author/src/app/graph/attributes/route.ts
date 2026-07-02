@@ -5,7 +5,7 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import { setResourceDescription } from '@/knowledge/fanout';
+import { setResourceDescription, setResourceMedia } from '@/knowledge/fanout';
 
 /**
  * KB application-attribute write for the consumer authoring surface (ADR-0011 §4).
@@ -31,7 +31,26 @@ const descriptionSchema = z.object({
   body: z.string(),
 });
 
-const postSchema = z.discriminatedUnion('attribute', [descriptionSchema]);
+// The CONFIRM leg of a media upload (ADR-0026 §5): written ONLY after the bytes
+// landed in the `kb-media` bucket. Mirrors `SetResourceMediaRequest` — `createdBy`
+// is NOT here (it comes from the SESSION). The upload/download SIGNED-URL mints are
+// separate transport (`/author/graph/media`); this just persists the satellite.
+const mediaSchema = z.object({
+  attribute: z.literal('media'),
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1),
+  storagePath: z.string().min(1),
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  originalFilename: z.string().min(1),
+  checksum: z.string().nullable().optional(),
+  durationMs: z.number().int().nonnegative().nullable().optional(),
+});
+
+const postSchema = z.discriminatedUnion('attribute', [
+  descriptionSchema,
+  mediaSchema,
+]);
 
 export async function POST(request: Request) {
   const raw = await request.json().catch(() => null);
@@ -55,6 +74,25 @@ export async function POST(request: Request) {
       case 'description': {
         const result = await setResourceDescription(
           { spaceId: d.spaceId, nodeId: d.nodeId, body: d.body },
+          { db, userId }
+        );
+        return NextResponse.json(result, {
+          status: 200,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+      case 'media': {
+        const result = await setResourceMedia(
+          {
+            spaceId: d.spaceId,
+            nodeId: d.nodeId,
+            storagePath: d.storagePath,
+            mimeType: d.mimeType,
+            sizeBytes: d.sizeBytes,
+            originalFilename: d.originalFilename,
+            checksum: d.checksum,
+            durationMs: d.durationMs,
+          },
           { db, userId }
         );
         return NextResponse.json(result, {

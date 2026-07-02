@@ -4,6 +4,7 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { Hint } from '@workspace/ui/components/hint';
+import { ToggleChip } from '@workspace/ui/components/toggle-chip';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
@@ -13,6 +14,7 @@ import {
   ClipboardPaste,
   Clock,
   Columns2,
+  FileUp,
   House,
   Send,
   Star,
@@ -76,10 +78,18 @@ import {
   ShareFacetChips,
   ShareMechanismBadge,
 } from '@/app/graph/views/drive/badges';
+import {
+  artifactBytes,
+  buildFolderHasArtifactIndex,
+  buildFolderSizeIndex,
+  isUploadedArtifact,
+  makePruneKeep,
+} from '@/app/graph/views/drive/uploaded-artifacts';
 import { LensListTable } from '@/app/graph/views/drive/list';
 import type { DriveRow } from '@/app/graph/views/drive/list';
 import { formatWhen } from '@/app/graph/views/drive/drive-projection.format';
 import { useAccessBadge } from '@/app/graph/views/drive/use-access-badge';
+import { LensToolbar } from '@/app/graph/views/lens-toolbar';
 
 /**
  * DriveProjectionView — the prototype `DriveView`, pixel-1:1 (slice-11 Ф3 §2,
@@ -150,7 +160,13 @@ export function DriveProjectionView({
     [kbData]
   );
   const shortcutEdges = React.useMemo(() => kbData?.shortcuts ?? [], [kbData]);
-  const attributesByItem = kbData?.attributesByItem ?? {};
+  // Memoized so the `?? {}` default is a STABLE reference — `attributesByItem` now feeds
+  // the `isArtifact`/`bytesOf` `useCallback`s (the uploaded-artifact filter + size index);
+  // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
+  const attributesByItem = React.useMemo(
+    () => kbData?.attributesByItem ?? {},
+    [kbData]
+  );
   // Memoized so the `?? {}` default is a STABLE reference — `metaByItem` feeds
   // `floorOf` (the broadcast badge) which is a `useCallback`/`useMemo` dependency;
   // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
@@ -211,6 +227,12 @@ export function DriveProjectionView({
   const [shareFacetState, setShareFacet] =
     React.useState<ShareMechanism | null>(null);
   const shareFacet = isShared ? shareFacetState : null;
+  // The cross-lens "Only files" filter (ADR-0026 render): ONE toggle over EVERY content
+  // lens (KB browse, the flat filter lenses, the advanced structural trees) — NEVER Trash
+  // (a holding state, not a content lens). State is raw but every READER goes through
+  // `uploadedOnly` (derived below, forced OFF in Trash) so the toggle resets on entering
+  // Trash with no setState-in-effect.
+  const [uploadedOnlyState, setUploadedOnly] = React.useState(false);
   // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
   // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
   // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
@@ -223,6 +245,9 @@ export function DriveProjectionView({
   // by the edge SELECT policy), so every trashed node is its own "trashed root". No
   // tree, no shortcuts, no breadcrumb, no DnD, no create/upload — only Restore + Purge.
   const isTrash = scope === 'trash';
+  // When ON: flat mode filters the item set to uploaded artifacts; advanced mode prunes
+  // the containment tree to branches that hold ≥1 artifact. OFF in Trash (see above).
+  const uploadedOnly = isTrash ? false : uploadedOnlyState;
   // The STRUCTURAL lenses (ADR-0022 Addendum A) — the lenses that can render their
   // node-set as a containment TREE (the two Shared lenses + Starred). The toggle shows
   // ONLY here (never Recent/Home). Single source of truth: `STRUCTURAL_LENS_SCOPES`.
@@ -344,6 +369,46 @@ export function DriveProjectionView({
   // Move picker / ResourcePanel keep the FULL `containment` (their targets are the whole
   // graph, never the lens sub-tree).
   const treeContainment = isLensAdvanced ? lensContainment : containment;
+
+  // The uploaded-artifact machinery (ADR-0026 render) — ONE predicate + two memoized,
+  // single-pass indexes shared by the filter, the tree prune, and the size column, so
+  // "an uploaded artifact" and "a folder's size" can never mean two different things
+  // across lenses (lens-feature-component-reuse). Pure over the loaded attributes +
+  // forest — never a query, never access logic.
+  //
+  // The size index sums over the FULL `containment` (the whole RLS-visible slice) so a
+  // folder's size is stable across lenses; the prune's has-artifact index is over
+  // `treeContainment` (the tree actually being walked — the lens subset when advanced).
+  const isArtifact = React.useCallback(
+    (node: LensNode) => isUploadedArtifact(node, attributesByItem[node.id]),
+    [attributesByItem]
+  );
+  const bytesOf = React.useCallback(
+    (node: LensNode) => artifactBytes(node, attributesByItem[node.id]),
+    [attributesByItem]
+  );
+  const folderSizeIndex = React.useMemo(
+    () => buildFolderSizeIndex(containment, bytesOf),
+    [containment, bytesOf]
+  );
+  const folderHasArtifactIndex = React.useMemo(
+    () => buildFolderHasArtifactIndex(treeContainment, isArtifact),
+    [treeContainment, isArtifact]
+  );
+  const pruneKeep = React.useMemo(
+    () => makePruneKeep(folderHasArtifactIndex, isArtifact),
+    [folderHasArtifactIndex, isArtifact]
+  );
+  // The size for ONE row's node: a folder → its recursive visible-descendant sum (absent
+  // from the index → null → "—"); a leaf → its own artifact bytes (null for text/link/
+  // tag). Fed to the list table's size column.
+  const sizeOf = React.useCallback(
+    (node: LensNode): number | null =>
+      node.kind === 'folder'
+        ? (folderSizeIndex.get(node.id) ?? null)
+        : bytesOf(node),
+    [folderSizeIndex, bytesOf]
+  );
 
   // Shortcuts grouped by source folder (Drive-only symlinks, not containment).
   const shortcutsByFolder = React.useMemo(() => {
@@ -537,6 +602,9 @@ export function DriveProjectionView({
     ? result.items
         .map((item) => containment.byId.get(item.id))
         .filter((n): n is LensNode => n != null && n.kind !== 'folder')
+        // "Only files" applies here too — Home is a flat digest, so it keeps just the
+        // uploaded artifacts (both sections derive from `homeContent`).
+        .filter((n) => (uploadedOnly ? isArtifact(n) : true))
     : [];
   const jumpBackNodes = homeContent
     .filter((n) => openedAtById[n.id] != null)
@@ -589,12 +657,19 @@ export function DriveProjectionView({
                 : []
   )
     .slice()
-    .sort(byTitle);
+    .sort(byTitle)
+    // "Only files" ON: a FLAT list (a flat filter lens) drops all folders (a flat file
+    // list); a TREE render (KB browse OR an advanced lens) keeps only folders whose
+    // subtree holds ≥1 artifact (prune empty branches). `!isFilterScope` = a tree render.
+    .filter((node) =>
+      !uploadedOnly ? true : !isFilterScope ? pruneKeep(node) : false
+    );
   const shortcuts =
     // Shortcuts are OFF in an advanced lens tree for v1 (Fork 3) — it is a containment
-    // projection of the lens set, not the full Drive home.
+    // projection of the lens set, not the full Drive home. Also OFF under "Only files"
+    // (a symlink is not an uploaded artifact).
     (
-      isFilterScope || isRoot || isLensAdvanced
+      isFilterScope || isRoot || isLensAdvanced || uploadedOnly
         ? []
         : (shortcutsByFolder.get(folderId ?? '') ?? [])
     )
@@ -616,7 +691,10 @@ export function DriveProjectionView({
                 : []
   )
     .slice()
-    .sort(isRecent ? byRecency : byTitle);
+    .sort(isRecent ? byRecency : byTitle)
+    // "Only files" ON: keep only uploaded artifacts (file/video with bytes) — the same
+    // predicate in flat AND advanced, so a lens shows exactly the files either way.
+    .filter((node) => (uploadedOnly ? isArtifact(node) : true));
 
   // The advanced lens GRID forest (ADR-0025): the SAME `treeContainment` subset the list
   // tree (`driveRows`) walks, shaped as a `LensTreeNode[]` for `LensTreeGrid` so the grid +
@@ -635,10 +713,14 @@ export function DriveProjectionView({
             ...childFolders(treeContainment, node.id)
               .slice()
               .sort(byTitle)
+              // "Only files" ON → prune child folders with no descendant artifact.
+              .filter((f) => (uploadedOnly ? pruneKeep(f) : true))
               .map((f) => buildTreeNode(f, new Set(ancestors).add(node.id))),
             ...childContent(treeContainment, node.id)
               .slice()
               .sort(byTitle)
+              // "Only files" ON → keep only artifact leaves.
+              .filter((c) => (uploadedOnly ? isArtifact(c) : true))
               .map((c) => ({ node: c, children: [] as LensTreeNode[] })),
           ]
         : [],
@@ -734,10 +816,15 @@ export function DriveProjectionView({
     subRows:
       isTree && !ancestors.has(node.id)
         ? [
-            ...childFolders(treeContainment, node.id).map((f) =>
-              folderRow(f, new Set(ancestors).add(node.id))
-            ),
-            ...childContent(treeContainment, node.id).map(itemRow),
+            ...childFolders(treeContainment, node.id)
+              // "Only files" ON → prune child folders with no descendant artifact, so the
+              // browse tree shows only branches that lead to a file (same as the grid).
+              .filter((f) => (uploadedOnly ? pruneKeep(f) : true))
+              .map((f) => folderRow(f, new Set(ancestors).add(node.id))),
+            ...childContent(treeContainment, node.id)
+              // "Only files" ON → keep only artifact leaves.
+              .filter((c) => (uploadedOnly ? isArtifact(c) : true))
+              .map(itemRow),
           ]
         : undefined,
   });
@@ -775,292 +862,315 @@ export function DriveProjectionView({
       folderId={folderId}
       containment={treeContainment}
       spaceId={spaceId}
+      maxUploadBytes={kbData?.maxUploadBytes}
       onMutated={onMutated}
     />
   );
 
-  const toolbar = (
-    <div className="flex items-center gap-2.5 border-b px-5 py-3">
-      <div className="flex min-w-0 items-center gap-1 text-sm">
-        {isFilterScope || isStructuralLens ? (
-          // A flat filter lens (Recent) is not a tree location — a single inert crumb
-          // stands in for the folder path. A structural lens (flat OR advanced) keeps its
-          // lens label as the ROOT crumb — the advanced tree is still a projection of the
-          // LENS set, not the Knowledge-base root. In an advanced lens tree the crumb is
-          // CLICKABLE (returns to the lens root) once drilled, exactly as the kb-browse
-          // root crumb is — same scope, just a narrowed tree.
-          (() => {
-            const lensIcon = isHome ? (
-              <House className="size-3.5" aria-hidden />
-            ) : isStarred ? (
-              <Star className="size-3.5" aria-hidden />
-            ) : isShared ? (
-              <Users className="size-3.5" aria-hidden />
-            ) : isSharedByMe ? (
-              <Send className="size-3.5" aria-hidden />
-            ) : isTrash ? (
-              <Trash2 className="size-3.5" aria-hidden />
-            ) : (
-              <Clock className="size-3.5" aria-hidden />
-            );
-            const lensLabel = isHome
-              ? t('graph.drive.navHome')
-              : isStarred
-                ? t('graph.drive.navStarred')
-                : isShared
-                  ? t('graph.drive.navShared')
-                  : isSharedByMe
-                    ? t('graph.drive.navSharedByMe')
-                    : isTrash
-                      ? t('graph.drive.navTrash')
-                      : t('graph.drive.navRecent');
-            // Drilled into an advanced lens tree → the lens label is a button back to the
-            // lens root (keeps the lens scope). Otherwise an inert label.
-            return isLensAdvanced && !isRoot ? (
-              <Button
-                type="button"
-                variant="crumb"
-                size={null}
-                onClick={() => navigate(null)}
-                className="flex shrink-0 items-center gap-1.5 font-semibold"
-              >
-                {lensIcon}
-                {lensLabel}
-              </Button>
-            ) : (
-              <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
-                {lensIcon}
-                {lensLabel}
-              </span>
-            );
-          })()
-        ) : dndEnabled ? (
-          // The root crumb is also a drop target: dropping a node here re-parents it
-          // to the top level (drop the current contains edge, add no new one).
-          <RootDropZone>
-            {(over) => (
-              <Button
-                type="button"
-                variant="crumb"
-                size={null}
-                onClick={() => navigate(null)}
-                title={t('graph.drive.dropOnRoot')}
-                className={cn(
-                  'shrink-0 rounded px-1',
-                  isRoot && 'text-foreground font-semibold',
-                  over && 'bg-accent text-foreground ring-ring/50 ring-1'
-                )}
-              >
-                {t('graph.lens.knowledgeBase')}
-              </Button>
-            )}
-          </RootDropZone>
-        ) : (
-          <Button
-            type="button"
-            variant="crumb"
-            size={null}
-            onClick={() => navigate(null)}
-            className={cn(
-              'shrink-0',
-              isRoot && 'text-foreground font-semibold'
-            )}
-          >
-            {t('graph.lens.knowledgeBase')}
-          </Button>
-        )}
-        {/* Full ancestry path (deliberate delta: the prototype showed only the
+  const toolbarLeft = (
+    <div className="flex min-w-0 items-center gap-1 text-sm">
+      {isFilterScope || isStructuralLens ? (
+        // A flat filter lens (Recent) is not a tree location — a single inert crumb
+        // stands in for the folder path. A structural lens (flat OR advanced) keeps its
+        // lens label as the ROOT crumb — the advanced tree is still a projection of the
+        // LENS set, not the Knowledge-base root. In an advanced lens tree the crumb is
+        // CLICKABLE (returns to the lens root) once drilled, exactly as the kb-browse
+        // root crumb is — same scope, just a narrowed tree.
+        (() => {
+          const lensIcon = isHome ? (
+            <House className="size-3.5" aria-hidden />
+          ) : isStarred ? (
+            <Star className="size-3.5" aria-hidden />
+          ) : isShared ? (
+            <Users className="size-3.5" aria-hidden />
+          ) : isSharedByMe ? (
+            <Send className="size-3.5" aria-hidden />
+          ) : isTrash ? (
+            <Trash2 className="size-3.5" aria-hidden />
+          ) : (
+            <Clock className="size-3.5" aria-hidden />
+          );
+          const lensLabel = isHome
+            ? t('graph.drive.navHome')
+            : isStarred
+              ? t('graph.drive.navStarred')
+              : isShared
+                ? t('graph.drive.navShared')
+                : isSharedByMe
+                  ? t('graph.drive.navSharedByMe')
+                  : isTrash
+                    ? t('graph.drive.navTrash')
+                    : t('graph.drive.navRecent');
+          // Drilled into an advanced lens tree → the lens label is a button back to the
+          // lens root (keeps the lens scope). Otherwise an inert label.
+          return isLensAdvanced && !isRoot ? (
+            <Button
+              type="button"
+              variant="crumb"
+              size={null}
+              onClick={() => navigate(null)}
+              className="flex shrink-0 items-center gap-1.5 font-semibold"
+            >
+              {lensIcon}
+              {lensLabel}
+            </Button>
+          ) : (
+            <span className="text-foreground flex shrink-0 items-center gap-1.5 font-semibold">
+              {lensIcon}
+              {lensLabel}
+            </span>
+          );
+        })()
+      ) : dndEnabled ? (
+        // The root crumb is also a drop target: dropping a node here re-parents it
+        // to the top level (drop the current contains edge, add no new one).
+        <RootDropZone>
+          {(over) => (
+            <Button
+              type="button"
+              variant="crumb"
+              size={null}
+              onClick={() => navigate(null)}
+              title={t('graph.drive.dropOnRoot')}
+              className={cn(
+                'shrink-0 rounded px-1',
+                isRoot && 'text-foreground font-semibold',
+                over && 'bg-accent text-foreground ring-ring/50 ring-1'
+              )}
+            >
+              {t('graph.lens.knowledgeBase')}
+            </Button>
+          )}
+        </RootDropZone>
+      ) : (
+        <Button
+          type="button"
+          variant="crumb"
+          size={null}
+          onClick={() => navigate(null)}
+          className={cn('shrink-0', isRoot && 'text-foreground font-semibold')}
+        >
+          {t('graph.lens.knowledgeBase')}
+        </Button>
+      )}
+      {/* Full ancestry path (deliberate delta: the prototype showed only the
             immediate folder). Each ancestor is a clickable crumb; the current one
             is bold and inert. */}
-        {!isFilterScope && !isRoot && folder
-          ? // In the advanced Shared tree the path walks the SHARED subset's forest
-            // (`treeContainment`) so the breadcrumb never reaches a non-shared ancestor;
-            // kb-browse walks the full graph forest.
-            pathTo(treeContainment, folder.id).map((crumb, index, crumbs) => {
-              const isCurrent = index === crumbs.length - 1;
-              return (
-                <React.Fragment key={crumb.id}>
-                  <ChevronRight
-                    className="text-muted-foreground size-3.5 shrink-0"
-                    aria-hidden
-                  />
-                  {isCurrent ? (
-                    <span className="truncate font-semibold">
-                      {crumb.title}
-                    </span>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="crumb"
-                      size={null}
-                      onClick={() => navigate(crumb.id)}
-                      className="truncate"
-                    >
-                      {crumb.title}
-                    </Button>
-                  )}
-                </React.Fragment>
-              );
-            })
-          : null}
-        {/* current-folder actions (deliberate delta: the card ⋯ acts on a CHILD
+      {!isFilterScope && !isRoot && folder
+        ? // In the advanced Shared tree the path walks the SHARED subset's forest
+          // (`treeContainment`) so the breadcrumb never reaches a non-shared ancestor;
+          // kb-browse walks the full graph forest.
+          pathTo(treeContainment, folder.id).map((crumb, index, crumbs) => {
+            const isCurrent = index === crumbs.length - 1;
+            return (
+              <React.Fragment key={crumb.id}>
+                <ChevronRight
+                  className="text-muted-foreground size-3.5 shrink-0"
+                  aria-hidden
+                />
+                {isCurrent ? (
+                  <span className="truncate font-semibold">{crumb.title}</span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="crumb"
+                    size={null}
+                    onClick={() => navigate(crumb.id)}
+                    className="truncate"
+                  >
+                    {crumb.title}
+                  </Button>
+                )}
+              </React.Fragment>
+            );
+          })
+        : null}
+      {/* current-folder actions (deliberate delta: the card ⋯ acts on a CHILD
             folder; this acts on the folder you are IN) → the shared action menu,
             with Details opening the panel. */}
-        {!isFilterScope && !isRoot && folder ? (
-          <span className="ml-0.5 shrink-0">
-            <NodeActionsMenu
-              spaceId={spaceId}
-              t={t}
-              node={folder}
-              containment={containment}
-              currentUserId={currentUserId}
-              ownerUserId={metaByItem[folder.id]?.ownerUserId ?? null}
-              capabilities={capabilities}
-              onMutated={onMutated}
-              onDetails={() => onSelect(folder.id)}
-              onCopyToClipboard={onCopyToClipboard}
-              onOpenInKb={onRevealInKbAction}
-            />
-          </span>
-        ) : null}
-      </div>
-      <div className="ml-auto flex items-center gap-1.5">
-        {/* Clipboard indicator (Dolphin model) — two states of the SAME affordance:
-            • ACTIVE (canPaste: clipboard set AND this pane browses 'kb') → the full
-              chip: a clickable Paste (source INTO this pane's current folder) + the ✕
-              clear. The split-pane's payoff: Copy in A, navigate B, Paste here.
-            • READ-ONLY (clipboard set but no paste target — a flat lens like Shared/
-              Starred/Recent/Trash) → a muted "on your clipboard" hint: no Paste
-              (nowhere to paste into here), but the ✕ clear IS present so the buffer
-              can be cleared from ANY lens (not just by navigating back to KB / Escape).
-              Escape still clears globally (the workbench keydown handler is
-              scope-independent). */}
-        {clipboard != null ? (
-          canPaste ? (
-            <div className="flex items-center overflow-hidden rounded-md border">
-              <Hint
-                label={t(
-                  isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
-                  { title: clipboard.title }
-                )}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={handlePaste}
-                  aria-label={t(
-                    isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
-                    { title: clipboard.title }
-                  )}
-                  className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-none px-2 text-sm font-normal"
-                >
-                  <ClipboardPaste className="size-[15px]" aria-hidden />
-                  <span className="max-w-[120px] truncate">
-                    {clipboard.title}
-                  </span>
-                </Button>
-              </Hint>
-              <Hint label={t('graph.drive.pasteClear')}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={onClearClipboard}
-                  aria-label={t('graph.drive.pasteClear')}
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
-                >
-                  <X className="size-[14px]" aria-hidden />
-                </Button>
-              </Hint>
-            </div>
-          ) : (
-            <div className="text-muted-foreground flex items-center overflow-hidden rounded-md border">
-              <Hint
-                label={t('graph.drive.clipboardHint', {
-                  title: clipboard.title,
-                })}
-              >
-                <div
-                  aria-label={t('graph.drive.clipboardHint', {
-                    title: clipboard.title,
-                  })}
-                  className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
-                >
-                  <Clipboard className="size-[15px]" aria-hidden />
-                  <span className="max-w-[120px] truncate">
-                    {clipboard.title}
-                  </span>
-                </div>
-              </Hint>
-              <Hint label={t('graph.drive.pasteClear')}>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={onClearClipboard}
-                  aria-label={t('graph.drive.pasteClear')}
-                  className="hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
-                >
-                  <X className="size-[14px]" aria-hidden />
-                </Button>
-              </Hint>
-            </div>
-          )
-        ) : null}
-        {/* Upload creates into the current location — meaningless in the Trash lens
-            (a holding state for trashed nodes, not a place to author into). */}
-        {!isTrash ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setCreateRequest({ kind: 'file', parentFolderId: folderId })
-            }
-          >
-            <Upload className="size-[15px]" aria-hidden />
-            {t('graph.drive.upload')}
-          </Button>
-        ) : null}
-        {/* The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced,
-            shown ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on
-            Recent/Home. When the space is NOT entitled it renders DISABLED, wrapped in a
-            Hint with the upsell copy — NEVER hidden (the locked control IS the upsell,
-            Fork 2). The server clamps `?view=` to 'flat' on a locked plan, so even a
-            forged URL stays flat. */}
-        {isStructuralLens && onLensViewChange ? (
-          <LensViewToggle
+      {!isFilterScope && !isRoot && folder ? (
+        <span className="ml-0.5 shrink-0">
+          <NodeActionsMenu
+            spaceId={spaceId}
             t={t}
-            lensView={lensView}
-            onLensViewChange={onLensViewChange}
-            entitled={advancedStructuralEntitled}
+            node={folder}
+            containment={containment}
+            currentUserId={currentUserId}
+            ownerUserId={metaByItem[folder.id]?.ownerUserId ?? null}
+            capabilities={capabilities}
+            onMutated={onMutated}
+            onDetails={() => onSelect(folder.id)}
+            onCopyToClipboard={onCopyToClipboard}
+            onOpenInKb={onRevealInKbAction}
           />
-        ) : null}
-        <LayoutToggle
-          layout={layout}
-          onLayoutChange={applyLayout}
-          gridLabel={t('graph.drive.layoutGrid')}
-          listLabel={t('graph.drive.layoutList')}
-        />
-        {onToggleSplit && scope === 'kb' ? (
+        </span>
+      ) : null}
+    </div>
+  );
+
+  // The cross-lens "Only files" toggle (ADR-0026 render) — passed as the shared
+  // LensToolbar's `filter` prop, which renders it FIRST in the right cluster with a
+  // trailing vertical rule (the toolbar owns the frame). A lens-agnostic chip (not a
+  // content row → never pushes the table down). ON: flat lenses filter to uploaded
+  // artifacts; a tree render prunes to branches with ≥1 file. NOT in Trash (undefined →
+  // the toolbar skips the slot + its separator). Carries the visible-slice Hint. Passing
+  // it as a first-class prop is what puts the chip on EVERY lens by construction.
+  const toolbarFilter = !isTrash ? (
+    <ToggleChip
+      label={t('graph.drive.filterUploaded')}
+      pressed={uploadedOnly}
+      onPressedChange={setUploadedOnly}
+      icon={FileUp}
+      hint={t('graph.drive.folderSizeHint')}
+    />
+  ) : undefined;
+
+  // Clipboard indicator (Dolphin model) — two states of the SAME affordance:
+  //  • ACTIVE (canPaste: clipboard set AND this pane browses 'kb') → the full chip: a
+  //    clickable Paste (source INTO this pane's current folder) + the ✕ clear. The
+  //    split-pane's payoff: Copy in A, navigate B, Paste here.
+  //  • READ-ONLY (clipboard set but no paste target — a flat lens like Shared/Starred/
+  //    Recent/Trash) → a muted "on your clipboard" hint: no Paste (nowhere to paste into
+  //    here), but the ✕ clear IS present so the buffer can be cleared from ANY lens (not
+  //    just by navigating back to KB / Escape). Escape still clears globally (the
+  //    workbench keydown handler is scope-independent). Rendered via the toolbar's
+  //    `trailing` slot (bespoke to Drive).
+  const toolbarClipboard =
+    clipboard != null ? (
+      canPaste ? (
+        <div className="flex items-center overflow-hidden rounded-md border">
           <Hint
-            label={t(
-              split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
-            )}
+            label={t(isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste', {
+              title: clipboard.title,
+            })}
           >
             <Button
               type="button"
-              variant="segmented"
-              onClick={onToggleSplit}
+              variant="ghost"
+              onClick={handlePaste}
               aria-label={t(
-                split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
+                isRoot ? 'graph.drive.pasteRoot' : 'graph.drive.paste',
+                { title: clipboard.title }
               )}
-              aria-pressed={split}
-              className="border-border grid h-7 w-[30px] place-items-center rounded-md border p-0"
+              className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-none px-2 text-sm font-normal"
             >
-              <Columns2 className="size-[15px]" aria-hidden />
+              <ClipboardPaste className="size-[15px]" aria-hidden />
+              <span className="max-w-[120px] truncate">{clipboard.title}</span>
             </Button>
           </Hint>
-        ) : null}
-      </div>
-    </div>
+          <Hint label={t('graph.drive.pasteClear')}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClearClipboard}
+              aria-label={t('graph.drive.pasteClear')}
+              className="text-muted-foreground hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
+            >
+              <X className="size-[14px]" aria-hidden />
+            </Button>
+          </Hint>
+        </div>
+      ) : (
+        <div className="text-muted-foreground flex items-center overflow-hidden rounded-md border">
+          <Hint
+            label={t('graph.drive.clipboardHint', {
+              title: clipboard.title,
+            })}
+          >
+            <div
+              aria-label={t('graph.drive.clipboardHint', {
+                title: clipboard.title,
+              })}
+              className="flex h-7 items-center gap-1.5 px-2 text-sm select-none"
+            >
+              <Clipboard className="size-[15px]" aria-hidden />
+              <span className="max-w-[120px] truncate">{clipboard.title}</span>
+            </div>
+          </Hint>
+          <Hint label={t('graph.drive.pasteClear')}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClearClipboard}
+              aria-label={t('graph.drive.pasteClear')}
+              className="hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
+            >
+              <X className="size-[14px]" aria-hidden />
+            </Button>
+          </Hint>
+        </div>
+      )
+    ) : null;
+
+  // Upload creates into the current location — meaningless in the Trash lens (a holding
+  // state for trashed nodes, not a place to author into).
+  const toolbarUpload = !isTrash ? (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() =>
+        setCreateRequest({ kind: 'file', parentFolderId: folderId })
+      }
+    >
+      <Upload className="size-[15px]" aria-hidden />
+      {t('graph.drive.upload')}
+    </Button>
+  ) : undefined;
+
+  // The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced, shown
+  // ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on Recent/Home.
+  // When the space is NOT entitled it renders DISABLED, wrapped in a Hint with the upsell
+  // copy — NEVER hidden (the locked control IS the upsell, Fork 2). The server clamps
+  // `?view=` to 'flat' on a locked plan, so even a forged URL stays flat.
+  const toolbarLensView =
+    isStructuralLens && onLensViewChange ? (
+      <LensViewToggle
+        t={t}
+        lensView={lensView}
+        onLensViewChange={onLensViewChange}
+        entitled={advancedStructuralEntitled}
+      />
+    ) : undefined;
+
+  const toolbarLayout = (
+    <LayoutToggle
+      layout={layout}
+      onLayoutChange={applyLayout}
+      gridLabel={t('graph.drive.layoutGrid')}
+      listLabel={t('graph.drive.layoutList')}
+    />
+  );
+
+  const toolbarSplit =
+    onToggleSplit && scope === 'kb' ? (
+      <Hint
+        label={t(split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen')}
+      >
+        <Button
+          type="button"
+          variant="segmented"
+          onClick={onToggleSplit}
+          aria-label={t(
+            split ? 'graph.drive.splitClose' : 'graph.drive.splitOpen'
+          )}
+          aria-pressed={split}
+          className="border-border grid h-7 w-[30px] place-items-center rounded-md border p-0"
+        >
+          <Columns2 className="size-[15px]" aria-hidden />
+        </Button>
+      </Hint>
+    ) : undefined;
+
+  const toolbar = (
+    <LensToolbar
+      left={toolbarLeft}
+      filter={toolbarFilter}
+      trailing={toolbarClipboard}
+      upload={toolbarUpload}
+      lensView={toolbarLensView}
+      layout={toolbarLayout}
+      split={toolbarSplit}
+    />
   );
 
   // One content card, reused by the flat items grid and the "For you" home sections.
@@ -1273,6 +1383,9 @@ export function DriveProjectionView({
                 // The access-status badge per row (ADR-0023 §7a) — the SAME globe-XOR-people
                 // taxonomy the cards use (globe precedence), so the list mirrors the grid.
                 sharedBadgeFor={(node) => renderAccessBadge(node.id) ?? null}
+                // The size column (ADR-0026 render): a file/video's own bytes, a folder's
+                // recursive VISIBLE-descendant sum, "—" otherwise — off the shared index.
+                sizeOf={sizeOf}
               />
             ) : null
           ) : (
@@ -1518,6 +1631,7 @@ export function DriveProjectionView({
         spaceId={spaceId}
         t={t}
         containment={containment}
+        maxUploadBytes={kbData?.maxUploadBytes}
         request={createRequest}
         onOpenChange={(open) => {
           if (!open) {

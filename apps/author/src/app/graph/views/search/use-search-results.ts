@@ -10,6 +10,7 @@ import type {
   KbViewData,
   LensView,
 } from '@/app/graph/views/registry/projection-view.types';
+import { isUploadedArtifact } from '@/app/graph/views/drive/uploaded-artifacts';
 
 import { buildSearchTree, type SearchTreeNode } from './search-tree';
 import {
@@ -66,6 +67,7 @@ export function useSearchResults({
   kbData,
   containment,
   lensView,
+  uploadedOnly,
   onTermChange,
 }: {
   spaceId?: string;
@@ -74,6 +76,13 @@ export function useSearchResults({
   kbData?: KbViewData;
   containment: Containment;
   lensView: LensView;
+  /**
+   * The cross-lens "Only files" filter (ADR-0026 render) — when ON, the flat search RESULT
+   * set is narrowed to uploaded artifacts via the SHARED `isUploadedArtifact` predicate
+   * (search results are a flat leaf list → keep only artifacts). Owned by the view, mirroring
+   * the Drive lens; the same chip the Drive shelf shows, now on Search by construction.
+   */
+  uploadedOnly: boolean;
   onTermChange?: (term: string) => void;
 }): SearchResultsState {
   const [term, setTerm] = React.useState(initialTerm);
@@ -111,7 +120,23 @@ export function useSearchResults({
   // The ONE lexical-search fetch path (shared with the command palette) — debounced,
   // min-2-char, race-safe, RLS-fenced; returns the server-ordered rows for this term.
   const search = useLexicalSearch(spaceId, term);
-  const { items: sortedItems } = search;
+  // The cross-lens "Only files" filter over the flat search RESULT set: when ON, keep only
+  // uploaded artifacts via the SHARED `isUploadedArtifact` predicate (search results are a
+  // flat leaf list, so filtering = keeping the artifact hits). OFF → the full ranked set.
+  // The order is preserved (a filter, not a re-sort); `hitById` + `searchTree` derive off
+  // this so every {flat|advanced}×{grid|list} branch respects the chip.
+  const sortedItems = React.useMemo(
+    () =>
+      uploadedOnly
+        ? search.items.filter((item) =>
+            isUploadedArtifact(
+              { id: item.id, kind: item.kind, title: item.title },
+              attributesByItem[item.id]
+            )
+          )
+        : search.items,
+    [uploadedOnly, search.items, attributesByItem]
+  );
 
   const onInput = React.useCallback(
     (next: string) => {
@@ -146,6 +171,9 @@ export function useSearchResults({
 
   return {
     ...search,
+    // Override the raw fetch's `items` with the "Only files"-filtered set so every consumer
+    // (the flat grid/list, `hitById`, `searchTree`) sees the same narrowed result set.
+    items: sortedItems,
     term,
     onInput,
     layout,

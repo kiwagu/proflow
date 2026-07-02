@@ -15,7 +15,10 @@ export function useCommandPalette() {
     const onKey = (event: KeyboardEvent) => {
       // ⌘K (mac) / Ctrl+K (win/linux) toggles the palette — the universal command-box
       // shortcut. `metaKey || ctrlKey` covers both without a platform sniff.
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+      if (
+        event.key?.toLowerCase() === 'k' &&
+        (event.metaKey || event.ctrlKey)
+      ) {
         event.preventDefault();
         setOpen((prev) => !prev);
       }

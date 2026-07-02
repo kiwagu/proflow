@@ -101,6 +101,21 @@ export type SearchHit = {
  * hits the caller may see under RLS (the SOLE access fence). */
 export type SearchHits = { items: SearchHit[]; nextCursor?: string };
 
+/** The `/author/graph/media?op=upload-url` result (ADR-0026 §3, resumable/TUS switch):
+ * CONTROL-plane only — the SERVER-decided `storagePath` (`spaces/<spaceId>/kb/<nodeId>/
+ * <serverKey>`) the caller uploads the bytes to under its OWN session JWT, then echoes
+ * back on confirm (`setMedia`). The single-PUT signed-url leg (`signedUrl`/`token`) was
+ * removed with the resumable transport — `storage.objects` INSERT RLS is the fence at
+ * PUT time. Fails CLOSED (403/404) for a node the caller cannot update/see. */
+export type MediaUploadUrl = {
+  storagePath: string;
+};
+
+/** The `/author/graph/media?op=download-url` result (ADR-0026 §2c): the short-lived
+ * signed DOWNLOAD url + its absolute expiry. Fails CLOSED (403/404) when the caller
+ * cannot read the node (no satellite row → no url) — the RLS byte fence. */
+export type MediaDownloadUrl = { signedUrl: string; expiresAt: string };
+
 /** One grantable co-member as the Share dialog people-picker reads it (ADR-0019/0020):
  * `displayName` + `email` resolved via the co-member directory (`email` may be null). */
 export type GrantableMember = {
@@ -239,6 +254,35 @@ export type SeedClient = SeedFetcher & {
     term: string,
     opts?: { limit?: number }
   ): Promise<SearchHits>;
+  /** Authorize an upload for a `file`/`video` node (ADR-0026 §3, resumable/TUS switch):
+   * `POST /author/graph/media?op=upload-url`. The server checks node-`update` under THIS
+   * actor's RLS + validates the declared mime/size, then returns the SERVER-decided
+   * `storagePath` only — CONTROL-plane, no signed URL/token. The caller uploads the bytes
+   * DIRECTLY to Storage under its OWN session (the product client via TUS; the seed via a
+   * standard storage-js `upload`), fenced by the `storage.objects` INSERT policy. A node
+   * the caller cannot update/see fails closed (403/404), never a leak. */
+  uploadMediaUrl(
+    spaceId: string,
+    nodeId: string,
+    declared: { mimeType: string; sizeBytes: number; filename: string }
+  ): Promise<MediaUploadUrl>;
+  /** Confirm a media upload — write the `kb.resource_media_meta` satellite AFTER the
+   * bytes have landed (`POST /author/graph/attributes {attribute:'media'}`). Written
+   * ONLY on a successful PUT so the row never points at absent bytes. `createdBy`
+   * comes from the SESSION, never the body. Under the caller's RLS (`space.knowledge.update`). */
+  setMedia(input: {
+    spaceId: string;
+    nodeId: string;
+    storagePath: string;
+    mimeType: string;
+    sizeBytes: number;
+    originalFilename: string;
+  }): Promise<void>;
+  /** Authorize a signed DOWNLOAD url for a node's media (ADR-0026 §2c):
+   * `POST /author/graph/media?op=download-url`. The server resolves the satellite
+   * under THIS actor's RLS (absence → no url) and mints a short-lived signed url the
+   * caller GETs for the bytes. A non-grantee / wrong-space caller fails closed. */
+  downloadMediaUrl(spaceId: string, nodeId: string): Promise<MediaDownloadUrl>;
 };
 
 /** Wrap a `SeedFetcher` with the typed `/author/graph/*` create-vocabulary. */
@@ -476,6 +520,40 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
       });
       const body = expectStatus(res, 200, `search("${term}")`);
       return body as SearchHits;
+    },
+
+    async uploadMediaUrl(spaceId, nodeId, declared) {
+      const res = await fetcher.post('/author/graph/media?op=upload-url', {
+        spaceId,
+        nodeId,
+        mimeType: declared.mimeType,
+        sizeBytes: declared.sizeBytes,
+        filename: declared.filename,
+      });
+      const body = expectStatus(res, 200, `uploadMediaUrl(${nodeId})`);
+      return body as MediaUploadUrl;
+    },
+
+    async setMedia(input) {
+      const res = await fetcher.post('/author/graph/attributes', {
+        attribute: 'media',
+        spaceId: input.spaceId,
+        nodeId: input.nodeId,
+        storagePath: input.storagePath,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        originalFilename: input.originalFilename,
+      });
+      expectStatus(res, 200, `setMedia(${input.nodeId})`);
+    },
+
+    async downloadMediaUrl(spaceId, nodeId) {
+      const res = await fetcher.post('/author/graph/media?op=download-url', {
+        spaceId,
+        nodeId,
+      });
+      const body = expectStatus(res, 200, `downloadMediaUrl(${nodeId})`);
+      return body as MediaDownloadUrl;
     },
   };
 }
