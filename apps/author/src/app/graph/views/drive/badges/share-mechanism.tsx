@@ -2,11 +2,10 @@
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Badge } from '@workspace/ui/components/badge';
-import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
+import { ToggleChip } from '@workspace/ui/components/toggle-chip';
 import { Radio, UserCheck, UsersRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { cn } from '@workspace/ui/lib/utils';
 import * as React from 'react';
 
 import type { ShareMechanism } from '@/app/graph/graph-data.types';
@@ -88,9 +87,10 @@ export function ShareMechanismBadge({
  * "All" chip + one chip per mechanism PRESENT in the shared set (absent mechanisms are
  * never shown). Clicking a mechanism narrows the rendered shared nodes to it; "All"
  * clears the filter. A client display filter over the precomputed annotation — facet
- * state is local to the lens and resets on leaving it. Built from the `Button` toggle
- * pattern the toolbar already uses (`aria-pressed`, rounded chips, accent-on-active),
- * NOT a new primitive (shadcn-patterns-required).
+ * state is local to the lens and resets on leaving it. Each facet is the shared
+ * `ToggleChip` primitive (the same `aria-pressed` chip the cross-lens filter uses) —
+ * radio-style here: a click always SELECTS its mechanism, so the reported pressed value
+ * is ignored (lens-feature-component-reuse, not a new primitive).
  */
 export function ShareFacetChips({
   t,
@@ -109,28 +109,15 @@ export function ShareFacetChips({
     label: string,
     onClick: () => void,
     icon?: LucideIcon
-  ) => {
-    const Icon = icon;
-    return (
-      <Button
-        key={key}
-        type="button"
-        variant="ghost"
-        size="pill"
-        onClick={onClick}
-        aria-pressed={selected}
-        className={cn(
-          'border',
-          selected
-            ? 'bg-accent text-foreground border-transparent'
-            : 'text-muted-foreground border-border hover:bg-accent hover:text-foreground'
-        )}
-      >
-        {Icon ? <Icon className="size-3" aria-hidden /> : null}
-        {label}
-      </Button>
-    );
-  };
+  ) => (
+    <ToggleChip
+      key={key}
+      label={label}
+      pressed={selected}
+      onPressedChange={() => onClick()}
+      icon={icon}
+    />
+  );
   return (
     <div className="mb-3 flex flex-wrap items-center gap-1.5">
       {chip('all', active == null, t('graph.drive.facetAll'), () =>

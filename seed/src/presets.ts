@@ -10,7 +10,7 @@ import type { SeedScenario } from './catalog/types.js';
 export const PRESET_DESCRIPTIONS: Record<string, string> = {
   all: 'Everything in the dictionary (default).',
   drive:
-    'The deep Drive resource tree (folders, docs, drafts, versions, shortcut).',
+    'The deep Drive resource tree (folders, docs, drafts, versions, shortcut). The `drive` + `media` presets also tag the e2e-only `drive-size-filter` fixture (ABSENT from the demo seed): a known-byte-size tree for the cross-lens "Only files" (uploaded-artifacts) filter + the list Size column (ADR-0026 render) — a media branch (a 512 B file + a 512 B video → the folder sums to 1 KB) beside a media-less branch + loose text/link leaves, plus two loose leaves sharing a `Falcon` title token (a real file + a plain text node) for the SEARCH-lens "Only files" variant — materialized directly by `knowledge-drive-size-filter.e2e.spec.ts` (Drive lenses) and `knowledge-search-size-filter.e2e.spec.ts` (Search lens).',
   access: 'Two-user sharing: private / cohort-shared / space-published.',
   'per-user-share':
     'Per-person sharing: a private doc granted to one named member (ADR-0019) — grantee sees it in "Shared with me" (`shared`), the owner sees it in "Shared by me" (`shared-by-me`, a SharedByMeEntry over the same grant — ADR-0021 Part B), third member blind. Named co-members feed the Share people-picker directory (ADR-0020), and a ten-member cohort exercises the paginated directory-v2 picker — page of 5 + "+N more" + keyset "Show more", owner/granted excluded (ADR-0021 Part A).',

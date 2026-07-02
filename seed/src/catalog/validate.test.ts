@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALL_SCENARIOS } from './index.js';
+import {
+  ALL_SCENARIOS,
+  DRIVE_CASCADE_SCENARIO,
+  DRIVE_COPY_CHAIN_SCENARIO,
+  DRIVE_SIZE_FILTER_SCENARIO,
+} from './index.js';
 import type { SeedScenario } from './types.js';
 import { validateCatalog, validateScenario } from './validate.js';
+
+/** e2e-only fixtures materialized directly via `materializeFixture` (absent from
+ * `ALL_SCENARIOS`, so not demo content) — still validated so a broken ref/media
+ * payload fails offline, exactly like a registered scenario. */
+const E2E_ONLY_FIXTURES: SeedScenario[] = [
+  DRIVE_CASCADE_SCENARIO,
+  DRIVE_COPY_CHAIN_SCENARIO,
+  DRIVE_SIZE_FILTER_SCENARIO,
+];
 
 describe('seed catalog integrity', () => {
   it('the whole registered catalog is internally consistent', () => {
@@ -21,6 +35,13 @@ describe('seed catalog integrity', () => {
       expect(s.presets.length).toBeGreaterThan(0);
     }
   });
+
+  it.each(E2E_ONLY_FIXTURES.map((s) => [s.id, s] as const))(
+    'e2e-only fixture "%s" validates',
+    (_id, scenario) => {
+      expect(validateScenario(scenario)).toEqual([]);
+    }
+  );
 
   it('catches the common authoring mistakes (negative)', () => {
     const bad = {

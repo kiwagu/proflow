@@ -242,6 +242,39 @@ shared fixture — no inline tree — and asserts the match classes (`догов
 stay ABSENT), proving search is a SUBSTRATE capability, not Drive-bound. One corpus, two
 consumers, one dictionary.
 
+The Drive size-&-filter render spec (`knowledge-drive-size-filter.e2e.spec.ts`, ADR-0026
+render) draws its whole tree from the shared `drive-size-filter` fixture (an e2e-only
+scenario, `drive` + `media` presets) via `seedDriveSizeFilterFixture` — never an inline
+`createFolder`/`createDoc`/upload tree — so the demo vocabulary and the test build the
+known-byte-size tree the SAME way, through the one create-vocabulary (its `file`/`video`
+bytes ride the SAME real media-upload transport as the media substrate, so the artifacts
+carry real `media` satellites with `byteSize` — the "Only files" predicate requires a real
+satellite, not a byte-less stub). The fixture is a small containment tree — a media branch
+(a nested folder with a 512 B file + a 512 B video, so the folder sums to exactly 1 KB), a
+media-less "empty" branch (a folder with only a text doc), and loose text/link leaves — plus
+the three artifacts/doc `starred` so the FLAT Starred lens carries a mix. The spec (KB browse
+LIST layout, forced via the `drive-layout=list` cookie) asserts the three behaviours purely in
+the browser over the resolved canvas + `kbData`: (1) the Size column — a file/video shows its
+humanized `byteSize` ("512 B"), a folder shows the recursive VISIBLE-descendant sum
+("1 KB" = 512 + 512, the arithmetic proof; a media-less folder sums to "0 B"), a non-artifact
+LEAF (text/link) shows "—"; (2) the "Only files" chip
+(`aria-pressed`) in TREE mode PRUNES the containment to branches holding ≥1 artifact (the
+media branch survives, the empty branch + loose leaves drop); (3) the same chip in FLAT mode
+(the Starred lens) keeps ONLY uploaded artifacts (the two files stay, the starred doc drops).
+It is purely presentational — no new endpoint, no resolver change.
+
+The SAME `drive-size-filter` fixture ALSO backs the SEARCH-lens variant of that chip
+(`knowledge-search-size-filter.e2e.spec.ts`, ADR-0026 render): the "Only files" chip now lives
+on EVERY lens shelf via the shared `LensToolbar`, and on Search it FUNCTIONALLY filters the
+result set (a flat leaf list) with the SAME `isUploadedArtifact` predicate. The fixture carries
+two loose leaves sharing ONE distinctive title token (`Falcon`) — a REAL uploaded file
+(`size/search-file`, an artifact) and a plain text node (`size/search-doc`, a non-artifact) — so
+a single browser search for `Falcon` (POST `/author/graph/search`, RLS-fenced as the owner)
+returns BOTH; toggling the chip ON keeps the file and drops the note (the chip filters, not just
+renders). The search leaves are loose at the root + NOT starred, so the Drive folder-sum + Starred
+proofs above are untouched. One fixture, two consumers (the Drive lenses + the Search lens), one
+dictionary.
+
 The KB media matrix spec (`knowledge-media-substrate.e2e.spec.ts`, ADR-0026 / slice-13, the
 MERGE GATE) draws its corpus from the SAME `knowledge-base` scenario via
 `seedMediaSubstrateFixture`, and drives the REAL upload/download transport against REAL

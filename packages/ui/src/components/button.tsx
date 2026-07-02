@@ -34,6 +34,14 @@ const buttonVariants = cva(
         // caller's (segments vary: text vs icon, first vs middle).
         segmented:
           'text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground rounded-none',
+        // A standalone on/off FILTER CHIP: a bordered pill that reads muted when off
+        // (hovering it to `--accent` previews the toggle) and lifts onto `--accent`
+        // with a seamless border when on, driven entirely by `aria-pressed`. Unlike
+        // `segmented` (a flush strip item), a chip stands alone — it keeps its own
+        // border and hover treatment. Pair with `size="pill"`. Used by every lens
+        // display filter (share-facet chips, cross-lens toggles).
+        filterChip:
+          'text-muted-foreground border-border hover:bg-accent hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground aria-pressed:border-transparent',
       },
       size: {
         default:

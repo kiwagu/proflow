@@ -4,12 +4,14 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
+import { Hint } from '@workspace/ui/components/hint';
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ArrowUpRight,
   ChevronRight,
   Folder,
   FolderSymlink,
+  Info,
 } from 'lucide-react';
 import * as React from 'react';
 
@@ -22,6 +24,7 @@ import { StarButton } from '@/app/graph/views/drive/cards/card-rail';
 import type { DriveRow } from '@/app/graph/views/drive/list/drive-row';
 import {
   modifiedCell,
+  sizeCell,
   typeCell,
 } from '@/app/graph/views/drive/list/lens-row-cells';
 
@@ -114,6 +117,7 @@ export function LensListTable({
   expansion = 'collapsible',
   dndEnabled = false,
   sharedBadgeFor,
+  sizeOf,
   snippet,
 }: {
   rows: DriveRow[];
@@ -144,6 +148,12 @@ export function LensListTable({
   /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
    * out — rendered in the name cell so the list mirrors the grid cards. */
   sharedBadgeFor?: (node: LensNode) => React.ReactNode;
+  /** The byte size for a row's node (uploaded file/video → its own bytes; folder → the
+   * recursive sum of its VISIBLE descendant media; `null` for text/link/tag or a
+   * media-less folder → the em-dash cell). OPTIONAL: supplied → a "Size" column with a
+   * visible-slice Hint on its header; omitted (default OFF) → no size column, so the
+   * search list is unchanged. Resolved by the view off the shared folder-size index. */
+  sizeOf?: (node: LensNode) => number | null;
   /** OPTIONAL trailing column slot rendering a per-row excerpt (the search snippet) —
    * a localized header plus a per-row cell renderer. Absent (default) → no snippet
    * column, so non-search lenses are unchanged (only the search config supplies it). */
@@ -295,6 +305,35 @@ export function LensListTable({
           modifiedCell((getValue() as string) || undefined),
         meta: { cellClassName: 'w-32' },
       },
+      // OPTIONAL size column (ADR-0026 render) — an uploaded file/video's own bytes or a
+      // folder's recursive VISIBLE-descendant sum, humanized via `formatBytes`; text/link/
+      // tag + media-less folders show "—". Sortable by the raw byte accessor (nulls → -1
+      // so the media-less rows sort last). The header carries a visible-slice Hint (the
+      // sum is what YOU can see, not an authoritative total). Present only when `sizeOf`
+      // is supplied — the search list omits it.
+      ...(sizeOf
+        ? [
+            {
+              id: 'size',
+              accessorFn: (r: DriveRow) => sizeOf(r.node) ?? -1,
+              sortingFn: 'basic' as const,
+              header: () => (
+                <span className="inline-flex items-center gap-1">
+                  {t('graph.table.size')}
+                  <Hint label={t('graph.drive.folderSizeHint')}>
+                    <Info
+                      className="text-muted-foreground size-3.5"
+                      aria-hidden
+                    />
+                  </Hint>
+                </span>
+              ),
+              cell: ({ row }: { row: { original: DriveRow } }) =>
+                sizeCell(t, sizeOf(row.original.node)),
+              meta: { cellClassName: 'w-28' },
+            } satisfies ColumnDef<DriveRow>,
+          ]
+        : []),
       // OPTIONAL snippet column (search only) — a trailing matched-excerpt slot. Absent
       // by default, so non-search lenses render the original column set unchanged.
       ...(snippet
@@ -335,6 +374,7 @@ export function LensListTable({
       recentOpenedAt,
       tree,
       sharedBadgeFor,
+      sizeOf,
       snippet,
     ]
   );

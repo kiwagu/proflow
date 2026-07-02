@@ -39,12 +39,15 @@ import {
   createActor,
   DIRECTORY_PICKER_SCENARIO,
   DIRECTORY_PICKER_DISPLAY_NAMES,
+  DRIVE_SIZE_FILTER_SCENARIO,
   KNOWLEDGE_BASE_SCENARIO,
   makeSeedClient,
   materializeScenario,
   PER_USER_SHARE_SCENARIO,
   resolveRoleIds,
   SHARE_MECHANISM_SCENARIO,
+  SIZE_FILTER_BYTES,
+  SIZE_FILTER_FOLDER_SUM,
   slug,
   teardownTenant,
   type MaterializedScenario,
@@ -2196,4 +2199,130 @@ export async function teardownMediaSubstrateFixture(
   if (fx?.otherSpace?.tenant) {
     await teardownKnowledgeGraphTenant(fx.otherSpace.tenant);
   }
+}
+
+// ── ADR-0026 render: "Only files" filter + list Size column fixture ───────────
+//
+// The size/filter render e2e (`knowledge-drive-size-filter.e2e.spec.ts`) drives the
+// cross-lens "Only files" (uploaded-artifacts) filter + the list-view Size column purely
+// in the browser over the resolved canvas + `kbData`. Its tree — a media branch with two
+// nested 512-byte artifacts (→ the folder sums to 1 KB), an empty (media-less) branch, and
+// loose text/link leaves — comes ENTIRELY from the shared `DRIVE_SIZE_FILTER_SCENARIO`
+// catalog entry (via `materializeFixture`), whose `file`/`video` bytes travel the SAME real
+// upload transport the media substrate uses (so the artifacts have real `media` satellites
+// with `byteSize`; the predicate requires a real satellite, not a byte-less stub). The demo
+// DB and this spec name the SAME nodes through the one create-vocabulary — no inline
+// `createFolder`/`createDoc`/upload tree.
+
+/** The seeded size/filter titles the render spec's DOM assertions key on — kept in sync
+ * with `DRIVE_SIZE_FILTER_SCENARIO`. */
+export const SIZE_FILTER_TITLES = {
+  root: 'Size Root',
+  mediaBranch: 'Media Branch',
+  nested: 'Nested Media',
+  fileSmall: 'Report A (file)',
+  videoSmall: 'Clip B (video)',
+  emptyBranch: 'Empty Branch',
+  docInside: 'Branch Notes',
+  looseDoc: 'Loose Note',
+  looseLink: 'Loose Link',
+  /** The SEARCH-lens "Only files" positive — a real uploaded file sharing the `Falcon`
+   * search token (kept under "Only files" on the search shelf). */
+  searchFile: 'Falcon Report (file)',
+  /** The SEARCH-lens "Only files" negative — a plain text note sharing the SAME token
+   * (dropped under "Only files" on the search shelf). */
+  searchDoc: 'Falcon Memo',
+} as const;
+
+/** The distinctive title token both search-target leaves share — a single search for it
+ * returns the artifact (`searchFile`) AND the non-artifact (`searchDoc`), so toggling
+ * "Only files" on the search shelf can drop the latter while keeping the former. */
+export const SIZE_FILTER_SEARCH_TERM = 'Falcon';
+
+/** The size/filter render fixture, resolved from the shared `DRIVE_SIZE_FILTER_SCENARIO`.
+ * Every `…Id` is a `knr_…`; the byte sizes are the EXACT seeded values so the spec can
+ * assert the humanized Size cells + the folder-sum arithmetic (512 + 512 = 1024 → "1 KB"). */
+export type DriveSizeFilterFixture = {
+  /** The space the browse tree is scoped to (`?folder=` navigation). */
+  spaceId: string;
+  /** The fixture root folder — the browser opens `?folder=<this>` to reach the tree. */
+  rootId: string;
+  /** The media branch (survives "Only files"; Size = its recursive descendant sum). */
+  mediaBranchId: string;
+  /** The innermost folder directly holding the two 512-byte artifacts (Size = 1 KB). */
+  nestedId: string;
+  /** A real 512-byte file — its own Size cell "512 B"; a folder-sum member; artifact. */
+  fileSmallId: string;
+  /** A real 512-byte video — its own Size cell "512 B"; a folder-sum member; artifact. */
+  videoSmallId: string;
+  /** A folder with only a text doc — DROPS under "Only files"; Size "0 B" (empty sum). */
+  emptyBranchId: string;
+  /** The text doc inside the empty branch — Size "—"; drops under "Only files". */
+  docInsideId: string;
+  /** A loose text leaf — Size "—"; drops under "Only files". */
+  looseDocId: string;
+  /** A loose link leaf — Size "—"; drops under "Only files". */
+  looseLinkId: string;
+  /** A real uploaded file sharing the `Falcon` search token — the SEARCH-lens "Only files"
+   * positive (a search hit that SURVIVES the chip). */
+  searchFileId: string;
+  /** A plain text node sharing the SAME token — the SEARCH-lens "Only files" negative (a
+   * search hit that DROPS under the chip). */
+  searchDocId: string;
+  /** The distinctive search token both search-target leaves share (`Falcon`). */
+  searchTerm: string;
+  /** The exact seeded artifact byte sizes (`fileSmall` / `videoSmall` = 512 each). */
+  bytes: typeof SIZE_FILTER_BYTES;
+  /** The folder-sum of the nested branch (1024 B → "1 KB") — the arithmetic assertion. */
+  folderSum: typeof SIZE_FILTER_FOLDER_SUM;
+  /** The seeded titles the DOM assertions key on. */
+  titles: typeof SIZE_FILTER_TITLES;
+  /** The owner (`admin`) that authored + can see the whole tree — the acting user. */
+  owner: KnowledgeActor;
+};
+
+/**
+ * Materialize the size/filter scenario over an existing tenant and project its refs onto
+ * the render-spec shape. The folders, the containment, and the two real uploaded artifacts
+ * are already CREATED by `materializeFixture` through the runtime RLS path + the real media
+ * transport (the materializer's `uploadNodeMedia`); this only names the pieces the spec
+ * asserts against. Single-space (no second tenant needed — the fixture is a pure render
+ * proof over one owner's tree).
+ */
+export async function seedDriveSizeFilterFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<DriveSizeFilterFixture> {
+  const { refs, actors } = await materializeFixture(
+    DRIVE_SIZE_FILTER_SCENARIO,
+    tenant
+  );
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`size-filter fixture: missing ref "${ref}"`);
+    return value;
+  };
+  const who = (ref: string): KnowledgeActor => {
+    const actor = actors.get(ref);
+    if (!actor) throw new Error(`size-filter fixture: missing actor "${ref}"`);
+    return actor;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    rootId: id('size/root'),
+    mediaBranchId: id('size/media-branch'),
+    nestedId: id('size/nested'),
+    fileSmallId: id('size/file-small'),
+    videoSmallId: id('size/video-small'),
+    emptyBranchId: id('size/empty-branch'),
+    docInsideId: id('size/doc-inside'),
+    looseDocId: id('size/loose-doc'),
+    looseLinkId: id('size/loose-link'),
+    searchFileId: id('size/search-file'),
+    searchDocId: id('size/search-doc'),
+    searchTerm: SIZE_FILTER_SEARCH_TERM,
+    bytes: SIZE_FILTER_BYTES,
+    folderSum: SIZE_FILTER_FOLDER_SUM,
+    titles: SIZE_FILTER_TITLES,
+    owner: who('admin'),
+  };
 }
