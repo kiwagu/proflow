@@ -2029,6 +2029,12 @@ export type MediaSubstrateFixture = {
   nodeGrantFileId: string;
   /** The seeded storage path of `nodeGrantFile` — for the 11b direct-upload-attempt fence. */
   nodeGrantFilePath: string;
+  /** A REAL confirmed file reserved for the trash → purge lifecycle (ADR-0026 touch-item):
+   * the media matrix e2e trashes it, purges it via the trash-route DELETE, and asserts
+   * `purgeResource` best-effort reaps its `kb-media` object (the object stops resolving). */
+  purgeReapFileId: string;
+  /** The seeded storage path of `purgeReapFile` — the object the purge must reap. */
+  purgeReapFilePath: string;
   /** Bea's PRIVATE file (real bytes) — the download RLS-negative (assertions 5, 6). */
   privateOtherFileId: string;
   privateOtherFilePath: string;
@@ -2109,6 +2115,7 @@ export async function seedMediaSubstrateFixture(
   const privateOtherFileId = id('kb/file-private-other');
   const inheritedFileId = id('kb/inherited-file');
   const nodeGrantFileId = id('kb/file-node-grant');
+  const purgeReapFileId = id('kb/file-purge-reap');
 
   // Space B: a second tenant whose `granted` actor owns one real file the space-A owner
   // is not a member of — the cross-space download denial (assertion 7). Uploaded through
@@ -2167,6 +2174,8 @@ export async function seedMediaSubstrateFixture(
     filePdfFilename: 'media-preview.pdf',
     nodeGrantFileId,
     nodeGrantFilePath: await mediaStoragePath(tenant, nodeGrantFileId),
+    purgeReapFileId,
+    purgeReapFilePath: await mediaStoragePath(tenant, purgeReapFileId),
     privateOtherFileId,
     privateOtherFilePath: await mediaStoragePath(tenant, privateOtherFileId),
     inheritedFileId,

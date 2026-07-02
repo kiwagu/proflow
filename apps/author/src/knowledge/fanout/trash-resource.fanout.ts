@@ -1,4 +1,5 @@
 import type { Database } from '@workspace/db';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 import type {
   PurgeResourceInput,
   RestoreResourceInput,
@@ -7,6 +8,7 @@ import type {
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
 
+import { kbSchema } from '@/lib/supabase/kb-schema';
 import { deleteBody } from './text-resource.fanout';
 
 /**
@@ -25,7 +27,13 @@ import { deleteBody } from './text-resource.fanout';
  *                       a durable space_admin_audit_log tombstone outlives the row. For
  *                       a kind=text node the Payload body is best-effort reaped AFTER
  *                       the node DELETE commits (idempotent; Mongo-down leaves an
- *                       unreachable orphan, never a half-write — §13.2).
+ *                       unreachable orphan, never a half-write — §13.2). For a media
+ *                       node the kb-media Storage object is best-effort reaped too
+ *                       (ADR-0026): its `storage_path` is captured from the media
+ *                       satellite, then the object is removed under the caller's RLS
+ *                       BEFORE the node DELETE — the `storage.objects` DELETE policy
+ *                       authorizes via an EXISTS on the owning node row, so the row
+ *                       must still be present at reap time.
  *
  * RLS is the SOLE authority on every path:
  *   - trash/restore are gated by the BEFORE-UPDATE authority guard
@@ -168,7 +176,8 @@ export async function restoreResource(
  * the user's RLS: the landed delete policy + the in-use guard authorize it, the
  * landed hard orphan-cascade destroys orphaned descendants, and a BEFORE-DELETE
  * trigger writes the durable purge audit tombstone. For a kind=text node the
- * Payload body is reaped best-effort AFTER the node DELETE commits.
+ * Payload body is reaped best-effort AFTER the node DELETE commits; for a media
+ * node its kb-media Storage object is reaped best-effort too (ADR-0026).
  */
 export async function purgeResource(
   input: PurgeResourceInput,
@@ -191,7 +200,30 @@ export async function purgeResource(
     (node as { body_ref?: unknown } | null)?.body_ref
   );
 
-  // 2. The real DELETE (the authority + in-use + audit + orphan-cascade triggers
+  // 2. Capture every kb-media Storage object about to be orphaned (ADR-0026),
+  //    BEFORE the DELETE cascades the `kmm` satellite rows away. The hard
+  //    orphan-cascade destroys not just the root but the trashed-as-a-unit
+  //    subtree, so we must reap ALL purged media nodes, not only the root —
+  //    read the media satellite for the whole subtree, not a single node. The
+  //    read is RLS-fenced (the satellite SELECT mirrors node-read), so a node the
+  //    caller cannot see contributes nothing; a node with no `kmm` row (text /
+  //    folder / link / tag) has no object and is naturally skipped.
+  const subtreeIds = await collectPurgeSubtreeIds(input, db);
+  const mediaObjects = await collectMediaObjects(input.spaceId, subtreeIds, db);
+
+  // 3. Best-effort kb-media reap BEFORE the node DELETE, WHILE the authorizing
+  //    node row still exists. The `storage.objects` DELETE policy (`kb_media
+  //    delete mirrors node update`) authorizes via an EXISTS on the owning
+  //    `knowledge_resources` row (owner-or-space-update) — so the object must be
+  //    removed while that row is present; after the node is gone the policy's
+  //    EXISTS is false and the user-scoped remove is silently denied. Best-effort:
+  //    a failed/denied object delete DOES NOT block the purge — we proceed to the
+  //    node DELETE regardless. The rare partial (object gone, node delete then
+  //    fails → a byte-less node still in Trash, re-purgeable) is strictly better
+  //    than invisible orphaned bytes.
+  await reapMediaObjects(mediaObjects, db);
+
+  // 4. The real DELETE (the authority + in-use + audit + orphan-cascade triggers
   //    all fire here, under the caller's RLS). A caller without authority deletes
   //    nothing — a clean no-op.
   const { data, error } = await db
@@ -205,14 +237,127 @@ export async function purgeResource(
   }
   const purged = (data ?? []).map((row) => (row as { id: string }).id);
 
-  // 3. Best-effort body reap AFTER the node DELETE commits (§13.2). One-directional:
-  //    the authority (node) is gone decisively; the satellite reap can only fail
-  //    OPEN (orphan), never destructive. Only when the node was actually purged.
+  // 5. Best-effort body reap AFTER the node DELETE commits (§13.2). The Payload
+  //    body lives in Mongo (no RLS dependency on the node row), so ordering it
+  //    after the authoritative delete is safe: the node is gone decisively, the
+  //    satellite reap can only fail OPEN (orphan), never destructive.
   if (purged.length > 0 && bodyDocId) {
     await deleteBody(payload, bodyDocId);
   }
 
   return { purged };
+}
+
+/** A captured kb-media Storage pointer, bucket-grouped for a batched remove. */
+type MediaObjectRef = { bucket: string; path: string };
+
+/**
+ * Resolve the id set the purge will actually destroy: the selected root plus the
+ * trashed-as-a-unit subtree (descendants stamped with the SAME deleted_at +
+ * trashed_by by the soft-cascade — exactly what the hard orphan-cascade removes,
+ * ADR-0018 §6). All under the caller's RLS. Purge is reached only from the Trash
+ * lens, so the root is already trashed; if it is not (or the caller cannot see
+ * it) we fall back to the root id alone — the DELETE below stays authoritative.
+ */
+async function collectPurgeSubtreeIds(
+  input: PurgeResourceInput,
+  db: SupabaseClient<Database>
+): Promise<string[]> {
+  const { data: root, error: rootErr } = await db
+    .from('knowledge_resources')
+    .select('id,deleted_at,trashed_by')
+    .eq('space_id', input.spaceId)
+    .eq('id', input.resourceId)
+    .maybeSingle();
+  if (rootErr || !root) {
+    return [input.resourceId];
+  }
+  const stamp = root as {
+    id: string;
+    deleted_at: string | null;
+    trashed_by: string | null;
+  };
+  if (!stamp.deleted_at) {
+    return [stamp.id];
+  }
+
+  let unitQuery = db
+    .from('knowledge_resources')
+    .select('id')
+    .eq('space_id', input.spaceId)
+    .eq('deleted_at', stamp.deleted_at);
+  unitQuery = stamp.trashed_by
+    ? unitQuery.eq('trashed_by', stamp.trashed_by)
+    : unitQuery.is('trashed_by', null);
+  const { data: rows, error } = await unitQuery;
+  if (error) {
+    return [stamp.id];
+  }
+  const ids = new Set((rows ?? []).map((r) => (r as { id: string }).id));
+  ids.add(stamp.id);
+  return [...ids];
+}
+
+/**
+ * Read the kb-media satellite (RLS-fenced) for the purged subtree and return the
+ * Storage pointers to reap. Nodes with no `kmm` row contribute nothing. A read
+ * failure is swallowed to an empty set — best-effort: a leftover object never
+ * blocks the purge.
+ */
+async function collectMediaObjects(
+  spaceId: string,
+  nodeIds: string[],
+  db: SupabaseClient<Database>
+): Promise<MediaObjectRef[]> {
+  if (nodeIds.length === 0) {
+    return [];
+  }
+  const { data, error } = await kbSchema(db)
+    .from('resource_media_meta')
+    .select('storage_path,storage_bucket')
+    .eq('space_id', spaceId)
+    .in('node_id', nodeIds);
+  if (error) {
+    return [];
+  }
+  return (data ?? [])
+    .map(
+      (row) => row as { storage_path: string; storage_bucket: string | null }
+    )
+    .filter((row) => Boolean(row.storage_path))
+    .map((row) => ({
+      bucket: row.storage_bucket ?? KB_MEDIA_BUCKET,
+      path: row.storage_path,
+    }));
+}
+
+/**
+ * Best-effort removal of the captured kb-media objects AFTER the node DELETE
+ * commits. Runs under the SAME user-scoped `db` — the `storage.objects` DELETE
+ * policy fences it (never service-role). Batched per bucket. Any failure/denial
+ * is swallowed: the primary node purge already succeeded, and a leftover object
+ * is the pre-existing reconcile concern, never a reason to fail the request.
+ */
+async function reapMediaObjects(
+  objects: MediaObjectRef[],
+  db: SupabaseClient<Database>
+): Promise<void> {
+  if (objects.length === 0) {
+    return;
+  }
+  const byBucket = new Map<string, string[]>();
+  for (const obj of objects) {
+    const paths = byBucket.get(obj.bucket) ?? [];
+    paths.push(obj.path);
+    byBucket.set(obj.bucket, paths);
+  }
+  for (const [bucket, paths] of byBucket) {
+    try {
+      await db.storage.from(bucket).remove(paths);
+    } catch {
+      // Best-effort: a failed/denied object delete never fails the purge.
+    }
+  }
 }
 
 /** Pull the Payload `bodies` doc id out of a `body_ref` jsonb, if present. */

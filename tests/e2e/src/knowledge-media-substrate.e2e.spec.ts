@@ -61,6 +61,13 @@
  *       the owner's bytes are unchanged. The regression guard: a read-grantee cannot
  *       overwrite someone else's file bytes.
  *
+ *  Purge reap (the ADR-0026 touch-item):
+ *   12 trashing then PURGING a confirmed media node (resource DELETE → trash-route DELETE)
+ *      best-effort reaps its `kb-media` object: after the purge the object no longer
+ *      resolves (a service download of the exact path returns no object), and the kmm
+ *      satellite is gone. The purge captures the storage_path before the node DELETE and
+ *      removes the bytes under the caller's RLS after commit.
+ *
  * Tagged `@full` — needs the running Supabase + author stack + REAL Storage.
  */
 import { createClient } from '@supabase/supabase-js';
@@ -896,5 +903,59 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       .download(fx.nodeGrantFilePath);
     expect(error, error?.message).toBeNull();
     expect(await data?.text()).toBe(fx.fixtureBytes.nodeGrant);
+  });
+
+  // ── Purge reap: destroying a media node reaps its kb-media bytes (ADR-0026) ──
+  //
+  // The ADR-0026 touch-item that was previously unimplemented: purging a CONFIRMED
+  // media node best-effort deletes its bytes from the private `kb-media` bucket. The
+  // lifecycle is driven through the SAME create-vocabulary the demo seed uses — the
+  // resource DELETE (soft-trash) then the trash-route DELETE (purge) — so the demo DB
+  // and this test speak one vocabulary. The seeded `kb/file-purge-reap` node is
+  // reserved for this destructive lifecycle (its own object + kmm row), so reaping it
+  // disturbs no other assertion.
+
+  test('(12) purging a confirmed media node reaps its kb-media object (best-effort byte reap)', async () => {
+    // Pre-condition: the seeded object exists (materializer uploaded it through the real
+    // transport) — a service read PROVES the bytes are present BEFORE the purge, so a
+    // post-purge absence is the reap, not a never-written object.
+    const before = await tenant.service.storage
+      .from(KB_MEDIA_BUCKET)
+      .download(fx.purgeReapFilePath);
+    expect(before.error, before.error?.message).toBeNull();
+    expect(await before.data?.text()).toBe(
+      'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (ADR-0026 purge best-effort reap).\n'
+    );
+    // …and the kmm satellite row is present (the confirmed-media pre-state).
+    expect(await readKmm(tenant, fx.purgeReapFileId)).not.toBeNull();
+
+    const client = await seedClientFor(fx.owner);
+    try {
+      // 1. Trash the node (resource DELETE — soft, reversible). It must be trashed
+      //    before the trash-route DELETE (purge) will destroy it.
+      await client.trash(fx.spaceId, fx.purgeReapFileId);
+
+      // 2. Purge via the trash-route DELETE — the one-way door. `purgeResource`
+      //    captures the storage_path from the kmm satellite, then best-effort
+      //    removes the object under the caller's RLS BEFORE the node DELETE (the
+      //    storage.objects DELETE policy authorizes via an EXISTS on the still-
+      //    present node row).
+      const result = await client.purge(fx.spaceId, fx.purgeReapFileId);
+      expect(result.purged).toContain(fx.purgeReapFileId);
+    } finally {
+      await client.dispose();
+    }
+
+    // 3. The node row is gone (the kmm satellite cascaded away with it).
+    expect(await readKmm(tenant, fx.purgeReapFileId)).toBeNull();
+
+    // 4. The bytes are REAPED from the private bucket — a service read of the exact
+    //    same path now returns no object (the best-effort remove ran under the owner's
+    //    RLS after the purge committed). This is the assertion the touch-item lacked.
+    const after = await tenant.service.storage
+      .from(KB_MEDIA_BUCKET)
+      .download(fx.purgeReapFilePath);
+    expect(after.data).toBeNull();
+    expect(after.error).not.toBeNull();
   });
 });

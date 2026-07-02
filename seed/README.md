@@ -163,7 +163,9 @@ WITHOUT space-wide `space.knowledge.update`), which exercises the READ/WRITE ASY
 per-user grant is a READ dimension, so the grantee CAN download the bytes (the storage-RLS
 SELECT composes grants) but is DENIED an upload (the WRITE fence mirrors node-UPDATE exactly
 — `owner OR space.knowledge.update`, grants NOT composed — so a read-grantee can never
-overwrite another user's file bytes). Bytes egress ONLY via short-lived signed URLs; RLS is
+overwrite another user's file bytes); and a REAL confirmed file (`kb/file-purge-reap`)
+reserved for the trash → purge lifecycle — purging it best-effort reaps its `kb-media` object
+(the ADR-0026 touch-item). Bytes egress ONLY via short-lived signed URLs; RLS is
 the sole fence. The ADR-0026 media matrix e2e (`knowledge-media-substrate.e2e.spec.ts`) draws
 this corpus via `seedMediaSubstrateFixture` and drives the REAL `/author/graph/media`
 upload/download transport against REAL Storage.
@@ -256,7 +258,11 @@ read/write asymmetry — a NODE-ONLY read-grantee (a per-user grant, no space-wi
 download the granted file (read-grant composes on the storage-RLS SELECT) but is DENIED an
 upload of it (the write fence mirrors node-UPDATE exactly — `owner OR space.knowledge.update`,
 grants NOT composed — so a read-grantee can never overwrite the bytes; a direct object write
-also fails and the owner's bytes stay intact). The other-space negative is built in the
+also fails and the owner's bytes stay intact). It ALSO proves the PURGE REAP (the ADR-0026
+touch-item): trashing then purging a confirmed media node (the resource DELETE then the
+trash-route DELETE, both through the shared create-vocabulary — `seedClientFor(actor).trash` /
+`.purge`) best-effort reaps its `kb-media` object, so after the purge the object no longer
+resolves and the `kmm` satellite is gone. The other-space negative is built in the
 fixture's second tenant (the catalog is single-space). Every denial is proven by RLS, not an
 app filter.
 

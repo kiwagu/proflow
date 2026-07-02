@@ -101,7 +101,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png), a real PDF (application/pdf), a real VIDEO (video/mp4) and a real AUDIO (audio/wav) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`, video/* → an inline `<video controls>` player, audio/* → an inline `<audio controls>` player; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload).',
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png), a real PDF (application/pdf), a real VIDEO (video/mp4) and a real AUDIO (audio/wav) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`, video/* → an inline `<video controls>` player, audio/* → an inline `<audio controls>` player; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload), and a REAL confirmed file reserved for the trash → purge lifecycle whose kb-media object is best-effort reaped when the node is purged from Trash (ADR-0026 touch-item).',
   presets: ['knowledge-base', 'search', 'media'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
@@ -275,6 +275,26 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
               'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
             mimeType: 'text/plain',
             filename: 'node-granted-read-target.txt',
+          },
+        },
+        {
+          // Purge-reap target (ADR-0026 touch-item): a REAL confirmed media node
+          // whose bytes travel the same upload transport (a `kb-media` object + a
+          // `kmm` satellite both exist). It is reserved for the trash → purge
+          // lifecycle: the media matrix e2e trashes it (resource DELETE), purges it
+          // via the trash-route DELETE, and asserts `purgeResource` best-effort reaps
+          // its bucket object (the object no longer resolves / downloads). Kept SEPARATE
+          // from the happy-path corpus so destroying it disturbs no other assertion.
+          ref: 'kb/file-purge-reap',
+          kind: 'file',
+          title: 'Purge Reap Target (file)',
+          description:
+            'A real confirmed file reserved for the trash → purge lifecycle — purging it reaps its kb-media object.',
+          media: {
+            bytes:
+              'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (ADR-0026 purge best-effort reap).\n',
+            mimeType: 'text/plain',
+            filename: 'purge-reap-target.txt',
           },
         },
 
