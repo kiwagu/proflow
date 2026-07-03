@@ -82,5 +82,35 @@ export function useDriveMutations({
     [spaceId, refresh]
   );
 
-  return { refreshKey, refresh, restoreNode, purgeNode };
+  // REMOVE SHORTCUT — delete the `shortcut` edge folder→target (ADR-0015 §3). The
+  // symlink card carries both endpoints (its containing folder = from, the target =
+  // to), so we delete by the natural (from,to,relation) triple with no id round-trip.
+  // Only the edge is removed; the target node and its canonical home are untouched.
+  // RLS (`space.knowledge.delete`) is the sole authority — a disallowed remove is a
+  // clean no-op. A success re-resolves so the shortcut card leaves the canvas.
+  const removeShortcut = React.useCallback(
+    async (folderId: string, targetId: string): Promise<boolean> => {
+      if (!spaceId) {
+        return false;
+      }
+      const res = await fetch('/author/graph/edges', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceId,
+          fromId: folderId,
+          toId: targetId,
+          relationType: 'shortcut',
+        }),
+      });
+      if (res.ok) {
+        refresh();
+        return true;
+      }
+      return false;
+    },
+    [spaceId, refresh]
+  );
+
+  return { refreshKey, refresh, restoreNode, purgeNode, removeShortcut };
 }

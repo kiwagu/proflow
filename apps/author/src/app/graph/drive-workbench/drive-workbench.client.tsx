@@ -139,10 +139,11 @@ export function DriveWorkbench({
   );
 
   // Refresh + Trash lifecycle (restore / purge).
-  const { refreshKey, refresh, restoreNode, purgeNode } = useDriveMutations({
-    spaceId,
-    onRestored,
-  });
+  const { refreshKey, refresh, restoreNode, purgeNode, removeShortcut } =
+    useDriveMutations({
+      spaceId,
+      onRestored,
+    });
 
   // Clipboard (Dolphin copy/paste).
   const clipboard = useDriveClipboard({ spaceId, refresh });
@@ -197,9 +198,11 @@ export function DriveWorkbench({
       clipboard={clipboard.clipboard}
       onCopyToClipboard={clipboard.copyToClipboard}
       onPaste={clipboard.pasteInto}
+      onPasteShortcut={clipboard.pasteAsShortcutInto}
       onClearClipboard={clipboard.clearClipboard}
       onRestore={restoreNode}
       onPurge={purgeNode}
+      onRemoveShortcut={removeShortcut}
     />
   );
 

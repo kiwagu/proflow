@@ -295,8 +295,16 @@ export type ProjectionViewProps = {
   /** PASTE the clipboard source into a folder (null → top level). The VIEW builds the
    * "X (copy)" rootTitle (it has `t`); the workbench just POSTs the deep-copy. */
   onPaste?: (targetFolderId: string | null, rootTitle: string) => void;
+  /** PASTE the clipboard source AS A SHORTCUT into a folder (ADR-0015 §3) — a
+   * `shortcut` edge folder→source instead of a deep copy. Folder-only (a shortcut
+   * hangs off a folder), so the view offers it only inside a folder, never at root. */
+  onPasteShortcut?: (targetFolderId: string) => void;
   /** CLEAR the clipboard (the ✕ on the Paste control / Escape). */
   onClearClipboard?: () => void;
+  /** REMOVE a shortcut card — delete the `shortcut` edge folder→target (ADR-0015 §3).
+   * Only the symlink is removed; the target node + its canonical home stay. Resolves
+   * `true` on success; `delete`-verb gated in the DB (a disallowed remove is a no-op). */
+  onRemoveShortcut?: (folderId: string, targetId: string) => Promise<boolean>;
   /**
    * RESTORE a trashed node (Trash lens) — `PATCH /author/graph/trash`. Clears
    * `deleted_at`; references re-admit automatically (dormant edges). Resolves to

@@ -13,6 +13,7 @@ export {
 } from './card-rail';
 export { FolderCard } from './folder-card';
 export { ItemCard } from './item-card';
+export { RemoveShortcutButton } from './remove-shortcut-button';
 export { TrashCard } from './trash-card';
 export {
   CanvasRootDropZone,

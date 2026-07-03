@@ -15,6 +15,7 @@ import {
   Clock,
   Columns2,
   FileUp,
+  FolderSymlink,
   House,
   Send,
   Star,
@@ -49,6 +50,7 @@ import {
   CreateResource,
   type CreateRequest,
 } from '@/app/graph/create-resource.view';
+import { iconForKind } from '@/app/graph/presentation';
 import { DriveSidebar } from '@/app/graph/views/drive/drive-sidebar';
 import { LayoutToggle } from '@/app/graph/views/drive/layout-toggle';
 import type { DriveLayout } from '@/app/graph/views/drive/layout-toggle';
@@ -65,6 +67,7 @@ import {
   GRID_WRAP,
   ItemCard,
   LIST_WRAP,
+  RemoveShortcutButton,
   RevealInKbButton,
   RootDropZone,
   SectionLabel,
@@ -137,9 +140,11 @@ export function DriveProjectionView({
   clipboard,
   onCopyToClipboard,
   onPaste,
+  onPasteShortcut,
   onClearClipboard,
   onRestore,
   onPurge,
+  onRemoveShortcut,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -749,6 +754,32 @@ export function DriveProjectionView({
     }
   };
 
+  // Paste AS SHORTCUT (ADR-0015 §3): drop a `shortcut` symlink to the clipboard source
+  // into THIS pane's current folder. Folder-only — a shortcut hangs off a folder, so it
+  // is offered only when browsing inside one (`folderId != null`), never at root.
+  const canPasteShortcut =
+    canPaste && onPasteShortcut != null && folderId != null;
+  const handlePasteShortcut = () => {
+    if (onPasteShortcut && folderId != null) {
+      onPasteShortcut(folderId);
+    }
+  };
+
+  // Following a shortcut (double-click / Open) must reach the SAME surface as opening
+  // the REAL target — a symlink you cannot follow is pointless (ADR-0015 §3): a folder
+  // navigates IN, a text document opens the reader/editor, and every other kind opens
+  // Details (where a file/video Download or a link's Open lives). Mirrors the canonical
+  // item-card `onOpen` exactly, so a shortcut behaves identically to its target.
+  const openShortcutTarget = (target: LensNode) => {
+    if (target.kind === 'folder') {
+      navigate(target.id);
+    } else if (target.kind === 'text' && onOpenDocument) {
+      onOpenDocument(target.id);
+    } else {
+      onSelect(target.id);
+    }
+  };
+
   // DnD is a 'kb' browse-only affordance (move = re-parent in the containment tree);
   // the flat lenses (Home/Starred/Recent/Shared) are read-only digests, no drag there.
   const dndEnabled = scope === 'kb';
@@ -834,10 +865,29 @@ export function DriveProjectionView({
       id: `sc-${target.id}`,
       node: target,
       rowKind: 'shortcut' as const,
-      onOpen: () =>
-        target.kind === 'folder' ? navigate(target.id) : onSelect(target.id),
+      onOpen: () => openShortcutTarget(target),
       onDetails: () => onSelect(target.id),
-      actions: null,
+      // "Open in KB" jumps to the target's CANONICAL home (its real position in the
+      // containment tree) — the whole point of a symlink is to reach elsewhere, so the
+      // list row carries the SAME reveal the grid card does. Remove drops ONLY this
+      // symlink (folder→target); the target node stays.
+      actions: (
+        <div className="flex items-center gap-0.5">
+          {onRevealInKb ? (
+            <RevealInKbButton
+              reveal="always"
+              onReveal={() => onRevealInKb(target.id)}
+              label={t('graph.panel.openInKb')}
+            />
+          ) : null}
+          {onRemoveShortcut && folderId != null ? (
+            <RemoveShortcutButton
+              onRemove={() => void onRemoveShortcut(folderId, target.id)}
+              label={t('graph.drive.removeShortcut')}
+            />
+          ) : null}
+        </div>
+      ),
     })),
     ...items.map(itemRow),
   ];
@@ -1058,6 +1108,23 @@ export function DriveProjectionView({
               <span className="max-w-[120px] truncate">{clipboard.title}</span>
             </Button>
           </Hint>
+          {canPasteShortcut ? (
+            <Hint
+              label={t('graph.drive.pasteShortcut', { title: clipboard.title })}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handlePasteShortcut}
+                aria-label={t('graph.drive.pasteShortcut', {
+                  title: clipboard.title,
+                })}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground border-l-border grid h-7 w-7 place-items-center rounded-none border-l p-0"
+              >
+                <FolderSymlink className="size-[15px]" aria-hidden />
+              </Button>
+            </Hint>
+          ) : null}
           <Hint label={t('graph.drive.pasteClear')}>
             <Button
               type="button"
@@ -1523,24 +1590,40 @@ export function DriveProjectionView({
                           <FolderCard
                             key={`sc-${target.id}`}
                             title={target.title}
-                            subtitle={t('graph.drive.shortcutFolder')}
+                            subtitle={
+                              target.kind === 'folder'
+                                ? t('graph.drive.shortcutFolder')
+                                : t('graph.drive.shortcut')
+                            }
                             layout={layout}
                             shortcut
-                            onOpen={() =>
-                              target.kind === 'folder'
-                                ? navigate(target.id)
-                                : onSelect(target.id)
-                            }
+                            // The TARGET's kind icon (doc/file/video/link/folder) + the
+                            // shortcut arrow — telegraphs WHAT it points at, not a
+                            // uniform folder-symlink glyph (ADR-0015 §3).
+                            icon={iconForKind(target.kind)}
+                            onOpen={() => openShortcutTarget(target)}
                             onDetails={() => onSelect(target.id)}
                             actions={
                               // A shortcut points ELSEWHERE, so "Open in KB" is meaningful even in
                               // the KB lens — it jumps to the target's CANONICAL home (target.id).
-                              onRevealInKb ? (
-                                <RevealInKbButton
-                                  onReveal={() => onRevealInKb(target.id)}
-                                  label={t('graph.panel.openInKb')}
-                                />
-                              ) : undefined
+                              // Remove drops ONLY this symlink (folder→target), never the target.
+                              <>
+                                {onRevealInKb ? (
+                                  <RevealInKbButton
+                                    onReveal={() => onRevealInKb(target.id)}
+                                    label={t('graph.panel.openInKb')}
+                                  />
+                                ) : null}
+                                {onRemoveShortcut && folderId != null ? (
+                                  <RemoveShortcutButton
+                                    reveal="hover"
+                                    onRemove={() =>
+                                      void onRemoveShortcut(folderId, target.id)
+                                    }
+                                    label={t('graph.drive.removeShortcut')}
+                                  />
+                                ) : null}
+                              </>
                             }
                           />
                         ))}

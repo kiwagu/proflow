@@ -98,7 +98,7 @@ export type CreateResourceProps = {
   onCreated: (created?: { nodeId: string; kind: CreateKind }) => void;
 };
 
-const KINDS: CreateKind[] = ['text', 'file', 'video', 'link', 'folder', 'tag'];
+const KINDS: CreateKind[] = ['folder', 'text', 'file', 'video', 'link', 'tag'];
 
 /**
  * The resumable (TUS) chunk size — 6 MiB, the Supabase storage-api-required

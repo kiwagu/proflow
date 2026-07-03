@@ -90,15 +90,20 @@ export function StarButton({
 export function RevealInKbButton({
   onReveal,
   label,
+  reveal = 'hover',
 }: {
   onReveal: () => void;
   label: string;
+  /** `'hover'` (default) hover-reveals it in a grid-card corner (a hover group);
+   * `'always'` keeps it visible in a table action cell, which has no hover group —
+   * without this an in-table reveal stays opacity-0 and looks like it never rendered. */
+  reveal?: 'hover' | 'always';
 }) {
   return (
     <RowActionButton
       label={label}
       onActivate={onReveal}
-      reveal="hover"
+      reveal={reveal}
       hint={false}
     >
       <Target className="size-4" aria-hidden />
