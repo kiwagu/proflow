@@ -200,27 +200,29 @@ export async function purgeResource(
     (node as { body_ref?: unknown } | null)?.body_ref
   );
 
-  // 2. Capture every kb-media Storage object about to be orphaned (ADR-0026),
-  //    BEFORE the DELETE cascades the `kmm` satellite rows away. The hard
-  //    orphan-cascade destroys not just the root but the trashed-as-a-unit
-  //    subtree, so we must reap ALL purged media nodes, not only the root —
-  //    read the media satellite for the whole subtree, not a single node. The
-  //    read is RLS-fenced (the satellite SELECT mirrors node-read), so a node the
-  //    caller cannot see contributes nothing; a node with no `kmm` row (text /
-  //    folder / link / tag) has no object and is naturally skipped.
+  // 2. Capture the purged subtree's media REFERENCES and decide, per shared
+  //    blob, whether this purge removes the LAST reference (ADR-0027 §7) — BEFORE
+  //    the DELETE cascades the `kmm` rows away. The hard orphan-cascade destroys
+  //    the trashed-as-a-unit subtree, so all its references count. Reads are
+  //    RLS-fenced (kmm SELECT mirrors node-read; the blob SELECT policy grants
+  //    any reference holder), so a node the caller cannot see contributes nothing.
   const subtreeIds = await collectPurgeSubtreeIds(input, db);
-  const mediaObjects = await collectMediaObjects(input.spaceId, subtreeIds, db);
+  const mediaObjects = await collectLastRefMediaObjects(
+    input.spaceId,
+    subtreeIds,
+    db
+  );
 
-  // 3. Best-effort kb-media reap BEFORE the node DELETE, WHILE the authorizing
-  //    node row still exists. The `storage.objects` DELETE policy (`kb_media
-  //    delete mirrors node update`) authorizes via an EXISTS on the owning
-  //    `knowledge_resources` row (owner-or-space-update) — so the object must be
-  //    removed while that row is present; after the node is gone the policy's
-  //    EXISTS is false and the user-scoped remove is silently denied. Best-effort:
-  //    a failed/denied object delete DOES NOT block the purge — we proceed to the
-  //    node DELETE regardless. The rare partial (object gone, node delete then
-  //    fails → a byte-less node still in Trash, re-purgeable) is strictly better
-  //    than invisible orphaned bytes.
+  // 3. Best-effort kb-media reap BEFORE the node DELETE, WHILE the caller's kmm
+  //    reference still exists. The `storage.objects` DELETE policy authorizes a
+  //    node-WRITER via a STILL-PRESENT reference — after the node row (and its
+  //    cascaded kmm) is gone the policy's EXISTS is false and the user-scoped
+  //    remove is silently denied (the ADR-0026 RLS-ordering lesson). ONLY
+  //    last-reference blobs are reaped — a blob another owner still references
+  //    keeps its bytes (refcount-gated; the blind reap was the cross-owner
+  //    data-loss bug). Best-effort: a failed/denied remove never blocks the
+  //    purge; the refcount-0 residue (incl. any TOCTOU race with a concurrent
+  //    copy) is the service_role reconcile reaper's job.
   await reapMediaObjects(mediaObjects, db);
 
   // 4. The real DELETE (the authority + in-use + audit + orphan-cascade triggers
@@ -299,12 +301,16 @@ async function collectPurgeSubtreeIds(
 }
 
 /**
- * Read the kb-media satellite (RLS-fenced) for the purged subtree and return the
- * Storage pointers to reap. Nodes with no `kmm` row contribute nothing. A read
- * failure is swallowed to an empty set — best-effort: a leftover object never
- * blocks the purge.
+ * Read the purged subtree's media references (RLS-fenced) and return the Storage
+ * pointers of ONLY the blobs for which this purge removes the LAST reference —
+ * the refcount-gated reap decision (ADR-0027 §7): a blob is reapable iff its
+ * authoritative `refcount` (trigger-owned, cross-owner) equals the number of
+ * references INSIDE the purged subtree. `refcount >` in-subtree refs means
+ * another node (possibly another owner's copy) still shares the bytes — they
+ * stay. A read failure is swallowed to an empty set — best-effort: a leftover
+ * object never blocks the purge; the reconcile reaper heals residue and races.
  */
-async function collectMediaObjects(
+async function collectLastRefMediaObjects(
   spaceId: string,
   nodeIds: string[],
   db: SupabaseClient<Database>
@@ -312,22 +318,34 @@ async function collectMediaObjects(
   if (nodeIds.length === 0) {
     return [];
   }
-  const { data, error } = await kbSchema(db)
+  const { data: refs, error: refsErr } = await kbSchema(db)
     .from('resource_media_meta')
-    .select('storage_path,storage_bucket')
+    .select('blob_id')
     .eq('space_id', spaceId)
     .in('node_id', nodeIds);
-  if (error) {
+  if (refsErr || !refs || refs.length === 0) {
     return [];
   }
-  return (data ?? [])
-    .map(
-      (row) => row as { storage_path: string; storage_bucket: string | null }
-    )
-    .filter((row) => Boolean(row.storage_path))
-    .map((row) => ({
-      bucket: row.storage_bucket ?? KB_MEDIA_BUCKET,
-      path: row.storage_path,
+  const purgedRefsByBlob = new Map<string, number>();
+  for (const ref of refs) {
+    purgedRefsByBlob.set(
+      ref.blob_id,
+      (purgedRefsByBlob.get(ref.blob_id) ?? 0) + 1
+    );
+  }
+
+  const { data: blobs, error: blobsErr } = await kbSchema(db)
+    .from('media_blob')
+    .select('id,refcount,storage_path,storage_bucket')
+    .in('id', [...purgedRefsByBlob.keys()]);
+  if (blobsErr) {
+    return [];
+  }
+  return (blobs ?? [])
+    .filter((blob) => blob.refcount <= (purgedRefsByBlob.get(blob.id) ?? 0))
+    .map((blob) => ({
+      bucket: blob.storage_bucket ?? KB_MEDIA_BUCKET,
+      path: blob.storage_path,
     }));
 }
 

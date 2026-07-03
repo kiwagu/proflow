@@ -29,21 +29,32 @@ export async function authorizeMediaDownload(
   // RLS-fenced read of the satellite: absence (non-grantee / wrong space) → 404.
   const { data: meta, error: metaErr } = await kbSchema(db)
     .from('resource_media_meta')
-    .select('storage_path,storage_bucket')
+    .select('blob_id')
     .eq('node_id', input.nodeId)
     .eq('space_id', input.spaceId)
     .maybeSingle();
   if (metaErr) {
     throw new MediaAuthorizeError('Download not authorized.', 403);
   }
-  if (!meta?.storage_path) {
+  if (!meta?.blob_id) {
     throw new MediaAuthorizeError('Media not found.', 404);
   }
 
-  const bucket = meta.storage_bucket ?? KB_MEDIA_BUCKET;
+  // Resolve the SHARED blob for its path (ADR-0027): the blob SELECT policy
+  // grants it to any holder of a readable reference — the kmm row just resolved.
+  const { data: blob, error: blobErr } = await kbSchema(db)
+    .from('media_blob')
+    .select('storage_path,storage_bucket')
+    .eq('id', meta.blob_id)
+    .maybeSingle();
+  if (blobErr || !blob?.storage_path) {
+    throw new MediaAuthorizeError('Media not found.', 404);
+  }
+
+  const bucket = blob.storage_bucket ?? KB_MEDIA_BUCKET;
   const { data: signed, error: signErr } = await db.storage
     .from(bucket)
-    .createSignedUrl(meta.storage_path, MEDIA_DOWNLOAD_URL_TTL_SECONDS);
+    .createSignedUrl(blob.storage_path, MEDIA_DOWNLOAD_URL_TTL_SECONDS);
   if (signErr || !signed?.signedUrl) {
     // storage-RLS refused (non-grantee) or the object is missing → fail-closed.
     throw new MediaAuthorizeError(

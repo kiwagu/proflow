@@ -31,20 +31,18 @@ const descriptionSchema = z.object({
   body: z.string(),
 });
 
-// The CONFIRM leg of a media upload (ADR-0026 §5): written ONLY after the bytes
-// landed in the `kb-media` bucket. Mirrors `SetResourceMediaRequest` — `createdBy`
-// is NOT here (it comes from the SESSION). The upload/download SIGNED-URL mints are
-// separate transport (`/author/graph/media`); this just persists the satellite.
+// The CONFIRM leg of a media upload (ADR-0027 §3): written ONLY after the bytes
+// landed in the `kb-media` bucket. The kmm reference is `{nodeId → blobId}` (the
+// blob was reserved at authorize and carries the byte-intrinsic fields); the
+// optional client-computed `checksum` is a write-once blob extra. Mirrors
+// `SetResourceMediaRequest` — `createdBy` is NOT here (it comes from the SESSION).
 const mediaSchema = z.object({
   attribute: z.literal('media'),
   spaceId: z.string().min(1),
   nodeId: z.string().min(1),
-  storagePath: z.string().min(1),
-  mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative(),
+  blobId: z.string().min(1),
   originalFilename: z.string().min(1),
   checksum: z.string().nullable().optional(),
-  durationMs: z.number().int().nonnegative().nullable().optional(),
 });
 
 const postSchema = z.discriminatedUnion('attribute', [
@@ -86,12 +84,9 @@ export async function POST(request: Request) {
           {
             spaceId: d.spaceId,
             nodeId: d.nodeId,
-            storagePath: d.storagePath,
-            mimeType: d.mimeType,
-            sizeBytes: d.sizeBytes,
+            blobId: d.blobId,
             originalFilename: d.originalFilename,
             checksum: d.checksum,
-            durationMs: d.durationMs,
           },
           { db, userId }
         );

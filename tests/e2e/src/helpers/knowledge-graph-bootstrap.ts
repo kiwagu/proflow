@@ -2071,18 +2071,30 @@ async function mediaStoragePath(
   tenant: KnowledgeGraphTenant,
   nodeId: string
 ): Promise<string> {
+  // ADR-0027: the path lives on the shared blob; the kmm row is the reference.
   const { data, error } = await tenant.service
     .schema('kb')
     .from('resource_media_meta')
-    .select('storage_path')
+    .select('blob_id')
     .eq('node_id', nodeId)
     .single();
-  if (error || !data?.storage_path) {
+  if (error || !data?.blob_id) {
     throw new Error(
-      `media fixture: no kmm.storage_path for ${nodeId} — ${error?.message ?? 'no row'}`
+      `media fixture: no kmm.blob_id for ${nodeId} — ${error?.message ?? 'no row'}`
     );
   }
-  return data.storage_path;
+  const { data: blob, error: blobErr } = await tenant.service
+    .schema('kb')
+    .from('media_blob')
+    .select('storage_path')
+    .eq('id', data.blob_id)
+    .single();
+  if (blobErr || !blob?.storage_path) {
+    throw new Error(
+      `media fixture: no blob.storage_path for ${nodeId} — ${blobErr?.message ?? 'no row'}`
+    );
+  }
+  return blob.storage_path;
 }
 
 /**
@@ -2154,9 +2166,7 @@ export async function seedMediaSubstrateFixture(
   await otherClient.setMedia({
     spaceId: otherTenant.spaceId,
     nodeId: otherFileId,
-    storagePath: otherAuth.storagePath,
-    mimeType: 'text/plain',
-    sizeBytes: otherSize,
+    blobId: otherAuth.blobId,
     originalFilename: 'cross-space.txt',
   });
   await otherClient.dispose();

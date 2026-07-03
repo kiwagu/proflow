@@ -4,12 +4,17 @@ import type { BodyRef } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
 
+import { kbSchema } from '@/lib/supabase/kb-schema';
+
 /**
  * Deep-copy a resource and its `contains` SUBTREE — UI-agnostic application
  * module (ADR-0005 §b). "Copy this folder" duplicates the whole tree: the node,
- * every `contains` descendant, and each text node's Lexical body. Shortcuts
- * (Drive symlinks), tags, and the per-user state (starred / opened) are NOT
- * carried — a copy is fresh content, not an alias.
+ * every `contains` descendant, each text node's Lexical body, and each
+ * file/video node's media as a SHALLOW reference to the SAME immutable blob
+ * (ADR-0027 §5: new kmm → same `blob_id`, refcount++, ZERO byte movement — the
+ * copy emulates a full independent file; bytes are reaped only when the last
+ * reference goes). Shortcuts (Drive symlinks), tags, and the per-user state
+ * (starred / opened) are NOT carried — a copy is fresh content, not an alias.
  *
  * FAIL-CLOSED by construction (ADR-0017): every clone is born the way any new
  * node is — `created_by`/`owner` pinned to the COPIER and `visibility` left at the
@@ -197,6 +202,35 @@ export async function copyResourceSubtree(
     }
   }
 
+  // 1b. Read the media references for the subtree's file/video nodes in one
+  //     RLS-fenced batch (ADR-0027 §5). A readable node ⇒ a readable kmm (the
+  //     satellite SELECT mirrors node read), so every copyable media node
+  //     resolves; a node with no kmm (byte-less shell) simply has no entry and
+  //     its copy stays byte-less too.
+  const mediaSourceIds = [...nodes.values()]
+    .filter((n) => n.kind === 'file' || n.kind === 'video')
+    .map((n) => n.id);
+  const mediaByNode = new Map<
+    string,
+    { blob_id: string; original_filename: string }
+  >();
+  if (mediaSourceIds.length > 0) {
+    const { data: kmmRows, error: kmmErr } = await kbSchema(db)
+      .from('resource_media_meta')
+      .select('node_id,blob_id,original_filename')
+      .eq('space_id', spaceId)
+      .in('node_id', mediaSourceIds);
+    if (kmmErr) {
+      throw new Error(`copyResourceSubtree media read: ${kmmErr.message}`);
+    }
+    for (const row of kmmRows ?? []) {
+      mediaByNode.set(row.node_id, {
+        blob_id: row.blob_id,
+        original_filename: row.original_filename,
+      });
+    }
+  }
+
   // 2..4. Create the clones (compensating every created node + body on any failure).
   const oldToNew = new Map<string, string>();
   const createdNodeIds: string[] = [];
@@ -230,6 +264,30 @@ export async function copyResourceSubtree(
         const bodyDocId = await cloneBody(db, payload, spaceId, oldId, node.id);
         if (bodyDocId) {
           createdBodyDocIds.push(bodyDocId);
+        }
+      }
+
+      // SHALLOW media copy (ADR-0027 §5): a new kmm reference on the clone
+      // pointing at the SAME immutable blob — zero byte movement; the refcount
+      // trigger increments. This copy route is within-space by construction
+      // (one spaceId), so the shallow branch is always correct here; a
+      // cross-space copy MATERIALIZES a new blob instead — a forward capability
+      // (no route reaches it yet), deliberately not built (poc-no-fallbacks).
+      // Compensation needs no byte step: deleting the clone node cascades the
+      // kmm away and the trigger decrements the count back.
+      const media = mediaByNode.get(oldId);
+      if (media) {
+        const { error: kmmInsErr } = await kbSchema(db)
+          .from('resource_media_meta')
+          .insert({
+            node_id: node.id,
+            space_id: spaceId,
+            blob_id: media.blob_id,
+            original_filename: media.original_filename,
+            created_by: userId,
+          });
+        if (kmmInsErr) {
+          throw new Error(`copyResourceSubtree media: ${kmmInsErr.message}`);
         }
       }
     }

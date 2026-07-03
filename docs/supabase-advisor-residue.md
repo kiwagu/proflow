@@ -100,3 +100,28 @@ has RLS enabled (no `0002`), and the storage policies delegate to the existing
 new lint kind**. The count sits within the documented `~17` baseline band (RPC count
 drifts as features land; the invariant is "no new lint kind, no new residue", which
 holds).
+
+## 2026-07-02 — KB media shared-blob substrate (ADR-0027): NO new residue
+
+The rewritten `20260701085100_kb_resource_media_meta.sql` adds `SECURITY DEFINER`
+functions, but NONE reach the REST-exposed surface, so the advisor count is
+UNCHANGED from the pre-ADR-0027 baseline:
+
+- `kb.media_blob_refcount_apply()` — trigger-only (sole writer of
+  `media_blob.refcount`). `EXECUTE` **revoked** from `public/anon/authenticated`
+  (trigger firing never checks the caller's `EXECUTE`) → not on the REST surface.
+- `private.auth_user_can_read_media_blob(text)` — the kmm-reference blob-readability
+  fence (the security-review revocation-bypass fix). Lives in `private` (NOT in
+  `PGRST_DB_SCHEMAS`) → not REST-exposed, not flagged (same treatment as the other
+  RLS helpers moved to `private`).
+- **Write-once checksum is NOT a SECURITY DEFINER RPC.** It is a COLUMN-scoped
+  `grant update (checksum) on kb.media_blob to authenticated` + the RLS policy
+  `"kb_media_blob update checksum write-once by uploader"` (`using uploaded_by =
+  auth.uid() and checksum is null`). refcount/path/etc. stay immutable to the client
+  (no column grant). This deliberately AVOIDS the `0029` lint an
+  authenticated-callable SECDEF setter would add — an earlier
+  `kb.media_blob_set_checksum` SECDEF was replaced by this column-RLS approach after
+  it bumped the count by one.
+
+Net: ADR-0027 adds **zero** new advisor entries and no new lint kind; both
+`kb.media_blob` and `kb.resource_media_meta` have RLS enabled from birth.

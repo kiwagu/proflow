@@ -113,21 +113,17 @@ export const MEDIA_UPLOAD_URL_TTL_SECONDS = 21600 as const;
 export const KB_MEDIA_BUCKET = 'kb-media' as const;
 
 /**
- * The satellite row shape — `kb.resource_media_meta` (ADR-0026 §4). 1:1 by
- * `nodeId`. `checksum`/`durationMs` are nullable generic extras (the per-kind
- * seam). `storagePath` is `spaces/<spaceId>/kb/<nodeId>/<serverKey>` — a
- * server-generated key, NEVER the raw filename (which is display-only metadata).
+ * The satellite row shape — `kb.resource_media_meta` (ADR-0027 §2b). 1:1 by
+ * `nodeId`, now a thin REFERENCE to a shared `kb.media_blob`: the byte-intrinsic
+ * metadata (path, bucket, mime, size, checksum, duration) lives on the BLOB; the
+ * reference carries only the per-reference display filename (a copier may rename
+ * their copy without touching the shared bytes).
  */
 export const resourceMediaMetaSchema = z.object({
   nodeId: z.string().min(1), // knr_… the owning node
   spaceId: z.string().min(1),
-  storageBucket: z.string().min(1),
-  storagePath: z.string().min(1),
-  mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative(),
+  blobId: z.string().min(1), // kmb_… the shared immutable byte record
   originalFilename: z.string().min(1), // display only; NEVER the storage path
-  checksum: z.string().nullable().optional(),
-  durationMs: z.number().int().nonnegative().nullable().optional(),
   createdBy: z.string().min(1),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -150,22 +146,28 @@ export const mediaUploadAuthorizeRequestSchema = z.object({
   // setting; this .max() is the code/infra ceiling that can never be exceeded.
   sizeBytes: z.number().int().nonnegative().max(HARD_MAX_UPLOAD_BYTES),
   filename: z.string().min(1),
+  // Byte-intrinsic media duration (video/audio), known client-side BEFORE the
+  // upload — recorded on the blob at reservation (blob UPDATE is not granted to
+  // authenticated, so it cannot be added later; ADR-0027 §2a).
+  durationMs: z.number().int().nonnegative().nullable().optional(),
 });
 export type MediaUploadAuthorizeRequest = z.infer<
   typeof mediaUploadAuthorizeRequestSchema
 >;
 
 /**
- * Upload-authorize response. Control-plane ONLY: it returns the SERVER-decided
- * `storagePath` (`spaces/<spaceId>/kb/<nodeId>/<serverKey>`) the client uploads the
- * bytes to via the resumable (TUS) transport under its own session JWT, and echoes
- * back on confirm (`setResourceMedia`) so the satellite path matches the object. The
- * server does NOT mint a signed upload URL — the single-PUT leg was removed with the
- * resumable switch (ADR-0026 §A2/§A5); `storage.objects` INSERT RLS is the fence at
- * PUT time.
+ * Upload-authorize response. Control-plane ONLY: the server creates a
+ * `kb.media_blob` RESERVATION (ADR-0027 §3) and returns its `blobId` + the
+ * blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>`)
+ * the client uploads the bytes to via the resumable (TUS) transport under its own
+ * session JWT. `blobId` is echoed back on confirm (`setResourceMedia`) — the kmm
+ * reference points at the blob, not at a raw path. The server does NOT mint a
+ * signed upload URL — `storage.objects` INSERT RLS (fresh-upload window:
+ * uploader's own refcount-0 reservation) is the fence at PUT time.
  */
 export const mediaUploadAuthorizeResponseSchema = z.object({
   storagePath: z.string().min(1),
+  blobId: z.string().min(1),
 });
 export type MediaUploadAuthorizeResponse = z.infer<
   typeof mediaUploadAuthorizeResponseSchema
@@ -173,19 +175,19 @@ export type MediaUploadAuthorizeResponse = z.infer<
 
 /**
  * The confirm/UPSERT input — written ONLY after a successful upload
- * (`attribute:'media'` on the attributes route → `setResourceMedia`). `createdBy`
- * is NOT here: it comes from the SESSION. `checksum`/`durationMs` are the nullable
- * generic extras.
+ * (`attribute:'media'` on the attributes route → `setResourceMedia`). The kmm
+ * reference is `{nodeId → blobId}` + the display filename; byte-intrinsic fields
+ * were declared at authorize and live on the blob (ADR-0027 §3). `createdBy` is
+ * NOT here: it comes from the SESSION. `checksum` (client-computed sha256) is a
+ * best-effort write-once blob extra — kept cheap so B2 content-dedup stays a
+ * later index, not a backfill.
  */
 export const setResourceMediaRequestSchema = z.object({
   spaceId: z.string().min(1),
   nodeId: z.string().min(1),
-  storagePath: z.string().min(1),
-  mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative(),
+  blobId: z.string().min(1),
   originalFilename: z.string().min(1),
   checksum: z.string().nullable().optional(),
-  durationMs: z.number().int().nonnegative().nullable().optional(),
 });
 export type SetResourceMediaRequest = z.infer<
   typeof setResourceMediaRequestSchema

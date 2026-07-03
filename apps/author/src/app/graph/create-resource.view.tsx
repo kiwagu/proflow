@@ -695,9 +695,10 @@ async function purgeOrphanNode(spaceId: string, nodeId: string): Promise<void> {
  * Upload a file's BYTES to a node + confirm its media satellite via the RESUMABLE
  * (TUS) transport (ADR-0026 AMENDMENT §A2). Order:
  *   1. authorize (`media?op=upload-url`) — the server checks node-update under RLS,
- *      validates the declared mime/size against the resolved per-org limit, and
- *      returns the SERVER-decided `storagePath` (`spaces/<spaceId>/kb/<nodeId>/<key>`,
- *      the object key within the `kb-media` bucket).
+ *      validates the declared mime/size against the resolved per-org limit,
+ *      reserves the `kb.media_blob` byte record (ADR-0027 §3), and returns the
+ *      blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<key>`)
+ *      + the `blobId` the confirm references.
  *   2. RESUMABLE upload of the bytes DIRECTLY to Storage's TUS endpoint
  *      (`/storage/v1/upload/resumable`) under the CALLER's OWN session JWT (§A2
  *      option 2). The `storage.objects` INSERT policy (mirroring node-`update`)
@@ -732,7 +733,7 @@ async function uploadMedia(
     return false;
   }
   const authorize = (await authRes.json()) as MediaUploadAuthorizeResponse;
-  if (!authorize.storagePath) {
+  if (!authorize.storagePath || !authorize.blobId) {
     return false;
   }
 
@@ -771,9 +772,7 @@ async function uploadMedia(
       attribute: 'media',
       spaceId,
       nodeId,
-      storagePath: authorize.storagePath,
-      mimeType: file.type,
-      sizeBytes: file.size,
+      blobId: authorize.blobId,
       originalFilename: file.name,
     }),
   });

@@ -101,14 +101,16 @@ export type SearchHit = {
  * hits the caller may see under RLS (the SOLE access fence). */
 export type SearchHits = { items: SearchHit[]; nextCursor?: string };
 
-/** The `/author/graph/media?op=upload-url` result (ADR-0026 §3, resumable/TUS switch):
- * CONTROL-plane only — the SERVER-decided `storagePath` (`spaces/<spaceId>/kb/<nodeId>/
- * <serverKey>`) the caller uploads the bytes to under its OWN session JWT, then echoes
- * back on confirm (`setMedia`). The single-PUT signed-url leg (`signedUrl`/`token`) was
- * removed with the resumable transport — `storage.objects` INSERT RLS is the fence at
- * PUT time. Fails CLOSED (403/404) for a node the caller cannot update/see. */
+/** The `/author/graph/media?op=upload-url` result (ADR-0027 §3): CONTROL-plane only —
+ * the server reserves the `kb.media_blob` byte record and returns its `blobId` + the
+ * blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>`) the
+ * caller uploads the bytes to under its OWN session JWT. `blobId` is echoed back on
+ * confirm (`setMedia`) — the kmm reference points at the blob, never a raw path.
+ * `storage.objects` INSERT RLS (the uploader's own refcount-0 reservation) is the
+ * fence at PUT time. Fails CLOSED (403/404) for a node the caller cannot update/see. */
 export type MediaUploadUrl = {
   storagePath: string;
+  blobId: string;
 };
 
 /** The `/author/graph/media?op=download-url` result (ADR-0026 §2c): the short-lived
@@ -273,9 +275,7 @@ export type SeedClient = SeedFetcher & {
   setMedia(input: {
     spaceId: string;
     nodeId: string;
-    storagePath: string;
-    mimeType: string;
-    sizeBytes: number;
+    blobId: string;
     originalFilename: string;
   }): Promise<void>;
   /** Authorize a signed DOWNLOAD url for a node's media (ADR-0026 §2c):
@@ -539,9 +539,7 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
         attribute: 'media',
         spaceId: input.spaceId,
         nodeId: input.nodeId,
-        storagePath: input.storagePath,
-        mimeType: input.mimeType,
-        sizeBytes: input.sizeBytes,
+        blobId: input.blobId,
         originalFilename: input.originalFilename,
       });
       expectStatus(res, 200, `setMedia(${input.nodeId})`);

@@ -439,9 +439,7 @@ export async function loadKbAttributesForItems(
   const mediaRows = await inChunks(itemIds, async (chunk) => {
     const { data, error } = await kbSchema(db)
       .from('resource_media_meta')
-      .select(
-        'node_id,storage_path,mime_type,size_bytes,original_filename,duration_ms'
-      )
+      .select('node_id,blob_id,original_filename')
       .eq('space_id', spaceId)
       .in('node_id', chunk);
     if (error) {
@@ -449,21 +447,35 @@ export async function loadKbAttributesForItems(
     }
     return data ?? [];
   });
+
+  // Resolve the SHARED blobs the references point at (ADR-0027): byte-intrinsic
+  // fields (size/mime/duration/path) live on `kb.media_blob`, one row per blob no
+  // matter how many nodes share it. Same RLS client — the blob SELECT policy
+  // grants any holder of a readable reference.
+  const blobIds = [...new Set(mediaRows.map((row) => row.blob_id))];
+  const blobRows = await inChunks(blobIds, async (chunk) => {
+    const { data, error } = await kbSchema(db)
+      .from('media_blob')
+      .select('id,storage_path,mime_type,size_bytes,duration_ms')
+      .in('id', chunk);
+    if (error) {
+      throw new Error(`loadKbAttributesForItems (blob): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  const blobById = new Map(blobRows.map((blob) => [blob.id, blob]));
+
   for (const row of mediaRows) {
-    const r = row as {
-      node_id: string;
-      storage_path: string;
-      mime_type: string;
-      size_bytes: number;
-      original_filename: string;
-      duration_ms: number | null;
-    };
-    (map[r.node_id] ??= {}).media = {
-      byteSize: r.size_bytes,
-      durationMs: r.duration_ms,
-      mimeType: r.mime_type,
-      storagePath: r.storage_path,
-      originalFilename: r.original_filename,
+    const blob = blobById.get(row.blob_id);
+    if (!blob) {
+      continue; // reference without a readable blob — fail-closed, no attribute
+    }
+    (map[row.node_id] ??= {}).media = {
+      byteSize: blob.size_bytes,
+      durationMs: blob.duration_ms,
+      mimeType: blob.mime_type,
+      storagePath: blob.storage_path,
+      originalFilename: row.original_filename,
     };
   }
   return map;
