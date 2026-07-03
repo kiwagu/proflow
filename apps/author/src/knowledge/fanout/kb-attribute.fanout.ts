@@ -1,4 +1,5 @@
 import type { Database } from '@workspace/db';
+import { deriveLinkHost } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { kbSchema } from '@/lib/supabase/kb-schema';
@@ -55,6 +56,45 @@ export async function setResourceDescription(
     throw new Error(`setResourceDescription: ${error?.message ?? 'no row'}`);
   }
   return { node_id: data.node_id, body: data.body };
+}
+
+export type SetResourceLinkInput = {
+  spaceId: string;
+  nodeId: string;
+  /** Already validated http(s)-only by the route (`linkUrlSchema`). */
+  url: string;
+};
+
+/**
+ * Set/update a link node's external URL (UPSERT by node_id) under the user's RLS
+ * (`space.knowledge.update`) — the satellite that makes a `kind=link` node real
+ * (slice-10 §2.4). `host` is derived HERE from the validated URL (denormalized
+ * display field — never client-supplied); the DB CHECK re-fences http(s)-only.
+ */
+export async function setResourceLink(
+  input: SetResourceLinkInput,
+  deps: KbAttributeDeps
+): Promise<{ node_id: string; url: string; host: string | null }> {
+  const { db, userId } = deps;
+  const { data, error } = await kbSchema(db)
+    .from('resource_link')
+    .upsert(
+      {
+        node_id: input.nodeId,
+        space_id: input.spaceId,
+        url: input.url,
+        host: deriveLinkHost(input.url),
+        created_by: userId,
+      },
+      { onConflict: ON_NODE_ID }
+    )
+    .select('node_id,url,host')
+    .single();
+  if (error || !data) {
+    // RLS rejection (no update verb / node not accessible) → clean failure.
+    throw new Error(`setResourceLink: ${error?.message ?? 'no row'}`);
+  }
+  return { node_id: data.node_id, url: data.url, host: data.host };
 }
 
 export type SetResourceMediaInput = {

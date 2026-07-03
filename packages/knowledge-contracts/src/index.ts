@@ -137,3 +137,12 @@ export {
   type ResourceMediaMeta,
   type SetResourceMediaRequest,
 } from './resource-media.schema.js';
+
+export {
+  LINK_URL_MAX_LENGTH,
+  deriveLinkHost,
+  linkUrlSchema,
+  parseSetResourceLinkRequest,
+  setResourceLinkRequestSchema,
+  type SetResourceLinkRequest,
+} from './resource-link.schema.js';

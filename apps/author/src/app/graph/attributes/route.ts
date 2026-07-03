@@ -1,3 +1,4 @@
+import { linkUrlSchema } from '@workspace/knowledge-contracts';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
@@ -5,7 +6,11 @@ import {
   isAuthFailure,
   requireRlsSession,
 } from '@/lib/supabase/require-rls-session';
-import { setResourceDescription, setResourceMedia } from '@/knowledge/fanout';
+import {
+  setResourceDescription,
+  setResourceLink,
+  setResourceMedia,
+} from '@/knowledge/fanout';
 
 /**
  * KB application-attribute write for the consumer authoring surface (ADR-0011 §4).
@@ -13,7 +18,7 @@ import { setResourceDescription, setResourceMedia } from '@/knowledge/fanout';
  * One thin route for ALL node satellites, discriminated by `attribute` — every
  * satellite is the SAME operation shape (a 1:1 UPSERT keyed by node_id under the
  * SAME RLS verb mirror), so they share identical session/zod/delegate plumbing.
- * Today only `description` is landed; new attributes (link / media-meta / …) are a
+ * Landed: `description`, `link` (slice-10 §2.4), `media`; new attributes are a
  * one-line schema member + case as their satellites land. The write LOGIC lives in
  * the UI-agnostic kb-attribute.fanout module; this route only validates + delegates.
  *
@@ -45,8 +50,19 @@ const mediaSchema = z.object({
   checksum: z.string().nullable().optional(),
 });
 
+// The URL of a `kind=link` node (slice-10 §2.4) — `linkUrlSchema` is the http(s)-
+// only allow-list (anti stored-XSS: the URL renders as an href). `host` is NOT
+// accepted from the client — the server derives it from the validated URL.
+const linkSchema = z.object({
+  attribute: z.literal('link'),
+  spaceId: z.string().min(1),
+  nodeId: z.string().min(1),
+  url: linkUrlSchema,
+});
+
 const postSchema = z.discriminatedUnion('attribute', [
   descriptionSchema,
+  linkSchema,
   mediaSchema,
 ]);
 
@@ -72,6 +88,16 @@ export async function POST(request: Request) {
       case 'description': {
         const result = await setResourceDescription(
           { spaceId: d.spaceId, nodeId: d.nodeId, body: d.body },
+          { db, userId }
+        );
+        return NextResponse.json(result, {
+          status: 200,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+      case 'link': {
+        const result = await setResourceLink(
+          { spaceId: d.spaceId, nodeId: d.nodeId, url: d.url },
           { db, userId }
         );
         return NextResponse.json(result, {

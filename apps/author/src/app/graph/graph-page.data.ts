@@ -398,7 +398,8 @@ export async function loadShortcutForest(
  * attribute lives in the dedicated `kb` schema keyed by `node_id`, read under the
  * user's RLS via `kbSchema(db)` (a satellite the user may not read because the
  * parent node is hidden simply does not return — the satellite RLS mirrors node
- * access). Reads the `description` and `media` (ADR-0026) satellites; each rides
+ * access). Reads the `description`, `link` (slice-10 §2.4) and `media` (ADR-0026)
+ * satellites; each rides
  * alongside the resolved canvas, never extending the frozen `ProjectionResult`
  * contract. A node with no satellite row simply carries no attribute (empty/absent
  * → no field, NOT a mock — poc-no-fallbacks).
@@ -427,6 +428,25 @@ export async function loadKbAttributesForItems(
   });
   for (const row of descriptionRows) {
     (map[row.node_id] ??= {}).description = row.body;
+  }
+
+  // The link satellite (slice-10 §2.4) — same shape as the description read. A
+  // `krl` row means the link node has a real URL; its absence means the node is a
+  // bare shell (no `link` field, poc-no-fallbacks). The card meta line shows
+  // `host`; the ResourcePanel Link section shows/edits `url` and opens it.
+  const linkRows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await kbSchema(db)
+      .from('resource_link')
+      .select('node_id,url,host')
+      .eq('space_id', spaceId)
+      .in('node_id', chunk);
+    if (error) {
+      throw new Error(`loadKbAttributesForItems (link): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  for (const row of linkRows) {
+    (map[row.node_id] ??= {}).link = { url: row.url, host: row.host };
   }
 
   // The media satellite (ADR-0026) — MIRRORS the description read above (same RLS

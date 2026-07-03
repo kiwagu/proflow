@@ -231,6 +231,28 @@ export async function copyResourceSubtree(
     }
   }
 
+  // 1c. Read the URL satellites for the subtree's link nodes (slice-10 §2.4) —
+  //     same RLS-fenced batch shape as the media read. The URL is a link node's
+  //     CONTENT, so a copy without it would be a broken shell; a plain row copy
+  //     suffices (no blob/refcount machinery — the URL is just text).
+  const linkSourceIds = [...nodes.values()]
+    .filter((n) => n.kind === 'link')
+    .map((n) => n.id);
+  const linkByNode = new Map<string, { url: string; host: string | null }>();
+  if (linkSourceIds.length > 0) {
+    const { data: krlRows, error: krlErr } = await kbSchema(db)
+      .from('resource_link')
+      .select('node_id,url,host')
+      .eq('space_id', spaceId)
+      .in('node_id', linkSourceIds);
+    if (krlErr) {
+      throw new Error(`copyResourceSubtree link read: ${krlErr.message}`);
+    }
+    for (const row of krlRows ?? []) {
+      linkByNode.set(row.node_id, { url: row.url, host: row.host });
+    }
+  }
+
   // 2..4. Create the clones (compensating every created node + body on any failure).
   const oldToNew = new Map<string, string>();
   const createdNodeIds: string[] = [];
@@ -288,6 +310,24 @@ export async function copyResourceSubtree(
           });
         if (kmmInsErr) {
           throw new Error(`copyResourceSubtree media: ${kmmInsErr.message}`);
+        }
+      }
+
+      // Link-URL copy (slice-10 §2.4): a fresh satellite row on the clone with the
+      // SAME url/host. Compensation is free — deleting the clone node cascades it.
+      const link = linkByNode.get(oldId);
+      if (link) {
+        const { error: krlInsErr } = await kbSchema(db)
+          .from('resource_link')
+          .insert({
+            node_id: node.id,
+            space_id: spaceId,
+            url: link.url,
+            host: link.host,
+            created_by: userId,
+          });
+        if (krlInsErr) {
+          throw new Error(`copyResourceSubtree link: ${krlInsErr.message}`);
         }
       }
     }

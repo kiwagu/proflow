@@ -19,6 +19,7 @@ import { iconForKind, kindLabel } from '@/app/graph/presentation';
 
 import { AccessSection } from './access-section';
 import { EditableDescription } from './editable-description';
+import { LinkSection } from './link-section';
 import { MediaSection } from './media-section';
 import { sendJson } from './panel-fetch';
 import { VersionsSection } from './versions-section';
@@ -38,6 +39,7 @@ import { VersionsSection } from './versions-section';
  * sections:
  *   - header (kind + title) + the `⋯` action menu (Share lives here now)
  *   - editable, RAG-bound description (kb satellite)
+ *   - link (slice-10 §2.4 — the external URL of a link node, editable + Open)
  *   - media (ADR-0026 — filename / size / mime + Download, when the node has bytes)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
@@ -154,6 +156,22 @@ export function ResourcePanel({
     }
   }
 
+  // Link-URL save (slice-10 §2.4) — same UPSERT plumbing as the description; the
+  // route validates http(s)-only and derives `host` server-side.
+  async function onSaveLink(url: string) {
+    setBusy(true);
+    const ok = await sendJson('/author/graph/attributes', {
+      attribute: 'link',
+      spaceId,
+      nodeId: node!.id,
+      url,
+    });
+    setBusy(false);
+    if (ok) {
+      onMutated();
+    }
+  }
+
   return (
     <aside
       aria-label={node.title}
@@ -219,6 +237,19 @@ export function ResourcePanel({
           disabled={busy}
           onSave={onSaveDescription}
         />
+
+        {/* Link — the external URL of a link node (slice-10 §2.4). Gated by KIND,
+            not by satellite presence, so a bare pre-slice link node can still be
+            given its URL here (the create dialog now requires one). */}
+        {node.kind === 'link' ? (
+          <LinkSection
+            t={t}
+            link={attributes?.link ?? null}
+            nodeId={node.id}
+            disabled={busy}
+            onSave={onSaveLink}
+          />
+        ) : null}
 
         {/* Media — shown ONLY when the node has confirmed bytes (a media satellite
             row, ADR-0026); a bodyless file/video stub carries no `media` and the
