@@ -53,7 +53,12 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
     components: {
-      providers: ['/admin/active-space.sync-provider.client'],
+      // The active-space sync provider is NOT registered here: config-level
+      // providers render OUTERMOST (NestProviders: providers[0] wraps the rest),
+      // while the multi-tenant plugin PUSHES its TenantSelectionProvider after
+      // them — so a provider listed here mounts OUTSIDE the tenant context and
+      // `useTenantSelection()` silently returns the DEFAULT (empty, noop)
+      // context. It is appended via a mini-plugin AFTER multiTenantPlugin below.
       logout: {
         Button: '/admin/logout-button',
       },
@@ -94,6 +99,19 @@ export default buildConfig({
             .hasAuthorAllTenantsCapability
         ),
     }),
+    // Registers the active-space sync provider AFTER multiTenantPlugin pushed
+    // its TenantSelectionProvider, so ours nests INSIDE the tenant context and
+    // `useTenantSelection()` is the real one (options/setTenant/syncTenants).
+    // Order matters: NestProviders nests in array order (earlier = outer).
+    (config) => {
+      config.admin = config.admin ?? {};
+      config.admin.components = config.admin.components ?? {};
+      config.admin.components.providers = [
+        ...(config.admin.components.providers ?? []),
+        '/admin/active-space.sync-provider.client',
+      ];
+      return config;
+    },
     customIdPlugin(
       { organizations: 'org', spaces: 'spc', bodies: 'bod' },
       { field: 'id', mode: 'validate' }

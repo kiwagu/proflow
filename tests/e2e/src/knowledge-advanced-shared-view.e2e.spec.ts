@@ -407,10 +407,17 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
       await expect(advBtn).toBeDisabled();
 
       // The upsell hint is reachable (the disabled control is wrapped in `Hint`).
-      await advBtn.hover().catch(() => undefined);
-      await expect(page.getByText(/available on/i).first()).toBeVisible({
-        timeout: 10_000,
-      });
+      // Retry the WHOLE hover→tooltip cycle (the suite's toPass pattern): a single
+      // hover with a swallowed failure left the assert waiting for a tooltip that
+      // was never triggered — the Radix tooltip only opens on a FRESH pointerenter,
+      // so each retry first parks the mouse away, then re-hovers.
+      await expect(async () => {
+        await page.mouse.move(0, 0);
+        await advBtn.hover({ timeout: 2_000 });
+        await expect(page.getByText(/available on/i).first()).toBeVisible({
+          timeout: 2_000,
+        });
+      }).toPass({ timeout: 30_000 });
 
       // The SAME node-set is shown either way (view-only — no data difference). And it
       // is FLAT: all three shared nodes are flat siblings — NO tree expand control, even
