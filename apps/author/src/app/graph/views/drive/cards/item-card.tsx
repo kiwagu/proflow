@@ -5,8 +5,14 @@ import { CardTile } from '@workspace/ui/components/card-tile';
 import { cn } from '@workspace/ui/lib/utils';
 import * as React from 'react';
 
+import { Tag as TagIcon } from 'lucide-react';
+
 import type { LensNode } from '@/app/graph/containment';
-import type { KbAttributes, NodeMeta } from '@/app/graph/graph-data.types';
+import type {
+  KbAttributes,
+  NodeMeta,
+  ResourceTag,
+} from '@/app/graph/graph-data.types';
 import {
   formatNodeMeta,
   iconForMedia,
@@ -37,12 +43,16 @@ export function ItemCard({
   footer,
   sharedBadge,
   when,
+  tags,
   dnd,
 }: {
   t: GraphTranslator;
   node: LensNode;
   attributes?: KbAttributes;
   meta?: NodeMeta;
+  /** The node's tags (ADR-0003 Variant B) — rendered as compact chips on the grid
+   * card (grid-only; a list row is a single line). Absent/empty → no chip row. */
+  tags?: ResourceTag[];
   currentUserId: string | null;
   layout: DriveLayout;
   selected: boolean;
@@ -156,6 +166,22 @@ export function ItemCard({
             </div>
           )}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
+          {/* Tag chips (ADR-0003 Variant B) — the node's `tagged` edges, grid-only
+              (a list row is one line). Wraps within the card's fixed height; extra
+              tags clip like a long title, never fabricated. */}
+          {!list && tags && tags.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {tags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="border-border/60 bg-muted/40 text-muted-foreground inline-flex max-w-full items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] leading-none"
+                >
+                  <TagIcon className="size-2.5 shrink-0" aria-hidden />
+                  <span className="truncate">{tag.title}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </CardTile>
       <CardActionRail star={star} actions={actions} list={list} />

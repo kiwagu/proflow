@@ -11,9 +11,11 @@ import {
   loadKbAttributesForItems,
   loadNodeMetaForItems,
   loadOpenedAtForItems,
+  loadResourceTagsForItems,
   loadShareMechanism,
   loadSharedByMe,
   loadShortcutForest,
+  loadSpaceTags,
   loadStarredIds,
   resolveActiveSpaceId,
   resolveCurrentUserId,
@@ -113,6 +115,8 @@ export default async function GraphPage({
     const emptyKb: KbViewData = {
       attributesByItem: {},
       metaByItem: {},
+      tagsByItem: {},
+      spaceTags: [],
       containment: [],
       shortcuts: [],
       currentUserId: null,
@@ -165,6 +169,8 @@ export default async function GraphPage({
     shortcuts,
     attributesByItem,
     metaByItem,
+    tagsByItem,
+    spaceTags,
     currentUserId,
     starredIds,
     openedAtById,
@@ -178,6 +184,11 @@ export default async function GraphPage({
     loadShortcutForest(spaceId),
     loadKbAttributesForItems(spaceId, itemIds),
     loadNodeMetaForItems(spaceId, itemIds),
+    // The tag topology (ADR-0003 Variant B): per-item tags (over the resolved canvas)
+    // + the whole space's tag vocabulary (for the panel tray + the lens facet). Both
+    // RLS-scoped fan-outs alongside the canvas, never extending the frozen contract.
+    loadResourceTagsForItems(spaceId, itemIds),
+    loadSpaceTags(spaceId),
     resolveCurrentUserId(),
     loadStarredIds(spaceId),
     loadOpenedAtForItems(spaceId),
@@ -218,6 +229,8 @@ export default async function GraphPage({
   const kbData: KbViewData = {
     attributesByItem,
     metaByItem,
+    tagsByItem,
+    spaceTags,
     containment,
     shortcuts,
     currentUserId,

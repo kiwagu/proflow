@@ -12,6 +12,7 @@ import { NodeActionsMenu } from '@/app/graph/node-actions-menu';
 import type {
   KbAttributes,
   ResourceFloor,
+  ResourceTag,
   SharedByMeEntry,
   SpaceCapabilities,
 } from '@/app/graph/graph-data.types';
@@ -22,6 +23,7 @@ import { EditableDescription } from './editable-description';
 import { LinkSection } from './link-section';
 import { MediaSection } from './media-section';
 import { sendJson } from './panel-fetch';
+import { TagsSection } from './tags-section';
 import { VersionsSection } from './versions-section';
 
 /**
@@ -41,12 +43,14 @@ import { VersionsSection } from './versions-section';
  *   - editable, RAG-bound description (kb satellite)
  *   - link (slice-10 §2.4 — the external URL of a link node, editable + Open)
  *   - media (ADR-0026 — filename / size / mime + Download, when the node has bytes)
+ *   - tags (ADR-0003 Variant B — the node's `tagged` edges: remove-chips + a
+ *     free-text adder + a "pick from existing" tray; read-only on folder/tag kinds)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
- * mocked — Law 3 / poc-no-fallbacks): tags / related / mini-graph (need the
- * neighborhood resolver), per-kind media preview/player (image thumb / pdf / video
- * player — Phase 2), status transition, suggested links (a RAG mock), view-in-graph
- * (the graph view). They return with their backend.
+ * mocked — Law 3 / poc-no-fallbacks): related / mini-graph (need the neighborhood
+ * resolver), per-kind media preview/player (image thumb / pdf / video player —
+ * Phase 2), status transition, suggested links (a RAG mock), view-in-graph (the
+ * graph view). They return with their backend.
  *
  * Purely presentational: it POSTs to the landed RLS routes; RLS is the authority.
  */
@@ -64,6 +68,12 @@ export type ResourcePanelProps = {
   node: SelectedNode | null;
   /** KB satellite attributes of the node (description; media/link as they land). */
   attributes?: KbAttributes;
+  /** The node's CURRENT tags (`kbData.tagsByItem[node.id]`, ADR-0003 Variant B) —
+   * the `tagged` edges it points at. Empty when it carries none. */
+  tags?: ResourceTag[];
+  /** ALL tags of the space (`kbData.spaceTags`) — the tag section's "pick from
+   * existing tags" tray vocabulary. Space-global (ADR-0003). */
+  spaceTags?: ResourceTag[];
   containment: Containment;
   /** The viewer's own id — combined with `ownerUserId` to display-gate the `⋯` menu. */
   currentUserId: string | null;
@@ -114,6 +124,8 @@ export function ResourcePanel({
   messages,
   node,
   attributes,
+  tags,
+  spaceTags,
   containment,
   currentUserId,
   ownerUserId,
@@ -236,6 +248,21 @@ export function ResourcePanel({
           nodeId={node.id}
           disabled={busy}
           onSave={onSaveDescription}
+        />
+
+        {/* Tags (ADR-0003 Variant B) — the node's `tagged` edges. Editable on a
+            content node (remove-chips + free-text adder + a "pick from existing"
+            tray); read-only badges on a folder/tag node (which cannot be tagged),
+            omitted there when it carries none. Self-contained writes to the edges
+            route; RLS is the authority. */}
+        <TagsSection
+          t={t}
+          spaceId={spaceId}
+          nodeId={node.id}
+          nodeKind={node.kind}
+          tags={tags ?? []}
+          spaceTags={spaceTags ?? []}
+          onMutated={onMutated}
         />
 
         {/* Link — the external URL of a link node (slice-10 §2.4). Gated by KIND,

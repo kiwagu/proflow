@@ -94,6 +94,8 @@ function folderWithDoc(): Pick<ProjectionViewProps, 'result' | 'kbData'> {
     },
     kbData: {
       attributesByItem: {},
+      tagsByItem: {},
+      spaceTags: [],
       metaByItem: {},
       containment: [{ from: 'knr_folder', to: 'knr_doc', position: 0 }],
       shortcuts: [],
@@ -177,6 +179,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
       },
       kbData: {
         attributesByItem: {},
+        tagsByItem: {},
+        spaceTags: [],
         metaByItem: {
           knr_old: {
             ownerUserId: null,
@@ -232,6 +236,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
           },
           kbData: {
             attributesByItem: {},
+            tagsByItem: {},
+            spaceTags: [],
             metaByItem: {},
             containment: [],
             shortcuts: [],
@@ -267,6 +273,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
           },
           kbData: {
             attributesByItem: {},
+            tagsByItem: {},
+            spaceTags: [],
             metaByItem: {},
             containment: [], // no contains edges → both sit at the root
             shortcuts: [],
@@ -303,6 +311,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
         ...props.kbData!,
         ...{
           attributesByItem: {},
+          tagsByItem: {},
+          spaceTags: [],
           metaByItem: {},
           containment: [],
           shortcuts: [],
@@ -503,6 +513,8 @@ describe('DriveProjectionView (forward-port shell)', () => {
           },
           kbData: {
             attributesByItem: {},
+            tagsByItem: {},
+            spaceTags: [],
             metaByItem: {},
             containment: [
               { from: 'knr_folder', to: 'knr_doc', position: 0 },

@@ -9,6 +9,7 @@ import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
 import {
+  Check,
   ChevronRight,
   Clipboard,
   ClipboardPaste,
@@ -19,6 +20,7 @@ import {
   House,
   Send,
   Star,
+  Tag as TagIcon,
   Trash2,
   Upload,
   Users,
@@ -27,6 +29,7 @@ import {
 import * as React from 'react';
 
 import type {
+  ResourceTag,
   ShareMechanism,
   SharedByMeEntry,
 } from '@/app/graph/graph-data.types';
@@ -176,6 +179,11 @@ export function DriveProjectionView({
   // `floorOf` (the broadcast badge) which is a `useCallback`/`useMemo` dependency;
   // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
   const metaByItem = React.useMemo(() => kbData?.metaByItem ?? {}, [kbData]);
+  // Per-item tags (ADR-0003 Variant B) — `resource_id → tag nodes` it points at via a
+  // FORWARD `tagged` edge. Memoized for a STABLE `?? {}` default (it feeds the tag-facet
+  // predicate + the resolved-set vocabulary, both `useMemo`/`useCallback` deps). Drives
+  // the card tag chips, and the client-side tag-facet filter below.
+  const tagsByItem = React.useMemo(() => kbData?.tagsByItem ?? {}, [kbData]);
   // The "Shared with me" mechanism annotation (ADR-0021 Part C): each node in the
   // 'shared' set → the WINNING mechanism that grants ME access (personal > cohort >
   // broadcast, precedence applied server-side). Pure DISPLAY enrichment of an
@@ -238,6 +246,15 @@ export function DriveProjectionView({
   // `uploadedOnly` (derived below, forced OFF in Trash) so the toggle resets on entering
   // Trash with no setState-in-effect.
   const [uploadedOnlyState, setUploadedOnly] = React.useState(false);
+  // The tag facet (ADR-0003 Variant B) — a set of toggled tag ids. When non-empty the
+  // canvas narrows to content carrying ANY active tag (union). A client-side filter over
+  // `tagsByItem` (the read-side projection of the incoming `tagged` topology — the same
+  // shape the engine's tagged-traversal computes, over the already-RLS-resolved set,
+  // gap-doc :28), never a fence. Raw state; every reader goes through `tagFacetActive`
+  // (forced off in Trash — a holding state, not a content lens) so it can't filter there.
+  const [tagFacet, setTagFacet] = React.useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
   // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
   // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
@@ -297,6 +314,50 @@ export function DriveProjectionView({
     () => buildContainment(result.items, containmentEdges),
     [result.items, containmentEdges]
   );
+
+  // The tag facet is live only outside Trash and only once a tag is toggled.
+  const tagFacetActive = !isTrash && tagFacet.size > 0;
+  // An item passes the tag facet iff it carries ANY active tag (union). Trivially true
+  // when the facet is inactive, so it composes as a no-op `.filter` on any list.
+  const hasActiveTag = React.useCallback(
+    (id: string) => {
+      if (!tagFacetActive) {
+        return true;
+      }
+      const tags = tagsByItem[id];
+      if (!tags) {
+        return false;
+      }
+      return tags.some((tag) => tagFacet.has(tag.id));
+    },
+    [tagFacetActive, tagFacet, tagsByItem]
+  );
+  // The facet chip vocabulary = the tags PRESENT on the resolved (RLS-narrowed) canvas
+  // (gap-doc :28), de-duped + sorted by title. A tag with no visible tagged node never
+  // shows a chip (nothing to filter to). Toggling a tag never in the set is impossible.
+  const resolvedTags = React.useMemo(() => {
+    const byId = new Map<string, ResourceTag>();
+    for (const item of result.items) {
+      for (const tag of tagsByItem[item.id] ?? []) {
+        byId.set(tag.id, tag);
+      }
+    }
+    return [...byId.values()].sort(byText((tag) => tag.title));
+  }, [result.items, tagsByItem]);
+  // Toggle one tag id in/out of the facet set (a new Set each change → stable identity
+  // churn only on real toggles).
+  const toggleTagFacet = React.useCallback((tagId: string) => {
+    setTagFacet((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) {
+        next.delete(tagId);
+      } else {
+        next.add(tagId);
+      }
+      return next;
+    });
+  }, []);
+  const clearTagFacet = React.useCallback(() => setTagFacet(new Set()), []);
 
   // The access-mirror predicate family (ADR-0023 §7) — `isGranted` (direct per-user
   // grant), the globe-XOR-people-XOR-lock `renderAccessBadge`, and the underlying
@@ -396,13 +457,27 @@ export function DriveProjectionView({
     () => buildFolderSizeIndex(containment, bytesOf),
     [containment, bytesOf]
   );
-  const folderHasArtifactIndex = React.useMemo(
-    () => buildFolderHasArtifactIndex(treeContainment, isArtifact),
-    [treeContainment, isArtifact]
+  // The UNIFIED leaf predicate for the two cross-lens content filters — "Only files"
+  // (ADR-0026: uploaded artifacts) AND the tag facet (ADR-0003: carries an active tag).
+  // A leaf is KEPT iff it passes BOTH active filters (each a no-op when off), so the two
+  // compose: a lens can be filtered to tagged files. Feeding it to the SAME prune index +
+  // `pruneKeep` the "Only files" toggle already used means the tag facet prunes the browse
+  // TREE to branches with a matching leaf (and filters the flat lists) with zero new
+  // structure (lens-feature-component-reuse) — identical behaviour to "Only files".
+  const leafPass = React.useCallback(
+    (node: LensNode) =>
+      (!uploadedOnly || isArtifact(node)) && hasActiveTag(node.id),
+    [uploadedOnly, isArtifact, hasActiveTag]
+  );
+  // At least one content filter is on → the tree prunes / the flat lists narrow.
+  const anyLeafFilter = uploadedOnly || tagFacetActive;
+  const folderHasKeptLeafIndex = React.useMemo(
+    () => buildFolderHasArtifactIndex(treeContainment, leafPass),
+    [treeContainment, leafPass]
   );
   const pruneKeep = React.useMemo(
-    () => makePruneKeep(folderHasArtifactIndex, isArtifact),
-    [folderHasArtifactIndex, isArtifact]
+    () => makePruneKeep(folderHasKeptLeafIndex, leafPass),
+    [folderHasKeptLeafIndex, leafPass]
   );
   // The size for ONE row's node: a folder → its recursive visible-descendant sum (absent
   // from the index → null → "—"); a leaf → its own artifact bytes (null for text/link/
@@ -607,9 +682,10 @@ export function DriveProjectionView({
     ? result.items
         .map((item) => containment.byId.get(item.id))
         .filter((n): n is LensNode => n != null && n.kind !== 'folder')
-        // "Only files" applies here too — Home is a flat digest, so it keeps just the
-        // uploaded artifacts (both sections derive from `homeContent`).
-        .filter((n) => (uploadedOnly ? isArtifact(n) : true))
+        // The cross-lens content filters apply here too — Home is a flat digest, so it
+        // keeps just the leaves passing "Only files" AND the tag facet (both sections
+        // derive from `homeContent`).
+        .filter(leafPass)
     : [];
   const jumpBackNodes = homeContent
     .filter((n) => openedAtById[n.id] != null)
@@ -663,18 +739,20 @@ export function DriveProjectionView({
   )
     .slice()
     .sort(byTitle)
-    // "Only files" ON: a FLAT list (a flat filter lens) drops all folders (a flat file
-    // list); a TREE render (KB browse OR an advanced lens) keeps only folders whose
-    // subtree holds ≥1 artifact (prune empty branches). `!isFilterScope` = a tree render.
+    // A content filter ON ("Only files" and/or the tag facet): a FLAT list (a flat filter
+    // lens) drops all folders (a flat leaf list); a TREE render (KB browse OR an advanced
+    // lens) keeps only folders whose subtree holds ≥1 KEPT leaf (prune empty branches).
+    // `!isFilterScope` = a tree render.
     .filter((node) =>
-      !uploadedOnly ? true : !isFilterScope ? pruneKeep(node) : false
+      !anyLeafFilter ? true : !isFilterScope ? pruneKeep(node) : false
     );
   const shortcuts =
     // Shortcuts are OFF in an advanced lens tree for v1 (Fork 3) — it is a containment
-    // projection of the lens set, not the full Drive home. Also OFF under "Only files"
-    // (a symlink is not an uploaded artifact).
+    // projection of the lens set, not the full Drive home. Also OFF under any content
+    // filter ("Only files" / the tag facet) — a symlink is not an uploaded artifact and
+    // carries no tag of its own.
     (
-      isFilterScope || isRoot || isLensAdvanced || uploadedOnly
+      isFilterScope || isRoot || isLensAdvanced || anyLeafFilter
         ? []
         : (shortcutsByFolder.get(folderId ?? '') ?? [])
     )
@@ -697,9 +775,10 @@ export function DriveProjectionView({
   )
     .slice()
     .sort(isRecent ? byRecency : byTitle)
-    // "Only files" ON: keep only uploaded artifacts (file/video with bytes) — the same
-    // predicate in flat AND advanced, so a lens shows exactly the files either way.
-    .filter((node) => (uploadedOnly ? isArtifact(node) : true));
+    // The cross-lens content filters: keep only leaves passing "Only files" AND the tag
+    // facet — the same predicate in flat AND advanced, so a lens shows exactly the same
+    // set either way.
+    .filter(leafPass);
 
   // The advanced lens GRID forest (ADR-0025): the SAME `treeContainment` subset the list
   // tree (`driveRows`) walks, shaped as a `LensTreeNode[]` for `LensTreeGrid` so the grid +
@@ -719,13 +798,13 @@ export function DriveProjectionView({
               .slice()
               .sort(byTitle)
               // "Only files" ON → prune child folders with no descendant artifact.
-              .filter((f) => (uploadedOnly ? pruneKeep(f) : true))
+              .filter((f) => (anyLeafFilter ? pruneKeep(f) : true))
               .map((f) => buildTreeNode(f, new Set(ancestors).add(node.id))),
             ...childContent(treeContainment, node.id)
               .slice()
               .sort(byTitle)
               // "Only files" ON → keep only artifact leaves.
-              .filter((c) => (uploadedOnly ? isArtifact(c) : true))
+              .filter((c) => leafPass(c))
               .map((c) => ({ node: c, children: [] as LensTreeNode[] })),
           ]
         : [],
@@ -850,11 +929,11 @@ export function DriveProjectionView({
             ...childFolders(treeContainment, node.id)
               // "Only files" ON → prune child folders with no descendant artifact, so the
               // browse tree shows only branches that lead to a file (same as the grid).
-              .filter((f) => (uploadedOnly ? pruneKeep(f) : true))
+              .filter((f) => (anyLeafFilter ? pruneKeep(f) : true))
               .map((f) => folderRow(f, new Set(ancestors).add(node.id))),
             ...childContent(treeContainment, node.id)
               // "Only files" ON → keep only artifact leaves.
-              .filter((c) => (uploadedOnly ? isArtifact(c) : true))
+              .filter((c) => leafPass(c))
               .map(itemRow),
           ]
         : undefined,
@@ -1250,6 +1329,7 @@ export function DriveProjectionView({
         node={item}
         attributes={attributesByItem[item.id]}
         meta={metaByItem[item.id]}
+        tags={tagsByItem[item.id]}
         currentUserId={currentUserId}
         layout={layout}
         selected={item.id === selectedId}
@@ -1409,6 +1489,39 @@ export function DriveProjectionView({
               active={shareFacet}
               onChange={setShareFacet}
             />
+          ) : null}
+
+          {/* Tag facet (ADR-0003 Variant B) — a chip row of the tags PRESENT on the
+              resolved canvas (gap-doc :28). Multi-select (union): toggling a tag narrows
+              the canvas to content carrying ANY active tag, reusing the same prune the
+              "Only files" filter uses (so the browse tree prunes to tagged branches).
+              "All" clears; an active tag is pressed + check-marked. A client display
+              filter over `tagsByItem`, never a fence. Hidden in Trash / when the canvas
+              carries no tags. */}
+          {!isTrash && resolvedTags.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-muted-foreground mr-0.5 inline-flex items-center gap-1 text-xs">
+                <TagIcon className="size-3" aria-hidden />
+                {t('graph.lens.filterTag')}
+              </span>
+              <ToggleChip
+                label={t('graph.drive.facetAll')}
+                pressed={!tagFacetActive}
+                onPressedChange={clearTagFacet}
+              />
+              {resolvedTags.map((tag) => {
+                const on = tagFacet.has(tag.id);
+                return (
+                  <ToggleChip
+                    key={tag.id}
+                    label={tag.title}
+                    pressed={on}
+                    onPressedChange={() => toggleTagFacet(tag.id)}
+                    icon={on ? Check : undefined}
+                  />
+                );
+              })}
+            </div>
           ) : null}
 
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
@@ -1668,13 +1781,24 @@ export function DriveProjectionView({
           {isSharedByMe && folders.length === 0 && items.length === 0 ? (
             <EmptyState>{t('graph.drive.sharedByMeEmpty')}</EmptyState>
           ) : null}
+          {/* A tag facet that filtered the KB-browse canvas to nothing → "nothing here
+              matches this tag" (the same copy the share facet uses), taking precedence
+              over the generic empty-editor / empty-folder copy below. */}
           {!isFilterScope &&
+          tagFacetActive &&
+          folders.length === 0 &&
+          items.length === 0 ? (
+            <EmptyState>{t('graph.drive.facetFilteredEmpty')}</EmptyState>
+          ) : null}
+          {!isFilterScope &&
+          !tagFacetActive &&
           isRoot &&
           folders.length === 0 &&
           items.length === 0 ? (
             <EmptyState>{t('graph.lens.emptyEditor')}</EmptyState>
           ) : null}
           {!isFilterScope &&
+          !tagFacetActive &&
           !isRoot &&
           folders.length === 0 &&
           items.length === 0 ? (

@@ -4,6 +4,7 @@ import type {
   ContainmentEdge,
   KbAttributes,
   NodeMeta,
+  ResourceTag,
   SharedByMeEntry,
   ShareMechanismByItem,
   ShortcutEdge,
@@ -27,13 +28,35 @@ import type {
  * Server-loaded KB seed the Drive view reads — all RLS-scoped fan-outs alongside
  * the resolved canvas: the containment forest (folder tree / counts via FORWARD
  * `contains`), the shortcut forest (Drive cross-folder symlinks), the KB satellite
- * attributes (link/media), node meta (owner/updated), and the current user id
- * (owner "You" label). Fields for the not-yet-ported views (tags, derived health,
- * the all-tags tray) are added when those views are pulled under the front.
+ * attributes (link/media), node meta (owner/updated), the current user id
+ * (owner "You" label), and the tag topology (per-item tags + the space tag
+ * vocabulary — ADR-0003 Variant B). Fields for the not-yet-ported surfaces (derived
+ * node health) are added when those are pulled under the front.
  */
 export type KbViewData = {
   attributesByItem: Record<string, KbAttributes>;
   metaByItem: Record<string, NodeMeta>;
+  /**
+   * The tags OF each resolved item (ADR-0003 Variant B) — `resource_id → tag nodes`
+   * it points at via a FORWARD `tagged` edge. A presentation fan-out alongside the
+   * canvas (`loadResourceTagsForItems`), NEVER a field on the frozen contract: a tag
+   * is an ordinary node, "R is tagged T" a directed edge, so this is the read-side
+   * projection of the incoming/outgoing `tagged` topology. Drives the Drive card tag
+   * chips, the ResourcePanel tag section (the node's current tags), and the client-
+   * side tag-facet filter (an item passes iff its tag set meets the active tags). A
+   * node with no `tagged` edge has no key (absent → no tags, poc-no-fallbacks).
+   */
+  tagsByItem: Record<string, ResourceTag[]>;
+  /**
+   * ALL tag nodes of the space (ADR-0003 Variant B) — the space's tag vocabulary,
+   * loaded once (`loadSpaceTags`) under the user's RLS. Space-global by construction:
+   * a tag is an ordinary node on the same row policy, and there is no separate tag-
+   * visibility model, so every reader of the space sees the space's tags (the
+   * confirmed model — no per-owner tag fence). Drives the ResourcePanel "pick from
+   * existing tags" tray and the lens tag-facet chip row. Empty when the space has no
+   * tags (or no active space).
+   */
+  spaceTags: ResourceTag[];
   containment: ContainmentEdge[];
   shortcuts: ShortcutEdge[];
   currentUserId: string | null;

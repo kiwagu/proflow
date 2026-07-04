@@ -394,6 +394,12 @@ export function DriveWorkbench({
                 ? kbData?.attributesByItem[selection.selectedNode.id]
                 : undefined
             }
+            tags={
+              selection.selectedNode
+                ? (kbData?.tagsByItem[selection.selectedNode.id] ?? [])
+                : []
+            }
+            spaceTags={kbData?.spaceTags ?? []}
             containment={derivations.containment}
             currentUserId={kbData?.currentUserId ?? null}
             ownerUserId={
