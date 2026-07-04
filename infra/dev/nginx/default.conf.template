@@ -82,8 +82,14 @@ server {
     location / {
         if ($request_method = OPTIONS) {
             add_header Access-Control-Allow-Origin $supabase_cors_origin;
-            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, upload-length, tus-resumable, upload-metadata";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS";
+            # The tus-resumable (TUS) headers are load-bearing for BROWSER uploads: a
+            # PATCH chunk sends `upload-offset`, so it MUST be in the allow-list or the
+            # browser blocks every chunk on preflight (the creation POST — which sends
+            # only upload-length/upload-metadata — would still 201, so the symptom is
+            # "create OK, chunks CORS-error, upload never finishes"). Node (e2e) skips
+            # CORS, which is why this only bites the real browser client (slice-14).
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
             add_header Access-Control-Allow-Credentials true;
             add_header Access-Control-Max-Age 86400;
             return 204;
@@ -106,5 +112,10 @@ server {
 
         add_header Access-Control-Allow-Origin $supabase_cors_origin always;
         add_header Access-Control-Allow-Credentials true always;
+        # tus-js-client reads these off the POST/PATCH/HEAD responses (the upload
+        # `Location`, the resumed `Upload-Offset`, …). Cross-origin JS can only see
+        # them when they are explicitly exposed; add it at the edge so the browser
+        # TUS client works regardless of the upstream's own CORS emission.
+        add_header Access-Control-Expose-Headers "Location, Tus-Resumable, Tus-Version, Tus-Extension, Tus-Max-Size, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Expires, Content-Type" always;
     }
 }
