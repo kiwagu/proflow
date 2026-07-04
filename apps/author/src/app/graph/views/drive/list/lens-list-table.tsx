@@ -6,13 +6,7 @@ import { Button } from '@workspace/ui/components/button';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { Hint } from '@workspace/ui/components/hint';
 import { cn } from '@workspace/ui/lib/utils';
-import {
-  ArrowUpRight,
-  ChevronRight,
-  Folder,
-  FolderSymlink,
-  Info,
-} from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Folder, Info } from 'lucide-react';
 import * as React from 'react';
 
 import type { LensNode } from '@/app/graph/containment';
@@ -214,12 +208,11 @@ export function LensListTable({
         header: t('graph.table.name'),
         cell: ({ row }) => {
           const r = row.original;
+          // A shortcut shows its TARGET's kind icon (r.node is the target) + the arrow
+          // suffix below — telegraphs WHAT it points at, not a uniform folder-symlink
+          // glyph (ADR-0015 §3). Real folders keep the Folder icon.
           const Icon =
-            r.rowKind === 'folder'
-              ? Folder
-              : r.rowKind === 'shortcut'
-                ? FolderSymlink
-                : iconForKind(r.node.kind);
+            r.rowKind === 'folder' ? Folder : iconForKind(r.node.kind);
           return (
             <div
               className="flex min-w-0 items-center gap-2.5"
@@ -362,7 +355,9 @@ export function LensListTable({
               {row.original.actions}
             </div>
           ) : null,
-        meta: { cellClassName: 'w-10' },
+        // Wide enough for a shortcut row's two always-on actions (Open in KB +
+        // Remove); single-⋯ rows right-align, so the extra room is invisible.
+        meta: { cellClassName: 'w-20' },
       },
     ],
     [

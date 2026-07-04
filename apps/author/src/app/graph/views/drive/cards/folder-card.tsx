@@ -2,7 +2,12 @@
 
 import { CardTile } from '@workspace/ui/components/card-tile';
 import { cn } from '@workspace/ui/lib/utils';
-import { ArrowUpRight, Folder, FolderSymlink } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Folder,
+  FolderSymlink,
+  type LucideIcon,
+} from 'lucide-react';
 import * as React from 'react';
 
 import type { DriveLayout } from '@/app/graph/views/drive/layout-toggle';
@@ -18,6 +23,7 @@ export function FolderCard({
   subtitle,
   layout,
   shortcut,
+  icon,
   onOpen,
   onDetails,
   star,
@@ -31,6 +37,10 @@ export function FolderCard({
   subtitle: string;
   layout: DriveLayout;
   shortcut?: boolean;
+  /** Override the leading glyph. A shortcut passes its TARGET's kind icon so the card
+   * telegraphs WHAT it points at (a doc / file / video / link / folder) — the shortcut
+   * arrow marks it as a symlink. Absent → the default Folder (or FolderSymlink). */
+  icon?: LucideIcon;
   /** Double-click / Open: navigate into the folder (or follow the shortcut). */
   onOpen: () => void;
   /** Single-click: open the shared Details panel for this node. */
@@ -81,23 +91,13 @@ export function FolderCard({
             : 'h-44 items-start gap-2.5 overflow-hidden p-4'
         )}
       >
-        {shortcut ? (
-          <FolderSymlink
-            className={cn(
-              'text-muted-foreground',
-              list ? 'size-[18px]' : 'size-[22px]'
-            )}
-            aria-hidden
-          />
-        ) : (
-          <Folder
-            className={cn(
-              'text-muted-foreground',
-              list ? 'size-[18px]' : 'size-[22px]'
-            )}
-            aria-hidden
-          />
-        )}
+        {React.createElement(icon ?? (shortcut ? FolderSymlink : Folder), {
+          className: cn(
+            'text-muted-foreground',
+            list ? 'size-[18px]' : 'size-[22px]'
+          ),
+          'aria-hidden': true,
+        })}
         <div className="min-w-0 flex-1 text-left">
           <div
             className={cn(

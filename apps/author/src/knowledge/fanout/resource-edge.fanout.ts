@@ -130,10 +130,16 @@ export type TagResourceInput = {
 
 /**
  * Tag a resource (`tagged` edge from_id=resource → to_id=tag) under the user's RLS.
- * Two-step: if no `tagId` is given, first create the `kind='tag'` node (body-less),
- * then the `tagged` edge — both under RLS, both verb-gated on the row. Idempotent
- * at the edge step. Order: node before edge so a partial failure leaves a
- * reconcilable tag node (orphan tag is harmless; the edge is the meaning).
+ * Two-step: if no `tagId` is given, RESOLVE-OR-CREATE the `kind='tag'` node BY TITLE
+ * (ADR-0003 Variant B — the space's tag vocabulary is keyed by title: free-text
+ * tagging with a title that already exists REUSES that tag node, never spawns a
+ * duplicate), then the `tagged` edge — both under RLS, both verb-gated on the row.
+ * Idempotent by title AND at the edge step: tagging the same resource with the same
+ * title twice is a no-op (same tag node, same edge). Order: node before edge so a
+ * partial failure leaves a reconcilable tag node (orphan tag is harmless; the edge is
+ * the meaning). The resolve read is RLS-scoped — a same-titled tag the caller cannot
+ * see (a private tag of another owner) is not reused; the caller gets their own, which
+ * is the correct space-global-within-RLS behaviour.
  */
 export async function tagResource(
   input: TagResourceInput,
@@ -147,12 +153,30 @@ export async function tagResource(
     if (!input.tagTitle) {
       throw new Error('tagResource: tagId or tagTitle required');
     }
-    const created = await createBodylessResource(
-      { spaceId: input.spaceId, kind: 'tag', title: input.tagTitle },
-      { db, userId }
-    );
-    tagId = created.node_id;
-    tagCreated = true;
+    // Resolve an EXISTING live tag node of this title in the space (the vocabulary is
+    // by title) before creating one — keeps the tray/facet vocabulary duplicate-free.
+    const { data: existing, error: findErr } = await db
+      .from('knowledge_resources')
+      .select('id')
+      .eq('space_id', input.spaceId)
+      .eq('kind', 'tag')
+      .eq('title', input.tagTitle)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (findErr) {
+      throw new Error(`tagResource (resolve): ${findErr.message}`);
+    }
+    if (existing?.id) {
+      tagId = existing.id;
+    } else {
+      const created = await createBodylessResource(
+        { spaceId: input.spaceId, kind: 'tag', title: input.tagTitle },
+        { db, userId }
+      );
+      tagId = created.node_id;
+      tagCreated = true;
+    }
   }
 
   const edge = await createEdge(

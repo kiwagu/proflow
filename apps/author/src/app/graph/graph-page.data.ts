@@ -7,6 +7,7 @@ import {
 } from '@workspace/knowledge-contracts';
 import { resolveProjection } from '@workspace/knowledge-engine';
 import { PLATFORM_ENTITLEMENT_SETTING_KEYS } from '@workspace/settings-runtime';
+import { byText } from '@workspace/ui/lib/sort';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 
@@ -27,6 +28,7 @@ import type {
   KbAttributes,
   NodeMeta,
   ResourceFloor,
+  ResourceTag,
   SharedByMeEntry,
   ShareMechanismByItem,
   ShortcutEdge,
@@ -394,11 +396,116 @@ export async function loadShortcutForest(
 }
 
 /**
+ * All tag nodes (`kind='tag'`) of a space (ADR-0003 Variant B) — the "vocabulary"
+ * of the space, read as a thin RLS-scoped select over `knowledge_resources`. A tag
+ * is an ORDINARY node, so it rides the SAME row policy as any resource: an ungranted
+ * user gets `[]` (RLS), and a private tag someone else owns simply does not return.
+ * Drives the ResourcePanel "pick from existing tags" tray AND the lens tag facet
+ * (both space-global by construction — no separate tag-visibility model, ADR-0003).
+ * Sorted by title with the canonical text sorter so the tray/facet order is stable.
+ */
+export async function loadSpaceTags(spaceId: string): Promise<ResourceTag[]> {
+  const db = await createRlsClientFromServerCookies();
+  const { data, error } = await db
+    .from('knowledge_resources')
+    .select('id,title')
+    .eq('space_id', spaceId)
+    .eq('kind', 'tag')
+    .is('deleted_at', null);
+  if (error) {
+    throw new Error(`loadSpaceTags: ${error.message}`);
+  }
+  return (data ?? [])
+    .map((row) => ({
+      id: (row as { id: string }).id,
+      title: (row as { title: string }).title,
+    }))
+    .sort(byText((tag) => tag.title));
+}
+
+/**
+ * Batch-load the tags OF a set of nodes (ADR-0003 Variant B) — for each item, the
+ * `kind='tag'` nodes it points at via a FORWARD `tagged` edge (from=item → to=tag).
+ * Two thin RLS-scoped reads, chunked like `loadKbAttributesForItems`: (1) the
+ * `tagged` edges whose `from_id` is in the item set, then (2) the titles of the
+ * referenced tag nodes. A tag whose node is RLS-hidden or trashed simply drops out
+ * (its title read returns nothing) — the projection can only ever narrow, never leak.
+ * Feeds the Drive card tag chips, the ResourcePanel tag section, and the client-side
+ * tag-facet filter. A node with no `tagged` edge carries no entry (absent → no tags,
+ * poc-no-fallbacks). Per-item lists sorted by tag title (canonical sorter).
+ */
+export async function loadResourceTagsForItems(
+  spaceId: string,
+  itemIds: string[]
+): Promise<Record<string, ResourceTag[]>> {
+  const map: Record<string, ResourceTag[]> = {};
+  if (itemIds.length === 0) {
+    return map;
+  }
+  const db = await createRlsClientFromServerCookies();
+  // (1) the `tagged` edges of the item set — from_id = tagged resource, to_id = tag
+  // node (ADR-0003 directed). Chunked to keep each `.in('from_id', …)` URL under the
+  // REST gateway limit (see `inChunks`).
+  const edges = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await db
+      .from('knowledge_edges')
+      .select('from_id,to_id')
+      .eq('space_id', spaceId)
+      .eq('relation_type', 'tagged')
+      .in('from_id', chunk);
+    if (error) {
+      throw new Error(`loadResourceTagsForItems (edges): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  const tagIds = [
+    ...new Set(edges.map((row) => (row as { to_id: string }).to_id)),
+  ];
+  if (tagIds.length === 0) {
+    return map;
+  }
+  // (2) the titles of the referenced tag nodes — a live `kind='tag'` row read under
+  // the same RLS client (a hidden/trashed tag returns nothing → its edges drop).
+  const tagRows = await inChunks(tagIds, async (chunk) => {
+    const { data, error } = await db
+      .from('knowledge_resources')
+      .select('id,title')
+      .eq('space_id', spaceId)
+      .eq('kind', 'tag')
+      .in('id', chunk)
+      .is('deleted_at', null);
+    if (error) {
+      throw new Error(`loadResourceTagsForItems (titles): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  const titleById = new Map(
+    tagRows.map((row) => [
+      (row as { id: string }).id,
+      (row as { title: string }).title,
+    ])
+  );
+  for (const row of edges) {
+    const { from_id, to_id } = row as { from_id: string; to_id: string };
+    const title = titleById.get(to_id);
+    if (title === undefined) {
+      continue; // RLS-hidden / trashed tag → not readable, drop the edge.
+    }
+    (map[from_id] ??= []).push({ id: to_id, title });
+  }
+  for (const id of Object.keys(map)) {
+    map[id]!.sort(byText((tag) => tag.title));
+  }
+  return map;
+}
+
+/**
  * Batch-load the KB satellite attributes for a set of nodes (ADR-0013). Each
  * attribute lives in the dedicated `kb` schema keyed by `node_id`, read under the
  * user's RLS via `kbSchema(db)` (a satellite the user may not read because the
  * parent node is hidden simply does not return — the satellite RLS mirrors node
- * access). Reads the `description` and `media` (ADR-0026) satellites; each rides
+ * access). Reads the `description`, `link` (slice-10 §2.4) and `media` (ADR-0026)
+ * satellites; each rides
  * alongside the resolved canvas, never extending the frozen `ProjectionResult`
  * contract. A node with no satellite row simply carries no attribute (empty/absent
  * → no field, NOT a mock — poc-no-fallbacks).
@@ -427,6 +534,25 @@ export async function loadKbAttributesForItems(
   });
   for (const row of descriptionRows) {
     (map[row.node_id] ??= {}).description = row.body;
+  }
+
+  // The link satellite (slice-10 §2.4) — same shape as the description read. A
+  // `krl` row means the link node has a real URL; its absence means the node is a
+  // bare shell (no `link` field, poc-no-fallbacks). The card meta line shows
+  // `host`; the ResourcePanel Link section shows/edits `url` and opens it.
+  const linkRows = await inChunks(itemIds, async (chunk) => {
+    const { data, error } = await kbSchema(db)
+      .from('resource_link')
+      .select('node_id,url,host')
+      .eq('space_id', spaceId)
+      .in('node_id', chunk);
+    if (error) {
+      throw new Error(`loadKbAttributesForItems (link): ${error.message}`);
+    }
+    return data ?? [];
+  });
+  for (const row of linkRows) {
+    (map[row.node_id] ??= {}).link = { url: row.url, host: row.host };
   }
 
   // The media satellite (ADR-0026) — MIRRORS the description read above (same RLS

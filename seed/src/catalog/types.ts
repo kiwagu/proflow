@@ -129,6 +129,10 @@ export type BodylessNode = NodeBase & {
    * `kmm` satellite row + a `kb-media` object both exist (ADR-0026). Omit for a
    * bodyless stub (a `link`, or a `file`/`video` with no bytes yet). */
   media?: MediaPayload;
+  /** For `link`: the external URL written to the `kb.resource_link` satellite
+   * through the attributes route (slice-10 §2.4) — http(s)-only. Omit for a bare
+   * link shell (no URL yet). */
+  url?: string;
 };
 
 export type SeedNode = FolderNode | TextNode | BodylessNode;

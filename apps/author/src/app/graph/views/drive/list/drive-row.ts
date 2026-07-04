@@ -11,7 +11,8 @@ export type DriveRow = {
   onOpen: () => void;
   /** Single click: open the shared Details panel. */
   onDetails: () => void;
-  /** Hover `⋯` actions (folders/items); shortcuts have none. */
+  /** Hover row actions: folders/items carry the `⋯` menu; a shortcut carries
+   * "Open in KB" (jump to the target's canonical home) + "Remove shortcut". */
   actions: React.ReactNode | null;
   /** Tree mode (browse): a folder's children (folders then content), recursively.
    * Undefined in flat lenses → the table renders flat. */

@@ -7,6 +7,11 @@ import * as React from 'react';
  * "Copy" action. It is NOT an immediate write: a Paste affordance appears in each KB-browse
  * pane's toolbar and deep-copies the source into THAT pane's current folder. Persists after
  * a paste (multi-paste) until a new Copy replaces it (or Escape clears it).
+ *
+ * The SAME clipboard drives the second paste verb "Paste as shortcut" (ADR-0015 §3): instead
+ * of duplicating the source it creates a `shortcut` edge folder→source (a cross-folder
+ * symlink — one canonical home, many appearances). A shortcut hangs off a FOLDER
+ * (from_id = folder), so it is offered only INSIDE a folder, never at root.
  */
 export function useDriveClipboard({
   spaceId,
@@ -68,5 +73,39 @@ export function useDriveClipboard({
     [spaceId, clipboard, refresh]
   );
 
-  return { clipboard, copyToClipboard, clearClipboard, pasteInto };
+  // PASTE AS SHORTCUT — place a `shortcut` edge from `targetFolderId` to the clipboard
+  // source (ADR-0015 §3), the cross-folder symlink gesture. Folder-only by construction
+  // (from_id = folder); the caller only offers it inside a folder. Clipboard persists so
+  // the same source can be shortcutted into several folders. RLS is the sole write fence
+  // (`space.knowledge.create` on the edge) — a reader's attempt fails cleanly.
+  const pasteAsShortcutInto = React.useCallback(
+    (targetFolderId: string) => {
+      if (!spaceId || !clipboard) {
+        return;
+      }
+      void fetch('/author/graph/edges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'shortcut',
+          spaceId,
+          folderId: targetFolderId,
+          targetId: clipboard.sourceId,
+        }),
+      }).then((res) => {
+        if (res.ok) {
+          refresh();
+        }
+      });
+    },
+    [spaceId, clipboard, refresh]
+  );
+
+  return {
+    clipboard,
+    copyToClipboard,
+    clearClipboard,
+    pasteInto,
+    pasteAsShortcutInto,
+  };
 }

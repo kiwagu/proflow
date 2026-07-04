@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_UPLOAD_BYTES,
   isAllowedMediaMime,
   KB_MEDIA_BUCKET,
+  linkUrlSchema,
   type MediaUploadAuthorizeResponse,
 } from '@workspace/knowledge-contracts';
 import { Button } from '@workspace/ui/components/button';
@@ -46,7 +47,12 @@ import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
  * (document/file/video/link/folder/tag) inside an optional parent folder, with an
  * optional description. Each kind routes to its landed RLS write route:
  *   text  → text-resources (node + Lexical body, ADR-0002)
- *   link/tag/folder → resources (body-less; folder is a pure container, ADR-0015)
+ *   tag/folder → resources (body-less; folder is a pure container, ADR-0015)
+ *   link  → body-less node + its REAL external URL (slice-10 §2.4): create the
+ *           node → write the `link` satellite via the attributes route. The URL is
+ *           the link's CONTENT, so it is REQUIRED at create (http(s)-only —
+ *           `linkUrlSchema`, the anti-stored-XSS allow-list) and a failed satellite
+ *           write ROLLS BACK the node (same no-broken-shell rule as media).
  *   file/video → body-less node + REAL bytes (ADR-0026, AMENDMENT §A2): create the
  *               node → authorize the upload (server checks node-`update` under RLS +
  *               decides the safe `storagePath`) → RESUMABLE (TUS) upload of the bytes
@@ -92,7 +98,7 @@ export type CreateResourceProps = {
   onCreated: (created?: { nodeId: string; kind: CreateKind }) => void;
 };
 
-const KINDS: CreateKind[] = ['text', 'file', 'video', 'link', 'folder', 'tag'];
+const KINDS: CreateKind[] = ['folder', 'text', 'file', 'video', 'link', 'tag'];
 
 /**
  * The resumable (TUS) chunk size — 6 MiB, the Supabase storage-api-required
@@ -160,6 +166,8 @@ export function CreateResource({
   const [description, setDescription] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(false);
+  // The external URL (link kind) — the link node's CONTENT (slice-10 §2.4).
+  const [linkUrl, setLinkUrl] = React.useState('');
   // The picked media file (file/video kinds) + the client pre-validation verdict.
   const [file, setFile] = React.useState<File | null>(null);
   const [mediaError, setMediaError] = React.useState<
@@ -195,6 +203,7 @@ export function CreateResource({
     setParentId(request.parentFolderId ?? '');
     setDescription('');
     setError(false);
+    setLinkUrl('');
     setFile(null);
     setMediaError(null);
     setUploadPercent(null);
@@ -231,11 +240,17 @@ export function CreateResource({
   }
 
   const needsMedia = kindNeedsMedia(kind);
-  // The media kinds require a valid picked file; other kinds require only a title.
+  // link: the URL is the node's content — required and http(s)-valid (mirror of the
+  // needsMedia file gate). The hint shows only once something is typed.
+  const needsLink = kind === 'link';
+  const linkUrlValid = linkUrlSchema.safeParse(linkUrl).success;
+  // The media kinds require a valid picked file, link a valid URL; other kinds
+  // require only a title.
   const submitDisabled =
     busy ||
     title.trim().length === 0 ||
-    (needsMedia && (file === null || mediaError !== null));
+    (needsMedia && (file === null || mediaError !== null)) ||
+    (needsLink && !linkUrlValid);
 
   /**
    * Abort a still in-flight resumable upload AND roll back its just-created node,
@@ -313,6 +328,27 @@ export function CreateResource({
           return;
         }
         if (!uploaded) {
+          await purgeOrphanNode(spaceId, nodeId);
+          setError(true);
+          return;
+        }
+      }
+      // link: write the URL satellite AFTER the node exists (slice-10 §2.4 — the
+      // UPSERT is keyed by nodeId). The URL is the link's CONTENT, so a failed
+      // satellite write ROLLS BACK the node exactly like a failed media upload —
+      // never a bare link shell (create-flow no-broken-shell rule).
+      if (needsLink) {
+        const linkRes = await fetch('/author/graph/attributes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attribute: 'link',
+            spaceId,
+            nodeId,
+            url: linkUrl.trim(),
+          }),
+        });
+        if (!linkRes.ok) {
           await purgeOrphanNode(spaceId, nodeId);
           setError(true);
           return;
@@ -413,6 +449,37 @@ export function CreateResource({
               autoFocus
             />
           </div>
+
+          {/* URL — the link kind's content (slice-10 §2.4). Client pre-validation
+              mirrors the media gate (instant hint; the route's zod + the DB CHECK
+              are the real http(s)-only fence). */}
+          {needsLink ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="create-link-url" className={FIELD_LABEL}>
+                {t('graph.link.url')}
+              </Label>
+              <Input
+                id="create-link-url"
+                type="url"
+                inputMode="url"
+                value={linkUrl}
+                onChange={(event) => setLinkUrl(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !submitDisabled) {
+                    event.preventDefault();
+                    void onSubmit();
+                  }
+                }}
+                placeholder={t('graph.link.urlPlaceholder')}
+                disabled={busy}
+              />
+              {linkUrl.trim().length > 0 && !linkUrlValid ? (
+                <p role="alert" className="text-destructive text-xs">
+                  {t('graph.link.invalidUrl')}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* FILE — a plain hidden <input type=file> behind a Button, for the media
               kinds (file/video). Client pre-validation (size/mime) surfaces an
@@ -648,8 +715,9 @@ async function createNode(
   }
 
   // link/tag/folder/file/video are body-less node inserts (ADR-0002 §3 /
-  // ADR-0015). file/video create a REAL node now; the binary asset + Storage
-  // upload is a deferred media slice (poc-no-fallbacks — no fake asset).
+  // ADR-0015). What makes the node REAL lands right after this insert: file/video
+  // get their bytes via the media flow (ADR-0026), link gets its URL satellite
+  // (slice-10 §2.4) — each with rollback on failure (no broken shells).
   const res = await fetch('/author/graph/resources', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

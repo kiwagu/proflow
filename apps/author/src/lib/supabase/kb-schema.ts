@@ -23,6 +23,30 @@ type SatelliteBase = {
 type DescriptionRow = SatelliteBase & { body: string; created_by: string };
 
 /**
+ * `resource_link` (prefix `krl`, slice-10 §2.4) — the 1:1 URL satellite that makes
+ * a `kind=link` node real. `host` is the denormalized display host, derived
+ * server-side from the validated URL at write time (never client-supplied).
+ */
+type LinkRow = SatelliteBase & {
+  url: string;
+  host: string | null;
+  created_by: string;
+};
+
+type LinkInsert = {
+  node_id: string;
+  space_id: string;
+  url: string;
+  host?: string | null;
+  created_by: string;
+};
+
+type LinkUpdate = {
+  url?: string;
+  host?: string | null;
+};
+
+/**
  * `resource_media_meta` (prefix `kmm`, ADR-0026) — the generic 1:1 media satellite
  * keyed by `node_id` — since ADR-0027 a thin REFERENCE `{node_id → blob_id}` to a
  * shared `media_blob` plus the per-reference display filename. Byte-intrinsic
@@ -132,6 +156,7 @@ export type KbDatabase = {
         { node_id: string; space_id: string; body: string; created_by: string },
         { body?: string }
       >;
+      resource_link: SatelliteTable<LinkRow, LinkInsert, LinkUpdate>;
       resource_activity: SatelliteTable<
         ResourceActivityRow,
         ResourceActivityInsert,

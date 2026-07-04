@@ -263,6 +263,11 @@ export type SeedClient = SeedFetcher & {
    * DIRECTLY to Storage under its OWN session (the product client via TUS; the seed via a
    * standard storage-js `upload`), fenced by the `storage.objects` INSERT policy. A node
    * the caller cannot update/see fails closed (403/404), never a leak. */
+  /** Set a link node's external URL — the `kb.resource_link` satellite (slice-10
+   * §2.4): `POST /author/graph/attributes {attribute:'link'}`. http(s)-only (the
+   * route's zod allow-list); `host` is derived server-side. Under the caller's RLS
+   * (`space.knowledge.update`). */
+  setLink(spaceId: string, nodeId: string, url: string): Promise<void>;
   uploadMediaUrl(
     spaceId: string,
     nodeId: string,
@@ -366,6 +371,16 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
         body,
       });
       expectStatus(res, 200, `describe(${nodeId})`);
+    },
+
+    async setLink(spaceId, nodeId, url) {
+      const res = await fetcher.post('/author/graph/attributes', {
+        attribute: 'link',
+        spaceId,
+        nodeId,
+        url,
+      });
+      expectStatus(res, 200, `setLink(${nodeId})`);
     },
 
     async contain(spaceId, folderId, childId, position) {

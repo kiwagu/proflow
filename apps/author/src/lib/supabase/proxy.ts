@@ -37,15 +37,26 @@ type ActiveSpaceOptions = {
   defaultSpaceId?: string;
 };
 
+/**
+ * Reads the user's active memberships for the per-request tenant-cookie sync.
+ * Returns NULL when the read FAILS (transient DB/REST error) — the caller must
+ * then keep the cookies untouched ('none'), never 'clear' them: silently
+ * treating a failed read as "zero memberships" DELETED the canonical
+ * active-space cookies on a hiccup (the author-space-sync drift).
+ */
 async function loadActiveSpaceOptions(
   supabase: SupabaseClient<Database>,
   userId: string
-): Promise<ActiveSpaceOptions> {
-  const { data: membershipRows } = await supabase
+): Promise<ActiveSpaceOptions | null> {
+  const { data: membershipRows, error } = await supabase
     .from('space_memberships')
     .select('space_id')
     .eq('user_id', userId)
     .eq('status', 'active');
+
+  if (error) {
+    return null;
+  }
 
   const activeSpaceIds =
     membershipRows
@@ -87,16 +98,26 @@ function resolvePayloadTenantSync(input: {
     return payloadTenantId ? { kind: 'clear' } : { kind: 'none' };
   }
 
+  // Re-stamping a value BOTH cookies already carry is not a no-op: every author
+  // response would then Set-Cookie the REQUEST-time state, and a slow response
+  // landing AFTER a concurrent platform-side space switch would overwrite the
+  // fresh choice with the stale one (Set-Cookie applies jar-wide even for an
+  // unloaded page). Only stamp when something actually changes.
+  const settle = (value: string): PayloadTenantSync =>
+    value === activeSpaceId && value === payloadTenantId
+      ? { kind: 'none' }
+      : { kind: 'set', value };
+
   if (activeSpaceId && activeSpaceIds.has(activeSpaceId)) {
-    return { kind: 'set', value: activeSpaceId };
+    return settle(activeSpaceId);
   }
 
   if (payloadTenantId && activeSpaceIds.has(payloadTenantId)) {
-    return { kind: 'set', value: payloadTenantId };
+    return settle(payloadTenantId);
   }
 
   if (defaultSpaceId && activeSpaceIds.has(defaultSpaceId)) {
-    return { kind: 'set', value: defaultSpaceId };
+    return settle(defaultSpaceId);
   }
 
   return activeSpaceId || payloadTenantId
@@ -292,13 +313,19 @@ export async function updateSession(request: NextRequest) {
   const activeSpaceOptions = user
     ? await loadActiveSpaceOptions(supabase, user.sub)
     : { activeSpaceIds: new Set<string>(), defaultSpaceId: undefined };
-  const payloadTenantSync = resolvePayloadTenantSync({
-    activeSpaceId,
-    payloadTenantId,
-    userPresent: Boolean(user),
-    activeSpaceIds: activeSpaceOptions.activeSpaceIds,
-    defaultSpaceId: activeSpaceOptions.defaultSpaceId,
-  });
+  // A FAILED membership read (null) is not "no memberships": keep the cookies
+  // exactly as they are ('none') — clearing canonical state on a transient
+  // error is how the active-space drift snuck in.
+  const payloadTenantSync: PayloadTenantSync =
+    activeSpaceOptions === null
+      ? { kind: 'none' }
+      : resolvePayloadTenantSync({
+          activeSpaceId,
+          payloadTenantId,
+          userPresent: Boolean(user),
+          activeSpaceIds: activeSpaceOptions.activeSpaceIds,
+          defaultSpaceId: activeSpaceOptions.defaultSpaceId,
+        });
 
   applyPayloadTenantSyncToRequest(request, payloadTenantSync);
   applyPayloadTenantSyncToResponse(

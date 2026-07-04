@@ -185,10 +185,12 @@ export const DRIVE_SIZE_FILTER_SCENARIO: SeedScenario = {
         },
         {
           // A loose link leaf — Size "—", drops under "Only files" (a link is not an
-          // uploaded artifact).
+          // uploaded artifact). Carries a REAL external URL (slice-10 §2.4): the card
+          // meta shows the host, the panel Link section shows/opens the URL.
           ref: 'size/loose-link',
           kind: 'link',
           title: 'Loose Link',
+          url: 'https://status.acme.example/incidents',
           description: 'A loose link — Size "—"; drops under "Only files".',
         },
         {

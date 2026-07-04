@@ -59,6 +59,20 @@ export type KbAttributes = {
   viewCount?: number;
 };
 
+/**
+ * One tag node (`kind='tag'`) as the cards / panel / facet read it — id + title
+ * only. ADR-0003 Variant B: a tag IS an ordinary node, and "resource R has tag T"
+ * is a directed `tagged` edge (from=R → to=T) — there is NO tag table or column, so
+ * a tag surfaces here purely as a node projection, never a scalar field. Loaded as a
+ * presentation fan-out (`loadResourceTagsForItems` per item; `loadSpaceTags` for the
+ * whole space) alongside the resolved canvas, never extending the frozen
+ * `ProjectionResult` contract.
+ */
+export type ResourceTag = {
+  id: string;
+  title: string;
+};
+
 /** Node owner + timestamp the Drive meta line needs but the FROZEN
  * `ProjectionResultItem` contract does not carry (`schema_version`=1). The "Recent"
  * filter sorts by the PER-USER `last_opened_at` overlay (loaded separately). */

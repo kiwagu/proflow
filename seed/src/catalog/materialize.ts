@@ -211,6 +211,12 @@ export async function materializeScenario(
           db(ownerRef)
         );
       }
+      // A `link` node with a URL becomes REAL through the same attributes route
+      // the product uses (slice-10 §2.4) — the `kb.resource_link` satellite under
+      // the owner's RLS, never a direct-SQL insert.
+      if (node.kind === 'link' && node.url) {
+        await c.setLink(spaceId, nodeId, node.url);
+      }
     }
     refs.set(node.ref, nodeId);
 
