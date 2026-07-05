@@ -1,7 +1,9 @@
 import type { Database } from '@workspace/db';
 import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 import type {
+  PurgeResourceBatchInput,
   PurgeResourceInput,
+  PurgeSkipReason,
   RestoreResourceInput,
   TrashResourceInput,
 } from '@workspace/knowledge-contracts';
@@ -248,6 +250,59 @@ export async function purgeResource(
   }
 
   return { purged };
+}
+
+/** One id a batch-purge did NOT destroy, with why (the honest partial-failure summary). */
+export type PurgeSkip = { resourceId: string; reason: PurgeSkipReason };
+
+/**
+ * Batch-purge — Empty Trash + bulk-selection purge (B2). Each id is purged
+ * INDEPENDENTLY via {@link purgeResource} under the caller's SAME RLS `db` (fan-out
+ * with `Promise.allSettled`), so one denied/in-use/failed node never aborts the rest.
+ * The result is an HONEST summary: `purged` = ids actually destroyed; `skipped` = ids
+ * that survived, each tagged with why —
+ *   - `in-use`  — the in-use guard rejected (living cross-owner references, 42501);
+ *   - `error`   — any other thrown rejection;
+ *   - `denied`  — the DELETE affected 0 rows with NO error (RLS silently denied, or the
+ *                 row was already gone) — a clean no-op, never a leak.
+ * Purge stays serialized per node inside `purgeResource` (media/body reap ordering);
+ * this only parallelizes ACROSS nodes. RLS is the sole authority on each — zero
+ * service-role. A subtree cascade may destroy a descendant that also appears later in
+ * `resourceIds`; that later id then reports `denied` (already gone), which is honest.
+ */
+export async function purgeResources(
+  input: PurgeResourceBatchInput,
+  deps: PurgeResourceDeps
+): Promise<{ purged: string[]; skipped: PurgeSkip[] }> {
+  const settled = await Promise.allSettled(
+    input.resourceIds.map((resourceId) =>
+      purgeResource({ spaceId: input.spaceId, resourceId }, deps)
+    )
+  );
+
+  const purged: string[] = [];
+  const skipped: PurgeSkip[] = [];
+  settled.forEach((outcome, i) => {
+    const resourceId = input.resourceIds[i]!;
+    if (outcome.status === 'fulfilled') {
+      if (outcome.value.purged.length > 0) {
+        purged.push(...outcome.value.purged);
+      } else {
+        // 0 rows deleted, no throw → RLS denied silently or the row was already
+        // destroyed (e.g. by an earlier id's subtree cascade). Honest: not destroyed.
+        skipped.push({ resourceId, reason: 'denied' });
+      }
+      return;
+    }
+    const message =
+      outcome.reason instanceof Error ? outcome.reason.message : '';
+    const inUse =
+      message.includes('living cross-owner references') ||
+      message.includes('42501');
+    skipped.push({ resourceId, reason: inUse ? 'in-use' : 'error' });
+  });
+
+  return { purged, skipped };
 }
 
 /** A captured kb-media Storage pointer, bucket-grouped for a batched remove. */

@@ -41,9 +41,11 @@ export { listResourcesSharedByMe } from './shared-by-me.fanout';
 export { annotateShareMechanism } from './share-mechanism.fanout';
 export {
   purgeResource,
+  purgeResources,
   restoreResource,
   trashResource,
   type PurgeResourceDeps,
+  type PurgeSkip,
   type TrashResourceDeps,
 } from './trash-resource.fanout';
 export {

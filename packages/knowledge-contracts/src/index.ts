@@ -101,13 +101,18 @@ export {
 } from './resource-user-state.schema.js';
 
 export {
+  parsePurgeResourceBatchInput,
   parsePurgeResourceInput,
   parseRestoreResourceInput,
   parseTrashResourceInput,
+  purgeResourceBatchInputSchema,
   purgeResourceInputSchema,
+  purgeSkipReasonSchema,
   restoreResourceInputSchema,
   trashResourceInputSchema,
+  type PurgeResourceBatchInput,
   type PurgeResourceInput,
+  type PurgeSkipReason,
   type RestoreResourceInput,
   type TrashResourceInput,
 } from './resource-trash.schema.js';
