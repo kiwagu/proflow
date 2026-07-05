@@ -32,6 +32,7 @@ export function TrashCard({
   meta,
   currentUserId,
   layout,
+  select,
   onRestore,
   onPurge,
 }: {
@@ -40,6 +41,9 @@ export function TrashCard({
   meta?: NodeMeta;
   currentUserId: string | null;
   layout: DriveLayout;
+  /** Multi-select checkbox (B2) for bulk Restore / Delete-forever — rendered inline
+   * (always visible) as the leading element. Absent → no bulk selection. */
+  select?: React.ReactNode;
   onRestore?: (nodeId: string) => Promise<boolean>;
   onPurge?: (nodeId: string) => Promise<'purged' | 'in-use' | 'error'>;
 }) {
@@ -107,6 +111,7 @@ export function TrashCard({
             list ? 'flex-1 gap-3' : 'w-full gap-2.5'
           )}
         >
+          {select}
           {React.createElement(iconForKind(node.kind), {
             className: cn(
               'text-muted-foreground shrink-0',

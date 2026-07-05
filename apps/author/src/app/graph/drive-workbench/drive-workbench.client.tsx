@@ -27,13 +27,16 @@ import type {
   KbViewData,
   LensView,
 } from '../views/registry/projection-view.types';
+import { DriveBulkActions } from './drive-bulk-actions';
 import { useDriveCanvasDerivations } from './use-drive-canvas-derivations';
 import { useDriveClipboard } from './use-drive-clipboard';
 import { useDriveDnd } from './use-drive-dnd';
+import { useDriveMultiSelect } from './use-drive-multi-select';
 import { useDriveMutations } from './use-drive-mutations';
 import { useDriveNavigation } from './use-drive-navigation';
 import { useDriveSelection } from './use-drive-selection';
 import { useDriveSplitReader } from './use-drive-split-reader';
+import type { DriveMultiSelect } from '../views/registry/projection-view.types';
 
 /**
  * DriveWorkbench — the workbench host for the Drive shell. It reproduces the
@@ -103,6 +106,19 @@ export function DriveWorkbench({
     recordOpen: selection.recordOpen,
   });
 
+  // Bulk multi-select (B2) — the DISTINCT bulk-selection model (checkboxes + the floating
+  // bulk bar), separate from the single-node Details selection above. Keyed to the primary
+  // pane's lens/folder so it force-clears (no setState-in-effect) when the lens changes.
+  const multiSelect = useDriveMultiSelect({
+    scope: nav.scope,
+    folderId: nav.folderId,
+  });
+
+  // Empty Trash confirm gate — the Trash toolbar button opens it; the DriveBulkActions
+  // composition owns the confirm dialog + the batch purge over ALL trashed ids.
+  const [emptyTrashOpen, setEmptyTrashOpen] = React.useState(false);
+  const onEmptyTrash = React.useCallback(() => setEmptyTrashOpen(true), []);
+
   // Dual-pane split + the shared document-reader/edit launcher.
   const splitReader = useDriveSplitReader({
     spaceId,
@@ -164,14 +180,36 @@ export function DriveWorkbench({
     return item ? { id: item.id, title: item.title } : null;
   }, [nav.docId, result.items]);
 
+  // The destination folders for the bulk Move picker — every visible folder node (RLS
+  // already narrowed the canvas). Sorted by title so the picker reads naturally.
+  const moveFolders = React.useMemo(
+    () =>
+      result.items
+        .filter((item) => item.kind === 'folder')
+        .map((item) => ({ id: item.id, title: item.title }))
+        .sort((a, b) => a.title.localeCompare(b.title)),
+    [result.items]
+  );
+
+  // Every trashed id (for Empty Trash) — enumerated from the already-resolved trash set,
+  // never re-queried (ADR-0018). The batch purge pages this at the 200-id contract cap.
+  const trashIds = React.useMemo(
+    () => (kbData?.trash.items ?? []).map((item) => item.id),
+    [kbData]
+  );
+
   // One Drive pane. Navigation (folder/scope) is per-pane; selection, the reader, the
-  // resolved canvas and the split toggle are shared.
+  // resolved canvas and the split toggle are shared. Multi-select is wired to the PRIMARY
+  // pane only (bulk selection over one lens location) — the secondary split pane gets no
+  // checkboxes, so the same node in two panes never fights over one selection.
   const renderPane = (
     paneFolderId: string | null,
     paneScope: DriveScope,
     onNav: (id: string | null) => void,
     onScopeChg: ((next: DriveScope) => void) | undefined,
-    hideSidebar = false
+    hideSidebar = false,
+    paneMultiSelect?: DriveMultiSelect,
+    paneOnEmptyTrash?: () => void
   ) => (
     <DriveProjectionView
       result={result}
@@ -203,6 +241,8 @@ export function DriveWorkbench({
       onRestore={restoreNode}
       onPurge={purgeNode}
       onRemoveShortcut={removeShortcut}
+      multiSelect={paneMultiSelect}
+      onEmptyTrash={paneOnEmptyTrash}
     />
   );
 
@@ -309,7 +349,10 @@ export function DriveWorkbench({
                           nav.folderId,
                           nav.scope,
                           nav.goFolder,
-                          goScope
+                          goScope,
+                          false,
+                          multiSelect,
+                          onEmptyTrash
                         )}
                       </DrivePaneProvider>
                     </div>
@@ -327,7 +370,15 @@ export function DriveWorkbench({
                   </div>
                 ) : (
                   <DrivePaneProvider value="a">
-                    {renderPane(nav.folderId, nav.scope, nav.goFolder, goScope)}
+                    {renderPane(
+                      nav.folderId,
+                      nav.scope,
+                      nav.goFolder,
+                      goScope,
+                      false,
+                      multiSelect,
+                      onEmptyTrash
+                    )}
                   </DrivePaneProvider>
                 )}
               </DriveDragProvider>
@@ -378,6 +429,24 @@ export function DriveWorkbench({
               onEdit={() => splitReader.requestEdit(openDoc.id)}
               onMutated={refresh}
               preparingEdit={splitReader.preparingEdit}
+            />
+          ) : null}
+
+          {/* The floating bulk action bar + its purge/move dialogs (B2). Floats
+              bottom-center over THIS canvas column; self-gates by scope + selection
+              count, and owns the Empty Trash confirm the Trash toolbar button opens. */}
+          {spaceId ? (
+            <DriveBulkActions
+              t={t}
+              scope={nav.scope}
+              spaceId={spaceId}
+              multiSelect={multiSelect}
+              containment={derivations.containment}
+              folders={moveFolders}
+              refresh={refresh}
+              emptyTrashIds={trashIds}
+              emptyTrashOpen={emptyTrashOpen}
+              onEmptyTrashOpenChange={setEmptyTrashOpen}
             />
           ) : null}
         </div>

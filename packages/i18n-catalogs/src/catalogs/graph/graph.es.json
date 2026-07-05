@@ -392,5 +392,15 @@
   "graph.panel.accessBroadcastViaFolder": "Difundido a {scope} a través de {folder}",
   "graph.panel.accessPrivateOnly": "Solo tú y los supervisores pueden ver esto.",
   "graph.panel.openInKb": "Abrir en la KB",
-  "graph.panel.manageAccess": "Administrar acceso"
+  "graph.panel.manageAccess": "Administrar acceso",
+  "graph.bulk.selectedCount": "{count} seleccionados",
+  "graph.bulk.clearSelection": "Limpiar selección",
+  "graph.bulk.selectAll": "Seleccionar todo",
+  "graph.bulk.working": "Procesando…",
+  "graph.bulk.summaryDone": "{count} listos",
+  "graph.bulk.summarySkipped": "{done} listos, {skipped} omitidos",
+  "graph.bulk.purgeConfirm": "¿Eliminar definitivamente {count} elementos seleccionados? Esta acción no se puede deshacer.",
+  "graph.select.toggle": "Seleccionar {title}",
+  "graph.trash.emptyTrash": "Vaciar papelera",
+  "graph.trash.emptyTrashConfirm": "¿Eliminar definitivamente los {count} elementos de la papelera? Esta acción no se puede deshacer."
 }

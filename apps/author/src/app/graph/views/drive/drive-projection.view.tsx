@@ -2,6 +2,7 @@
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import { Checkbox } from '@workspace/ui/components/checkbox';
 import { EmptyState } from '@workspace/ui/components/empty-state';
 import { Hint } from '@workspace/ui/components/hint';
 import { ToggleChip } from '@workspace/ui/components/toggle-chip';
@@ -76,6 +77,7 @@ import {
   RevealInKbButton,
   RootDropZone,
   SectionLabel,
+  SelectCheckbox,
   StarButton,
   TrashCard,
 } from '@/app/graph/views/drive/cards';
@@ -151,6 +153,8 @@ export function DriveProjectionView({
   onRestore,
   onPurge,
   onRemoveShortcut,
+  multiSelect,
+  onEmptyTrash,
 }: ProjectionViewProps) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
@@ -1009,6 +1013,81 @@ export function DriveProjectionView({
     ...items.map(itemRow),
   ];
 
+  // The CURRENT ORDERED VISIBLE selectable ids (B2) — the exact visual order of what is
+  // rendered NOW, so a shift-click range + "select all visible" act on precisely what the
+  // user sees. Per render branch: Trash cards, the Home digest sections, the list table
+  // (tree-flattened, shortcuts excluded), the advanced grid forest, or the flat grid
+  // (folders then files). Shortcuts (symlinks, not nodes) are never selectable. Empty when
+  // there is no multi-select host.
+  const flattenRowIds = (rowSet: DriveRow[]): string[] => {
+    const out: string[] = [];
+    const walk = (rs: DriveRow[]) => {
+      for (const r of rs) {
+        if (r.rowKind !== 'shortcut') {
+          out.push(r.node.id);
+        }
+        if (r.subRows) {
+          walk(r.subRows);
+        }
+      }
+    };
+    walk(rowSet);
+    return out;
+  };
+  const flattenForestIds = (nodes: LensTreeNode[]): string[] => {
+    const out: string[] = [];
+    const walk = (ns: LensTreeNode[]) => {
+      for (const n of ns) {
+        out.push(n.node.id);
+        if (n.children.length > 0) {
+          walk(n.children);
+        }
+      }
+    };
+    walk(nodes);
+    return out;
+  };
+  const orderedVisibleIds: string[] = !multiSelect
+    ? []
+    : isTrash
+      ? trashNodes.map((node) => node.id)
+      : isHome
+        ? [
+            ...new Set(
+              [...jumpBackNodes, ...recentlyUpdatedNodes].map((node) => node.id)
+            ),
+          ]
+        : layout === 'list'
+          ? flattenRowIds(driveRows)
+          : isLensAdvanced
+            ? flattenForestIds(lensForest)
+            : [...folders, ...items].map((node) => node.id);
+
+  // One card/row select checkbox — toggles this node's bulk selection (shift = a
+  // contiguous range over the ordered visible ids). Absent host → no checkbox.
+  const renderSelect = (
+    id: string,
+    title: string,
+    placement: 'grid' | 'list' | 'inline'
+  ) =>
+    multiSelect ? (
+      <SelectCheckbox
+        placement={placement}
+        checked={multiSelect.isSelected(id)}
+        label={t('graph.select.toggle', { title })}
+        onToggle={(shiftKey) =>
+          shiftKey
+            ? multiSelect.toggleRange(id, orderedVisibleIds)
+            : multiSelect.toggle(id)
+        }
+      />
+    ) : undefined;
+
+  // How many of the currently visible ids are selected (drives the header tri-state).
+  const selectedVisibleCount = multiSelect
+    ? orderedVisibleIds.filter((id) => multiSelect.isSelected(id)).length
+    : 0;
+
   // The shared Drive left-rail (lens nav + Sections + the "New" launcher), now a
   // standalone component so the search lens renders the IDENTICAL chrome (ADR-0024
   // §5). It walks `treeContainment` (the lens subset's forest when advanced, else the
@@ -1301,6 +1380,23 @@ export function DriveProjectionView({
     </Button>
   ) : undefined;
 
+  // Empty Trash (B2) — purge ALL trashed nodes (the workbench owns the mandatory confirm
+  // + the batch fan-out; this button just asks it to open). Only in the Trash lens, only
+  // when the trash is non-empty, and only when the workbench wired the callback. Occupies
+  // the toolbar's action slot (Upload is meaningless in Trash).
+  const toolbarEmptyTrash =
+    isTrash && onEmptyTrash && trashNodes.length > 0 ? (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onEmptyTrash}
+        className="text-destructive hover:text-destructive"
+      >
+        <Trash2 className="size-[15px]" aria-hidden />
+        {t('graph.trash.emptyTrash')}
+      </Button>
+    ) : undefined;
+
   // The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced, shown
   // ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on Recent/Home.
   // When the space is NOT entitled it renders DISABLED, wrapped in a Hint with the upsell
@@ -1350,7 +1446,7 @@ export function DriveProjectionView({
       left={toolbarLeft}
       filter={toolbarFilter}
       trailing={toolbarClipboard}
-      upload={toolbarUpload}
+      upload={toolbarEmptyTrash ?? toolbarUpload}
       lensView={toolbarLensView}
       layout={toolbarLayout}
       split={toolbarSplit}
@@ -1373,6 +1469,11 @@ export function DriveProjectionView({
         selected={item.id === selectedId}
         sharedBadge={renderAccessBadge(item.id)}
         when={whenIso && mounted ? formatWhen(whenIso) : undefined}
+        select={renderSelect(
+          item.id,
+          item.title,
+          layout === 'list' ? 'list' : 'grid'
+        )}
         onOpen={() =>
           item.kind === 'text' && onOpenDocument
             ? onOpenDocument(item.id)
@@ -1476,13 +1577,43 @@ export function DriveProjectionView({
       meta={trashMetaByItem[node.id]}
       currentUserId={currentUserId}
       layout={layout}
+      select={renderSelect(node.id, node.title, 'inline')}
       onRestore={onRestore}
       onPurge={onPurge}
     />
   );
 
+  // The "select all visible" header (B2) — a tri-state checkbox over the ordered visible
+  // ids: all → clear, some/none → select all. Shown only with a multi-select host and a
+  // non-empty visible set. Composes above every lens's content (browse, flat lenses,
+  // Home, Trash), so bulk selection has a single always-present entry point.
+  const selectAllHeader =
+    multiSelect && orderedVisibleIds.length > 0 ? (
+      <div className="mb-3 flex items-center gap-2">
+        <Checkbox
+          aria-label={t('graph.bulk.selectAll')}
+          checked={
+            selectedVisibleCount === 0
+              ? false
+              : selectedVisibleCount === orderedVisibleIds.length
+                ? true
+                : 'indeterminate'
+          }
+          onClick={() =>
+            selectedVisibleCount === orderedVisibleIds.length
+              ? multiSelect.clear()
+              : multiSelect.selectAll(orderedVisibleIds)
+          }
+        />
+        <span className="text-muted-foreground text-xs">
+          {t('graph.bulk.selectAll')}
+        </span>
+      </div>
+    ) : null;
+
   const main = (
     <>
+      {selectAllHeader}
       {isTrash ? (
         trashNodes.length === 0 ? (
           <EmptyState>{t('graph.trash.empty')}</EmptyState>
@@ -1617,6 +1748,20 @@ export function DriveProjectionView({
                 // The size column (ADR-0026 render): a file/video's own bytes, a folder's
                 // recursive VISIBLE-descendant sum, "—" otherwise — off the shared index.
                 sizeOf={sizeOf}
+                // Multi-select (B2): a leading checkbox column; shift = a range over the
+                // ordered visible ids the view threads in. Omitted → no column.
+                selection={
+                  multiSelect
+                    ? {
+                        isSelected: multiSelect.isSelected,
+                        onToggle: (id, shiftKey) =>
+                          shiftKey
+                            ? multiSelect.toggleRange(id, orderedVisibleIds)
+                            : multiSelect.toggle(id),
+                        label: (title) => t('graph.select.toggle', { title }),
+                      }
+                    : undefined
+                }
               />
             ) : null
           ) : (
@@ -1664,6 +1809,9 @@ export function DriveProjectionView({
                             layout,
                             onOpen: () => navigate(sub.id),
                             onDetails: () => onSelect(sub.id),
+                            // This folder-card section renders only in grid layout (the
+                            // list layout goes through LensListTable above).
+                            select: renderSelect(sub.id, sub.title, 'grid'),
                             sharedBadge: renderAccessBadge(sub.id),
                             // The "placement = sharing" hint shows only when THIS folder
                             // itself confers access (a direct grant or a broadcast floor) —

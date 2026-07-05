@@ -5,25 +5,8 @@ import {
   ActionMenu,
   type ActionMenuItem,
 } from '@workspace/ui/components/action-menu';
-import { Button } from '@workspace/ui/components/button';
 import { ConfirmDialog } from '@workspace/ui/components/confirm-dialog';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@workspace/ui/components/dialog';
-import { Label } from '@workspace/ui/components/label';
 import { PromptDialog } from '@workspace/ui/components/prompt-dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@workspace/ui/components/select';
 import {
   Check,
   Copy,
@@ -39,6 +22,7 @@ import {
 import * as React from 'react';
 
 import { allFolders, type Containment } from '@/app/graph/containment';
+import { FolderPickerDialog } from '@/app/graph/folder-picker-dialog';
 import type { SpaceCapabilities } from '@/app/graph/graph-data.types';
 import { ShareDialog } from '@/app/graph/views/resource-panel/share-dialog';
 
@@ -396,44 +380,19 @@ export function NodeActionsMenu({
         confirmIcon={<Trash2 className="size-4" aria-hidden />}
       />
 
-      {/* Move — bespoke: the folder picker is domain data, so it stays here. */}
-      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-        <DialogContent aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{t('graph.panel.move')}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="move-target">
-              {t('graph.create.parentFolder')}
-            </Label>
-            <Select value={moveTarget} onValueChange={setMoveTarget}>
-              <SelectTrigger id="move-target">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="top">
-                  {t('graph.create.topLevel')}
-                </SelectItem>
-                {folders.map((folder) => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folder.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={busy}>
-                {t('graph.panel.cancel')}
-              </Button>
-            </DialogClose>
-            <Button onClick={onMove} disabled={busy}>
-              {t('graph.panel.move')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Move — the shared folder picker (the folder list is domain data). */}
+      <FolderPickerDialog
+        t={t}
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        folders={folders}
+        title={t('graph.panel.move')}
+        submitLabel={t('graph.panel.move')}
+        value={moveTarget}
+        onValueChange={setMoveTarget}
+        onSubmit={onMove}
+        busy={busy}
+      />
     </>
   );
 }

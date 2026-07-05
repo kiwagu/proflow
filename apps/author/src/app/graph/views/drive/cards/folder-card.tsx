@@ -31,6 +31,7 @@ export function FolderCard({
   footer,
   sharedBadge,
   folderHint,
+  select,
   dnd,
 }: {
   title: string;
@@ -59,6 +60,9 @@ export function FolderCard({
   /** The "placement = sharing" hint on a folder that confers access (ADR-0023 §7a) —
    * names the audience / floor scope. Rendered under the subtitle. */
   folderHint?: React.ReactNode;
+  /** Multi-select checkbox (B2) — the OPPOSITE corner from the star; reveals on hover
+   * or while selected. Absent → no checkbox (a lens without bulk selection). */
+  select?: React.ReactNode;
   /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
   dnd?: CardDnd;
 }) {
@@ -121,6 +125,7 @@ export function FolderCard({
           />
         ) : null}
       </CardTile>
+      {select}
       <CardActionRail star={star} actions={actions} list={list} />
     </div>
   );

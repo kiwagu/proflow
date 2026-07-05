@@ -221,6 +221,25 @@ export const STRUCTURAL_LENS_SCOPES: ReadonlySet<DriveScope> =
  */
 export type LensView = 'flat' | 'advanced';
 
+/**
+ * The multi-select model (release-hardening B2) — the DISTINCT bulk-selection affordance
+ * (checkboxes + the floating bulk bar), owned by the workbench and threaded to the view.
+ * SEPARATE from the single-node Details selection (`selectedId`): a checkbox toggles
+ * membership here and must NOT open Details. `toggleRange` selects the contiguous run
+ * between the last-toggled anchor and `id` over the CURRENT ORDERED VISIBLE id list the
+ * view supplies (its own visual order). Forced-clear on lens/folder change is the
+ * workbench's job (a selection never leaks across lenses).
+ */
+export type DriveMultiSelect = {
+  selectedIds: ReadonlySet<string>;
+  count: number;
+  isSelected: (id: string) => boolean;
+  toggle: (id: string) => void;
+  toggleRange: (id: string, orderedVisibleIds: readonly string[]) => void;
+  selectAll: (ids: readonly string[]) => void;
+  clear: () => void;
+};
+
 export type ProjectionViewProps = {
   result: ProjectionResult;
   /** Plain serializable message catalog (RSC-safe); the view builds its own `t`. */
@@ -343,4 +362,17 @@ export type ProjectionViewProps = {
    * Never throws (graceful — the guard rejection is surfaced, not raised).
    */
   onPurge?: (nodeId: string) => Promise<'purged' | 'in-use' | 'error'>;
+  /**
+   * Multi-select model (B2) — drives the per-card / per-row checkboxes + the "select all
+   * visible" header. The view computes the CURRENT ORDERED VISIBLE ids and passes them to
+   * `toggleRange` (shift-click) / `selectAll`. Absent → no bulk selection (the checkboxes
+   * do not render). The floating bulk bar itself is rendered by the workbench.
+   */
+  multiSelect?: DriveMultiSelect;
+  /**
+   * Empty Trash (B2) — the Trash-lens toolbar button asks the workbench to open its
+   * mandatory purge-all confirm (the workbench owns the confirm + the batch fan-out).
+   * Absent → no button (a lens that is not Trash, or no bulk affordance wired).
+   */
+  onEmptyTrash?: () => void;
 };

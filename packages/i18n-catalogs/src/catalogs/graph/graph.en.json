@@ -392,5 +392,15 @@
   "graph.panel.accessBroadcastViaFolder": "Broadcast to {scope} via {folder}",
   "graph.panel.accessPrivateOnly": "Only you and supervisors can see this.",
   "graph.panel.openInKb": "Open in KB",
-  "graph.panel.manageAccess": "Manage access"
+  "graph.panel.manageAccess": "Manage access",
+  "graph.bulk.selectedCount": "{count} selected",
+  "graph.bulk.clearSelection": "Clear selection",
+  "graph.bulk.selectAll": "Select all",
+  "graph.bulk.working": "Working…",
+  "graph.bulk.summaryDone": "{count} done",
+  "graph.bulk.summarySkipped": "{done} done, {skipped} skipped",
+  "graph.bulk.purgeConfirm": "Permanently delete {count} selected items? This cannot be undone.",
+  "graph.select.toggle": "Select {title}",
+  "graph.trash.emptyTrash": "Empty Trash",
+  "graph.trash.emptyTrashConfirm": "Permanently delete all {count} items in Trash? This cannot be undone."
 }

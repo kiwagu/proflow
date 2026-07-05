@@ -15,6 +15,7 @@ import type { DriveDragData, DriveDropData } from '@/app/graph/drive-dnd';
 import type { NodeMeta } from '@/app/graph/graph-data.types';
 import { iconForKind, kindLabel, ownerLabel } from '@/app/graph/presentation';
 import { StarButton } from '@/app/graph/views/drive/cards/card-rail';
+import { SelectCheckbox } from '@/app/graph/views/drive/cards/select-checkbox';
 import type { DriveRow } from '@/app/graph/views/drive/list/drive-row';
 import {
   modifiedCell,
@@ -113,6 +114,7 @@ export function LensListTable({
   sharedBadgeFor,
   sizeOf,
   snippet,
+  selection,
 }: {
   rows: DriveRow[];
   t: GraphTranslator;
@@ -152,9 +154,46 @@ export function LensListTable({
    * a localized header plus a per-row cell renderer. Absent (default) → no snippet
    * column, so non-search lenses are unchanged (only the search config supplies it). */
   snippet?: { header: string; cell: (node: LensNode) => React.ReactNode };
+  /** Multi-select (B2) — supplied → a leading checkbox column (per-row toggle, shift =
+   * range over the ordered rows the view supplies); omitted → no column (unchanged). */
+  selection?: {
+    isSelected: (id: string) => boolean;
+    onToggle: (id: string, shiftKey: boolean) => void;
+    label: (title: string) => string;
+  };
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
     () => [
+      // OPTIONAL leading multi-select checkbox column (B2) — leftmost so it never
+      // collides with the star. Shortcuts (symlinks, not nodes) carry none. The cell
+      // stops pointer/click so toggling neither opens Details nor starts a row drag.
+      ...(selection
+        ? [
+            {
+              id: 'select',
+              header: '',
+              enableSorting: false,
+              cell: ({ row }: { row: { original: DriveRow } }) =>
+                row.original.rowKind === 'shortcut' ? null : (
+                  <div
+                    role="presentation"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <SelectCheckbox
+                      placement="inline"
+                      checked={selection.isSelected(row.original.node.id)}
+                      onToggle={(shiftKey) =>
+                        selection.onToggle(row.original.node.id, shiftKey)
+                      }
+                      label={selection.label(row.original.node.title)}
+                    />
+                  </div>
+                ),
+              meta: { cellClassName: 'w-8' },
+            } satisfies ColumnDef<DriveRow>,
+          ]
+        : []),
       // Tree only: a HIDDEN rank (folders/shortcuts 0, files 1) pinned as the primary
       // sort, so "folders first" holds at every level regardless of the column sort
       // direction (the visible column becomes the secondary sort). Auto-hidden by the
@@ -371,6 +410,7 @@ export function LensListTable({
       sharedBadgeFor,
       sizeOf,
       snippet,
+      selection,
     ]
   );
 

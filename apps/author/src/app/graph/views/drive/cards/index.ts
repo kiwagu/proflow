@@ -14,6 +14,7 @@ export {
 export { FolderCard } from './folder-card';
 export { ItemCard } from './item-card';
 export { RemoveShortcutButton } from './remove-shortcut-button';
+export { SelectCheckbox } from './select-checkbox';
 export { TrashCard } from './trash-card';
 export {
   CanvasRootDropZone,
