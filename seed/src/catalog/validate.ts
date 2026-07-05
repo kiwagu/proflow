@@ -1,4 +1,7 @@
-import { isAllowedMediaMime } from '@workspace/knowledge-contracts';
+import {
+  isAllowedMediaMime,
+  resourceStatusSchema,
+} from '@workspace/knowledge-contracts';
 
 import type { SeedNode, SeedScenario } from './types.js';
 
@@ -79,6 +82,28 @@ export function validateScenario(s: SeedScenario): string[] {
       actorOk(a, `node "${n.ref}" userGrants`);
     for (const t of n.tags ?? []) {
       if (!t) fail(`node "${n.ref}" has an empty tag title`);
+    }
+    // Workflow-LIFECYCLE status (B1) — a CONTENT-only dimension set via the product's
+    // `PATCH /author/graph/status` route. Must be a valid three-state value, never on a
+    // `folder` (a pure container, no lifecycle — the seed model has no `tag` NODE kind;
+    // tags are titles), and never combined with the board demo's `status`/`workflowKey`
+    // axis (a different, mutually-exclusive status machine).
+    if (n.lifecycleStatus !== undefined) {
+      if (!resourceStatusSchema.safeParse(n.lifecycleStatus).success) {
+        fail(
+          `node "${n.ref}" lifecycleStatus "${n.lifecycleStatus}" is invalid (draft | active | archived)`
+        );
+      }
+      if (n.kind === 'folder') {
+        fail(
+          `node "${n.ref}" (kind "folder") cannot carry a lifecycleStatus — only content nodes have a lifecycle`
+        );
+      }
+      if (n.kind === 'text' && (n.status !== undefined || n.workflowKey)) {
+        fail(
+          `node "${n.ref}" sets both lifecycleStatus and the board status/workflowKey — they are mutually-exclusive status axes`
+        );
+      }
     }
     if (n.kind === 'text') {
       if (n.body !== undefined && !isLexical(n.body)) {

@@ -49,6 +49,7 @@ import {
   SIZE_FILTER_BYTES,
   SIZE_FILTER_FOLDER_SUM,
   slug,
+  STATUS_LIFECYCLE_SCENARIO,
   teardownTenant,
   type MaterializedScenario,
   type SeedActor,
@@ -2334,5 +2335,82 @@ export async function seedDriveSizeFilterFixture(
     folderSum: SIZE_FILTER_FOLDER_SUM,
     titles: SIZE_FILTER_TITLES,
     owner: who('admin'),
+  };
+}
+
+// ── B1: resource status-lifecycle fixture (transition control + status facet) ─
+//
+// The status-lifecycle e2e (`knowledge-status-lifecycle.e2e.spec.ts`) drives the
+// ResourcePanel transition control (`PATCH /author/graph/status`) and the Drive status
+// facet purely in the browser + through the shared HTTP client. Its tree — one folder of
+// three content docs, one per lifecycle state (draft/active/archived) — comes ENTIRELY
+// from the shared `STATUS_LIFECYCLE_SCENARIO` catalog entry (via `materializeFixture`),
+// whose docs each have their declared lifecycle state written through the product's OWN new
+// route (the materializer's `lifecycleStatus` → `seedClientFor(owner).setStatus`, RLS-fenced
+// as the owner; a text doc is born `active`, so even the draft state is set explicitly) —
+// never a direct column write. The demo DB and this spec name the SAME nodes at the SAME
+// states through the one create-vocabulary.
+
+/** The seeded status-lifecycle titles the spec's DOM assertions key on — kept in sync
+ * with `STATUS_LIFECYCLE_SCENARIO`. */
+export const STATUS_LIFECYCLE_TITLES = {
+  root: 'Release Notes',
+  draft: 'Draft Release Note',
+  active: 'Active Runbook',
+  archived: 'Archived Postmortem',
+} as const;
+
+/** The status-lifecycle fixture, resolved from the shared `STATUS_LIFECYCLE_SCENARIO`.
+ * Every `…Id` is a `knr_…`; the docs carry the labelled lifecycle state so the spec can
+ * assert the transition control's active segment + the facet's prune. */
+export type StatusLifecycleFixture = {
+  /** The space the browse tree + facet are scoped to. */
+  spaceId: string;
+  /** The folder holding the three lifecycle docs — the browser opens `?folder=<this>`. */
+  rootId: string;
+  /** The `draft` doc (create-time default) — the transition test opens its panel and
+   * clicks "Active"; the facet test narrows the canvas to it when "Draft" is selected. */
+  draftDocId: string;
+  /** The `active` doc (lifted via the status route) — DROPS out when the facet = "Draft". */
+  activeDocId: string;
+  /** The `archived` doc (lifted via the status route) — the THIRD distinct status so the
+   * facet chip row always renders (>1 present). */
+  archivedDocId: string;
+  /** The seeded titles the DOM assertions key on. */
+  titles: typeof STATUS_LIFECYCLE_TITLES;
+  /** The OWNER (`admin`, holds `space.knowledge.update`) — authors + transitions. */
+  owner: KnowledgeActor;
+  /** A space member WITHOUT `space.knowledge.update` (the tenant's `space_admin` actor):
+   * the RLS-negative — its `PATCH /author/graph/status` on the owner's node is rejected
+   * (422) and the status stays unchanged. */
+  stranger: KnowledgeActor;
+};
+
+/**
+ * Materialize the status-lifecycle scenario over an existing tenant and project its refs
+ * onto the spec shape. The three docs + their non-draft lifecycle states are already
+ * CREATED by `materializeFixture` through the runtime RLS path + the live status route;
+ * this only names the pieces the spec asserts against. Single-space (a pure lifecycle
+ * proof over one owner's tree); the RLS-negative reuses the tenant's `ungranted` actor.
+ */
+export async function seedStatusLifecycleFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<StatusLifecycleFixture> {
+  const { refs } = await materializeFixture(STATUS_LIFECYCLE_SCENARIO, tenant);
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value)
+      throw new Error(`status-lifecycle fixture: missing ref "${ref}"`);
+    return value;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    rootId: id('status/root'),
+    draftDocId: id('status/draft'),
+    activeDocId: id('status/active'),
+    archivedDocId: id('status/archived'),
+    titles: STATUS_LIFECYCLE_TITLES,
+    owner: tenant.granted,
+    stranger: tenant.ungranted,
   };
 }

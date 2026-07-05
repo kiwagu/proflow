@@ -55,7 +55,7 @@ as a `space_admin` — both password `ProflowDemo!1`. Content is private-by-defa
 ### Presets
 
 `all` (default) materializes everything. Named presets — `drive`, `access`,
-`per-user-share`, `knowledge-base`, `search`, `media`, `board`, `shared`, `hierarchy`, `trash` —
+`per-user-share`, `knowledge-base`, `search`, `media`, `board`, `status`, `shared`, `hierarchy`, `trash` —
 group the scenarios for one capability so the seed stays runnable as the catalog grows. A
 scenario opts into a preset via its `presets` field. `access` is cohort/floor sharing;
 `shared` is the "Shared with me" lens — cross-shared docs that fill it both ways PLUS the
@@ -169,6 +169,20 @@ reserved for the trash → purge lifecycle — purging it best-effort reaps its 
 the sole fence. The ADR-0026 media matrix e2e (`knowledge-media-substrate.e2e.spec.ts`) draws
 this corpus via `seedMediaSubstrateFixture` and drives the REAL `/author/graph/media`
 upload/download transport against REAL Storage.
+`status` is the resource WORKFLOW lifecycle (B1): the `status-lifecycle` scenario — one
+folder of three content docs, one per state (`draft`/`active`/`archived`). A text doc is born
+`active` (the text-resource fan-out default), so each declared state is written through the
+product's OWN new route (`PATCH /author/graph/status`, gated by `space.knowledge.update`) at
+seed time — the materializer's `lifecycleStatus` → `seedClientFor(owner).setStatus`, never a
+direct column write. It backs BOTH B1 surfaces: the ResourcePanel transition control (a
+SegmentedControl — click a segment to move the state) and the Drive status facet
+(`StatusFacetChips`, `graph.lens.filterStatus` — a single-select content prune, shown when the
+resolved canvas carries ≥2 distinct content statuses). The scenario ALSO rides the `drive`
+preset, so the demo Drive shows a live status facet. Its e2e
+(`knowledge-status-lifecycle.e2e.spec.ts`) draws the tree via `seedStatusLifecycleFixture` and
+proves the transition (owner moves draft→active, persists across reload), the facet (select
+"Draft" narrows the canvas, "All" restores), and the RLS negative (a space member without
+`space.knowledge.update` is rejected 422, status unchanged).
 
 ## The dictionary
 

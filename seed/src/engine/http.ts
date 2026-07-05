@@ -10,6 +10,8 @@
  * already carry an actor's auth cookies (see `actorCookieHeader`).
  */
 
+import type { ResourceStatus } from '@workspace/knowledge-contracts';
+
 export type SeedResponse = { status: number; body: unknown };
 
 export type SeedFetcher = {
@@ -222,6 +224,18 @@ export type SeedClient = SeedFetcher & {
   restore(spaceId: string, resourceId: string): Promise<void>;
   purge(spaceId: string, resourceId: string): Promise<PurgeResult>;
   setFloor(resourceId: string, visibility: Floor): Promise<void>;
+  /** Set a node's WORKFLOW-LIFECYCLE status — `draft` → `active` → `archived`
+   * (B1): `PATCH /author/graph/status`. One scalar column written under the caller's
+   * RLS (`space.knowledge.update` enforced on the UPDATE, never an app check) — the
+   * transport twin of `setFloor`, but ORTHOGONAL: status (workflow) is neither
+   * `visibility` (access) nor `deleted_at` (trash). A create defaults to `draft`, so
+   * the seed calls this only to lift a node to `active`/`archived`. Fails closed
+   * (422) for a caller without update / a node it cannot see. */
+  setStatus(
+    spaceId: string,
+    resourceId: string,
+    status: ResourceStatus
+  ): Promise<void>;
   /** Read a node's Share-dialog audience (ADR-0019/0020/0021): the floor, cohort choices,
    * the per-user `grants` ("who has access"), and the searchable, PAGINATED `members`
    * people-picker page. `query` narrows the directory server-side (`?q=`); `cursor` is the
@@ -472,6 +486,15 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
         visibility,
       });
       expectStatus(res, 200, `setFloor(${resourceId})`);
+    },
+
+    async setStatus(spaceId, resourceId, status) {
+      const res = await fetcher.patch('/author/graph/status', {
+        spaceId,
+        resourceId,
+        status,
+      });
+      expectStatus(res, 200, `setStatus(${resourceId}→${status})`);
     },
 
     async visibility(spaceId, nodeId, opts) {

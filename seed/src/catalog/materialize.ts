@@ -242,6 +242,17 @@ export async function materializeScenario(
     for (const granteeRef of node.userGrants ?? []) {
       await c.grantUser(nodeId, actor(granteeRef).userId);
     }
+    // Workflow-LIFECYCLE status (B1) — drive the declared state through the product's OWN
+    // route (`PATCH /author/graph/status`) under the OWNER's RLS, exactly as the panel's
+    // transition control does (never a direct column write). Always written when declared:
+    // the create-time default differs by kind (a text doc is born `active` via the
+    // text-resource fan-out; a bodyless node defaults `draft`), so an idempotent set makes
+    // the declared status authoritative regardless. The `hasWorkflow` branch above is a
+    // DIFFERENT status axis (the board demo); the validator forbids combining them, so a
+    // node here reached this via the normal create path.
+    if (node.lifecycleStatus) {
+      await c.setStatus(spaceId, nodeId, node.lifecycleStatus);
+    }
     // Star is per-user — pin it in the OWNER's Starred lens (owner needs progress).
     if (node.starred) await c.star(spaceId, nodeId, true);
     // …and for any explicit actors (e.g. star a doc that another user shared with you).

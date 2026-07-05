@@ -14,6 +14,7 @@ import { KNOWLEDGE_BASE_SCENARIO } from './knowledge-base.js';
 import { PER_USER_SHARE_SCENARIO } from './per-user-share.js';
 import { SHARE_MECHANISM_SCENARIO } from './share-mechanism.js';
 import { SHARED_SCENARIO } from './shared.js';
+import { STATUS_LIFECYCLE_SCENARIO } from './status-lifecycle.js';
 import { TRASH_SCENARIO } from './trash.js';
 import type { SeedScenario } from './types.js';
 
@@ -38,6 +39,7 @@ export const ALL_SCENARIOS: SeedScenario[] = [
   PER_USER_SHARE_SCENARIO,
   DIRECTORY_PICKER_SCENARIO,
   CONTAINMENT_INHERITANCE_SCENARIO,
+  STATUS_LIFECYCLE_SCENARIO,
 ];
 
 export {
@@ -55,6 +57,7 @@ export {
   PER_USER_SHARE_SCENARIO,
   SHARE_MECHANISM_SCENARIO,
   SHARED_SCENARIO,
+  STATUS_LIFECYCLE_SCENARIO,
   TRASH_SCENARIO,
 };
 export {

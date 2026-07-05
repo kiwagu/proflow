@@ -1,3 +1,5 @@
+import type { ResourceStatus } from '@workspace/knowledge-contracts';
+
 import type { Floor } from '../engine/http.js';
 
 /**
@@ -70,6 +72,19 @@ type NodeBase = {
   /** Record a per-user "open" for these actors (verb `space.knowledge.open`) so the
    * node lands in their "Recent" lens (ADR-0016). The actor must be able to SEE it. */
   openedBy?: ActorRef[];
+  /** Workflow-LIFECYCLE status — `draft` → `active` → `archived` (B1). A CONTENT-only
+   * dimension (invalid on `folder`). The create endpoints do NOT expose it, and the
+   * create-time default differs by kind (a text doc is born `active` via the text-resource
+   * fan-out; a bodyless node defaults `draft`), so when declared the materializer writes
+   * the state through the product's OWN new route (`PATCH /author/graph/status`) as the
+   * node's OWNER — exactly as the panel's transition control does, NEVER a direct column
+   * write. Omit to leave the kind's create default.
+   *
+   * This is the RESOURCE lifecycle (ADR-0007's coarse three-state, migration
+   * 20260615190243) — distinct from the board demo's `status`/`workflowKey` pair
+   * (`draft`/`in_review`/`approved`), which is a bodyless direct-insert workflow demo;
+   * the two are mutually exclusive on one node (the validator enforces it). */
+  lifecycleStatus?: ResourceStatus;
 };
 
 export type FolderNode = NodeBase & {
