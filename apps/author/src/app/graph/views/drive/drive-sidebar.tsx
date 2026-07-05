@@ -1,7 +1,6 @@
 'use client';
 
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
-import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { SectionLabel } from '@workspace/ui/components/section-label';
 import { cn } from '@workspace/ui/lib/utils';
@@ -55,9 +54,8 @@ import type { DriveScope } from '@/app/graph/views/registry/projection-view.type
 
 /**
  * A sidebar filter. `scope` present = the item is WIRED to a canvas filter (the
- * active one highlights); `comingSoon` = a not-yet-available filter (depends on the
- * access-model work), rendered muted + inert. `DriveScope` is the shared type (the
- * workbench owns it in the URL).
+ * active one highlights). `DriveScope` is the shared type (the workbench owns it in
+ * the URL).
  */
 type NavItem = {
   icon: LucideIcon;
@@ -67,9 +65,6 @@ type NavItem = {
    * even though the nav is data-driven). */
   label: (t: GraphTranslator) => string;
   scope?: DriveScope;
-  /** Not yet available (depends on the access-model work) — rendered muted + inert
-   * with a "Coming soon" badge instead of a dead `navigate(null)` stub. */
-  comingSoon?: boolean;
 };
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -178,31 +173,8 @@ export function DriveSidebar({
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           // A wired item highlights when its scope is the active one ('kb' stays
-          // active even inside a folder); the not-yet-wired stubs never highlight.
+          // active even inside a folder).
           const active = item.scope === scope;
-          // Not-yet-available filters (depend on the access-model work) read as muted +
-          // inert with a "Coming soon" badge — honest, not a dead navigate-to-root stub.
-          if (item.comingSoon) {
-            return (
-              <div
-                key={item.key}
-                aria-disabled
-                title={t('graph.drive.comingSoon')}
-                className="flex h-auto w-full cursor-not-allowed items-center gap-2.5 px-2 py-1.5 text-left text-sm font-normal select-none"
-              >
-                <Icon
-                  className="text-muted-foreground/70 size-4 shrink-0"
-                  aria-hidden
-                />
-                <span className="text-muted-foreground/70 flex-1 truncate">
-                  {item.label(t)}
-                </span>
-                <Badge variant="secondary" className="text-[10px] font-normal">
-                  {t('graph.drive.comingSoon')}
-                </Badge>
-              </div>
-            );
-          }
           return (
             <Button
               key={item.key}

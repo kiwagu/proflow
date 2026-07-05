@@ -354,8 +354,8 @@ export function CreateResource({
           return;
         }
       }
-      // description rides on the attributes route after the node exists (the
-      // RAG-bound field, stored — vector seam hidden, poc-no-fallbacks).
+      // description rides on the attributes route after the node exists (stored;
+      // indexed for lexical search only — no vector/semantic pipeline).
       if (kind !== 'tag' && description.trim().length > 0) {
         await fetch('/author/graph/attributes', {
           method: 'POST',

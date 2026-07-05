@@ -2,15 +2,17 @@ import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
 import { Textarea } from '@workspace/ui/components/textarea';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
-import { Check, Pencil, Sparkles } from 'lucide-react';
+import { AlignLeft, Check, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { PanelSectionLabel } from './panel-section-label';
 
 /**
- * Editable, RAG-bound description (stored). Saved on Save / ⌘↵. The vector index
- * status/reindex is NOT shown — RAG seam, no pipeline (poc-no-fallbacks; the
- * prototype's mocked embed badge is intentionally dropped).
+ * Editable description (stored). Saved on Save / ⌘↵. The description body is indexed
+ * for LEXICAL search only (trgm over `kb.resource_description.body`) — there is no
+ * semantic/vector pipeline, so the copy makes no "found by meaning" claim and no
+ * embed/reindex status is shown (poc-no-fallbacks; the prototype's mocked embed badge
+ * is intentionally dropped).
  */
 export function EditableDescription({
   t,
@@ -43,7 +45,7 @@ export function EditableDescription({
   return (
     <section className="flex flex-col gap-2">
       <PanelSectionLabel>
-        <Sparkles className="size-3" aria-hidden />
+        <AlignLeft className="size-3" aria-hidden />
         {t('graph.panel.description')}
       </PanelSectionLabel>
       {editing ? (
