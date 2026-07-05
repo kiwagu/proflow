@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ALL_SCENARIOS,
+  BULK_ACTIONS_SCENARIO,
   DRIVE_CASCADE_SCENARIO,
   DRIVE_COPY_CHAIN_SCENARIO,
   DRIVE_SIZE_FILTER_SCENARIO,
@@ -16,6 +17,7 @@ const E2E_ONLY_FIXTURES: SeedScenario[] = [
   DRIVE_CASCADE_SCENARIO,
   DRIVE_COPY_CHAIN_SCENARIO,
   DRIVE_SIZE_FILTER_SCENARIO,
+  BULK_ACTIONS_SCENARIO,
 ];
 
 describe('seed catalog integrity', () => {

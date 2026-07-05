@@ -277,6 +277,23 @@ media branch survives, the empty branch + loose leaves drop); (3) the same chip 
 (the Starred lens) keeps ONLY uploaded artifacts (the two files stay, the starred doc drops).
 It is purely presentational — no new endpoint, no resolver change.
 
+The Drive bulk-actions render spec (`knowledge-bulk-actions.e2e.spec.ts`, release-hardening
+B2) draws its whole tree from the shared `bulk-actions` fixture (an e2e-only scenario, `drive`
+preset, ABSENT from the demo seed) via `seedBulkActionsFixture` — never an inline
+`createFolder`/`createDoc`/trash tree — so the demo vocabulary and the test build the known
+selectable set the SAME way through the one create-vocabulary. The fixture is a folder of FOUR
+content siblings (titles sort in declaration order, so a SHIFT-click range over the ordered-
+visible list is deterministic) plus TWO loose docs soft-deleted at seed time (the scenario's
+`trash` list → a known Trash lens). The spec proves the runtime behaviours a green build can't:
+multi-select via the per-card checkboxes drives the floating bulk bar (a checkbox toggles
+selection and must NOT open the Details drawer; SHIFT selects a contiguous range), bulk Trash /
+Star / Restore fan out over the existing per-id routes with an honest done-summary, Empty Trash
+opens a MANDATORY confirm (cancel keeps, confirm batch-purges all → empty), and the batch route
+(`DELETE /author/graph/trash {resourceIds[]}`) returns the honest partial split — a mix of an
+own-trashed id (→ `purged`) and a second actor's node the caller cannot destroy (→ `skipped`,
+reason `denied`), status 200, driven through the shared vocabulary's `purgeMany` wrapper. No new
+endpoint — every verb is a client fan-out over routes that already shipped.
+
 The SAME `drive-size-filter` fixture ALSO backs the SEARCH-lens variant of that chip
 (`knowledge-search-size-filter.e2e.spec.ts`, ADR-0026 render): the "Only files" chip now lives
 on EVERY lens shelf via the shared `LensToolbar`, and on Search it FUNCTIONALLY filters the

@@ -35,6 +35,7 @@ import {
   bootstrapMemberActor,
   buildBoardSpec,
   buildKnowledgeBaseSpec,
+  BULK_ACTIONS_SCENARIO,
   CONTAINMENT_INHERITANCE_SCENARIO,
   createActor,
   DIRECTORY_PICKER_SCENARIO,
@@ -2412,5 +2413,84 @@ export async function seedStatusLifecycleFixture(
     titles: STATUS_LIFECYCLE_TITLES,
     owner: tenant.granted,
     stranger: tenant.ungranted,
+  };
+}
+
+// ── B2: Drive multi-select + bulk action bar + Empty Trash fixture ────────────
+//
+// The bulk-actions e2e (`knowledge-bulk-actions.e2e.spec.ts`) drives the floating bulk
+// action bar (multi-select → Trash / Star / Restore) + Empty Trash purely in the browser
+// through the per-card checkboxes, and the honest batch-purge partial split through the
+// shared HTTP client. Its tree — a folder of four selectable content siblings + two
+// pre-trashed loose docs — comes ENTIRELY from the shared `BULK_ACTIONS_SCENARIO` catalog
+// entry (via `materializeFixture`), created through the one create-vocabulary (folders/docs
+// via the live routes, the two trashed via the resource DELETE = soft-trash). The demo
+// vocabulary and this spec name the SAME nodes through the one create-vocabulary — never an
+// inline `createFolder`/`createDoc`/trash tree.
+
+/** The seeded bulk-actions titles the spec's DOM assertions key on — kept in sync with
+ * `BULK_ACTIONS_SCENARIO`. The four siblings sort in this (declaration) order, so a
+ * SHIFT-click range over the ordered-visible list is deterministic. */
+export const BULK_ACTIONS_TITLES = {
+  root: 'Bulk Playground',
+  alpha: 'Bulk Alpha',
+  bravo: 'Bulk Bravo',
+  charlie: 'Bulk Charlie',
+  delta: 'Bulk Delta',
+  trashedOne: 'Trashed One',
+  trashedTwo: 'Trashed Two',
+} as const;
+
+/** The bulk-actions fixture, resolved from the shared `BULK_ACTIONS_SCENARIO`. Every
+ * `…Id` is a `knr_…`; the spec asserts against these named refs. */
+export type BulkActionsFixture = {
+  /** The space the browse tree + Trash lens are scoped to. */
+  spaceId: string;
+  /** The folder holding the four selectable siblings — the browser opens `?folder=<this>`. */
+  rootId: string;
+  /** The four selectable content docs, in ordered-visible order (for SHIFT-range + bulk
+   * Trash / Star). `alpha`/`bravo` are trashed by the bulk-Trash proof; `charlie`/`delta`
+   * are starred by the bulk-Star proof. */
+  alphaId: string;
+  bravoId: string;
+  charlieId: string;
+  deltaId: string;
+  /** The two loose docs soft-deleted at seed time — the known Trash lens set for bulk Restore. */
+  trashedOneId: string;
+  trashedTwoId: string;
+  /** The seeded titles the DOM assertions key on. */
+  titles: typeof BULK_ACTIONS_TITLES;
+  /** The OWNER (`admin`, holds all knowledge verbs) — authors + drives every bulk verb. */
+  owner: KnowledgeActor;
+};
+
+/**
+ * Materialize the bulk-actions scenario over an existing tenant and project its refs onto
+ * the spec shape. The four siblings + the two pre-trashed docs are already CREATED (and
+ * soft-trashed) by `materializeFixture` through the runtime RLS path + the live routes;
+ * this only names the pieces the spec asserts against. Single-space (a pure multi-select
+ * proof over one owner's tree); the batch-purge RLS-negative bootstraps a second actor
+ * inline (like the trash spec) and drives the batch route through `owner`'s `purgeMany`.
+ */
+export async function seedBulkActionsFixture(
+  tenant: KnowledgeGraphTenant
+): Promise<BulkActionsFixture> {
+  const { refs } = await materializeFixture(BULK_ACTIONS_SCENARIO, tenant);
+  const id = (ref: string): string => {
+    const value = refs.get(ref);
+    if (!value) throw new Error(`bulk-actions fixture: missing ref "${ref}"`);
+    return value;
+  };
+  return {
+    spaceId: tenant.spaceId,
+    rootId: id('bulk/root'),
+    alphaId: id('bulk/alpha'),
+    bravoId: id('bulk/bravo'),
+    charlieId: id('bulk/charlie'),
+    deltaId: id('bulk/delta'),
+    trashedOneId: id('bulk/trashed-one'),
+    trashedTwoId: id('bulk/trashed-two'),
+    titles: BULK_ACTIONS_TITLES,
+    owner: tenant.granted,
   };
 }

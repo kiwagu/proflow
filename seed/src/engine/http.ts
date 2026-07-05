@@ -87,6 +87,18 @@ export type TextResourceResult = {
 export type CopyResult = { nodeId: string; count: number };
 export type PurgeResult = { purged: string[]; reason?: string };
 
+/** One id a batch-purge did NOT destroy, with why (release-hardening B2). `denied` =
+ * the DELETE hit 0 rows with no error (RLS silently denied / already gone); `in-use` =
+ * a living cross-owner reference blocked it; `error` = an unexpected per-id failure. */
+export type PurgeBatchSkip = {
+  resourceId: string;
+  reason: 'denied' | 'in-use' | 'error';
+};
+/** The `DELETE /author/graph/trash` BATCH result (Empty Trash / bulk Delete-forever):
+ * the honest partial split — every id is purged INDEPENDENTLY under the caller's RLS
+ * (`Promise.allSettled`), so a denied id is `skipped`, never aborting the rest. */
+export type PurgeBatchResult = { purged: string[]; skipped: PurgeBatchSkip[] };
+
 /** One row of the lexical-search result (ADR-0024 §1) — a knowledge resource the
  * caller may see under RLS, annotated with its match `score` + `matchedField`. The
  * shape mirrors `SearchResultItem`; the seed/e2e only needs `id`/`title` to assert
@@ -223,6 +235,12 @@ export type SeedClient = SeedFetcher & {
   trash(spaceId: string, resourceId: string): Promise<void>;
   restore(spaceId: string, resourceId: string): Promise<void>;
   purge(spaceId: string, resourceId: string): Promise<PurgeResult>;
+  /** Batch-purge a SET of trashed nodes (Empty Trash / bulk Delete-forever, B2):
+   * `DELETE /author/graph/trash` with the `resourceIds[]` discriminator (server-capped
+   * at 200). Each id is purged independently under the caller's RLS, so the result is
+   * the honest `{ purged, skipped }` split — an id the caller cannot destroy lands in
+   * `skipped` (reason `denied`/`in-use`/`error`), never failing the whole request. */
+  purgeMany(spaceId: string, resourceIds: string[]): Promise<PurgeBatchResult>;
   setFloor(resourceId: string, visibility: Floor): Promise<void>;
   /** Set a node's WORKFLOW-LIFECYCLE status — `draft` → `active` → `archived`
    * (B1): `PATCH /author/graph/status`. One scalar column written under the caller's
@@ -478,6 +496,19 @@ export function makeSeedClient(fetcher: SeedFetcher): SeedClient {
       });
       const body = expectStatus(res, 200, `purge(${resourceId})`);
       return body as PurgeResult;
+    },
+
+    async purgeMany(spaceId, resourceIds) {
+      const res = await fetcher.del('/author/graph/trash', {
+        spaceId,
+        resourceIds,
+      });
+      const body = expectStatus(
+        res,
+        200,
+        `purgeMany(${resourceIds.length} ids)`
+      );
+      return body as PurgeBatchResult;
     },
 
     async setFloor(resourceId, visibility) {

@@ -1,6 +1,7 @@
 import { ACCESS_SCENARIO } from './access.js';
 import { ADVANCED_SHARED_SCENARIO } from './advanced-shared.js';
 import { BOARD_SCENARIO } from './board.js';
+import { BULK_ACTIONS_SCENARIO } from './bulk-actions.js';
 import { CONTAINMENT_INHERITANCE_SCENARIO } from './containment-inheritance.js';
 import { DIRECTORY_PICKER_SCENARIO } from './directory-picker.js';
 import {
@@ -20,11 +21,12 @@ import type { SeedScenario } from './types.js';
 
 /**
  * Every scenario the CLI seeds, in materialization order. The `drive-cascade` /
- * `drive-copy-chain` / `drive-size-filter` fixtures are deliberately ABSENT: they
- * are e2e-only shapes (a multi-parent folder, a copy chain, a known-byte-size tree)
- * that the specs materialize directly via `materializeFixture`, NOT demo content —
- * seeding them pollutes the demo Drive (the multi-parent node trips the workbench's
- * key-by-node-id list rendering; the size fixture is contrived byte-count files).
+ * `drive-copy-chain` / `drive-size-filter` / `bulk-actions` fixtures are deliberately
+ * ABSENT: they are e2e-only shapes (a multi-parent folder, a copy chain, a
+ * known-byte-size tree, a set of selectable siblings + a known trashed pair) that the
+ * specs materialize directly via `materializeFixture`, NOT demo content — seeding them
+ * pollutes the demo Drive (the multi-parent node trips the workbench's key-by-node-id
+ * list rendering; the size + bulk fixtures are contrived placeholder nodes).
  */
 export const ALL_SCENARIOS: SeedScenario[] = [
   DRIVE_SCENARIO,
@@ -46,6 +48,7 @@ export {
   ACCESS_SCENARIO,
   ADVANCED_SHARED_SCENARIO,
   BOARD_SCENARIO,
+  BULK_ACTIONS_SCENARIO,
   CONTAINMENT_INHERITANCE_SCENARIO,
   DIRECTORY_PICKER_SCENARIO,
   DRIVE_CASCADE_SCENARIO,
