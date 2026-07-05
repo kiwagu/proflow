@@ -253,10 +253,19 @@ test.describe('@full ADR-0015 shortcut authoring — create, follow + remove fro
       // canonical home (root), leaving the team folder.
       const openInKb = shortcutRow.getByRole('button', { name: 'Open in KB' });
       await expect(openInKb).toBeVisible({ timeout: 30_000 });
-      await openInKb.click();
-      await expect
-        .poll(() => page.url(), { timeout: 30_000 })
-        .not.toContain(`folder=${teamFolderId}`);
+      // Retry the WHOLE click→navigate cycle: a single click on the in-cell button can
+      // miss (nested inside the row `<tr role=button>`; a background re-render can detach
+      // it mid-click), leaving the URL unchanged. Each attempt short-circuits once we've
+      // already left the team folder, so a late-landing navigation still passes.
+      const inTeamFolder = () =>
+        new URL(page.url()).searchParams.get('folder') === teamFolderId;
+      await expect(async () => {
+        if (!inTeamFolder()) {
+          return; // reveal already jumped to the target's canonical home (root)
+        }
+        await openInKb.click({ timeout: 3_000 });
+        expect(inTeamFolder()).toBe(false);
+      }).toPass({ timeout: 30_000 });
     } finally {
       await context.close();
     }
