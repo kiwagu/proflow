@@ -1,7 +1,6 @@
 'use client';
 
 import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
-import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
 import { X } from 'lucide-react';
@@ -23,6 +22,7 @@ import { EditableDescription } from './editable-description';
 import { LinkSection } from './link-section';
 import { MediaSection } from './media-section';
 import { sendJson } from './panel-fetch';
+import { StatusSection } from './status-section';
 import { TagsSection } from './tags-section';
 import { VersionsSection } from './versions-section';
 
@@ -40,17 +40,18 @@ import { VersionsSection } from './versions-section';
  * opened from that menu's `Share` entry — NOT a separate panel section. Landed
  * sections:
  *   - header (kind + title) + the `⋯` action menu (Share lives here now)
- *   - editable, RAG-bound description (kb satellite)
+ *   - workflow status transition (draft → active → archived; content kinds only)
+ *   - editable description (kb satellite; indexed for lexical search only)
  *   - link (slice-10 §2.4 — the external URL of a link node, editable + Open)
- *   - media (ADR-0026 — filename / size / mime + Download, when the node has bytes)
+ *   - media (ADR-0026 — filename / size / mime + Download + an inline MIME-driven
+ *     preview: image / pdf / video / audio, when the node has bytes)
  *   - tags (ADR-0003 Variant B — the node's `tagged` edges: remove-chips + a
  *     free-text adder + a "pick from existing" tray; read-only on folder/tag kinds)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
  * mocked — Law 3 / poc-no-fallbacks): related / mini-graph (need the neighborhood
- * resolver), per-kind media preview/player (image thumb / pdf / video player —
- * Phase 2), status transition, suggested links (a RAG mock), view-in-graph (the
- * graph view). They return with their backend.
+ * resolver), suggested links (a RAG mock), view-in-graph (the graph view). They
+ * return with their backend.
  *
  * Purely presentational: it POSTs to the landed RLS routes; RLS is the authority.
  */
@@ -235,12 +236,20 @@ export function ResourcePanel({
       <div className="flex flex-col gap-5 px-4 py-4">
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-bold tracking-tight">{node.title}</h2>
-          {node.status ? (
-            <div>
-              <Badge variant="outline">{node.status}</Badge>
-            </div>
-          ) : null}
         </div>
+
+        {/* Workflow status transition (draft → active → archived). A live control,
+            not a read-only badge — the earlier inert badge was a dead affordance
+            (honesty nit A2). Omitted on folder/tag kinds, which carry no lifecycle. */}
+        {node.status && node.kind !== 'folder' && node.kind !== 'tag' ? (
+          <StatusSection
+            t={t}
+            spaceId={spaceId}
+            nodeId={node.id}
+            status={node.status}
+            onMutated={onMutated}
+          />
+        ) : null}
 
         <EditableDescription
           t={t}

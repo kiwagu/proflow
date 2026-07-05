@@ -185,3 +185,36 @@ export async function renameResource(
   }
   return { node_id: data.id, title: data.title };
 }
+
+export type SetResourceStatusInput = {
+  spaceId: string;
+  resourceId: string; // knr_…
+  status: 'draft' | 'active' | 'archived';
+};
+
+/**
+ * Set a node's workflow status (`draft`/`active`/`archived`) under the user's RLS
+ * (`space.knowledge.update` enforced by RLS on the UPDATE, never an application
+ * check) — the exact mirror of {@link renameResource} / `setResourceFloor`, one
+ * scalar column written under the caller's authority. Status (workflow) is
+ * orthogonal to `visibility` (access) and `deleted_at` (trash); this touches only
+ * `status`. `space_id` scopes the row; identity is the RLS context, never the body.
+ * Returns the new status.
+ */
+export async function setResourceStatus(
+  input: SetResourceStatusInput,
+  deps: { db: SupabaseClient<Database> }
+): Promise<{ node_id: string; status: string }> {
+  const { db } = deps;
+  const { data, error } = await db
+    .from('knowledge_resources')
+    .update({ status: input.status })
+    .eq('id', input.resourceId)
+    .eq('space_id', input.spaceId)
+    .select('id,status')
+    .single();
+  if (error || !data?.id) {
+    throw new Error(`setResourceStatus: ${error?.message ?? 'not found'}`);
+  }
+  return { node_id: data.id, status: data.status };
+}

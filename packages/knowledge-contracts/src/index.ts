@@ -28,6 +28,14 @@ export {
 } from './projection.schema.js';
 
 export {
+  parseSetResourceStatusInput,
+  resourceStatusSchema,
+  setResourceStatusInputSchema,
+  type ResourceStatus,
+  type SetResourceStatusInput,
+} from './resource-status.schema.js';
+
+export {
   parseWorkflowDefinition,
   workflowDefinitionSchema,
   workflowStateSchema,

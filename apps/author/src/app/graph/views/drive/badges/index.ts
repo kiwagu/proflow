@@ -11,3 +11,4 @@ export {
   ShareFacetChips,
   ShareMechanismBadge,
 } from './share-mechanism';
+export { StatusFacetChips } from './status-facet';

@@ -1,6 +1,7 @@
 export {
   createBodylessResource,
   renameResource,
+  setResourceStatus,
   type BodylessKind,
   type CreateBodylessResourceDeps,
   type CreateBodylessResourceInput,
@@ -8,6 +9,7 @@ export {
   type FanoutEdgeInput,
   type ParentFolderPlacement,
   type RenameResourceInput,
+  type SetResourceStatusInput,
 } from './bodyless-resource.fanout';
 export {
   AUTHORABLE_RELATION_TYPES,

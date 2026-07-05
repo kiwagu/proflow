@@ -26,6 +26,11 @@ export type LensNode = {
   id: string;
   kind: string;
   title: string;
+  /** The node's workflow status (`draft`/`active`/`archived`, ADR-0007 coarse form).
+   * Optional: only the Drive canvas (`buildContainment` over resolved items) carries
+   * it; ad-hoc LensNodes built elsewhere (search hits) omit it. Drives the client-side
+   * status facet — a content-lifecycle filter, the sibling of the "Only files" toggle. */
+  status?: string;
 };
 
 export type Containment = Forest<LensNode>;
@@ -36,7 +41,12 @@ export function buildContainment(
   edges: ContainmentEdge[]
 ): Containment {
   return buildForest(
-    items.map((item) => ({ id: item.id, kind: item.kind, title: item.title })),
+    items.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      status: item.status,
+    })),
     edges
   );
 }

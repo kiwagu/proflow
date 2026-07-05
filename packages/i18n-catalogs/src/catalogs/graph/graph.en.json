@@ -196,6 +196,7 @@
   "graph.lens.typeVideo": "Video",
   "graph.lens.typeLink": "Links",
   "graph.lens.filterTag": "Filter by tag",
+  "graph.lens.filterStatus": "Filter by status",
   "graph.lens.filterHealth": "Health",
   "graph.lens.healthOrphan": "Orphans (not linked)",
   "graph.lens.healthStale": "Stale (needs review)",

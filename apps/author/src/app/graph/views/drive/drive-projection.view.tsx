@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import * as React from 'react';
 
+import type { ResourceStatus } from '@workspace/knowledge-contracts';
+
 import type {
   ResourceTag,
   ShareMechanism,
@@ -83,6 +85,7 @@ import {
   SharedFolderHint,
   ShareFacetChips,
   ShareMechanismBadge,
+  StatusFacetChips,
 } from '@/app/graph/views/drive/badges';
 import {
   artifactBytes,
@@ -255,6 +258,13 @@ export function DriveProjectionView({
   const [tagFacet, setTagFacet] = React.useState<ReadonlySet<string>>(
     () => new Set()
   );
+  // The status facet (workflow lifecycle, B1) — a single selected status or null (All).
+  // A client-side CONTENT filter over `LensNode.status`, the exact sibling of "Only
+  // files": it narrows to leaves in one lifecycle state, pruning the browse tree to
+  // branches with a matching leaf. Raw state; the reader `statusFacet` forces null in
+  // Trash (a holding state, not a content lens) so it resets there with no effect.
+  const [statusFacetState, setStatusFacet] =
+    React.useState<ResourceStatus | null>(null);
   // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
   // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
   // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
@@ -358,6 +368,32 @@ export function DriveProjectionView({
     });
   }, []);
   const clearTagFacet = React.useCallback(() => setTagFacet(new Set()), []);
+
+  // The status facet is live only outside Trash and only once a state is picked.
+  const statusFacet = isTrash ? null : statusFacetState;
+  // A node passes the status facet iff it is CONTENT (folders/tags carry no lifecycle)
+  // in the selected state. Trivially true when the facet is off, so it composes as a
+  // no-op leaf term alongside "Only files" + the tag facet.
+  const statusPass = React.useCallback(
+    (node: LensNode) =>
+      statusFacet == null ||
+      (node.kind !== 'folder' &&
+        node.kind !== 'tag' &&
+        node.status === statusFacet),
+    [statusFacet]
+  );
+  // The facet chip vocabulary = the DISTINCT content statuses present on the resolved
+  // canvas. Shown only when ≥2 exist (a single-status canvas has nothing to filter) —
+  // mirrors ShareFacetChips' ">1 mechanism" guard.
+  const presentStatuses = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const item of result.items) {
+      if (item.kind !== 'folder' && item.kind !== 'tag') {
+        set.add(item.status);
+      }
+    }
+    return set;
+  }, [result.items]);
 
   // The access-mirror predicate family (ADR-0023 §7) — `isGranted` (direct per-user
   // grant), the globe-XOR-people-XOR-lock `renderAccessBadge`, and the underlying
@@ -466,11 +502,13 @@ export function DriveProjectionView({
   // structure (lens-feature-component-reuse) — identical behaviour to "Only files".
   const leafPass = React.useCallback(
     (node: LensNode) =>
-      (!uploadedOnly || isArtifact(node)) && hasActiveTag(node.id),
-    [uploadedOnly, isArtifact, hasActiveTag]
+      (!uploadedOnly || isArtifact(node)) &&
+      hasActiveTag(node.id) &&
+      statusPass(node),
+    [uploadedOnly, isArtifact, hasActiveTag, statusPass]
   );
   // At least one content filter is on → the tree prunes / the flat lists narrow.
-  const anyLeafFilter = uploadedOnly || tagFacetActive;
+  const anyLeafFilter = uploadedOnly || tagFacetActive || statusFacet != null;
   const folderHasKeptLeafIndex = React.useMemo(
     () => buildFolderHasArtifactIndex(treeContainment, leafPass),
     [treeContainment, leafPass]
@@ -1522,6 +1560,19 @@ export function DriveProjectionView({
                 );
               })}
             </div>
+          ) : null}
+
+          {/* Status facet (workflow lifecycle, B1) — a chip row that narrows the canvas
+              to one status (draft/active/archived), reusing the SAME leaf-prune as the
+              tag facet + "Only files". Single-select; "All" clears. Shown only outside
+              Trash and only when the canvas carries ≥2 distinct content statuses (a
+              single-status set has nothing to filter). Display over `LensNode.status`. */}
+          {!isTrash && presentStatuses.size > 1 ? (
+            <StatusFacetChips
+              t={t}
+              active={statusFacet}
+              onChange={setStatusFacet}
+            />
           ) : null}
 
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
