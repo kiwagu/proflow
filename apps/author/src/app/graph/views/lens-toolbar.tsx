@@ -23,7 +23,6 @@ import * as React from 'react';
 export function LensToolbar({
   left,
   filter,
-  selectAll,
   lensView,
   layout,
   upload,
@@ -38,10 +37,6 @@ export function LensToolbar({
    * place. Omit (undefined) on a lens where the filter does not apply (e.g. Trash).
    */
   filter?: React.ReactNode;
-  /** The "select all visible" affordance (Drive multi-select, GRID/card renders — the
-   * list layout carries its own header checkbox instead). A compact icon control grouped
-   * with the view controls; omitted when there is nothing to select. */
-  selectAll?: React.ReactNode;
   /** The Flat↔Advanced lens-view toggle (structural / search lenses). */
   lensView?: React.ReactNode;
   /** The grid↔list layout toggle. */
@@ -65,7 +60,6 @@ export function LensToolbar({
         ) : null}
         {trailing}
         {upload}
-        {selectAll}
         {lensView}
         {layout}
         {split}

@@ -1112,22 +1112,25 @@ export function DriveProjectionView({
       multiSelect.selectAll(orderedVisibleIds);
     }
   };
-  // The GRID/card select-all — a toolbar icon (the list layout uses its table header
-  // instead). Shown only with a multi-select host, a non-empty visible set, and a
-  // NON-table render (grid, or the Trash/Home card wraps which never use the table).
+  // The GRID/card select-all — a header ROW above the cards (the list layout uses its
+  // table-header checkbox instead, so it is suppressed there). Shown only with a
+  // multi-select host, a non-empty visible set, and a NON-table render (grid, or the
+  // Trash/Home card wraps which never use the table). Kept ON the content (not the
+  // toolbar) so it reads as part of the card grid it selects.
   const usesListTable = layout === 'list' && !isTrash && !isHome;
-  const toolbarSelectAll =
+  const gridSelectAllRow =
     multiSelect && orderedVisibleIds.length > 0 && !usesListTable ? (
-      <Hint label={t('graph.bulk.selectAll')}>
-        <span className="inline-flex">
-          <Checkbox
-            aria-label={t('graph.bulk.selectAll')}
-            checked={selectAllChecked}
-            onClick={onToggleSelectAll}
-          />
+      <div className="mb-3 flex items-center gap-2">
+        <Checkbox
+          aria-label={t('graph.bulk.selectAll')}
+          checked={selectAllChecked}
+          onClick={onToggleSelectAll}
+        />
+        <span className="text-muted-foreground text-xs">
+          {t('graph.bulk.selectAll')}
         </span>
-      </Hint>
-    ) : undefined;
+      </div>
+    ) : null;
 
   // The shared Drive left-rail (lens nav + Sections + the "New" launcher), now a
   // standalone component so the search lens renders the IDENTICAL chrome (ADR-0024
@@ -1551,7 +1554,6 @@ export function DriveProjectionView({
     <LensToolbar
       left={toolbarLeft}
       filter={toolbarFilter}
-      selectAll={toolbarSelectAll}
       trailing={toolbarClipboard}
       upload={toolbarEmptyTrash ?? toolbarUpload}
       lensView={toolbarLensView}
@@ -1692,6 +1694,7 @@ export function DriveProjectionView({
 
   const main = (
     <>
+      {gridSelectAllRow}
       {isTrash ? (
         trashNodes.length === 0 ? (
           <EmptyState>{t('graph.trash.empty')}</EmptyState>
