@@ -72,8 +72,9 @@ export function ItemCard({
   sharedBadge?: React.ReactNode;
   /** The "For you" sort timestamp, appended to the meta line (opened / updated time). */
   when?: string;
-  /** Multi-select checkbox (B2) — the OPPOSITE corner from the star; reveals on hover
-   * or while selected. Absent → no checkbox (a lens without bulk selection). */
+  /** Multi-select checkbox (B2) — the bottom-right corner (clear of the leading icon +
+   * the top star/⋯ rail); reveals on hover or while selected. Absent → no checkbox (a
+   * lens without bulk selection). */
   select?: React.ReactNode;
   /** Drag wiring (a content card is draggable, but not a drop target). */
   dnd?: CardDnd;

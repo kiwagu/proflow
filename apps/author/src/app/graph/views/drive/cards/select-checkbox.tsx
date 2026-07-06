@@ -5,13 +5,13 @@ import { cn } from '@workspace/ui/lib/utils';
 import * as React from 'react';
 
 /**
- * SelectCheckbox — the per-card multi-select control (release-hardening B2). On a
- * browsable card it sits at the OPPOSITE corner from the star (which the CardActionRail
- * keeps at the far corner — top-right in grid, rightmost in list): top-left in a grid
- * card, overlaying the leading kind icon in a list row, revealed on hover (the `group`
- * on the card wrapper) OR while selected, exactly like the star. On a Trash card (which
- * has no star and no hover-reveal group) it renders INLINE and always-visible, matching
- * the always-on Restore / Delete buttons.
+ * SelectCheckbox — the per-card multi-select control (release-hardening B2). On a grid
+ * card it sits in the BOTTOM-RIGHT corner — clear of both the leading kind icon (which a
+ * top-left box overlapped) and the star/`⋯` rail the CardActionRail keeps at the top; on
+ * a list row it overlays the leading kind icon. Revealed on hover (the `group` on the
+ * card wrapper) OR while selected, exactly like the star. On a Trash card (which has no
+ * star and no hover-reveal group) it renders INLINE and always-visible, matching the
+ * always-on Restore / Delete buttons.
  *
  * Clicking it toggles selection and MUST NOT open the Details drawer, so it stops
  * propagation (it is a sibling of the clickable CardTile). SHIFT-click is detected off
@@ -30,8 +30,8 @@ export function SelectCheckbox({
   onToggle: (shiftKey: boolean) => void;
   label: string;
   /**
-   * `grid` (default) — top-left corner overlay; `list` — overlay the leading icon of a
-   * list-row card; `inline` — a plain always-visible box the caller positions (Trash).
+   * `grid` (default) — bottom-right corner overlay; `list` — overlay the leading icon of
+   * a list-row card; `inline` — a plain always-visible box the caller positions (Trash).
    */
   placement?: 'grid' | 'list' | 'inline';
 }) {
@@ -67,7 +67,7 @@ export function SelectCheckbox({
         'absolute z-10',
         placement === 'list'
           ? 'top-1/2 left-3.5 -translate-y-1/2'
-          : 'top-2 left-2'
+          : 'right-2 bottom-2'
       )}
     >
       {box}

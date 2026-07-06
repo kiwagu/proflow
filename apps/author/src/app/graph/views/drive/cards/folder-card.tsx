@@ -60,8 +60,9 @@ export function FolderCard({
   /** The "placement = sharing" hint on a folder that confers access (ADR-0023 §7a) —
    * names the audience / floor scope. Rendered under the subtitle. */
   folderHint?: React.ReactNode;
-  /** Multi-select checkbox (B2) — the OPPOSITE corner from the star; reveals on hover
-   * or while selected. Absent → no checkbox (a lens without bulk selection). */
+  /** Multi-select checkbox (B2) — the bottom-right corner (clear of the leading icon +
+   * the top star/⋯ rail); reveals on hover or while selected. Absent → no checkbox (a
+   * lens without bulk selection). */
   select?: React.ReactNode;
   /** Drag (this folder can be moved) + drop (other nodes re-parent into it). */
   dnd?: CardDnd;
