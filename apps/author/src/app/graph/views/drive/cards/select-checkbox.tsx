@@ -67,7 +67,10 @@ export function SelectCheckbox({
         'absolute z-10',
         placement === 'list'
           ? 'top-1/2 left-3.5 -translate-y-1/2'
-          : 'right-2 bottom-2'
+          : // Mirror the CardActionRail's footprint EXACTLY: a `size-7` box at the same
+            // `right-2` inset the star/⋯ buttons use, so the checkbox glyph lines up with
+            // the menu-icon glyphs (a bare box at `right-2` hugged the corner tighter).
+            'right-2 bottom-2 grid size-7 place-items-center'
       )}
     >
       {box}
