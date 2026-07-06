@@ -11,9 +11,13 @@ export const GRID_CARD = 'w-[264px] shrink-0';
 export const GRID_WRAP = 'flex flex-wrap gap-2.5';
 export const LIST_WRAP = 'flex flex-col gap-1.5';
 
-// Hover-reveal classes for a card's `⋯` action trigger (stays visible while open).
+// Hover-reveal classes for a card's `⋯` action trigger (stays visible while open). Also
+// pins the trigger to `size-7` — the SAME footprint as the rail's star button (the default
+// `icon-sm` is `size-8`, 4px wider, which drifts the wider button's center left of the star
+// under the rail's `items-end`). Equal widths → right-aligned edges AND aligned centers, so
+// the star + `⋯` share one vertical axis while the star stays flush at the far corner.
 export const CARD_ACTION_TRIGGER =
-  'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100';
+  'size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100';
 
 /**
  * CardActionRail — the per-card "command" controls (e.g. star + `⋯` menu + reveal), unified
