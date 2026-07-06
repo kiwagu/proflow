@@ -1,13 +1,7 @@
 # Docker Image Versions
 
-## 2026-06-29
-- supabase/postgres:17.6.1.136 (prev supabase/postgres:17.6.1.095) — PG17 patch; stays on 17.x
-
-## 2026-06-22
-- supabase/postgres:17.6.1.136 in docker-compose.pg17.yml (prev 17.6.1.084 in override; main docker-compose.yml stays at 17.6.1.095 pending human merge)
-- Upstream sync: CHANGELOG.md, CONFIG.md, tests/test-{self-hosted,pg17-upgrade}.sh, utils/upgrade-pg17.sh, docker-compose.pg15.yml (new file), docker-compose.pg17.yml
-- ⚠️ FLAGGED: upstream 0.6.0 switches Studio + postgres-meta from supabase_admin → postgres (POSTGRES_USER_READ_WRITE: postgres in studio; PG_META_DB_USER: postgres in meta). Our docker-compose.yml preserves supabase_admin — human must review before applying.
-- ⚠️ FLAGGED: upstream changed GOTRUE_JWT_ISSUER removed; CLUSTER_POSTGRES string→bool; pg17 is now upstream default; new docker-compose.pg15.yml for PG15 rollback/migration.
+## 2026-06-17
+- supabase/postgres:17.6.1.136 (prev supabase/postgres:15.8.1.085)
 
 ## 2026-06-03
 - supabase/studio:2026.06.03-sha-0bca601 (prev supabase/studio:2026.04.27-sha-5f60601)
