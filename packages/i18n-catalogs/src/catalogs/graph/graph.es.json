@@ -197,6 +197,7 @@
   "graph.lens.typeLink": "Enlaces",
   "graph.lens.filterTag": "Filtrar por etiqueta",
   "graph.lens.filterStatus": "Filtrar por estado",
+  "graph.lens.filters": "Filtros",
   "graph.lens.filterHealth": "Estado de salud",
   "graph.lens.healthOrphan": "Huérfanos (sin enlaces)",
   "graph.lens.healthStale": "Obsoletos (requieren revisión)",

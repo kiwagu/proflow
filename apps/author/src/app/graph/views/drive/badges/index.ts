@@ -8,7 +8,5 @@ export {
 export {
   SHARE_MECHANISM_META,
   SHARE_MECHANISM_ORDER,
-  ShareFacetChips,
   ShareMechanismBadge,
 } from './share-mechanism';
-export { StatusFacetChips } from './status-facet';

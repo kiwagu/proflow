@@ -10,8 +10,8 @@ import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { byText } from '@workspace/ui/lib/sort';
 import { cn } from '@workspace/ui/lib/utils';
 import {
-  Check,
   ChevronRight,
+  CircleDot,
   Clipboard,
   ClipboardPaste,
   Clock,
@@ -83,12 +83,15 @@ import {
 } from '@/app/graph/views/drive/cards';
 import {
   GranteeSummary,
+  SHARE_MECHANISM_META,
   SHARE_MECHANISM_ORDER,
   SharedFolderHint,
-  ShareFacetChips,
   ShareMechanismBadge,
-  StatusFacetChips,
 } from '@/app/graph/views/drive/badges';
+import {
+  DriveFiltersMenu,
+  type FacetColumn,
+} from '@/app/graph/views/drive/drive-filters-menu';
 import {
   artifactBytes,
   buildFolderHasArtifactIndex,
@@ -1087,6 +1090,44 @@ export function DriveProjectionView({
   const selectedVisibleCount = multiSelect
     ? orderedVisibleIds.filter((id) => multiSelect.isSelected(id)).length
     : 0;
+  // The "select all visible" tri-state + toggle, computed once and shared by the two
+  // hosts: the list layout's table HEADER checkbox (LensListTable) and the GRID/card
+  // layouts' toolbar icon. None on a content row (that ate top space).
+  const allVisibleSelected =
+    selectedVisibleCount > 0 &&
+    selectedVisibleCount === orderedVisibleIds.length;
+  const selectAllChecked: boolean | 'indeterminate' =
+    selectedVisibleCount === 0
+      ? false
+      : allVisibleSelected
+        ? true
+        : 'indeterminate';
+  const onToggleSelectAll = () => {
+    if (!multiSelect) {
+      return;
+    }
+    if (allVisibleSelected) {
+      multiSelect.clear();
+    } else {
+      multiSelect.selectAll(orderedVisibleIds);
+    }
+  };
+  // The GRID/card select-all — a toolbar icon (the list layout uses its table header
+  // instead). Shown only with a multi-select host, a non-empty visible set, and a
+  // NON-table render (grid, or the Trash/Home card wraps which never use the table).
+  const usesListTable = layout === 'list' && !isTrash && !isHome;
+  const toolbarSelectAll =
+    multiSelect && orderedVisibleIds.length > 0 && !usesListTable ? (
+      <Hint label={t('graph.bulk.selectAll')}>
+        <span className="inline-flex">
+          <Checkbox
+            aria-label={t('graph.bulk.selectAll')}
+            checked={selectAllChecked}
+            onClick={onToggleSelectAll}
+          />
+        </span>
+      </Hint>
+    ) : undefined;
 
   // The shared Drive left-rail (lens nav + Sections + the "New" launcher), now a
   // standalone component so the search lens renders the IDENTICAL chrome (ADR-0024
@@ -1254,21 +1295,86 @@ export function DriveProjectionView({
     </div>
   );
 
-  // The cross-lens "Only files" toggle (ADR-0026 render) — passed as the shared
-  // LensToolbar's `filter` prop, which renders it FIRST in the right cluster with a
-  // trailing vertical rule (the toolbar owns the frame). A lens-agnostic chip (not a
-  // content row → never pushes the table down). ON: flat lenses filter to uploaded
-  // artifacts; a tree render prunes to branches with ≥1 file. NOT in Trash (undefined →
-  // the toolbar skips the slot + its separator). Carries the visible-slice Hint. Passing
-  // it as a first-class prop is what puts the chip on EVERY lens by construction.
+  // The lens FACET filters (tag / status / shared-mechanism) as ONE dropdown-panel
+  // descriptor set — each a column in `DriveFiltersMenu` (built once here so the label/
+  // option wiring stays with the facet state). Each gate matches the old inline chip
+  // row's ">=2 distinct values" rule, so the menu offers exactly what used to occupy a
+  // content row. Empty → the menu renders nothing. A statically-extractable literal key
+  // per status keeps the i18n extractor happy despite the data-driven options.
+  const filterColumns = ((): FacetColumn[] => {
+    const statusLabel = (status: ResourceStatus): string =>
+      status === 'draft'
+        ? t('graph.status.draft')
+        : status === 'active'
+          ? t('graph.status.active')
+          : t('graph.status.archived');
+    const columns: FacetColumn[] = [];
+    if (!isTrash && resolvedTags.length > 0) {
+      columns.push({
+        key: 'tag',
+        label: t('graph.lens.filterTag'),
+        icon: TagIcon,
+        allSelected: !tagFacetActive,
+        onClear: clearTagFacet,
+        options: resolvedTags.map((tag) => ({
+          id: tag.id,
+          label: tag.title,
+          selected: tagFacet.has(tag.id),
+          onSelect: () => toggleTagFacet(tag.id),
+        })),
+      });
+    }
+    if (!isTrash && presentStatuses.size > 1) {
+      const order: ResourceStatus[] = ['draft', 'active', 'archived'];
+      columns.push({
+        key: 'status',
+        label: t('graph.lens.filterStatus'),
+        icon: CircleDot,
+        allSelected: statusFacet == null,
+        onClear: () => setStatusFacet(null),
+        options: order.map((status) => ({
+          id: status,
+          label: statusLabel(status),
+          selected: statusFacet === status,
+          onSelect: () => setStatusFacet(status),
+        })),
+      });
+    }
+    if (isShared && presentMechanisms.length > 1) {
+      columns.push({
+        key: 'share',
+        label: t('graph.drive.navShared'),
+        icon: Users,
+        allSelected: shareFacet == null,
+        onClear: () => setShareFacet(null),
+        options: presentMechanisms.map((mech) => ({
+          id: mech,
+          label: SHARE_MECHANISM_META[mech].label(t),
+          icon: SHARE_MECHANISM_META[mech].icon,
+          selected: shareFacet === mech,
+          onSelect: () => setShareFacet(mech),
+        })),
+      });
+    }
+    return columns;
+  })();
+
+  // The toolbar filter cluster: the cross-lens "Only files" toggle (ADR-0026) + the
+  // facet-filters dropdown (tag/status/shared), both anchored in the shared LensToolbar's
+  // `filter` slot (rendered FIRST in the right cluster with a trailing vertical rule).
+  // Collapsing the facets into the dropdown keeps them off a fixed content row (they used
+  // to eat top vertical space). NOT in Trash (undefined → the toolbar skips the slot).
   const toolbarFilter = !isTrash ? (
-    <ToggleChip
-      label={t('graph.drive.filterUploaded')}
-      pressed={uploadedOnly}
-      onPressedChange={setUploadedOnly}
-      icon={FileUp}
-      hint={t('graph.drive.folderSizeHint')}
-    />
+    <div className="flex items-center gap-1.5">
+      <ToggleChip
+        label={t('graph.drive.filterUploaded')}
+        pressed={uploadedOnly}
+        onPressedChange={setUploadedOnly}
+        icon={FileUp}
+        hint={t('graph.drive.folderSizeHint')}
+      />
+      <DriveFiltersMenu t={t} columns={filterColumns} />
+    </div>
   ) : undefined;
 
   // Clipboard indicator (Dolphin model) — two states of the SAME affordance:
@@ -1445,6 +1551,7 @@ export function DriveProjectionView({
     <LensToolbar
       left={toolbarLeft}
       filter={toolbarFilter}
+      selectAll={toolbarSelectAll}
       trailing={toolbarClipboard}
       upload={toolbarEmptyTrash ?? toolbarUpload}
       lensView={toolbarLensView}
@@ -1583,37 +1690,8 @@ export function DriveProjectionView({
     />
   );
 
-  // The "select all visible" header (B2) — a tri-state checkbox over the ordered visible
-  // ids: all → clear, some/none → select all. Shown only with a multi-select host and a
-  // non-empty visible set. Composes above every lens's content (browse, flat lenses,
-  // Home, Trash), so bulk selection has a single always-present entry point.
-  const selectAllHeader =
-    multiSelect && orderedVisibleIds.length > 0 ? (
-      <div className="mb-3 flex items-center gap-2">
-        <Checkbox
-          aria-label={t('graph.bulk.selectAll')}
-          checked={
-            selectedVisibleCount === 0
-              ? false
-              : selectedVisibleCount === orderedVisibleIds.length
-                ? true
-                : 'indeterminate'
-          }
-          onClick={() =>
-            selectedVisibleCount === orderedVisibleIds.length
-              ? multiSelect.clear()
-              : multiSelect.selectAll(orderedVisibleIds)
-          }
-        />
-        <span className="text-muted-foreground text-xs">
-          {t('graph.bulk.selectAll')}
-        </span>
-      </div>
-    ) : null;
-
   const main = (
     <>
-      {selectAllHeader}
       {isTrash ? (
         trashNodes.length === 0 ? (
           <EmptyState>{t('graph.trash.empty')}</EmptyState>
@@ -1647,64 +1725,9 @@ export function DriveProjectionView({
             </div>
           ) : null}
 
-          {/* "Shared with me" mechanism facet (ADR-0021 Part C) — a chip row that
-              filters the shared set by mechanism. Only rendered in the 'shared' lens,
-              and only when ≥2 mechanisms are present (a single-mechanism set has
-              nothing to filter). Display over the precomputed annotation. */}
-          {isShared && presentMechanisms.length > 1 ? (
-            <ShareFacetChips
-              t={t}
-              mechanisms={presentMechanisms}
-              active={shareFacet}
-              onChange={setShareFacet}
-            />
-          ) : null}
-
-          {/* Tag facet (ADR-0003 Variant B) — a chip row of the tags PRESENT on the
-              resolved canvas (gap-doc :28). Multi-select (union): toggling a tag narrows
-              the canvas to content carrying ANY active tag, reusing the same prune the
-              "Only files" filter uses (so the browse tree prunes to tagged branches).
-              "All" clears; an active tag is pressed + check-marked. A client display
-              filter over `tagsByItem`, never a fence. Hidden in Trash / when the canvas
-              carries no tags. */}
-          {!isTrash && resolvedTags.length > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-muted-foreground mr-0.5 inline-flex items-center gap-1 text-xs">
-                <TagIcon className="size-3" aria-hidden />
-                {t('graph.lens.filterTag')}
-              </span>
-              <ToggleChip
-                label={t('graph.drive.facetAll')}
-                pressed={!tagFacetActive}
-                onPressedChange={clearTagFacet}
-              />
-              {resolvedTags.map((tag) => {
-                const on = tagFacet.has(tag.id);
-                return (
-                  <ToggleChip
-                    key={tag.id}
-                    label={tag.title}
-                    pressed={on}
-                    onPressedChange={() => toggleTagFacet(tag.id)}
-                    icon={on ? Check : undefined}
-                  />
-                );
-              })}
-            </div>
-          ) : null}
-
-          {/* Status facet (workflow lifecycle, B1) — a chip row that narrows the canvas
-              to one status (draft/active/archived), reusing the SAME leaf-prune as the
-              tag facet + "Only files". Single-select; "All" clears. Shown only outside
-              Trash and only when the canvas carries ≥2 distinct content statuses (a
-              single-status set has nothing to filter). Display over `LensNode.status`. */}
-          {!isTrash && presentStatuses.size > 1 ? (
-            <StatusFacetChips
-              t={t}
-              active={statusFacet}
-              onChange={setStatusFacet}
-            />
-          ) : null}
+          {/* The tag / status / shared-mechanism facets live in the toolbar's
+              `DriveFiltersMenu` dropdown now (they used to be fixed chip rows here,
+              eating top vertical space). The prune predicates are unchanged. */}
 
           {/* contents — a sortable TABLE in list mode, cards in grid mode */}
           {layout === 'list' ? (
@@ -1759,6 +1782,9 @@ export function DriveProjectionView({
                             ? multiSelect.toggleRange(id, orderedVisibleIds)
                             : multiSelect.toggle(id),
                         label: (title) => t('graph.select.toggle', { title }),
+                        headerChecked: selectAllChecked,
+                        onToggleAll: onToggleSelectAll,
+                        selectAllLabel: t('graph.bulk.selectAll'),
                       }
                     : undefined
                 }

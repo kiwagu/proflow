@@ -3,6 +3,7 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { GraphTranslator } from '@workspace/i18n-catalogs/graph';
 import { Button } from '@workspace/ui/components/button';
+import { Checkbox } from '@workspace/ui/components/checkbox';
 import { DataTable, type ColumnDef } from '@workspace/ui/components/data-table';
 import { Hint } from '@workspace/ui/components/hint';
 import { cn } from '@workspace/ui/lib/utils';
@@ -155,11 +156,19 @@ export function LensListTable({
    * column, so non-search lenses are unchanged (only the search config supplies it). */
   snippet?: { header: string; cell: (node: LensNode) => React.ReactNode };
   /** Multi-select (B2) — supplied → a leading checkbox column (per-row toggle, shift =
-   * range over the ordered rows the view supplies); omitted → no column (unchanged). */
+   * range over the ordered rows the view supplies); omitted → no column (unchanged). The
+   * column HEADER is a tri-state "select all visible" checkbox (a Hint-labelled icon,
+   * ADR-0025 §1) — the list layout's select-all lives here, not on a content row. */
   selection?: {
     isSelected: (id: string) => boolean;
     onToggle: (id: string, shiftKey: boolean) => void;
     label: (title: string) => string;
+    /** Tri-state over the ordered visible rows: false / 'indeterminate' / true. */
+    headerChecked: boolean | 'indeterminate';
+    /** All visible selected → clear; otherwise → select all visible. */
+    onToggleAll: () => void;
+    /** The "select all" Hint/aria label. */
+    selectAllLabel: string;
   };
 }) {
   const columns = React.useMemo<ColumnDef<DriveRow>[]>(
@@ -171,8 +180,21 @@ export function LensListTable({
         ? [
             {
               id: 'select',
-              header: '',
               enableSorting: false,
+              // The "select all visible" tri-state checkbox lives in the header cell
+              // (a Hint-labelled icon) — the list layout's select-all entry point, so
+              // no content row is spent on it.
+              header: () => (
+                <Hint label={selection.selectAllLabel}>
+                  <span className="inline-flex">
+                    <Checkbox
+                      aria-label={selection.selectAllLabel}
+                      checked={selection.headerChecked}
+                      onClick={selection.onToggleAll}
+                    />
+                  </span>
+                </Hint>
+              ),
               cell: ({ row }: { row: { original: DriveRow } }) =>
                 row.original.rowKind === 'shortcut' ? null : (
                   <div
