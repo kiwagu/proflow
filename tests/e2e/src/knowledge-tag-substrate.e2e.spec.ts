@@ -53,6 +53,10 @@ const ACTIVE_SPACE_COOKIE = 'pf_active_space_id';
 
 const TAG_TITLE = 'Design';
 const SECOND_TAG_TITLE = 'Roadmap';
+// The facet filters now live behind ONE toolbar "Filters" dropdown (a `filterChip` Button
+// with `aria-pressed`; an active-facet count may append to its name → startsWith match, no
+// `$` anchor). Match BOTH the resolved label AND the raw key, catalog-rebuild-agnostic.
+const FILTERS = /^(Filters|graph\.lens\.filters)/;
 
 /** The CARD (grid tile) for a node — scoped to `div.group` so it never matches the
  * sidebar folder list. Mirrors the sibling render specs. */
@@ -60,6 +64,22 @@ function card(page: Page, title: string) {
   return page
     .locator('div.group', { has: page.getByText(title, { exact: true }) })
     .first();
+}
+
+/** Open the toolbar "Filters" dropdown and return its Popover content. The facet chips
+ * (tag / status / shared-mechanism) moved out of the content body into this ONE Popover, so
+ * they only exist in the DOM while it is open — a facet test must open this FIRST, then
+ * click the chip INSIDE the returned content. The open is retried against a hydration race
+ * (the trigger paints from SSR before it is interactive). */
+async function openFilters(page: Page) {
+  const trigger = page.getByRole('button', { name: FILTERS });
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
+  const content = page.locator('[data-slot="popover-content"]');
+  await expect(async () => {
+    await trigger.click();
+    await expect(content).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  return content;
 }
 
 /** A browser context authenticated AS the actor with the active space pinned. */
@@ -205,9 +225,11 @@ test.describe('@full ADR-0003 KB tags — real tagged edges, read-path + facet +
       await expect(card(page, taggedTitle)).toBeVisible({ timeout: 60_000 });
       await expect(card(page, siblingTitle)).toBeVisible();
 
-      // The facet chip (a ToggleChip = Button) named after the tag. The card chip is a
-      // span (not a button), so this targets the facet row unambiguously.
-      const facetChip = page.getByRole('button', {
+      // The facet chips moved into the toolbar "Filters" dropdown — open it, then click the
+      // tag chip INSIDE it. The chip is a ToggleChip (= Button) named after the tag; the
+      // card chip is a span (not a button), and scoping to the popover keeps it unambiguous.
+      const filters = await openFilters(page);
+      const facetChip = filters.getByRole('button', {
         name: TAG_TITLE,
         exact: true,
       });
@@ -220,8 +242,8 @@ test.describe('@full ADR-0003 KB tags — real tagged edges, read-path + facet +
       });
       await expect(card(page, taggedTitle)).toBeVisible();
 
-      // "All" clears the facet — the sibling returns.
-      await page.getByRole('button', { name: 'All', exact: true }).click();
+      // "All" (inside the same dropdown) clears the facet — the sibling returns.
+      await filters.getByRole('button', { name: 'All', exact: true }).click();
       await expect(card(page, siblingTitle)).toBeVisible({ timeout: 30_000 });
     } finally {
       await context.close();

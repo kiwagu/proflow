@@ -66,6 +66,10 @@ const DRAFT = /^(Draft|graph\.status\.draft)$/;
 const ACTIVE = /^(Active|graph\.status\.active)$/;
 const ALL = /^(All|graph\.drive\.facetAll)$/;
 const FILTER_STATUS = /Filter by status|graph\.lens\.filterStatus/;
+// The facet filters now live behind ONE toolbar "Filters" dropdown (a `filterChip` Button
+// with `aria-pressed`; an active-facet count may append to its name → startsWith match, no
+// `$` anchor). Match BOTH the resolved label AND the raw key, catalog-rebuild-agnostic.
+const FILTERS = /^(Filters|graph\.lens\.filters)/;
 
 /** A browser context authenticated AS the actor with the active space pinned. Mirrors the
  * sibling render specs' `pageFor`. */
@@ -107,6 +111,22 @@ async function openPanel(page: Page, title: string) {
   await expect(card(page, title)).toBeVisible({ timeout: 60_000 });
   await card(page, title).getByText(title, { exact: true }).click();
   return page.getByRole('complementary', { name: title });
+}
+
+/** Open the toolbar "Filters" dropdown and return its Popover content. The facet chips
+ * (tag / status / shared-mechanism) moved out of the content body into this ONE Popover, so
+ * they only exist in the DOM while it is open — a facet test must open this FIRST, then
+ * click the chip INSIDE the returned content. The open is retried against a hydration race
+ * (the trigger paints from SSR before it is interactive). */
+async function openFilters(page: Page) {
+  const trigger = page.getByRole('button', { name: FILTERS });
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
+  const content = page.locator('[data-slot="popover-content"]');
+  await expect(async () => {
+    await trigger.click();
+    await expect(content).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  return content;
 }
 
 test.describe('@full B1 — resource status lifecycle (transition control + status facet)', () => {
@@ -184,20 +204,24 @@ test.describe('@full B1 — resource status lifecycle (transition control + stat
       const page = await pageFor(context, fx.owner, fx.spaceId);
       await page.goto(`/author/graph?folder=${fx.rootId}`, { timeout: 60_000 });
 
-      // All three lifecycle docs are visible, and the ≥2-distinct-statuses guard renders the
-      // facet chip row (its leading `graph.lens.filterStatus` label).
+      // All three lifecycle docs are visible.
       await expect(card(page, fx.titles.draft)).toBeVisible({
         timeout: 60_000,
       });
       await expect(card(page, fx.titles.active)).toBeVisible();
       await expect(card(page, fx.titles.archived)).toBeVisible();
-      await expect(page.getByText(FILTER_STATUS).first()).toBeVisible({
+
+      // Open the toolbar "Filters" dropdown — the ≥2-distinct-statuses guard renders the
+      // status facet COLUMN inside it (its leading `graph.lens.filterStatus` label). The
+      // chips live only in this Popover now, so open it before touching them.
+      const filters = await openFilters(page);
+      await expect(filters.getByText(FILTER_STATUS).first()).toBeVisible({
         timeout: 30_000,
       });
 
       // Select "Draft" → the canvas narrows to draft content: the draft doc stays, the
       // active + archived docs drop (a client-side prune over `LensNode.status`).
-      const draftChip = page.getByRole('button', { name: DRAFT });
+      const draftChip = filters.getByRole('button', { name: DRAFT });
       await draftChip.click();
       await expect(draftChip).toHaveAttribute('aria-pressed', 'true', {
         timeout: 30_000,
@@ -207,7 +231,7 @@ test.describe('@full B1 — resource status lifecycle (transition control + stat
       await expect(card(page, fx.titles.archived)).toHaveCount(0);
 
       // "All" restores every state.
-      const allChip = page.getByRole('button', { name: ALL });
+      const allChip = filters.getByRole('button', { name: ALL });
       await allChip.click();
       await expect(allChip).toHaveAttribute('aria-pressed', 'true', {
         timeout: 30_000,
