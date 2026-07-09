@@ -1,4 +1,4 @@
-import { createEntityId } from '@workspace/entity-id';
+import { createEntityIdFor } from '@workspace/entity-id';
 import type { Database } from '@workspace/db';
 import type { BodyRef } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -138,7 +138,7 @@ async function cloneBody(
     collection: 'bodies',
     overrideAccess: true,
     data: {
-      id: createEntityId('bod'),
+      id: createEntityIdFor('body'),
       node_id: newId,
       space_id: spaceId,
       body: src.body as never,

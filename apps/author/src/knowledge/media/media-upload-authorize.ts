@@ -1,5 +1,5 @@
 import type { Database } from '@workspace/db';
-import { createEntityId } from '@workspace/entity-id';
+import { createEntityIdFor } from '@workspace/entity-id';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isAllowedMediaMime,
@@ -139,7 +139,7 @@ export async function authorizeMediaUpload(
   // it, so a DB-generated default can't work). `provenance_author_id` = the
   // uploader (the "zero author" starts as the physical creator); a reservation
   // that never confirms stays refcount-0 with no kmm → the reconcile reaper's job.
-  const blobId = createEntityId('kmb');
+  const blobId = createEntityIdFor('kbMediaBlob');
   const storagePath = buildStoragePath(input.spaceId, blobId, input.filename);
   const { error: blobErr } = await kbSchema(db)
     .from('media_blob')

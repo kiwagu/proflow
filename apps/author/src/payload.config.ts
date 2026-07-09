@@ -9,6 +9,7 @@ import { es } from '@payloadcms/translations/languages/es';
 import { multiTenantPlugin } from '@payloadcms/plugin-multi-tenant';
 import { s3Storage } from '@payloadcms/storage-s3';
 
+import { ENTITY_PREFIXES } from '@workspace/entity-id';
 import { customIdPlugin } from '@workspace/payload-plugins';
 
 import { Organizations } from './collections/Organizations';
@@ -113,7 +114,11 @@ export default buildConfig({
       return config;
     },
     customIdPlugin(
-      { organizations: 'org', spaces: 'spc', bodies: 'bod' },
+      {
+        organizations: ENTITY_PREFIXES.organization,
+        spaces: ENTITY_PREFIXES.space,
+        bodies: ENTITY_PREFIXES.body,
+      },
       { field: 'id', mode: 'validate' }
     ),
     s3Storage({

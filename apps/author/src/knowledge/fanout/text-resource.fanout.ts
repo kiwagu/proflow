@@ -1,5 +1,5 @@
 import type { Database } from '@workspace/db';
-import { createEntityId } from '@workspace/entity-id';
+import { createEntityIdFor } from '@workspace/entity-id';
 import type { BodyRef } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
@@ -143,7 +143,7 @@ export async function createTextResource(
         // The `bodies` collection uses customIdPlugin in `validate` mode — the
         // id must be supplied (it is not auto-minted). Mint the canonical
         // `bod_…` entity id the plugin would otherwise generate.
-        id: createEntityId('bod'),
+        id: createEntityIdFor('body'),
         node_id: nodeId,
         space_id: input.spaceId,
         body: (input.lexicalBody ?? EMPTY_LEXICAL) as never,
@@ -219,7 +219,7 @@ export async function ensureNodeBody(
     collection: 'bodies',
     overrideAccess: true,
     data: {
-      id: createEntityId('bod'),
+      id: createEntityIdFor('body'),
       node_id: input.nodeId,
       space_id: input.spaceId,
       body: EMPTY_LEXICAL as never,
