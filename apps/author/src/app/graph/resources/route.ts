@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { trashResourceInputSchema } from '@workspace/knowledge-contracts';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
@@ -81,18 +82,18 @@ export async function GET(request: Request) {
 
 const startEdgeSchema = z.object({
   relationType: z.enum(['prerequisite', 'relates_to']),
-  toId: z.string().min(1),
+  toId: entityIds.knowledgeResource.prefixSchema,
 });
 
 // Optional containment placement: create the node inside a folder via a FORWARD
 // `contains` edge (folder→child, ADR-0015). `parentFolderId` is the folder.
 const parentFolderSchema = z.object({
-  parentFolderId: z.string().min(1),
+  parentFolderId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
 });
 
 const createSchema = z.object({
-  spaceId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
   // text → text-resources (carries a body). link/tag/folder/file/video are
   // body-less (ADR-0002 §3 / ADR-0015).
   kind: z.enum(['link', 'tag', 'folder', 'file', 'video']),
@@ -132,8 +133,8 @@ export async function POST(request: Request) {
 }
 
 const renameSchema = z.object({
-  spaceId: z.string().min(1),
-  resourceId: z.string().min(1), // knr_…
+  spaceId: entityIds.space.prefixSchema,
+  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_…
   title: z.string().min(1),
 });
 

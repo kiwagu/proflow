@@ -18,6 +18,7 @@
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
+    "@workspace/entity-id": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/logger": "workspace:*",

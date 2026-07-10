@@ -1,6 +1,7 @@
-import type {
-  ProjectionResult,
-  ResourceUserStateMap,
+import {
+  type ProjectionResult,
+  projectionResultSchema,
+  type ResourceUserStateMap,
 } from '@workspace/knowledge-contracts';
 import { describe, expect, it } from 'vitest';
 
@@ -9,7 +10,9 @@ import { gateSequence } from './sequence-gating.js';
 // Linear prerequisite chain L1 → L2 → L3 (the e2e bootstrap graph), ordered by
 // the resolver into `items` (depth 0/1/2). Pure: no DB, no React.
 function courseResult(): ProjectionResult {
-  return {
+  // Parse through the schema so the correctly-prefixed fixture ids validate and
+  // get branded (prj_/knr_/kne_), matching the resolver's real output type.
+  return projectionResultSchema.parse({
     projection_id: 'prj_course',
     view: 'course',
     items: [
@@ -44,7 +47,7 @@ function courseResult(): ProjectionResult {
         via_edge_id: 'kne_2',
       },
     ],
-  };
+  });
 }
 
 function lockedById(course: ReturnType<typeof gateSequence>) {
@@ -132,7 +135,11 @@ describe('gateSequence — display gating over per-user state (pure)', () => {
 
   it('empty course → empty steps', () => {
     const gated = gateSequence(
-      { projection_id: 'prj_x', view: 'course', items: [] },
+      projectionResultSchema.parse({
+        projection_id: 'prj_x',
+        view: 'course',
+        items: [],
+      }),
       {}
     );
     expect(gated.steps).toEqual([]);

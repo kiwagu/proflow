@@ -1,5 +1,6 @@
 'use server';
 
+import { entityIds } from '@workspace/entity-id';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -14,7 +15,14 @@ import { createClient } from '@/lib/supabase/server';
 
 const organizationAvatarSchema = z
   .object({
-    organizationId: z.string().trim().min(1, 'Organization is required.'),
+    organizationId: z
+      .string()
+      .trim()
+      .min(1, 'Organization is required.')
+      .refine((v) => v.startsWith(`${entityIds.organization.prefix}_`), {
+        message: 'Organization is required.',
+      })
+      .transform((v) => entityIds.organization.brand(v)),
     avatar_url: z
       .string()
       .trim()

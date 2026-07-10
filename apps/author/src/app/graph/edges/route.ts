@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
@@ -35,9 +36,9 @@ const authorableRelation = z.enum(AUTHORABLE_RELATION_TYPES);
 // create relates_to — explicit from/to.
 const createRelatesToSchema = z.object({
   action: z.literal('link'),
-  spaceId: z.string().min(1),
-  fromId: z.string().min(1),
-  toId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  fromId: entityIds.knowledgeResource.prefixSchema,
+  toId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
 });
 
@@ -45,9 +46,9 @@ const createRelatesToSchema = z.object({
 const createTaggedSchema = z
   .object({
     action: z.literal('tag'),
-    spaceId: z.string().min(1),
-    resourceId: z.string().min(1),
-    tagId: z.string().min(1).optional(),
+    spaceId: entityIds.space.prefixSchema,
+    resourceId: entityIds.knowledgeResource.prefixSchema,
+    tagId: entityIds.knowledgeResource.prefixSchema.optional(),
     tagTitle: z.string().min(1).optional(),
   })
   .refine((v) => Boolean(v.tagId) || Boolean(v.tagTitle), {
@@ -57,18 +58,18 @@ const createTaggedSchema = z
 // place a node inside a folder — FORWARD `contains` edge folder→child (ADR-0015).
 const createContainsSchema = z.object({
   action: z.literal('contain'),
-  spaceId: z.string().min(1),
-  folderId: z.string().min(1),
-  childId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  folderId: entityIds.knowledgeResource.prefixSchema,
+  childId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
 });
 
 // cross-folder symlink — FORWARD `shortcut` edge folder→target (ADR-0015).
 const createShortcutSchema = z.object({
   action: z.literal('shortcut'),
-  spaceId: z.string().min(1),
-  folderId: z.string().min(1),
-  targetId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  folderId: entityIds.knowledgeResource.prefixSchema,
+  targetId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
 });
 
@@ -174,14 +175,14 @@ export async function POST(request: Request) {
 // delete by edge id, OR by the (from,to,relation) natural key the unlink/untag UI
 // already holds (avoids a round-trip to discover the id).
 const deleteByIdSchema = z.object({
-  spaceId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
   edgeId: z.string().min(1),
 });
 
 const deleteByTripleSchema = z.object({
-  spaceId: z.string().min(1),
-  fromId: z.string().min(1),
-  toId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  fromId: entityIds.knowledgeResource.prefixSchema,
+  toId: entityIds.knowledgeResource.prefixSchema,
   relationType: authorableRelation,
 });
 

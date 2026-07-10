@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import {
   SEARCH_DEFAULT_LIMIT,
   type SearchQuery,
@@ -34,7 +35,7 @@ export const dynamic = 'force-dynamic';
 // is deferred, ADR-0024 §4). The term's min length is enforced client-side (the lens
 // does not fire below 2 chars); the route accepts any non-empty term defensively.
 const searchRequestSchema = z.object({
-  spaceId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
   term: z.string().min(1),
   limit: z.number().int().positive().optional(),
 });

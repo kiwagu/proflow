@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { linkUrlSchema } from '@workspace/knowledge-contracts';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
@@ -31,8 +32,8 @@ export const dynamic = 'force-dynamic';
 
 const descriptionSchema = z.object({
   attribute: z.literal('description'),
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   body: z.string(),
 });
 
@@ -43,9 +44,9 @@ const descriptionSchema = z.object({
 // `SetResourceMediaRequest` — `createdBy` is NOT here (it comes from the SESSION).
 const mediaSchema = z.object({
   attribute: z.literal('media'),
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
-  blobId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
+  blobId: entityIds.kbMediaBlob.prefixSchema,
   originalFilename: z.string().min(1),
   checksum: z.string().nullable().optional(),
 });
@@ -55,8 +56,8 @@ const mediaSchema = z.object({
 // accepted from the client — the server derives it from the validated URL.
 const linkSchema = z.object({
   attribute: z.literal('link'),
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   url: linkUrlSchema,
 });
 

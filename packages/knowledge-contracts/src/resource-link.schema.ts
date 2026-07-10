@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -42,8 +43,8 @@ export function deriveLinkHost(url: string): string | null {
  * derives it; `createdBy` comes from the SESSION, never the body.
  */
 export const setResourceLinkRequestSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   url: linkUrlSchema,
 });
 export type SetResourceLinkRequest = z.infer<

@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 
@@ -126,7 +127,7 @@ export async function GET(request: Request) {
 }
 
 const floorSchema = z.object({
-  resourceId: z.string().min(1), // knr_…
+  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_…
   visibility: z.enum(['private', 'space', 'organization']),
 });
 
@@ -167,13 +168,13 @@ export async function PATCH(request: Request) {
  */
 const cohortShareSchema = z.object({
   grantType: z.literal('cohort'),
-  resourceId: z.string().min(1), // knr_…
-  scopeId: z.string().min(1),
+  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_…
+  scopeId: entityIds.scope.prefixSchema,
 });
 
 const userShareSchema = z.object({
   grantType: z.literal('user'),
-  resourceId: z.string().min(1), // knr_…
+  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_…
   userId: z.string().uuid(),
 });
 

@@ -1,4 +1,7 @@
-import type { ProjectionResult } from '@workspace/knowledge-contracts';
+import {
+  type ProjectionResult,
+  projectionResultSchema,
+} from '@workspace/knowledge-contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,7 +13,9 @@ import {
 // A board projection over three documents with different statuses. Pure: no DB,
 // no React (parity with sequence-gating.test.ts).
 function docResult(): ProjectionResult {
-  return {
+  // Parse through the schema so the correctly-prefixed fixture ids validate and
+  // get branded (prj_/knr_), matching the resolver's real output type.
+  return projectionResultSchema.parse({
     projection_id: 'prj_docs',
     view: 'board',
     items: [
@@ -45,7 +50,7 @@ function docResult(): ProjectionResult {
         via_edge_id: null,
       },
     ],
-  };
+  });
 }
 
 function availableById(result: ReturnType<typeof requiresStateRule>) {

@@ -6,3 +6,9 @@ coverage/
 pnpm-lock.yaml
 .pnpm-store/
 bun.lock
+
+# Raw `supabase gen types` output (Makefile db-types) — canonical form is the
+# generator's, verified by the `db:types` check (git diff --exit-code). Prettier
+# must NOT rewrite it, or every `format`/save reintroduces a full-file diff and
+# breaks db:types.
+src/database.types.ts

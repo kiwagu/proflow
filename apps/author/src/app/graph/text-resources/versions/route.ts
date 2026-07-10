@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import config from '@payload-config';
 import { NextResponse } from 'next/server';
 import { getPayload, type Payload } from 'payload';
@@ -169,8 +170,8 @@ export async function GET(request: Request) {
 }
 
 const restoreSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   versionId: z.string().min(1),
   action: z.literal('restore').default('restore'),
 });
@@ -230,8 +231,8 @@ export async function POST(request: Request) {
 }
 
 const deleteSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   versionId: z.string().min(1),
 });
 

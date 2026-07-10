@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { mediaUploadAuthorizeRequestSchema } from '@workspace/knowledge-contracts';
@@ -28,8 +29,8 @@ export const dynamic = 'force-dynamic';
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 const downloadRequestSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
 });
 
 function errorStatus(error: unknown): { message: string; status: number } {

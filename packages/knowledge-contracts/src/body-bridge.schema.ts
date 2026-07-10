@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -26,14 +27,14 @@ export const BODY_BRIDGE_SCHEMA_VERSION = 1 as const;
 /** Thin body pointer — the SAME shape as `knowledge_resources.body_ref`. */
 export const bodyRefSchema = z.object({
   collection: z.literal('bodies'),
-  doc_id: z.string(),
+  doc_id: z.string(), // opaque Payload-internal doc id (NOT a bod_ entity id)
 });
 export type BodyRef = z.infer<typeof bodyRefSchema>;
 
 const envelopeBase = {
   schema_version: z.literal(BODY_BRIDGE_SCHEMA_VERSION),
-  space_id: z.string(),
-  node_id: z.string(), // knr_… — the authoritative node
+  space_id: entityIds.space.prefixSchema,
+  node_id: entityIds.knowledgeResource.prefixSchema, // knr_… — the authoritative node
 };
 
 export const bodyBridgeEnvelopeSchema = z.discriminatedUnion('event', [

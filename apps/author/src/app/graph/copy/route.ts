@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import config from '@payload-config';
 import { NextResponse } from 'next/server';
 import { getPayload } from 'payload';
@@ -25,10 +26,12 @@ import {
 export const dynamic = 'force-dynamic';
 
 const copySchema = z.object({
-  spaceId: z.string().min(1),
-  sourceId: z.string().min(1), // knr_… root of the subtree to copy
+  spaceId: entityIds.space.prefixSchema,
+  sourceId: entityIds.knowledgeResource.prefixSchema, // knr_… root of the subtree to copy
   // The copy's destination folder, or null for the top level.
-  targetFolderId: z.string().min(1).nullable().default(null),
+  targetFolderId: entityIds.knowledgeResource.prefixSchema
+    .nullable()
+    .default(null),
   // The caller-built "(copy)" title for the root (i18n stays in the front).
   rootTitle: z.string().min(1).optional(),
 });

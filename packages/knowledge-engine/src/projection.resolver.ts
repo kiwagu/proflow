@@ -203,7 +203,9 @@ export async function resolveProjection(
   }
 
   const rows = await args.transport({ sql, paramsJson });
-  const result: ProjectionResult = {
+  // Raw literal (string ids from the DB transport); `projectionResultSchema.parse`
+  // below validates the prefixes and brands the ids at this boundary.
+  const result = {
     projection_id: args.projectionId,
     view: spec.view,
     items: rows.map((row) => ({

@@ -1,8 +1,4 @@
-import type {
-  SearchQuery,
-  SearchResult,
-  SearchResultItem,
-} from '@workspace/knowledge-contracts';
+import type { SearchQuery, SearchResult } from '@workspace/knowledge-contracts';
 import {
   parseSearchQuery,
   searchResultSchema,
@@ -80,7 +76,9 @@ export async function resolveSearch(
     paramsJson,
   })) as unknown as SearchRow[];
 
-  const items: SearchResultItem[] = rows.map((row) => ({
+  // Raw literal (string ids from the DB transport); `searchResultSchema.parse`
+  // below validates the prefixes and brands the ids at this boundary.
+  const items = rows.map((row) => ({
     id: row.id,
     kind: row.kind,
     title: row.title,

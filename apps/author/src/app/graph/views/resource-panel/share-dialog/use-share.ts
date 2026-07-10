@@ -1,5 +1,6 @@
 'use client';
 
+import { entityIds } from '@workspace/entity-id';
 import type { AsyncSearchPage } from '@workspace/ui/components/platform/async-search-picker';
 import { useValueChanged } from '@workspace/ui/hooks/use-value-changed';
 import * as React from 'react';
@@ -179,14 +180,20 @@ export function useShare({
   }
 
   function changeFloor(next: ResourceFloor): void {
-    void mutate({ resourceId: node.id, visibility: next }, 'PATCH');
+    void mutate(
+      {
+        resourceId: entityIds.knowledgeResource.brand(node.id),
+        visibility: next,
+      },
+      'PATCH'
+    );
   }
 
   function linkCohort(scopeId: string): void {
     const body: CohortShareBody = {
       grantType: 'cohort',
-      resourceId: node.id,
-      scopeId,
+      resourceId: entityIds.knowledgeResource.brand(node.id),
+      scopeId: entityIds.scope.brand(scopeId),
     };
     void mutate(body, 'POST');
   }
@@ -194,8 +201,8 @@ export function useShare({
   function unlinkCohort(scopeId: string): void {
     const body: CohortShareBody = {
       grantType: 'cohort',
-      resourceId: node.id,
-      scopeId,
+      resourceId: entityIds.knowledgeResource.brand(node.id),
+      scopeId: entityIds.scope.brand(scopeId),
     };
     void mutate(body, 'DELETE');
   }
@@ -203,7 +210,7 @@ export function useShare({
   function grantUser(userId: string): void {
     const body: UserShareBody = {
       grantType: 'user',
-      resourceId: node.id,
+      resourceId: entityIds.knowledgeResource.brand(node.id),
       userId,
     };
     void mutate(body, 'POST');
@@ -212,7 +219,7 @@ export function useShare({
   function revokeUser(userId: string): void {
     const body: UserShareBody = {
       grantType: 'user',
-      resourceId: node.id,
+      resourceId: entityIds.knowledgeResource.brand(node.id),
       userId,
     };
     void mutate(body, 'DELETE');

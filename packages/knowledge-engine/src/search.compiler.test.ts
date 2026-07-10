@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import { compileSearchQuery, encodeSearchCursor } from './search.compiler.js';
 
-function lexical(overrides: Partial<SearchQuery> = {}): SearchQuery {
+// Test helper: accepts raw-string scope ids (the schema's spaceId is branded) and
+// casts the assembled object to SearchQuery — the compiler under test only reads shape.
+function lexical(
+  overrides: Partial<Omit<SearchQuery, 'scope'>> & {
+    scope?: Record<string, unknown>;
+  } = {}
+): SearchQuery {
   return {
     mode: 'lexical',
     term: 'getting',

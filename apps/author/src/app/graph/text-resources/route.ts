@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import config from '@payload-config';
 import { NextResponse } from 'next/server';
 import { getPayload } from 'payload';
@@ -147,12 +148,12 @@ export async function GET(request: Request) {
 }
 
 const parentFolderSchema = z.object({
-  parentFolderId: z.string().min(1),
+  parentFolderId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
 });
 
 const createSchema = z.object({
-  spaceId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
   title: z.string().min(1),
   // The seed Lexical body. Optional — the fan-out defaults to an empty body
   // (empty-but-live until the editor lands). Passed through to the richText
@@ -197,8 +198,8 @@ export async function POST(request: Request) {
 }
 
 const updateSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1), // knr_…
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema, // knr_…
   // A Lexical SerializedEditorState ({ root }). OMIT for a status-only change:
   //   - status:'draft'     → UNPUBLISH (retract to draft; body unchanged),
   //   - status:'published' → publish the current state (no body change).

@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import {
   MEDIA_MAX_UPLOAD_DEFAULT_BYTES,
   MEDIA_MAX_UPLOAD_HARD_CAP_BYTES,
@@ -120,11 +121,11 @@ export const KB_MEDIA_BUCKET = 'kb-media' as const;
  * their copy without touching the shared bytes).
  */
 export const resourceMediaMetaSchema = z.object({
-  nodeId: z.string().min(1), // knr_… the owning node
-  spaceId: z.string().min(1),
-  blobId: z.string().min(1), // kmb_… the shared immutable byte record
+  nodeId: entityIds.knowledgeResource.prefixSchema, // knr_… the owning node
+  spaceId: entityIds.space.prefixSchema,
+  blobId: entityIds.kbMediaBlob.prefixSchema, // kmb_… the shared immutable byte record
   originalFilename: z.string().min(1), // display only; NEVER the storage path
-  createdBy: z.string().min(1),
+  createdBy: entityIds.user.prefixSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -138,8 +139,8 @@ export type ResourceMediaMeta = z.infer<typeof resourceMediaMetaSchema>;
  * + the bucket `file_size_limit` are the backstop).
  */
 export const mediaUploadAuthorizeRequestSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
   mimeType: z.string().min(1),
   // Hard belt: reject anything over the 5 GB system cap at the boundary. The SOFT
   // per-org limit is enforced in the authorizer against the RESOLVED runtime
@@ -167,7 +168,7 @@ export type MediaUploadAuthorizeRequest = z.infer<
  */
 export const mediaUploadAuthorizeResponseSchema = z.object({
   storagePath: z.string().min(1),
-  blobId: z.string().min(1),
+  blobId: entityIds.kbMediaBlob.prefixSchema,
 });
 export type MediaUploadAuthorizeResponse = z.infer<
   typeof mediaUploadAuthorizeResponseSchema
@@ -183,9 +184,9 @@ export type MediaUploadAuthorizeResponse = z.infer<
  * later index, not a backfill.
  */
 export const setResourceMediaRequestSchema = z.object({
-  spaceId: z.string().min(1),
-  nodeId: z.string().min(1),
-  blobId: z.string().min(1),
+  spaceId: entityIds.space.prefixSchema,
+  nodeId: entityIds.knowledgeResource.prefixSchema,
+  blobId: entityIds.kbMediaBlob.prefixSchema,
   originalFilename: z.string().min(1),
   checksum: z.string().nullable().optional(),
 });

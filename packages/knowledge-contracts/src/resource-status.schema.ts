@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -21,8 +22,8 @@ export type ResourceStatus = z.infer<typeof resourceStatusSchema>;
 
 /** Set a node's workflow status under the caller's RLS. */
 export const setResourceStatusInputSchema = z.object({
-  spaceId: z.string().min(1),
-  resourceId: z.string().min(1), // knr_… the selected node
+  spaceId: entityIds.space.prefixSchema,
+  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_… the selected node
   status: resourceStatusSchema,
 });
 export type SetResourceStatusInput = z.infer<
