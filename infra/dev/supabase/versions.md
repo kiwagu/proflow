@@ -1,5 +1,8 @@
 # Docker Image Versions
 
+## 2026-07-11
+- supabase/studio:2026.07.07-sha-a6a04f2 (prev supabase/studio:2026.06.03-sha-0bca601)
+
 ## 2026-06-03
 - supabase/studio:2026.06.03-sha-0bca601 (prev supabase/studio:2026.04.27-sha-5f60601)
 - supabase/gotrue:v2.189.0 (prev supabase/gotrue:v2.186.0)
