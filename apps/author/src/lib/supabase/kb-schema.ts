@@ -2,7 +2,7 @@ import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Typed view of the `kb` application-satellite schema for supabase-js (ADR-0013).
+ * Typed view of the `kb` application-satellite schema for supabase-js.
  *
  * The generated `@workspace/db` `Database` type covers only `public` /
  * `graphql_public`; `kb` is a SEPARATE Postgres schema exposed through PostgREST via
@@ -47,8 +47,8 @@ type LinkUpdate = {
 };
 
 /**
- * `resource_media_meta` (prefix `kmm`, ADR-0026) — the generic 1:1 media satellite
- * keyed by `node_id` — since ADR-0027 a thin REFERENCE `{node_id → blob_id}` to a
+ * `resource_media_meta` (prefix `kmm`) — the generic 1:1 media satellite
+ * keyed by `node_id` — a thin REFERENCE `{node_id → blob_id}` to a
  * shared `media_blob` plus the per-reference display filename. Byte-intrinsic
  * metadata lives on the blob; the BYTES live in the private `kb-media` bucket.
  */
@@ -72,7 +72,7 @@ type MediaMetaUpdate = {
 };
 
 /**
- * `media_blob` (prefix `kmb`, ADR-0027) — the immutable, reference-counted byte
+ * `media_blob` (prefix `kmb`) — the immutable, reference-counted byte
  * record N kmm references share. `refcount` is trigger-owned (read-only here);
  * UPDATE/DELETE are not granted to `authenticated` at all — the app only INSERTs
  * a reservation (authorize) and SELECTs (download/purge decisions). The FK-less
@@ -115,7 +115,7 @@ type MediaBlobUpdate = {
 };
 
 /**
- * `resource_activity` (prefix `kra`, ADR-0016) — the append-only activity-log
+ * `resource_activity` (prefix `kra`) — the append-only activity-log
  * spine. NOT the 1:1 `node_id` satellite shape: it is 1:N keyed by `resource_id`,
  * with a `user_id` (per-user open) / `source` discriminator / `event_id` dedupe.
  */

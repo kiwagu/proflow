@@ -1,11 +1,11 @@
 /**
- * Trash / reference-aware lifecycle acceptance (ADR-0018) — the regression net for
+ * Trash / reference-aware lifecycle acceptance — the regression net for
  * the destructive Drive flow. Trash is soft-delete + restore + manual purge; the
  * one-way door (purge) destroys a row, so this is a critical flow proved end-to-end
  * over HTTP through the SHARED seed client (the cascade shape is the shared
  * `drive-cascade` catalog fixture). Runtime tenant, never a migration seed.
  *
- * Coverage (ADR-0018 §10.8):
+ * Coverage:
  *  1. trash → hidden from normal browse / visible under the trash filter; restore
  *     round-trips the FULL reference set (a `contains` parent, a `shortcut`, a
  *     `tagged` edge) with zero rebuild — all reappear.
@@ -13,7 +13,7 @@
  *     child ALSO under folder B survives (it keeps a living parent); restore re-shows.
  *  3. cross-owner gating: a `member` (no `space.knowledge.delete`) cannot trash or
  *     restore a granted-owned node; the owner / a delete-holder can. And cross-owner
- *     PURGE authority (ADR-0018 §8) is fail-closed (ADR-0017): a delete-holder CAN
+ *     PURGE authority is fail-closed: a delete-holder CAN
  *     purge a SHARED member node (visible → `purged:[id]`, durable audit stamped to
  *     the admin), but a still-PRIVATE member node is owner-only-visible, so the admin
  *     purge is an HONEST no-op (`purged:[]`, 200, row + audit untouched — to ACT you
@@ -252,7 +252,7 @@ test.describe('@full knowledge trash lifecycle', () => {
 
     // The parent's containment forest, read under the actor's RLS, OMITS the edge
     // to the trashed child (dormant) — no dangling edge to a hidden node reaches
-    // the client (graceful-absence by construction, ADR-0018 §14 defense 1).
+    // the client (graceful-absence by construction).
     const { data: forest } = await tenant.granted.client
       .from('knowledge_edges')
       .select('from_id,to_id')
@@ -273,7 +273,7 @@ test.describe('@full knowledge trash lifecycle', () => {
   });
 
   test('in-use purge guard: an unauthorized purge of a node with a live cross-owner reference is rejected as reason:in-use (422), nothing destroyed', async () => {
-    // The Trash lens render (ADR-0018 §10.7) surfaces the in-use rejection as a
+    // The Trash lens render surfaces the in-use rejection as a
     // cooperative "in use" state. This proves the route signal that drives it: the
     // `assert_purge_not_in_use` guard rejects an unauthorized purge of a resource with
     // LIVING cross-owner references, and the `/author/graph/trash` DELETE tags that
@@ -327,7 +327,7 @@ test.describe('@full knowledge trash lifecycle', () => {
     await grantedApi.dispose();
   });
 
-  test('cross-owner purge authority (ADR-0018 §8): a delete-holder CAN purge a SHARED member node, but a PRIVATE one is an honest no-op (fail-closed: to act you must SEE)', async () => {
+  test('cross-owner purge authority: a delete-holder CAN purge a SHARED member node, but a PRIVATE one is an honest no-op (fail-closed: to act you must SEE)', async () => {
     const member = await bootstrapMemberActor(tenant);
     const memberApi = await seedClientFor(member);
     const grantedApi = await seedClientFor(tenant.granted); // holds space.knowledge.delete
@@ -371,7 +371,7 @@ test.describe('@full knowledge trash lifecycle', () => {
       sid,
       'Member Private Purge Target'
     );
-    // No publish: the node stays floor=private (private-by-default, ADR-0017).
+    // No publish: the node stays floor=private (private-by-default).
     await memberApi.trash(sid, privateDoc);
 
     // The admin attempts the SAME purge. The DELETE-USING (delete verb) passes, but

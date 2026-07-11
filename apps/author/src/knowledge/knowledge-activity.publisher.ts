@@ -13,7 +13,7 @@ import {
 import { connect, type NatsConnection } from '@nats-io/transport-node';
 
 /**
- * Knowledge-activity PRODUCER (ADR-0016 §5.3) — the publish seam used by the
+ * Knowledge-activity PRODUCER — the publish seam used by the
  * Payload `Bodies.afterChange` hook to emit a body-edit activity event onto the
  * `knowledge.activity.v1.>` JetStream. It does NOT write Postgres — the durable
  * `knowledge-activity.jetstream.worker` consumer owns the `kb.resource_activity`

@@ -5,7 +5,7 @@ import type { ResourceFloor, ScopeChoice } from '@/app/graph/graph-data.types';
 
 /**
  * Resource visibility — broadcast floor + cohort grants (UI-agnostic application
- * module, ADR-0005 §b). ADR-0017 Model B: visibility composes as ONE broadcast floor
+ * module). Visibility composes as ONE broadcast floor
  * (the `knowledge_resources.visibility` column: private / space / organization) plus
  * additive cohort GRANTS. Linking a resource to a `scope` (cohort) is an ADDITIVE
  * grant — it WIDENS access to that cohort's members; it never fences. On a `space`
@@ -105,8 +105,8 @@ export async function listScopeChoices(
 }
 
 /**
- * GRANT a cohort access to a resource (additive — widens to the cohort's members,
- * ADR-0017 Model B). Idempotent against the `(resource_id, scope_id)` PK — re-linking
+ * GRANT a cohort access to a resource (additive — widens to the cohort's members).
+ * Idempotent against the `(resource_id, scope_id)` PK — re-linking
  * is a no-op (the grant already exists).
  */
 export async function linkResourceScope(
@@ -131,7 +131,7 @@ export async function linkResourceScope(
 }
 
 /**
- * Remove a cohort grant (narrow — the cohort loses access; ADR-0017 Model B). Returns
+ * Remove a cohort grant (narrow — the cohort loses access). Returns
  * how many rows the caller's RLS context actually deleted (0 = nothing visible/
  * permitted — a clean no-op). A resource with zero grants falls back to its floor +
  * owner.

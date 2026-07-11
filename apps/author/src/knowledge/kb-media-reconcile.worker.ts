@@ -1,10 +1,10 @@
 /**
- * KB media reconcile reaper — the scheduled sweep host (ADR-0027 §7). Runs
+ * KB media reconcile reaper — the scheduled sweep host. Runs
  * `runMediaReconcileSweep` on an interval: heals refcount drift, reaps dead
  * blobs (0 references past the 24 h grace — confirm-failed uploads, abandoned
  * reservations, last-ref purge residue/races) and stray `kb-media` objects with
  * no blob row. This worker is the ONLY sanctioned `service_role` user on the
- * media path (ADR-0009 carve-out: background, off every user request) — all
+ * media path (background, off every user request) — all
  * user-facing reads/writes stay under the caller's RLS.
  *
  * Local dev: `bun run dev` in `apps/author` starts Next + the workers

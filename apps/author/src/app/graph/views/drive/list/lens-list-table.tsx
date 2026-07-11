@@ -87,7 +87,7 @@ function useDriveRowDnd(row: DriveRow): {
 }
 
 /**
- * LensListTable — the parameterizable LIST layout (ADR-0025): a node-set rendered as a
+ * LensListTable — the parameterizable LIST layout: a node-set rendered as a
  * sortable table (the generic {@link DataTable}) instead of cards, with every
  * cross-cutting column assembled from optional flags/slots so EVERY lens — KB browse,
  * the flat filter lenses, and (Phase B) the lexical-search list/tree — renders through
@@ -127,7 +127,7 @@ export function LensListTable({
   recentOpenedAt: Record<string, string> | null;
   /** Initial column sort (Recent → viewed-desc; otherwise name-asc). */
   defaultSorting: { id: string; desc: boolean }[];
-  /** The starred set + toggle. OPTIONAL (ADR-0025 §1 `star?`): supplied → a leading star
+  /** The starred set + toggle. OPTIONAL (`star?`): supplied → a leading star
    * column; OMITTED (default OFF, fail-safe) → no star column at all. The structural
    * lenses pass it; the lexical-search list omits it (a ranked hit list has no star). */
   starredSet?: Set<string>;
@@ -142,7 +142,7 @@ export function LensListTable({
   /** Wire rows as drag sources / folder rows as drop targets (move = re-parent).
    * Only in 'kb' browse — flat lenses are read-only digests. */
   dndEnabled?: boolean;
-  /** The access-mirror badge for a row's node (ADR-0023 §7a), or null when not shared
+  /** The access-mirror badge for a row's node, or null when not shared
    * out — rendered in the name cell so the list mirrors the grid cards. */
   sharedBadgeFor?: (node: LensNode) => React.ReactNode;
   /** The byte size for a row's node (uploaded file/video → its own bytes; folder → the
@@ -157,8 +157,8 @@ export function LensListTable({
   snippet?: { header: string; cell: (node: LensNode) => React.ReactNode };
   /** Multi-select (B2) — supplied → a leading checkbox column (per-row toggle, shift =
    * range over the ordered rows the view supplies); omitted → no column (unchanged). The
-   * column HEADER is a tri-state "select all visible" checkbox (a Hint-labelled icon,
-   * ADR-0025 §1) — the list layout's select-all lives here, not on a content row. */
+   * column HEADER is a tri-state "select all visible" checkbox (a Hint-labelled icon)
+   * — the list layout's select-all lives here, not on a content row. */
   selection?: {
     isSelected: (id: string) => boolean;
     onToggle: (id: string, shiftKey: boolean) => void;
@@ -232,7 +232,7 @@ export function LensListTable({
             },
           ]
         : []),
-      // OPTIONAL leading star column (ADR-0025 §1 `star?`) — present only when a starred
+      // OPTIONAL leading star column (`star?`) — present only when a starred
       // set + toggle are supplied (the structural lenses); omitted for the search list.
       ...(starredSet && onToggleStar
         ? [
@@ -271,7 +271,7 @@ export function LensListTable({
           const r = row.original;
           // A shortcut shows its TARGET's kind icon (r.node is the target) + the arrow
           // suffix below — telegraphs WHAT it points at, not a uniform folder-symlink
-          // glyph (ADR-0015 §3). Real folders keep the Folder icon.
+          // glyph. Real folders keep the Folder icon.
           const Icon =
             r.rowKind === 'folder' ? Folder : iconForKind(r.node.kind);
           return (
@@ -359,7 +359,7 @@ export function LensListTable({
           modifiedCell((getValue() as string) || undefined),
         meta: { cellClassName: 'w-32' },
       },
-      // OPTIONAL size column (ADR-0026 render) — an uploaded file/video's own bytes or a
+      // OPTIONAL size column — an uploaded file/video's own bytes or a
       // folder's recursive VISIBLE-descendant sum, humanized via `formatBytes`; text/link/
       // tag + media-less folders show "—". Sortable by the raw byte accessor (nulls → -1
       // so the media-less rows sort last). The header carries a visible-slice Hint (the

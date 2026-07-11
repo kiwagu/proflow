@@ -57,7 +57,7 @@ export function SearchResults({
   const { attributesByItem } = results;
   const { renderCard, renderTreeLeaf, listRows, snippetSlot } = renderers;
 
-  // The Size column for the shared list table (ADR-0026 render) — a leaf's own uploaded-
+  // The Size column for the shared list table — a leaf's own uploaded-
   // artifact bytes, off the SAME `artifactBytes` helper the Drive lens uses (one meaning of
   // "size" across lenses). Search results are mostly flat leaves; a folder in the advanced
   // ancestor tree lacks a recursive size context here, so it shows "—" (deliberate — the
@@ -86,7 +86,7 @@ export function SearchResults({
         currentUserId={currentUserId}
         selectedId={selectedId}
         // Search has no star / Recent / DnD / shared-badge column — the fail-safe defaults
-        // (star omitted entirely, ADR-0025 §1 `star?` off).
+        // (star omitted entirely, `star?` off).
         recentOpenedAt={null}
         defaultSorting={SEARCH_LIST_NO_SORT}
         snippet={snippetSlot}

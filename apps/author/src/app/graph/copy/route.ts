@@ -11,8 +11,8 @@ import {
 } from '@/lib/supabase/require-rls-session';
 
 /**
- * Deep-copy a resource and its `contains` subtree (ADR-0015 containment, ADR-0017
- * fail-closed). A cross-store fan-out: nodes + edges in Postgres under the user's
+ * Deep-copy a resource and its `contains` subtree. A cross-store fan-out: nodes
+ * + edges in Postgres under the user's
  * RLS, each text body cloned via the Payload Local API. The clone is the COPIER's
  * own private content — `created_by`/`owner` from the SESSION, `visibility` left at
  * the private default, never the source's audience.

@@ -3,8 +3,8 @@ import type { SeedScenario } from './types.js';
 
 /**
  * Drive size-&-filter fixture — the worked example for the cross-lens "Only files"
- * (uploaded-artifacts) filter and the list-view Size column (ADR-0026 render). Making
- * `file`/`video` REAL (a `media` satellite with `byteSize`, ADR-0026) let the Drive add
+ * (uploaded-artifacts) filter and the list-view Size column. Making
+ * `file`/`video` REAL (a `media` satellite with `byteSize`) let the Drive add
  * two purely-presentational capabilities over the resolved canvas + `kbData`:
  *
  *  1. the "Only files" toggle chip (`graph.drive.filterUploaded`) — FLAT mode keeps only
@@ -36,7 +36,7 @@ import type { SeedScenario } from './types.js';
  * two files stay, the starred doc drops), distinct from the TREE prune above.
  *
  * The SAME fixture ALSO proves the cross-lens "Only files" chip on the SEARCH lens (the chip
- * now lives on EVERY lens shelf via the shared `LensToolbar` — ADR-0026 render). Search
+ * now lives on EVERY lens shelf via the shared `LensToolbar`). Search
  * RESULTS are a flat leaf list, so the chip filters them with the SAME `isUploadedArtifact`
  * predicate: ON keeps only uploaded artifacts. To exercise that in the browser, the fixture
  * adds two loose leaves under the root that share ONE distinctive title token (`Falcon`) so a
@@ -80,7 +80,7 @@ export const DRIVE_SIZE_FILTER_SCENARIO: SeedScenario = {
   id: 'drive-size-filter',
   title: 'Drive size & "Only files" fixture',
   summary:
-    'A small containment tree with real uploaded artifacts of KNOWN byte sizes — the worked example for the cross-lens "Only files" (uploaded-artifacts) filter and the list-view Size column (ADR-0026 render). A media branch (a nested folder with a 512 B file + a 512 B video → the folder sums to 1 KB) survives "Only files" and carries a size; an empty branch (a folder with only a text doc → Size "0 B") and loose text/link leaves (Size "—") drop under "Only files".',
+    'A small containment tree with real uploaded artifacts of KNOWN byte sizes — the worked example for the cross-lens "Only files" (uploaded-artifacts) filter and the list-view Size column. A media branch (a nested folder with a 512 B file + a 512 B video → the folder sums to 1 KB) survives "Only files" and carries a size; an empty branch (a folder with only a text doc → Size "0 B") and loose text/link leaves (Size "—") drop under "Only files".',
   presets: ['drive', 'media'],
   tree: [
     {

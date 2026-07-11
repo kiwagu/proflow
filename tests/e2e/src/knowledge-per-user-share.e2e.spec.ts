@@ -1,5 +1,5 @@
 /**
- * Per-person (per-user) sharing access-matrix — ADR-0019 (the UI half, slice §8(b)).
+ * Per-person (per-user) sharing access-matrix — (the UI half, slice §8(b)).
  *
  * Proves the THIRD additive grant dimension: beyond the broadcast floor and cohort
  * grants, an owner shares ONE private resource with ONE named space member, widening
@@ -13,7 +13,7 @@
  * vocabulary (`seedClientFor(owner).revokeUser` / `.grantUser`) — no inline
  * create/delete helpers, no hand-built tree.
  *
- * RLS is the SOLE fence (ADR-0017 §1.5 + ADR-0019): a node a member may not see is
+ * RLS is the SOLE fence: a node a member may not see is
  * ABSENT from a direct `knowledge_resources` select under that member's RLS client —
  * never returned with a flag. So `canSee` = "the row comes back under your own JWT".
  *
@@ -29,7 +29,7 @@
  *  (5) cross-space: granting to a user who is NOT a member of the resource's space is
  *      rejected (the same-space DB guard), and confers no visibility.
  *
- * Plus the co-member identity directory the Share dialog reads (ADR-0020), driven AS
+ * Plus the co-member identity directory the Share dialog reads, driven AS
  * each actor through the SAME shared `seedClientFor(actor).visibility(...)` vocabulary
  * (the live `GET /author/graph/visibility?q=`) — never an inline fetch or member tree:
  *  (6) the people-picker / "who has access" resolve a CO-member's `display_name`
@@ -39,7 +39,7 @@
  *  (8) a NON-member of the space gets ZERO directory rows (the membership fence) —
  *      asserted from a second, isolated tenant's user under its OWN RLS.
  *
- * DEFERRED — the "Shared by me" lens (ADR-0021 Part B, DriveScope `shared-by-me`): the
+ * DEFERRED — the "Shared by me" lens (DriveScope `shared-by-me`): the
  * owner-direction read of the SAME `per-user-share/granted` grant this fixture already
  * creates (the granter sees the doc the grantee sees via `shared`). Wave 2 a landed only
  * the DATA slice (`SharedByMeEntry` / `KbViewData.sharedByMe`); the lens render + its e2e
@@ -172,14 +172,14 @@ test.describe('per-user (per-person) sharing — access matrix @full', () => {
     }
   });
 
-  // ── ADR-0020: the co-member identity directory the Share dialog reads ─────────
+  // ── the co-member identity directory the Share dialog reads ───────────────────
   //
   // The picker + "who has access" resolve OTHER members' display_name + email (the
   // own-row `profiles` SELECT could not). Driven AS each actor through the shared
   // `visibility(...)` vocabulary (GET /author/graph/visibility?q=).
 
   /** True when `value` is the bare 8-char short-id fallback for `userId` (display
-   * name unresolved) — exactly what ADR-0020 must NOT render for a co-member. */
+   * name unresolved) — exactly what the directory must NOT render for a co-member. */
   const isShortId = (value: string, userId: string): boolean =>
     value === userId.slice(0, 8);
 
@@ -198,7 +198,7 @@ test.describe('per-user (per-person) sharing — access matrix @full', () => {
 
       // People-picker — the control sibling has NO grants, so every other member is
       // grantable; each resolves to a real display_name (never a short-id). `members`
-      // is a keyset PAGE (ADR-0021): `items` is this page, `total` the grantable count.
+      // is a keyset PAGE: `items` is this page, `total` the grantable count.
       const picker = await ownerClient.visibility(fx.spaceId, fx.unsharedDocId);
       const byId = new Map(picker.members.items.map((m) => [m.userId, m]));
       for (const co of [fx.grantee, fx.outsider, fx.bystander]) {
@@ -292,10 +292,10 @@ test.describe('per-user (per-person) sharing — access matrix @full', () => {
 });
 
 /**
- * Directory-v2 paginated people-picker — ADR-0021 Part A (Wave 1).
+ * Directory-v2 paginated people-picker — (Wave 1).
  *
- * ADR-0020 gave the Share dialog a co-member directory; the suite above proves it on a
- * SMALL (4-member) space — one page holds everyone, so it cannot exercise paging. ADR-0021
+ * The Share dialog already has a co-member directory; the suite above proves it on a
+ * SMALL (4-member) space — one page holds everyone, so it cannot exercise paging. This suite
  * makes that directory SCALABLE: `space_member_directory` gains a keyset cursor
  * (`p_after`), a windowed `total_count`, and `p_exclude` (owner + already-granted, applied
  * BEFORE the limit AND the count). `GET /author/graph/visibility` accepts `cursor` + `limit`
@@ -323,7 +323,7 @@ test.describe('per-user (per-person) sharing — access matrix @full', () => {
  *
  * Tagged `@full` — needs the running Supabase + author stack.
  */
-test.describe('directory-v2 paginated people-picker — ADR-0021 @full', () => {
+test.describe('directory-v2 paginated people-picker — @full', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;

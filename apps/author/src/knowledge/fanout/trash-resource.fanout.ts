@@ -14,7 +14,7 @@ import { kbSchema } from '@/lib/supabase/kb-schema';
 import { deleteBody } from './text-resource.fanout';
 
 /**
- * Trash lifecycle fan-out — UI-agnostic application modules (ADR-0005 §b, ADR-0018).
+ * Trash lifecycle fan-out — UI-agnostic application modules.
  *
  * The reversible holding state between "live" and "destroyed":
  *   - trashResource   — soft-delete (UPDATE deleted_at = now()); the DB soft-cascade
@@ -30,8 +30,8 @@ import { deleteBody } from './text-resource.fanout';
  *                       a kind=text node the Payload body is best-effort reaped AFTER
  *                       the node DELETE commits (idempotent; Mongo-down leaves an
  *                       unreachable orphan, never a half-write — §13.2). For a media
- *                       node the kb-media Storage object is best-effort reaped too
- *                       (ADR-0026): its `storage_path` is captured from the media
+ *                       node the kb-media Storage object is best-effort reaped too:
+ *                       its `storage_path` is captured from the media
  *                       satellite, then the object is removed under the caller's RLS
  *                       BEFORE the node DELETE — the `storage.objects` DELETE policy
  *                       authorizes via an EXISTS on the owning node row, so the row
@@ -141,7 +141,7 @@ export async function restoreResource(
     .eq('deleted_at', stamp.deleted_at);
   // Match the actor too (the cascade stamps trashed_by atomically): two
   // independent trashes cannot share the exact microsecond timestamp, but pinning
-  // trashed_by makes the unit detection exact per ADR-0018 §6.
+  // trashed_by makes the unit detection exact.
   unitQuery = stamp.trashed_by
     ? unitQuery.eq('trashed_by', stamp.trashed_by)
     : unitQuery.is('trashed_by', null);
@@ -179,7 +179,7 @@ export async function restoreResource(
  * landed hard orphan-cascade destroys orphaned descendants, and a BEFORE-DELETE
  * trigger writes the durable purge audit tombstone. For a kind=text node the
  * Payload body is reaped best-effort AFTER the node DELETE commits; for a media
- * node its kb-media Storage object is reaped best-effort too (ADR-0026).
+ * node its kb-media Storage object is reaped best-effort too.
  */
 export async function purgeResource(
   input: PurgeResourceInput,
@@ -203,7 +203,7 @@ export async function purgeResource(
   );
 
   // 2. Capture the purged subtree's media REFERENCES and decide, per shared
-  //    blob, whether this purge removes the LAST reference (ADR-0027 §7) — BEFORE
+  //    blob, whether this purge removes the LAST reference — BEFORE
   //    the DELETE cascades the `kmm` rows away. The hard orphan-cascade destroys
   //    the trashed-as-a-unit subtree, so all its references count. Reads are
   //    RLS-fenced (kmm SELECT mirrors node-read; the blob SELECT policy grants
@@ -219,7 +219,7 @@ export async function purgeResource(
   //    reference still exists. The `storage.objects` DELETE policy authorizes a
   //    node-WRITER via a STILL-PRESENT reference — after the node row (and its
   //    cascaded kmm) is gone the policy's EXISTS is false and the user-scoped
-  //    remove is silently denied (the ADR-0026 RLS-ordering lesson). ONLY
+  //    remove is silently denied (the RLS-ordering lesson). ONLY
   //    last-reference blobs are reaped — a blob another owner still references
   //    keeps its bytes (refcount-gated; the blind reap was the cross-owner
   //    data-loss bug). Best-effort: a failed/denied remove never blocks the
@@ -311,8 +311,8 @@ type MediaObjectRef = { bucket: string; path: string };
 /**
  * Resolve the id set the purge will actually destroy: the selected root plus the
  * trashed-as-a-unit subtree (descendants stamped with the SAME deleted_at +
- * trashed_by by the soft-cascade — exactly what the hard orphan-cascade removes,
- * ADR-0018 §6). All under the caller's RLS. Purge is reached only from the Trash
+ * trashed_by by the soft-cascade — exactly what the hard orphan-cascade removes).
+ * All under the caller's RLS. Purge is reached only from the Trash
  * lens, so the root is already trashed; if it is not (or the caller cannot see
  * it) we fall back to the root id alone — the DELETE below stays authoritative.
  */
@@ -358,7 +358,7 @@ async function collectPurgeSubtreeIds(
 /**
  * Read the purged subtree's media references (RLS-fenced) and return the Storage
  * pointers of ONLY the blobs for which this purge removes the LAST reference —
- * the refcount-gated reap decision (ADR-0027 §7): a blob is reapable iff its
+ * the refcount-gated reap decision: a blob is reapable iff its
  * authoritative `refcount` (trigger-owned, cross-owner) equals the number of
  * references INSIDE the purged subtree. `refcount >` in-subtree refs means
  * another node (possibly another owner's copy) still shares the bytes — they

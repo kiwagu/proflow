@@ -72,7 +72,7 @@ describe('seed catalog integrity', () => {
     expect(errors.some((e) => e.includes('unknown node ref "missing"'))).toBe(
       true
     );
-    // The ADR-0023 `contains.by` cross-owner filer must resolve to a known actor.
+    // The `contains.by` cross-owner filer must resolve to a known actor.
     expect(
       errors.some(
         (e) =>

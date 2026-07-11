@@ -2,15 +2,15 @@ import { prose } from './lexical.js';
 import type { SeedScenario } from './types.js';
 
 /**
- * "Shared with me" MECHANISM DISTINCTION — ADR-0021 Part C (the DATA layer landed in
+ * "Shared with me" MECHANISM DISTINCTION (the DATA layer landed in
  * Wave 3a; this scenario is the SHARED fixture the Wave 3b render/badge e2e draws from).
  *
  * In the `'shared'` lens (visible nodes I do NOT own) every node carries the single
  * WINNING mechanism that grants ME — the `viewer` — access, with precedence
  * `personal > cohort > broadcast`:
- *  - `personal`  — a per-user grant TO me (`knowledge_resource_user_grants`, ADR-0019);
+ *  - `personal`  — a per-user grant TO me (`knowledge_resource_user_grants`);
  *  - `cohort`    — a cohort grant to a cohort I belong to (`knowledge_resource_scopes`
- *                  ⋈ `scope_memberships`, ADR-0017);
+ *                  ⋈ `scope_memberships`);
  *  - `broadcast` — the residual: visible via the space/org floor OR the supervisory
  *                  hierarchy (folded into broadcast for v1).
  *
@@ -47,7 +47,7 @@ export const SHARE_MECHANISM_SCENARIO: SeedScenario = {
   id: 'share-mechanism',
   title: 'Shared-with-me mechanism distinction',
   summary:
-    'One non-owner `viewer` sees four nodes owned by another member, one per "Shared with me" mechanism — per-user grant → personal, cohort grant → cohort, space-floor publish → broadcast, plus a both-granted node that must win as personal (precedence personal > cohort > broadcast, ADR-0021 Part C).',
+    'One non-owner `viewer` sees four nodes owned by another member, one per "Shared with me" mechanism — per-user grant → personal, cohort grant → cohort, space-floor publish → broadcast, plus a both-granted node that must win as personal (precedence personal > cohort > broadcast).',
   presets: ['shared'],
   actors: [
     // The single non-owner grantee. A plain `member` (base read holds via

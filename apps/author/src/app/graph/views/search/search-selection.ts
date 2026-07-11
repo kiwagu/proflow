@@ -1,7 +1,7 @@
 import type { ResourceFloor } from '@/app/graph/graph-data.types';
 
 /**
- * The renderable meta a SEARCH hit carries on the wire (ADR-0024 §1) — the subset of
+ * The renderable meta a SEARCH hit carries on the wire — the subset of
  * `SearchResultItem` the SHARED ResourcePanel needs to render correct meta when the
  * hit is NOT in the resolved Drive canvas (`kbData`/`result.items`). The workbench
  * keeps these keyed by id and reads them as a FALLBACK so opening a search result

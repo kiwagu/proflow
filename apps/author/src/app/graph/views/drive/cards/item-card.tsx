@@ -51,7 +51,7 @@ export function ItemCard({
   node: LensNode;
   attributes?: KbAttributes;
   meta?: NodeMeta;
-  /** The node's tags (ADR-0003 Variant B) — rendered as compact chips on the grid
+  /** The node's tags — rendered as compact chips on the grid
    * card (grid-only; a list row is a single line). Absent/empty → no chip row. */
   tags?: ResourceTag[];
   currentUserId: string | null;
@@ -67,8 +67,8 @@ export function ItemCard({
   actions?: React.ReactNode;
   /** Extra line under the meta line (the "Shared by me" grantee summary). */
   footer?: React.ReactNode;
-  /** The access-mirror people-icon badge, shown when the node is shared out (ADR-0023
-   * §7a) — direct OR via a granted ancestor. Rendered inline beside the title. */
+  /** The access-mirror people-icon badge, shown when the node is shared out
+   * — direct OR via a granted ancestor. Rendered inline beside the title. */
   sharedBadge?: React.ReactNode;
   /** The "For you" sort timestamp, appended to the meta line (opened / updated time). */
   when?: string;
@@ -171,7 +171,7 @@ export function ItemCard({
             </div>
           )}
           {footer ? <div className="mt-1.5">{footer}</div> : null}
-          {/* Tag chips (ADR-0003 Variant B) — the node's `tagged` edges, grid-only
+          {/* Tag chips — the node's `tagged` edges, grid-only
               (a list row is one line). Wraps within the card's fixed height; extra
               tags clip like a long title, never fabricated. */}
           {!list && tags && tags.length > 0 ? (

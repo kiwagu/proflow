@@ -13,7 +13,7 @@ import {
  * lens-row-cells — the per-column CELL CONTENT shared by EVERY lens list/tree row, so
  * the name (kind icon + title), type, owner and modified renderings can never drift
  * between the Drive list table (`LensListTable`) and any future lens that renders the
- * same row-set (the lexical-search table/tree, ADR-0025 Step 0). One source of truth
+ * same row-set (the lexical-search table/tree). One source of truth
  * for each cell + its em-dash fallbacks.
  *
  * Each helper is a pure `(…) => ReactNode` over the shared row shape; the WRAPPING (a
@@ -23,7 +23,7 @@ import {
  *
  * Owner + modified read from `NodeMeta` for resolved-canvas rows and DEGRADE to an em
  * dash when a row carries no meta (an out-of-canvas hit is a superset of the resolved
- * canvas — those rows never crash; ADR-0024 §1).
+ * canvas — those rows never crash).
  */
 
 /**

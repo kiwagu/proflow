@@ -14,8 +14,8 @@ import type {
 const GRANTEE_AVATAR_CAP = 3;
 
 /**
- * GranteeSummary — the "who I shared this with" line on a "Shared by me" card
- * (ADR-0021 Part B). A compact avatar cluster + a label: "Shared with {name}" for
+ * GranteeSummary — the "who I shared this with" line on a "Shared by me" card.
+ * A compact avatar cluster + a label: "Shared with {name}" for
  * one grantee, "Shared with {name} +{n}" for a few, or "Shared with {n} people" once
  * the cluster would overflow. Each avatar carries a Hint tooltip with the person's
  * name + email (the same EntityAvatar + Hint pattern the Share dialog uses for the
@@ -70,8 +70,8 @@ export function GranteeSummary({
 }
 
 /**
- * AccessBadgeChip — the shared round icon-chip shell for the access-status badges
- * (ADR-0023 §7a): the people-icon `SharedOutBadge` and the globe `BroadcastBadge` are the
+ * AccessBadgeChip — the shared round icon-chip shell for the access-status badges:
+ * the people-icon `SharedOutBadge` and the globe `BroadcastBadge` are the
  * SAME `size-5` muted round chip wrapped in a `Hint`, differing only in the icon + the
  * tooltip copy. Lifting the shell keeps the two badges pixel-identical and gives the
  * globe-XOR-people taxonomy one visual vocabulary (ui-primitive-hygiene). The Hint label
@@ -97,8 +97,8 @@ function AccessBadgeChip({
 }
 
 /**
- * SharedOutBadge — the per-card "this is shared out" people-icon badge (ADR-0023 §7a,
- * Tier 1). It marks a node shown-as-shared per the access-mirror invariant: the node OR
+ * SharedOutBadge — the per-card "this is shared out" people-icon badge (Tier 1).
+ * It marks a node shown-as-shared per the access-mirror invariant: the node OR
  * a granted ancestor folder is shared (computed by `sharedOut` over the loaded forest).
  * It renders in ALL browse scopes (not only 'shared-by-me') so a node shared via an
  * ancestor badges wherever it appears. The Hint names the audience: the grantee count/
@@ -143,7 +143,7 @@ export function SharedOutBadge({
 }
 
 /**
- * BroadcastBadge — the per-card GLOBE badge (ADR-0023 §7a, the broadcast state): the node's
+ * BroadcastBadge — the per-card GLOBE badge (the broadcast state): the node's
  * EFFECTIVE floor is `space`/`organization`, either its OWN `visibility` or — via floor
  * inheritance — an owner-scoped ancestor folder on a broadcast floor (`broadcastOut`). It
  * OUTRANKS the people badge (a broadcast node is "for everyone in the scope", the widest
@@ -184,7 +184,7 @@ export function BroadcastBadge({
 /**
  * PrivateBadge — flags a PRIVATE (personal, not-shared) node. KB inverts the default: the
  * space-wide broadcast (the common case) is badge-less, so the EXCEPTION worth surfacing is
- * the still-personal resource — a freshly created node is private by default (ADR-0017), and
+ * the still-personal resource — a freshly created node is private by default, and
  * the lock makes "this is yours only, not yet shared with the space" legible at a glance.
  */
 export function PrivateBadge({ t }: { t: GraphTranslator }) {
@@ -197,7 +197,7 @@ export function PrivateBadge({ t }: { t: GraphTranslator }) {
 
 /**
  * SharedFolderHint — the load-bearing "placement = sharing" warning on a folder that
- * confers access (ADR-0023 §5 + §7a). Because there is NO subtractive detach, dropping
+ * confers access. Because there is NO subtractive detach, dropping
  * a node into a shared folder auto-shares it; for a `space`/`organization`-FLOOR folder
  * that is an AUTO-BROADCAST to everyone in the scope. The copy MUST name the actual
  * audience — and for a floor folder the SCOPE explicitly — never collapse a floor into a

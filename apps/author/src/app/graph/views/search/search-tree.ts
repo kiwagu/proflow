@@ -10,7 +10,7 @@ import {
 
 /**
  * The advanced (extended) search render is a FILTERED KB: the matched leaves placed in
- * their FULLY-EXPANDED ancestor-folder tree (ADR-0024 §5, advanced reframe). A node in
+ * their FULLY-EXPANDED ancestor-folder tree (the advanced reframe). A node in
  * the tree is either a matched HIT (a search result — carries the snippet) or a PATH
  * folder (an ancestor of some hit, rendered so the full nesting from root → match is
  * visible, even with no direct match of its own). Recursive + UNBOUNDED depth: the tree

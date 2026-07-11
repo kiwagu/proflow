@@ -212,7 +212,7 @@ export function isPlatformFeatureFlagRuntimeSettingKey(
 // namespace so a commercial dimension never reads as an internal rollout
 // toggle. Source of truth is a scoped runtime_settings row (global/org/space),
 // resolved global→org→space with org∧space AND-composition (a space's plan can
-// never exceed its org's). See ADR-0022 (+ Addendum A).
+// never exceed its org's).
 //
 // `advancedStructuralView` is ONE generic commercial unit — the structural
 // (KB-containment tree) display of the membership lenses. WHICH lenses it
@@ -260,7 +260,7 @@ export function isPlatformEntitlementRuntimeSettingKey(
 }
 
 // --- Media upload limit -----------------------------------------------------
-// The org-configurable MAX-UPLOAD size for KB media (ADR-0026 AMENDMENT §A3).
+// The org-configurable MAX-UPLOAD size for KB media.
 // A `platform.*` infrastructure dial (operator config), NOT a KB-app domain
 // attribute — so it is NOT a `space.knowledge.*` verb and NOT a `kb.*` row; it
 // reuses this runtime-settings registry verbatim (org scope + numeric value_type

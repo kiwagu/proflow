@@ -1,10 +1,10 @@
 /**
- * Directory keyset cursor — opaque encode/decode for `space_member_directory` paging
- * (ADR-0021 Part A / A1). The cursor carries the LAST seen row's stable sort position
+ * Directory keyset cursor — opaque encode/decode for `space_member_directory` paging.
+ * The cursor carries the LAST seen row's stable sort position
  * `(k, u)` where `k = coalesce(nullif(btrim(display_name),''), email)` and `u = user_id`.
  * The DB resumes the total order strictly AFTER this tuple — a drift-free keyset seek.
  *
- * Encoding (normative, ADR-0021 A1): `base64url(json({ k, u }))`. The token is OPAQUE to
+ * Encoding (normative): `base64url(json({ k, u }))`. The token is OPAQUE to
  * the client (never parsed there); the fanout decodes it into the two plain function
  * params `(p_after_key, p_after_user)`, keeping the DB contract simple + the codec
  * testable. A null/blank/malformed cursor decodes to `null` = first page (fail-soft — a

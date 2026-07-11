@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validateTransition } from './workflow.validator.js';
 
-// The document_review lifecycle (XState-compatible, ADR-0007). Pure: no DB.
+// The document_review lifecycle (XState-compatible). Pure: no DB.
 const documentReview: WorkflowDefinition = {
   initial: 'draft',
   states: {

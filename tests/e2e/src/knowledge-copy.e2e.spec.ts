@@ -7,10 +7,10 @@
  *     a new owner-pinned, PRIVATE clone of every node, the structure preserved,
  *     and each text node's body cloned to an INDEPENDENT `bodies` doc (the
  *     `body_ref` differs from the source). The source is untouched.
- *  2. FAIL-CLOSED (ADR-0017): a member copying someone else's SPACE-shared tree
+ *  2. FAIL-CLOSED: a member copying someone else's SPACE-shared tree
  *     gets their OWN PRIVATE drafts — the source's audience is never re-broadcast.
  *     This is the security-critical property of copy, so it gets its own test.
- *  3. SHALLOW MEDIA COPY (ADR-0027): copying a file node adds a NEW kmm reference
+ *  3. SHALLOW MEDIA COPY: copying a file node adds a NEW kmm reference
  *     to the SAME immutable blob (refcount 2, zero byte movement), the copy
  *     downloads for real, purging one copy leaves the shared bytes alive
  *     (refcount-gated reap), and purging the LAST reference reaps the object.
@@ -156,7 +156,7 @@ test.describe('@full knowledge deep-copy', () => {
     await ownerApi.setFloor(folder, 'space');
     await ownerApi.setFloor(note, 'space');
 
-    // A space member (read + create, ADR-0017 D5-revision) copies the shared tree.
+    // A space member (read + create) copies the shared tree.
     const member = await bootstrapMemberActor(tenant);
     const memberApi = await seedClientFor(member);
     const copied = await memberApi.copy(tenant.spaceId, folder, {
@@ -188,14 +188,14 @@ test.describe('@full knowledge deep-copy', () => {
     await memberApi.dispose();
   });
 
-  test('shallow media copy: shared blob, zero byte movement, refcount-gated reap (ADR-0027)', async () => {
+  test('shallow media copy: shared blob, zero byte movement, refcount-gated reap', async () => {
     const api = await seedClientFor(tenant.granted);
     const kb = () => tenant.service.schema('kb');
 
     // A real file node with real bytes through the real transport
     // (authorize → reservation → PUT → confirm).
     const content =
-      'ProFlow ADR-0027 shallow-copy fixture — one blob, many references.\n';
+      'ProFlow shallow-copy fixture — one blob, many references.\n';
     const bytes = new TextEncoder().encode(content);
     const sourceId = await api.createNode(
       tenant.spaceId,

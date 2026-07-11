@@ -13,11 +13,11 @@ import { publishBodyActivity } from '@/knowledge/knowledge-activity.publisher';
 import { createRlsClientFromCookieHeader } from '@/lib/supabase/rls-from-request';
 
 /**
- * `bodies` — the ONE projection-agnostic Lexical-body collection (ADR-0005
- * Invariant #1). One Lexical doc = one body of a `kind=text` knowledge node.
+ * `bodies` — the ONE projection-agnostic Lexical-body collection. One Lexical
+ * doc = one body of a `kind=text` knowledge node.
  * Holds ONLY the bridge keys + the body; ZERO article/course/document fields.
  *
- * Authority is the node, not the body (ADR-0002 §1). Payload access here is
+ * Authority is the node, not the body. Payload access here is
  * SUBORDINATE to Postgres RLS (§3.3, discipline A): read/update/delete reduce to
  * a Postgres-RLS check keyed on `node_id` under the user's own JWT — if RLS
  * returns no `knowledge_resources` row for that node, access is `false`. `create`
@@ -154,7 +154,7 @@ const createAccess: Access = () => false;
 
 /**
  * afterChange: PUBLISH a body-edit activity event onto the knowledge-activity
- * JetStream (ADR-0016 §5.3). A body edit is the most common authoring act and
+ * JetStream. A body edit is the most common authoring act and
  * must move the node's `last_activity_at` recency — but the body lives in Mongo,
  * unobservable to a Postgres trigger, so the signal crosses stores via the proven
  * durable stream (the durable consumer appends `kb.resource_activity`,

@@ -24,8 +24,8 @@ import {
 import { useLexicalSearch } from '@/app/graph/views/search/use-lexical-search';
 
 /**
- * CommandPalette — the SECOND consumer of the lexical-search capability (ADR-0024 §5,
- * slice-12 Phase 3). It is the PROOF that search is a SUBSTRATE capability, not a
+ * CommandPalette — the SECOND consumer of the lexical-search capability (slice-12
+ * Phase 3). It is the PROOF that search is a SUBSTRATE capability, not a
  * Drive-bound feature: it reuses the EXACT same path the Drive lens uses — the same
  * `useLexicalSearch` hook → the same `POST /author/graph/search` route → the same
  * `resolveSearchQuery` under the same REUSED RLS transport → the same `SearchResult`

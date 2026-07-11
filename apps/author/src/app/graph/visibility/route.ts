@@ -19,9 +19,9 @@ import {
 } from '@/knowledge/fanout';
 
 /**
- * Resource visibility / sharing — ONE endpoint, ONE Share dialog (ADR-0019 Fork 6).
+ * Resource visibility / sharing — ONE endpoint, ONE Share dialog.
  * Serves the whole audience of a node: the broadcast floor + cohort grants + per-user
- * grants (ADR-0017 Model B + ADR-0019).
+ * grants.
  *
  * GET    — the node's current floor (`visibility`), the space's cohort scopes (with
  *          whether this node is granted to each), the node's per-user `grants`, and the
@@ -40,7 +40,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-/** Optional people-picker search term (ADR-0020): trimmed, blank → bounded starter list.
+/** Optional people-picker search term: trimmed, blank → bounded starter list.
  * The directory function caps the result server-side regardless of this param. */
 const memberQuerySchema = z
   .string()
@@ -48,7 +48,7 @@ const memberQuerySchema = z
   .transform((value) => (value === '' ? undefined : value))
   .optional();
 
-/** Optional opaque keyset cursor (ADR-0021 A1): the directory's `p_after` position of the
+/** Optional opaque keyset cursor: the directory's `p_after` position of the
  * last seen row. Trimmed; blank → first page. Opaque to this layer — the fanout decodes it;
  * a malformed token fails soft to first page (the membership fence is the authority). */
 const memberCursorSchema = z
@@ -57,7 +57,7 @@ const memberCursorSchema = z
   .transform((value) => (value === '' ? undefined : value))
   .optional();
 
-/** Optional page-size hint (ADR-0021 A3): the picker pages 5 by default. Clamped to ≤50
+/** Optional page-size hint: the picker pages 5 by default. Clamped to ≤50
  * defensively here; the directory function clamps server-side regardless. */
 const memberLimitSchema = z.coerce.number().int().min(1).max(50).optional();
 
@@ -161,7 +161,7 @@ export async function PATCH(request: Request) {
 
 /**
  * Share body — a discriminated union over `grantType`: a cohort link (landed) or a
- * per-user grant (ADR-0019). One POST/DELETE transport for both share kinds, schema-first.
+ * per-user grant. One POST/DELETE transport for both share kinds, schema-first.
  * `grantType` defaults to `'cohort'` when absent so the landed cohort caller
  * (`{ resourceId, scopeId }`, no discriminator) keeps parsing unchanged — the per-user
  * caller passes `grantType: 'user'` explicitly.

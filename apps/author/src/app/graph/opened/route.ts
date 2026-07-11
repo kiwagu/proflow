@@ -8,8 +8,8 @@ import {
 } from '@/lib/supabase/require-rls-session';
 
 /**
- * Per-user "open" write for the consumer authoring surface (ADR-0016 §5.4,
- * Decision B). Records a DELIBERATE open ("recently opened by me") — the call site
+ * Per-user "open" write for the consumer authoring surface. Records a
+ * DELIBERATE open ("recently opened by me") — the call site
  * fires this on ResourcePanel / doc-editor / folder-navigation open, NEVER on
  * hover/list-render (that would make "Recent" = "recently scrolled past").
  *

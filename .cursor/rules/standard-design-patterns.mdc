@@ -39,7 +39,7 @@ alwaysApply: true
 
 Recognizable design patterns apply to FEATURE components, not just primitives. The graph
 lens is the canonical example: one parameterizable renderer, every cross-cutting concern a
-prop/slot, each lens a config (ADR-0025). When a task adds a "new view" (search, a future
+prop/slot, each lens a config. When a task adds a "new view" (search, a future
 course/board), the pattern is "add a config + inject the new provider," NEVER "add a parallel
 renderer." Re-deriving an existing list/tree/card/cell renderer is the anti-pattern this rule
 forbids — see `lens-feature-component-reuse.mdc`.

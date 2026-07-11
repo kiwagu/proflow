@@ -2,7 +2,7 @@ import { prose } from './lexical.js';
 import type { SeedScenario } from './types.js';
 
 /**
- * Hierarchy-access scenario (ADR-0008) — the FOURTH access dimension, distinct from
+ * Hierarchy-access scenario — the FOURTH access dimension, distinct from
  * cohort/floor sharing. A reporting line makes `demo-admin` the manager of
  * `demo-viewer`; the manager then sees the report's PRIVATE content automatically
  * (RLS hierarchy branch — oversight without the report having to share). The doc
@@ -12,7 +12,7 @@ export const HIERARCHY_SCENARIO: SeedScenario = {
   id: 'hierarchy',
   title: 'Manager visibility',
   summary:
-    'A reporting line (admin manages viewer) lets the manager see a report’s PRIVATE content — access via hierarchy, not sharing (ADR-0008).',
+    'A reporting line (admin manages viewer) lets the manager see a report’s PRIVATE content — access via hierarchy, not sharing.',
   presets: ['hierarchy'],
   reportingLines: [{ manager: 'admin', subordinate: 'viewer' }],
   tree: [

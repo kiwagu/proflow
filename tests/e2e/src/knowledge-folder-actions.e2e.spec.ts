@@ -100,7 +100,7 @@ test.describe('@full knowledge folder actions', () => {
     await ungranted.dispose();
   });
 
-  test('delete = soft-trash cascade: orphan child trashed, multi-parent child survives (ADR-0018)', async () => {
+  test('delete = soft-trash cascade: orphan child trashed, multi-parent child survives', async () => {
     // The cascade shape (Parent → {Only, Shared}, with Shared ALSO under Other) is
     // the shared `drive-cascade` fixture from the dictionary.
     const { refs } = await materializeFixture(DRIVE_CASCADE_SCENARIO, tenant);
@@ -111,7 +111,7 @@ test.describe('@full knowledge folder actions', () => {
 
     const api = await seedClientFor(tenant.granted);
 
-    // DELETE now TRASHES (soft, reference-aware — ADR-0018). The orphan rule is
+    // DELETE now TRASHES (soft, reference-aware). The orphan rule is
     // mirrored as a soft cascade: rows are stamped deleted_at, NOT destroyed.
     await api.trash(tenant.spaceId, parent);
 
@@ -168,7 +168,7 @@ test.describe('@full knowledge folder actions', () => {
     const vis = visRes.body as { choices: { id: string; linked: boolean }[] };
     expect(vis.choices.find((c) => c.id === scopeId)?.linked).toBe(true);
 
-    // DELETE now TRASHES (soft, ADR-0018): the row survives, stamped deleted_at.
+    // DELETE now TRASHES (soft): the row survives, stamped deleted_at.
     await api.trash(tenant.spaceId, folderId);
 
     const { data: trashedRow } = await tenant.service
@@ -183,7 +183,7 @@ test.describe('@full knowledge folder actions', () => {
     await api.dispose();
   });
 
-  test('personal authoring: a member authors its OWN, cannot touch others (ADR-0017 D5-revision)', async () => {
+  test('personal authoring: a member authors its OWN, cannot touch others', async () => {
     const member = await bootstrapMemberActor(tenant);
     const memberApi = await seedClientFor(member);
     const grantedApi = await seedClientFor(tenant.granted);
@@ -226,7 +226,7 @@ test.describe('@full knowledge folder actions', () => {
     expect((afterRename as { title: string }).title).toBe('Granted Only');
 
     // …cannot trash a granted-owned node — it stays LIVE (the trash authority
-    // guard blocks a non-owner without space.knowledge.delete; ADR-0018 fork #5).
+    // guard blocks a non-owner without space.knowledge.delete).
     await memberApi.del('/author/graph/resources', {
       spaceId: tenant.spaceId,
       resourceId: grantedFolder,

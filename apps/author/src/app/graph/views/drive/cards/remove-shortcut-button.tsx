@@ -5,7 +5,7 @@ import { Unlink } from 'lucide-react';
 
 /**
  * RemoveShortcutButton — the per-card "Remove shortcut" affordance on a Drive
- * symlink card (ADR-0015 §3). Deletes ONLY the `shortcut` edge folder→target; the
+ * symlink card. Deletes ONLY the `shortcut` edge folder→target; the
  * target node and its canonical home are untouched (a symlink, not the file). A thin
  * domain wrapper over the shared `RowActionButton` (the single row-action icon-button
  * style — strong hover, stopPropagation, Hint tooltip), supplying the `Unlink` glyph

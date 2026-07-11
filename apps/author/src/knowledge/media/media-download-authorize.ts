@@ -11,7 +11,7 @@ import {
 } from './media-upload-authorize';
 
 /**
- * KB media DOWNLOAD authorizer — UI-agnostic server module (ADR-0026 §2c).
+ * KB media DOWNLOAD authorizer — UI-agnostic server module.
  *
  * Under the caller's RLS, resolve the media satellite for the node. The satellite's
  * SELECT policy mirrors node-`read`, so a non-grantee simply sees NO row →
@@ -40,7 +40,7 @@ export async function authorizeMediaDownload(
     throw new MediaAuthorizeError('Media not found.', 404);
   }
 
-  // Resolve the SHARED blob for its path (ADR-0027): the blob SELECT policy
+  // Resolve the SHARED blob for its path: the blob SELECT policy
   // grants it to any holder of a readable reference — the kmm row just resolved.
   const { data: blob, error: blobErr } = await kbSchema(db)
     .from('media_blob')

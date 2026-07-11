@@ -53,7 +53,7 @@ export function OwnerRow({
 
 /** One per-user grant row — avatar + name (+ email disambiguator) + provenance +
  * a Revoke control. `email` is the secondary line resolved by the co-member
- * directory (ADR-0020); provenance moves into the avatar tooltip so the row keeps
+ * directory; provenance moves into the avatar tooltip so the row keeps
  * to two lines (name + email). */
 export function PersonRow({
   name,

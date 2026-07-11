@@ -2,7 +2,7 @@ import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
- * Node↔body bridge domain events (ADR-0002 §1, slice-03 §2.2). A `kind=text`
+ * Node↔body bridge domain events (slice-03 §2.2). A `kind=text`
  * knowledge node (authoritative, in Postgres) and its Lexical body (in Payload/
  * Mongo) are linked two-ways; these events carry the reconcilable intent across
  * the storage seam. Same shape as `@workspace/domain-events` `identity-lifecycle`

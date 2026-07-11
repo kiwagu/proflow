@@ -25,14 +25,14 @@ import { useSearchResults } from './use-search-results';
 export type { SearchSelection } from './search-selection';
 
 /**
- * SearchView — the lexical-search lens (ADR-0024 §5), rendered as a CONFIG of the ONE
- * parameterizable lens (ADR-0025), NOT a forked renderer. It owns only the irreducible
+ * SearchView — the lexical-search lens, rendered as a CONFIG of the ONE
+ * parameterizable lens, NOT a forked renderer. It owns only the irreducible
  * search delta — the live RLS-fenced fetch (`useLexicalSearch`), the hits∪ancestors
  * node-set builder (`buildSearchTree`), and the snippet/highlight slot (`SearchSnippet`)
  * — and renders every result through the SAME leaves every other lens uses: the Drive
  * `ItemCard` (grid), the shared `LensListTable` (list, flat + the fully-expanded advanced
  * tree), and the `LensTreeGrid` (the advanced grid). There is no `search-result-table` /
- * `search-result-tree` / `search-row-cells` renderer — those were the fork ADR-0025 deletes.
+ * `search-result-tree` / `search-row-cells` renderer — those were what the fork deletes.
  *
  * The component is a thin COMPOSITION: `useSearchResults` derives the render data (term,
  * layout cookie, the lexical fetch, the advanced forest), `useSearchActivation` owns the
@@ -42,7 +42,7 @@ export type { SearchSelection } from './search-selection';
  * the standalone SEARCH capability (a SIBLING of projection-resolve), resolving its own
  * `SearchResult` live as the user types. The browser POSTs only a `term` + `spaceId` to
  * `/author/graph/search`; the server compiles + runs the SELECT AS THE USER, so Postgres
- * RLS is the sole access fence (ADR-0024 §6).
+ * RLS is the sole access fence.
  *
  * The two axes match every other lens: layout (grid tiles ↔ list table, the shared
  * `drive-layout` cookie) is ORTHOGONAL to the lens-view axis (flat ↔ advanced, the
@@ -81,7 +81,7 @@ export function SearchView({
    * Single-click a row → open the SHARED ResourcePanel (owned by the workbench). The
    * SELECTED search item's renderable meta rides along so the panel can render correct
    * meta even when the hit is NOT in the resolved canvas (`result.items`/`kbData`) —
-   * the workbench reads it as a fallback (ADR-0024 §5, out-of-canvas hit follow-up).
+   * the workbench reads it as a fallback (out-of-canvas hit follow-up).
    */
   onSelect: (selection: SearchSelection) => void;
   /** Open a `text` node in the reader (owned by the workbench). */
@@ -113,7 +113,7 @@ export function SearchView({
    */
   onRevealInKb?: (nodeId: string) => void;
   /**
-   * The lens DISPLAY MODE (ADR-0022 + Addendum A), owned by the workbench in the URL
+   * The lens DISPLAY MODE, owned by the workbench in the URL
    * (`?view=`). The search lens carries the SAME Flat↔Advanced toggle as the structural
    * lenses (present + Pro-gated). Defaults 'flat'. Gated by the `advancedStructuralView`
    * entitlement.
@@ -130,7 +130,7 @@ export function SearchView({
 }) {
   const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
 
-  // The cross-lens "Only files" filter (ADR-0026 render) — ONE chip on EVERY lens shelf by
+  // The cross-lens "Only files" filter — ONE chip on EVERY lens shelf by
   // construction. State lives here (mirroring the Drive lens); the shared `isUploadedArtifact`
   // predicate narrows the flat result set inside `useSearchResults`.
   const [uploadedOnly, setUploadedOnly] = React.useState(false);

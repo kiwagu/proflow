@@ -11,7 +11,7 @@ import type { ContainmentEdge } from '@/app/graph/graph-data.types';
 
 /**
  * KB containment — the knowledge-graph specialization of the generic forest
- * (`@workspace/ui/lib/forest`) over the FORWARD `contains` forest (ADR-0015): the
+ * (`@workspace/ui/lib/forest`) over the FORWARD `contains` forest: the
  * Drive folder tree, the canvas browser, breadcrumb and per-folder counts. The
  * generic mechanism (build / children / path) lives in `ui/lib`; the KB-domain bits
  * (the `folder`/`tag` kind predicates, the `LensNode` shape) live HERE. SHARED by
@@ -26,7 +26,7 @@ export type LensNode = {
   id: string;
   kind: string;
   title: string;
-  /** The node's workflow status (`draft`/`active`/`archived`, ADR-0007 coarse form).
+  /** The node's workflow status (`draft`/`active`/`archived`).
    * Optional: only the Drive canvas (`buildContainment` over resolved items) carries
    * it; ad-hoc LensNodes built elsewhere (search hits) omit it. Drives the client-side
    * status facet — a content-lifecycle filter, the sibling of the "Only files" toggle. */
@@ -111,7 +111,7 @@ export function pathTo(c: Containment, folderId: string): LensNode[] {
  * root). Unlike {@link pathTo} — which is root→node and includes the node itself for
  * the breadcrumb — this excludes the node and orders from the node OUTWARD, so the
  * "nearest granted ancestor" is the FIRST match. Drives the access-mirror inheritance
- * walk (ADR-0023 §7): `pathTo` minus the node, reversed.
+ * walk: `pathTo` minus the node, reversed.
  */
 export function ancestorsOf(c: Containment, nodeId: string): LensNode[] {
   const path = forestPath(c, nodeId);
@@ -120,7 +120,7 @@ export function ancestorsOf(c: Containment, nodeId: string): LensNode[] {
 }
 
 /**
- * The access-mirror predicate (ADR-0023 §7) — the SINGLE source of "who can read this"
+ * The access-mirror predicate — the SINGLE source of "who can read this"
  * for BOTH the Drive card badge (§7a) and the ResourcePanel Access summary (§7b), so
  * the two read surfaces can never diverge from each other or from the server access
  * predicate. A node is shown-as-shared IFF someone other than the owner can read it,
@@ -160,7 +160,7 @@ export function sharedOut(
 }
 
 /**
- * The BROADCAST half of the access-mirror (ADR-0023 §7, the globe state) — the SIBLING of
+ * The BROADCAST half of the access-mirror (the globe state) — the SIBLING of
  * {@link sharedOut}, kept parallel + co-located so the two predicates can never drift. A
  * node is BROADCAST when its EFFECTIVE visibility floor is `space` or `organization`:
  * either its OWN `visibility` is on a broadcast floor, OR — per floor inheritance — an

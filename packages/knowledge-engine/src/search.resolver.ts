@@ -13,20 +13,20 @@ import {
 /**
  * Search resolver: parses the `SearchQuery`, compiles it, runs it through the
  * INJECTED `ResolveQueryTransport`, and validates the rows back through the domain
- * `SearchResult` contract (ADR-0024 §2). A SIBLING of `resolveProjection` — it
- * REUSES the SAME transport (`createProjectionResolveTransport`, ADR-0009), so it
- * NEVER constructs its own DB path and can never bypass the RLS fence (ADR-0001).
+ * `SearchResult` contract. A SIBLING of `resolveProjection` — it
+ * REUSES the SAME transport (`createProjectionResolveTransport`), so it
+ * NEVER constructs its own DB path and can never bypass the RLS fence.
  *
  * RLS safety: the compiled SELECT runs AS THE USER inside the transport (`SET
  * LOCAL ROLE authenticated` + the user's JWT claims). The engine can only NARROW
  * what RLS allows — the optional `scope.statuses`/`scope.visibility` narrowing can
- * shrink results, never widen access (ADR-0024 §6). There is NO app-level
+ * shrink results, never widen access. There is NO app-level
  * status/visibility filter acting as the fence (`poc-no-fallbacks`).
  */
 
 type ResolveSearchArgs = {
   /**
-   * Server-side execution transport (ADR-0009). MUST run the compiled SQL under
+   * Server-side execution transport. MUST run the compiled SQL under
    * the requesting user's RLS context, never service-role. The SAME transport the
    * projection resolver uses (`createProjectionResolveTransport(claims)`).
    */
@@ -69,7 +69,7 @@ export async function resolveSearch(
     );
   }
 
-  // The transport's row type is the projection shape (ADR-0009 shared transport);
+  // The transport's row type is the projection shape (shared transport);
   // a search SELECT returns the search columns instead, so re-type through unknown.
   const rows = (await args.transport({
     sql,

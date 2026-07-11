@@ -1,11 +1,11 @@
 /**
  * Command palette — the SECOND consumer of the lexical-search capability, on the RENDER
- * (ADR-0024 §5, slice-12 Phase 3 — the cross-client extensibility proof). The capability
+ * (slice-12 Phase 3 — the cross-client extensibility proof). The capability
  * is FROZEN for this phase: no engine / contract / route change. The palette reuses the
  * EXACT path the Drive search lens uses — the shared `useLexicalSearch` hook → the same
  * `POST /author/graph/search` route → `resolveSearchQuery` under the same REUSED RLS
- * transport (ADR-0009) → the same `SearchResult` shape. Postgres RLS is the SOLE access
- * fence (ADR-0024 §6); the palette only changes how the IDENTICAL rows are PRESENTED
+ * transport → the same `SearchResult` shape. Postgres RLS is the SOLE access
+ * fence; the palette only changes how the IDENTICAL rows are PRESENTED
  * (a ⌘K command box vs the Drive grid lens).
  *
  * This spec drives the palette through the BROWSER (the testids the render half exposes:

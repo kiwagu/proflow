@@ -13,9 +13,9 @@ import {
 } from '@/knowledge/fanout/directory-cursor';
 
 /**
- * Per-user (per-person) sharing — the THIRD additive grant dimension (ADR-0019).
+ * Per-user (per-person) sharing — the THIRD additive grant dimension.
  * A per-user GRANT links one resource to one identified space member; it WIDENS that
- * person's read visibility on top of the broadcast floor (ADR-0017 Model B) and never
+ * person's read visibility on top of the broadcast floor and never
  * fences. Grants are NOT graph edges — a separate access dimension
  * (`knowledge_resource_user_grants`), never `knowledge_edges` (Invariant #1 unaffected).
  *
@@ -27,7 +27,7 @@ import {
  * Display names: co-member rows of `space_memberships` are readable to any space
  * participant, but `profiles` is OWN-ROW-only under RLS — so a direct join to profiles
  * resolves only the CALLER's own display name. Identity for OTHER members is resolved via
- * the `space_member_directory` SECURITY-DEFINER RPC (ADR-0020): gated by the caller's own
+ * the `space_member_directory` SECURITY-DEFINER RPC: gated by the caller's own
  * active membership of the space (the fence — non-member → ∅, zero service-role), it
  * returns `display_name` + `email` for co-members and is searchable + hard-limited at the
  * source. The picker remains a UX convenience, not the fence (Fork 2) — the same-space
@@ -38,7 +38,7 @@ import {
  * uses when `p_limit` is omitted. */
 const DIRECTORY_LIMIT = 50;
 
-/** The picker's default page size (ADR-0021 A3): a small page of 5 + "+N more". The
+/** The picker's default page size: a small page of 5 + "+N more". The
  * caller may override; the directory function clamps to ≤50 regardless. */
 const GRANTABLE_PAGE_SIZE = 5;
 
@@ -56,7 +56,7 @@ function memberLabel(input: {
 }
 
 /**
- * Fetch the co-member directory for a space and key it by user_id (ADR-0020). One
+ * Fetch the co-member directory for a space and key it by user_id. One
  * RLS-respecting RPC call: the SECURITY-DEFINER function returns co-member
  * `display_name` + `email` ONLY when the caller is an active member of the space (else ∅).
  * `query` narrows server-side; the function caps the result (max 50) regardless.
@@ -86,7 +86,7 @@ async function loadDirectoryLabels(
 /**
  * The node's current per-user grants, with a display label + email for each grantee
  * (read/query). RLS-scoped reads: the resource's space (RLS mirrors node read), the node's
- * grant rows, and the co-member directory for that space (ADR-0020 — one bounded fetch
+ * grant rows, and the co-member directory for that space (one bounded fetch
  * resolves the small fixed grantee set). Sorted by display name via the canonical text
  * sorter (`@workspace/ui/lib/sort` → `@workspace/std`).
  */
@@ -142,8 +142,8 @@ export async function listUserGrants(
 }
 
 /**
- * The GRANTABLE picker source (ADR-0021 Part A): ONE keyset page of the bounded, searchable
- * co-member directory of the resource's space (ADR-0020), with the owner + already-granted
+ * The GRANTABLE picker source: ONE keyset page of the bounded, searchable
+ * co-member directory of the resource's space, with the owner + already-granted
  * EXCLUDED at the source (passed as `p_exclude`, applied BEFORE the limit AND before the
  * count). So the page is `limit` REAL grantable candidates and `total` is the count of
  * grantable matches for the query — the picker shows a small page + an accurate "+N more".
@@ -156,8 +156,7 @@ export async function listUserGrants(
  * The list is a UX convenience — the same-space guard + grant RLS are the fence, so a stale
  * page can only ever produce a clean no-op insert, never a leak (the directory itself is
  * membership-fenced: a non-member gets ∅ + total 0). Order is preserved from the directory's
- * own stable SQL ordering; the UI applies its canonical text sorter to the shown set
- * (ADR-0020 §4 / ADR-0021 §8).
+ * own stable SQL ordering; the UI applies its canonical text sorter to the shown set.
  */
 export async function listGrantableMembers(
   input: {
@@ -259,7 +258,7 @@ export type GrantResourceToUserInput = {
 };
 
 /**
- * GRANT a resource to ONE person (additive — widens that user's read access, ADR-0019).
+ * GRANT a resource to ONE person (additive — widens that user's read access).
  * Idempotent against the `(resource_id, user_id)` PK — re-granting is a no-op (the grant
  * already exists). `grantedBy` is pinned from the session. An RLS rejection (not owner /
  * no access) or the same-space guard surfaces as a clean failure.
@@ -291,7 +290,7 @@ export type RevokeResourceUserGrantInput = {
 };
 
 /**
- * REVOKE a per-user grant (narrow — the person loses read access; ADR-0019 Fork 5).
+ * REVOKE a per-user grant (narrow — the person loses read access).
  * Visibility-neutral and fail-closed: deletes the grant row only, touches no other
  * disjunct. Returns how many rows the caller's RLS context actually deleted (0 =
  * nothing visible/permitted — a clean no-op).

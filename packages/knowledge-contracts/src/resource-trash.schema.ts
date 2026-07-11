@@ -2,7 +2,7 @@ import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
- * Trash lifecycle contracts (ADR-0018). The three frozen-v1 operations over a
+ * Trash lifecycle contracts. The three frozen-v1 operations over a
  * knowledge resource's existence axis (`deleted_at`):
  *
  *   - trash   — soft-delete a resource/subtree (reversible holding state);

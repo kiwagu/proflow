@@ -8,15 +8,15 @@ import { kbSchema } from '@/lib/supabase/kb-schema';
 
 /**
  * Deep-copy a resource and its `contains` SUBTREE — UI-agnostic application
- * module (ADR-0005 §b). "Copy this folder" duplicates the whole tree: the node,
+ * module. "Copy this folder" duplicates the whole tree: the node,
  * every `contains` descendant, each text node's Lexical body, and each
  * file/video node's media as a SHALLOW reference to the SAME immutable blob
- * (ADR-0027 §5: new kmm → same `blob_id`, refcount++, ZERO byte movement — the
+ * (new kmm → same `blob_id`, refcount++, ZERO byte movement — the
  * copy emulates a full independent file; bytes are reaped only when the last
  * reference goes). Shortcuts (Drive symlinks), tags, and the per-user state
  * (starred / opened) are NOT carried — a copy is fresh content, not an alias.
  *
- * FAIL-CLOSED by construction (ADR-0017): every clone is born the way any new
+ * FAIL-CLOSED by construction: every clone is born the way any new
  * node is — `created_by`/`owner` pinned to the COPIER and `visibility` left at the
  * private default. So a copy of someone-else's shared tree lands as the copier's
  * OWN private drafts, never re-broadcasting the source's audience. The traversal
@@ -203,7 +203,7 @@ export async function copyResourceSubtree(
   }
 
   // 1b. Read the media references for the subtree's file/video nodes in one
-  //     RLS-fenced batch (ADR-0027 §5). A readable node ⇒ a readable kmm (the
+  //     RLS-fenced batch. A readable node ⇒ a readable kmm (the
   //     satellite SELECT mirrors node read), so every copyable media node
   //     resolves; a node with no kmm (byte-less shell) simply has no entry and
   //     its copy stays byte-less too.
@@ -289,7 +289,7 @@ export async function copyResourceSubtree(
         }
       }
 
-      // SHALLOW media copy (ADR-0027 §5): a new kmm reference on the clone
+      // SHALLOW media copy: a new kmm reference on the clone
       // pointing at the SAME immutable blob — zero byte movement; the refcount
       // trigger increments. This copy route is within-space by construction
       // (one spaceId), so the shallow branch is always correct here; a

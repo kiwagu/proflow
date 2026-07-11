@@ -34,12 +34,12 @@ import type {
 
 /**
  * `/author/graph` — the knowledge workbench entry. Resolves the default lens
- * projection over the active space under the user's RLS (ADR-0009 transport, never
+ * projection over the active space under the user's RLS (transport, never
  * service-role) and threads it + the KB seed (containment / shortcut forests + node
  * meta + current user id) into the Drive shell. An ungranted user — or no active
  * space — resolves to an empty editor, never an error. RLS/auth is handled upstream
  * by the proxy. KB satellite attributes ride in `attributesByItem`: `description`
- * and `media` (ADR-0026 — a node's real file bytes surface as size/mime/filename +
+ * and `media` (a node's real file bytes surface as size/mime/filename +
  * a Download in the ResourcePanel); a node with no satellite row carries no
  * attribute and the meta line falls to "{kind} · {owner}".
  */
@@ -75,11 +75,11 @@ function readLocation(sp: Record<string, string | string[] | undefined>): {
       scope === 'search'
         ? scope
         : 'kb',
-    // The lexical-search term (ADR-0024 §5) — read server-side so a deep-linked
+    // The lexical-search term — read server-side so a deep-linked
     // `?scope=search&q=<term>` SSRs with its term (no hydration flip). Empty unless
     // the search lens is the active scope.
     searchTerm: one(sp.q) ?? '',
-    // The EXPLICITLY-REQUESTED lens display mode (ADR-0022 + Addendum A). `null` = `?view=`
+    // The EXPLICITLY-REQUESTED lens display mode. `null` = `?view=`
     // absent → fall back to the persisted cookie (Fork 4 amended). An explicit `?view=`
     // WINS over the cookie (a shareable deep-link override). The entitlement clamps the
     // final effective mode below, so a hand-edited `?view=advanced` on a locked plan
@@ -98,7 +98,7 @@ export default async function GraphPage({
   const spaceId = await resolveActiveSpaceId();
   const location = readLocation(await searchParams);
   const initialLayout = await resolveDriveLayout();
-  // The persisted Shared-lens display mode (ADR-0022 amended Fork 4). Precedence on
+  // The persisted Shared-lens display mode. Precedence on
   // initial render: an explicit `?view=` WINS (a shareable deep-link); else the
   // remembered cookie; else 'flat'. The entitlement clamps the final mode below.
   const persistedLensView = await resolveLensView();
@@ -126,7 +126,7 @@ export default async function GraphPage({
         canCreate: false,
         canAccess: false,
       },
-      // No active space → the cheapest plan (ADR-0022): the advanced Shared view is
+      // No active space → the cheapest plan: the advanced Shared view is
       // off, so the toggle (which never shows without a space anyway) would lock.
       entitlements: { advancedStructuralView: false },
       starredIds: [],
@@ -154,7 +154,7 @@ export default async function GraphPage({
   }
 
   // The LIVE lens (deleted_at IS NULL) and the TRASH lens (deleted_at IS NOT NULL)
-  // are resolved by the SAME machinery (ADR-0018 fork #4), both server-side under
+  // are resolved by the SAME machinery, both server-side under
   // the user's RLS. The trash set rides alongside the live canvas as the seed for
   // the client-side 'trash' scope switch — the same shape as Starred/Recent flat
   // lenses over the live canvas. An ungranted/empty Trash resolves to items=[].
@@ -184,7 +184,7 @@ export default async function GraphPage({
     loadShortcutForest(spaceId),
     loadKbAttributesForItems(spaceId, itemIds),
     loadNodeMetaForItems(spaceId, itemIds),
-    // The tag topology (ADR-0003 Variant B): per-item tags (over the resolved canvas)
+    // The tag topology: per-item tags (over the resolved canvas)
     // + the whole space's tag vocabulary (for the panel tray + the lens facet). Both
     // RLS-scoped fan-outs alongside the canvas, never extending the frozen contract.
     loadResourceTagsForItems(spaceId, itemIds),
@@ -195,11 +195,11 @@ export default async function GraphPage({
     loadNodeMetaForItems(spaceId, trashIds),
     resolveSpaceCapabilities(spaceId),
     loadSharedByMe(spaceId),
-    // The COMMERCIAL entitlement (ADR-0022) — resolved under the SAME RLS client as
+    // The COMMERCIAL entitlement — resolved under the SAME RLS client as
     // the verb capabilities, but from a DIFFERENT authority (the platform plan
     // registry, not RLS). Kept ORTHOGONAL: packed as a SIBLING of `capabilities`.
     resolveSpaceEntitlements(spaceId),
-    // The EFFECTIVE per-org max-upload size (ADR-0026 §A3) — resolved under the SAME
+    // The EFFECTIVE per-org max-upload size — resolved under the SAME
     // user RLS (member read of the public runtime-settings row); the CreateResource
     // picker uses it for a friendly "too large" hint (the authorizer is the fence).
     resolveMaxUploadBytes(spaceId),
@@ -216,7 +216,7 @@ export default async function GraphPage({
     : itemIds;
   const shareMechanism = await loadShareMechanism(spaceId, sharedNodeIds);
 
-  // The EFFECTIVE lens display mode (ADR-0022 amended Fork 4 + Addendum A): the server clamps
+  // The EFFECTIVE lens display mode: the server clamps
   // the REQUESTED mode (explicit `?view=` ELSE the persisted cookie ELSE 'flat') to
   // 'flat' unless the space is entitled, so a hand-edited `?view=advanced` OR a stale
   // 'advanced' cookie on a locked plan still renders flat (the gate is honest without

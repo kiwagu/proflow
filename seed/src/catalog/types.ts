@@ -26,7 +26,7 @@ export type ActorSpec = {
   role?: ActorRole;
   /** A human display name for the actor's own profile. Seeded actors are born with
    * a NULL `profiles.display_name` (only their email is set), so the co-member
-   * directory (ADR-0020) — the Share dialog people-picker + "who has access" rows —
+   * directory — the Share dialog people-picker + "who has access" rows —
    * would render them as a bare short-id. Setting this authors the name through the
    * actor's OWN RLS client (the own-row profile update), exactly as a member would,
    * so the directory resolves a real `display_name` for the people-picker demo. */
@@ -56,8 +56,8 @@ type NodeBase = {
   visibility?: Floor;
   /** Cohort refs this node is shared into (additive grants). */
   scopes?: ScopeRef[];
-  /** Actor refs this node is shared with PER-PERSON (additive per-user grants,
-   * ADR-0019): each named member's READ visibility is widened on top of the floor
+  /** Actor refs this node is shared with PER-PERSON (additive per-user grants):
+   * each named member's READ visibility is widened on top of the floor
    * + cohort grants. Authored via the owner's (or an access-manager's) Share call;
    * the grantee must be an active member of the node's space. */
   userGrants?: ActorRef[];
@@ -70,7 +70,7 @@ type NodeBase = {
    * `space.knowledge.progress`) — e.g. star a doc someone else shared with you. */
   starredBy?: ActorRef[];
   /** Record a per-user "open" for these actors (verb `space.knowledge.open`) so the
-   * node lands in their "Recent" lens (ADR-0016). The actor must be able to SEE it. */
+   * node lands in their "Recent" lens. The actor must be able to SEE it. */
   openedBy?: ActorRef[];
   /** Workflow-LIFECYCLE status — `draft` → `active` → `archived` (B1). A CONTENT-only
    * dimension (invalid on `folder`). The create endpoints do NOT expose it, and the
@@ -80,7 +80,7 @@ type NodeBase = {
    * node's OWNER — exactly as the panel's transition control does, NEVER a direct column
    * write. Omit to leave the kind's create default.
    *
-   * This is the RESOURCE lifecycle (ADR-0007's coarse three-state, migration
+   * This is the RESOURCE lifecycle (a coarse three-state, migration
    * 20260615190243) — distinct from the board demo's `status`/`workflowKey` pair
    * (`draft`/`in_review`/`approved`), which is a bodyless direct-insert workflow demo;
    * the two are mutually exclusive on one node (the validator enforces it). */
@@ -101,7 +101,7 @@ export type TextNode = NodeBase & {
   draft?: boolean;
   /** Additional published body states applied after the initial one (each a Lexical
    * doc) — every entry is a new published version, so the reader shows a version
-   * history (ADR-0012). Only meaningful for a published (non-draft) doc. */
+   * history. Only meaningful for a published (non-draft) doc. */
   revisions?: unknown[];
   /** Workflow status; when set, the node is authored via the owner's RLS client
    * (the create endpoints do not expose `status`) and carries no Payload body. */
@@ -111,8 +111,8 @@ export type TextNode = NodeBase & {
 };
 
 /**
- * A small, deterministic byte payload uploaded through the REAL media transport
- * (ADR-0026): the materializer creates the bodyless node, authorizes a signed
+ * A small, deterministic byte payload uploaded through the REAL media transport:
+ * the materializer creates the bodyless node, authorizes a signed
  * upload URL (`/author/graph/media?op=upload-url`), PUTs these bytes to the private
  * `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kb.resource_media_meta`
  * satellite (`attribute:'media'`). NEVER a service-role insert / direct SQL — the
@@ -123,7 +123,7 @@ export type TextNode = NodeBase & {
 export type MediaPayload = {
   /** The literal file bytes. By default (`encoding` omitted / `'utf8'`) this is a
    * small text/`text-like` fixture encoded as UTF-8. For a BINARY fixture (a real
-   * image or PDF whose bytes must render in the inline preview — ADR-0026 Phase 2),
+   * image or PDF whose bytes must render in the inline preview — Phase 2),
    * set `encoding: 'base64'` and put the base64-encoded bytes here; the materializer
    * decodes them to the exact binary before the signed PUT, so the object holds a
    * genuine renderable asset (a corrupt/utf8-mangled image would fail the `<img>`
@@ -141,7 +141,7 @@ export type MediaPayload = {
 export type BodylessNode = NodeBase & {
   kind: 'link' | 'file' | 'video';
   /** For `file`/`video`: a byte payload uploaded through the real media path so a
-   * `kmm` satellite row + a `kb-media` object both exist (ADR-0026). Omit for a
+   * `kmm` satellite row + a `kb-media` object both exist. Omit for a
    * bodyless stub (a `link`, or a `file`/`video` with no bytes yet). */
   media?: MediaPayload;
   /** For `link`: the external URL written to the `kb.resource_link` satellite

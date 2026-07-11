@@ -8,7 +8,7 @@ import type { LensNode } from '@/app/graph/containment';
 import { iconForKind } from '@/app/graph/presentation';
 
 /**
- * LensTreeGrid — the parameterizable GRID side of the lens tree (ADR-0025 Step 3). It takes
+ * LensTreeGrid — the parameterizable GRID side of the lens tree. It takes
  * a node-set FOREST and renders it FLAT as path-grouped shelves: the content LEAVES of each
  * container sit on ONE horizontal flex-wrap row, and consecutive groups are separated by a
  * BREADCRUMB of the container's full path (root › … › folder) — the "gallery / Netflix"

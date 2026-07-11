@@ -2,7 +2,7 @@ import { prose } from './lexical.js';
 import type { SeedScenario } from './types.js';
 
 /**
- * Owner-scoped, live containment access inheritance — ADR-0023.
+ * Owner-scoped, live containment access inheritance.
  *
  * A node is readable if it OR an ANCESTOR folder (up the forward `contains` forest) is
  * granted to the viewer — but OWNER-SCOPED, so the cascade only ever reaches the folder
@@ -58,7 +58,7 @@ export const CONTAINMENT_INHERITANCE_SCENARIO: SeedScenario = {
   id: 'containment-inheritance',
   title: 'Containment access inheritance (owner-scoped, live)',
   summary:
-    "Sharing a folder makes its OWNER-SCOPED descendants readable to the grantee — live (a new child auto-appears, a revoke removes the subtree), additive-OR (a self-granted child survives the revoke), across per-user / cohort / floor dimensions, but NEVER cross-owner (a third party's nested node, even an admin's folder-share, stays private) (ADR-0023).",
+    "Sharing a folder makes its OWNER-SCOPED descendants readable to the grantee — live (a new child auto-appears, a revoke removes the subtree), additive-OR (a self-granted child survives the revoke), across per-user / cohort / floor dimensions, but NEVER cross-owner (a third party's nested node, even an admin's folder-share, stays private).",
   presets: ['shared'],
   actors: [
     { ref: 'grantee', role: 'member', displayName: 'Folder Grantee' },
@@ -233,7 +233,7 @@ export const CONTAINMENT_INHERITANCE_SCENARIO: SeedScenario = {
     // ── the NEGATIVE control: a top-level PRIVATE, UN-SHARED admin node ─────────
     // Owned by A, default visibility, NO `userGrants`, NO `scopes`, NO `visibility`
     // override, and NOT placed inside ANY folder (no containment ancestor at all).
-    // The access-mirror RENDER invariant (ADR-0023 Wave 2) asserts the NEGATIVE half
+    // The access-mirror RENDER invariant asserts the NEGATIVE half
     // on this node: it must show NEITHER a "shared out" card badge NOR a shared /
     // inherited summary in the ResourcePanel Access section. Additive-inert: a private
     // unshared admin node is invisible to everyone but `admin`, so it changes no
@@ -254,7 +254,7 @@ export const CONTAINMENT_INHERITANCE_SCENARIO: SeedScenario = {
   // Cross-owner filing: each foreign node (ownerB's) is placed into the relevant folder by
   // an actor that can see BOTH endpoints — the folder owner who also holds the enabling grant
   // the foreign node's owner authored (`userGrants` above). This is the real-world fact
-  // ADR-0023 §Context cites (A files B's node) — and the owner-scope rule makes those nested
+  // (A files B's node) — and the owner-scope rule makes those nested
   // foreign nodes the negatives the matrix proves are NOT exposed by the folder grant.
   contains: [
     // A files ownerB's node into A's shared folder (A sees both: owns folder + the grant).

@@ -21,7 +21,7 @@ import type { ProjectionViewProps } from '@/app/graph/views/registry/projection-
 
 let messages: Record<string, string>;
 
-// Display-gate verbs (ADR-0006): these presentational tests render the shell, not the
+// Display-gate verbs: these presentational tests render the shell, not the
 // capability gate, so the fail-closed default (no verbs) keeps each `KbViewData` literal
 // valid. The dedicated capability assertions live in the e2e (real RLS verdicts).
 const NO_CAPS = {
@@ -31,7 +31,7 @@ const NO_CAPS = {
   canAccess: false,
 } as const;
 
-// The commercial entitlement (ADR-0022) — fail-closed off for these presentational
+// The commercial entitlement — fail-closed off for these presentational
 // tests; the Flat/Advanced toggle's entitled/locked behaviour is covered by the e2e.
 const NO_ENTITLEMENTS = { advancedStructuralView: false } as const;
 
@@ -297,7 +297,7 @@ describe('DriveProjectionView (forward-port shell)', () => {
     expect(screen.getByText('LooseDoc')).toBeTruthy();
   });
 
-  // ── Trash lens (ADR-0018 §10.7) ──────────────────────────────────────────
+  // ── Trash lens ──────────────────────────────────────────
 
   /** A trashed node — the seed for the Trash lens (`kbData.trash`). It is NOT in the
    * live canvas/containment (which is `deleted_at IS NULL`); the trashed set rides

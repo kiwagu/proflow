@@ -18,7 +18,7 @@ import {
 } from '@/lib/supabase/require-rls-session';
 
 /**
- * Trash lens lifecycle endpoints (ADR-0018). DISTINCT from the resource DELETE
+ * Trash lens lifecycle endpoints. DISTINCT from the resource DELETE
  * (which TRASHES, soft + reversible). These are the two operations reached only
  * from inside the Trash lens:
  *
@@ -130,7 +130,7 @@ export async function DELETE(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Purge failed.';
-    // The in-use guard (`assert_purge_not_in_use`, ADR-0018 §10.5) rejects purge of a
+    // The in-use guard (`assert_purge_not_in_use`) rejects purge of a
     // resource still referenced by LIVING cross-owner edges unless the caller holds
     // `space.knowledge.delete` — surfaced so the Trash lens can show the cooperative
     // "in use" state (graceful-absence cannot restore a purged row). The guard raises

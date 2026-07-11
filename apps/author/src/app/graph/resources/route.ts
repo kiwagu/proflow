@@ -19,11 +19,11 @@ import {
  * GET    — RLS-scoped node listing (edge-target select for the node picker). A THIN
  *          PostgREST select under the user's RLS client.
  * POST   — create a body-less node (`link`/`tag`/`folder`/`file`/`video`), optionally
- *          placed inside a folder via a `contains` edge. A single RLS-scoped INSERT
- *          (ADR-0002 §3 / ADR-0015). `text` creation stays on text-resources (the
+ *          placed inside a folder via a `contains` edge. A single RLS-scoped INSERT.
+ *          `text` creation stays on text-resources (the
  *          fan-out with the body).
  * PATCH  — rename a node's title under `space.knowledge.update`.
- * DELETE — TRASH a node (soft-delete, reference-aware, ADR-0018) under the
+ * DELETE — TRASH a node (soft-delete, reference-aware) under the
  *          owner-sovereign-or-`space.knowledge.delete` authority guard. References
  *          (edges, body) are PRESERVED-but-dormant; the soft-cascade trashes
  *          containment orphans (a child with another LIVING parent survives).
@@ -86,7 +86,7 @@ const startEdgeSchema = z.object({
 });
 
 // Optional containment placement: create the node inside a folder via a FORWARD
-// `contains` edge (folder→child, ADR-0015). `parentFolderId` is the folder.
+// `contains` edge (folder→child). `parentFolderId` is the folder.
 const parentFolderSchema = z.object({
   parentFolderId: entityIds.knowledgeResource.prefixSchema,
   position: z.number().int().min(0).optional(),
@@ -95,7 +95,7 @@ const parentFolderSchema = z.object({
 const createSchema = z.object({
   spaceId: entityIds.space.prefixSchema,
   // text → text-resources (carries a body). link/tag/folder/file/video are
-  // body-less (ADR-0002 §3 / ADR-0015).
+  // body-less.
   kind: z.enum(['link', 'tag', 'folder', 'file', 'video']),
   title: z.string().min(1),
   edge: startEdgeSchema.optional(),

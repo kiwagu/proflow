@@ -142,7 +142,7 @@ async function deleteOrganizationRuntimeSetting(
   }
 }
 
-/** Set the ORG-scoped `platform.media.max_upload_bytes` governance dial (ADR-0026 §A4)
+/** Set the ORG-scoped `platform.media.max_upload_bytes` governance dial
  * — the resolver reads org → global → default, so an org row LOWERS the effective soft
  * limit for uploads targeting a space in that org. Public row (an uploader must read it).
  * Pair with `resetOrganizationMediaMaxUploadBytes` to fall back to the 200 MB default. */

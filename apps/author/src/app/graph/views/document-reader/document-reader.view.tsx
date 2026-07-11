@@ -15,7 +15,7 @@ import { DocumentBodyView, type SerializedLexical } from './document-body-view';
 /**
  * DocumentReader — the node-centric read-view for a `kind=text` node, opened from
  * Drive. Reads the REAL Lexical body through the RLS-gated body endpoint
- * (`GET /author/graph/text-resources`, ADR-0002 §2) and renders it read-only with
+ * (`GET /author/graph/text-resources`) and renders it read-only with
  * Payload's own `RichText` serializer (zero bespoke renderer).
  *
  * Read mode shows ONLY the latest PUBLISHED version — never a draft or an older
@@ -66,7 +66,7 @@ export function DocumentReader({
   currentUserId: string | null;
   /** This document's owner (`knowledge_resources.owner_user_id`). */
   ownerUserId: string | null;
-  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu (ADR-0006). */
+  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu. */
   capabilities: SpaceCapabilities;
   onClose: () => void;
   /** Launch the editor (the workbench's shared seed-choice flow). */

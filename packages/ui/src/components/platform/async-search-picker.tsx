@@ -7,7 +7,7 @@ import { Search } from 'lucide-react';
 import * as React from 'react';
 
 /**
- * One page of an async, cursor-paged search (ADR-0021 Part A — the directory-v2
+ * One page of an async, cursor-paged search (the directory-v2
  * contract, kept GENERIC so any future entity-picker reuses it).
  *
  * - `items` — this page's rows, in the source's own (stable) order.
@@ -79,7 +79,7 @@ export type AsyncSearchPickerProps<TItem> = {
 
 /**
  * AsyncSearchPicker — a generic, props-driven async search-and-pick list
- * (ADR-0021 §A4 — the "типовая функция" reuse deliverable). It owns a debounced
+ * (the "типовая функция" reuse deliverable). It owns a debounced
  * search `Input`, the cursor "load more" append loop, the remaining-count footer,
  * and the results list; it knows NOTHING about people, grants, spaces, or i18n.
  *

@@ -43,7 +43,7 @@ export function SearchToolbar({
   lensView: LensView;
   onLensViewChange?: (view: LensView) => void;
   advancedStructuralEntitled: boolean;
-  /** The cross-lens "Only files" filter state (ADR-0026 render) — the SAME chip Drive shows. */
+  /** The cross-lens "Only files" filter state — the SAME chip Drive shows. */
   uploadedOnly: boolean;
   /** Toggle the "Only files" filter — the view holds the state + narrows the result set. */
   onUploadedOnlyChange: (next: boolean) => void;
@@ -79,7 +79,7 @@ export function SearchToolbar({
           hint={t('graph.drive.folderSizeHint')}
         />
       }
-      // The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A) — the SAME Flat↔Advanced
+      // The lens display-mode toggle — the SAME Flat↔Advanced
       // control the structural lenses carry; present + Pro-gated (the locked control IS the
       // upsell).
       lensView={

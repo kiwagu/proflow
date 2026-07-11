@@ -12,11 +12,11 @@ import {
 
 /**
  * Text-resource write for the consumer authoring surface — the ONE node kind
- * that carries a Lexical body (ADR-0002 §1, ADR-0005).
+ * that carries a Lexical body.
  *
  * GET  — read a node's Lexical body for READ MODE: the LATEST PUBLISHED version
  *        ONLY (never a draft or an older approved revision). The cross-store RLS
- *        gate (ADR-0002 §2): first resolve node access under the user's OWN RLS
+ *        gate: first resolve node access under the user's OWN RLS
  *        (a PostgREST select on `knowledge_resources` — no row ⇒ no access ⇒ 404),
  *        THEN read the `bodies` doc by `node_id` via the Payload Local API with
  *        `overrideAccess` (the gate already passed). Body access is subordinate
@@ -28,7 +28,7 @@ import {
  *        `{ body: null, status: null, published: false }`.
  * POST — create a `kind=text` node + its Payload `bodies` doc, bridged by
  *        `body_ref`, optionally placed inside a folder (FORWARD `contains`
- *        edge, ADR-0015). A SYNCHRONOUS cross-store fan-out: the node INSERT is
+ *        edge). A SYNCHRONOUS cross-store fan-out: the node INSERT is
  *        gated by Postgres RLS (`space.knowledge.create`) under the user's
  *        session; the body is born via the Payload Local API. All-or-nothing —
  *        a post-INSERT failure is compensated by deletion (see the fan-out).

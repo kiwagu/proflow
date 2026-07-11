@@ -13,7 +13,7 @@ import {
 import { resolveSearchQuery } from '@/knowledge/resolve';
 
 /**
- * Lexical search endpoint (ADR-0024 §5, slice-12 Phase 1) — the runtime path the
+ * Lexical search endpoint (slice-12 Phase 1) — the runtime path the
  * Drive search lens calls as the user types. Search is a SUBSTRATE capability, a
  * SIBLING of projection-resolve (not a `ProjectionSpec.filter` operator): the
  * browser POSTs only a `term` + `spaceId` + `limit`; raw SQL never crosses the
@@ -22,8 +22,8 @@ import { resolveSearchQuery } from '@/knowledge/resolve';
  * Auth context: the Supabase SESSION (cookies), under `/author/graph/*`. The thin
  * route auth-guards (401 when unauthenticated) then delegates to `resolveSearchQuery`,
  * which builds the SAME RLS transport (`createProjectionResolveTransport`, REUSED
- * verbatim — ADR-0009) and runs the compiled SELECT AS THE USER. Postgres RLS is the
- * SOLE access fence (ADR-0001/0009/0024 §6): a private / other-space node never
+ * verbatim) and runs the compiled SELECT AS THE USER. Postgres RLS is the
+ * SOLE access fence: a private / other-space node never
  * appears for a non-grantee — there is NO app-level status/visibility filter doing
  * the fencing. Zero service-role on this read path.
  */
@@ -32,7 +32,7 @@ export const dynamic = 'force-dynamic';
 
 // The client sends only the raw query shape; the compiler clamps the limit and the
 // transport fences by RLS. `mode` is fixed to 'lexical' (Phase 1 — the semantic seam
-// is deferred, ADR-0024 §4). The term's min length is enforced client-side (the lens
+// is deferred). The term's min length is enforced client-side (the lens
 // does not fire below 2 chars); the route accepts any non-empty term defensively.
 const searchRequestSchema = z.object({
   spaceId: entityIds.space.prefixSchema,

@@ -78,7 +78,7 @@ export function useSearchRenderers({
   );
 
   // ONE search-result card — the Drive `ItemCard` (a `SearchResultItem` is a superset of
-  // the projection item, ADR-0024 §1), with the snippet footer + the reveal action. Shared
+  // the projection item), with the snippet footer + the reveal action. Shared
   // by the flat grid AND every advanced grid leaf, so the two render modes never drift.
   const renderCard = React.useCallback(
     (item: SearchResultItem) => (

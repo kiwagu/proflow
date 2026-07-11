@@ -1,6 +1,6 @@
 /**
  * KB media substrate — real file/video upload + download over the private `kb-media`
- * bucket, RLS-fenced (ADR-0026, slice-13; the MERGE GATE). Making `file`/`video`
+ * bucket, RLS-fenced (slice-13; the MERGE GATE). Making `file`/`video`
  * REAL introduces a NEW access surface over BYTES, so the storage-RLS negatives
  * (assertions 5–10, 11b) are a hard gate. The READ fence (storage.objects SELECT +
  * satellite RLS) mirrors node-read and COMPOSES grants — a per-user / inherited-folder
@@ -25,14 +25,14 @@
  *   2  download that node → signed URL; GET returns the EXACT bytes.
  *   3  ResourcePanel Media section shows filename + humanized size + mime + Download.
  *   3a an IMAGE node (image/png) renders an inline `<img>` preview ABOVE the facts
- *       (ADR-0026 Phase 2, increment 1) — mime-driven, via the SAME download authorizer.
+ *       (Phase 2, increment 1) — mime-driven, via the SAME download authorizer.
  *   3b a PDF node (application/pdf) renders an inline `<iframe>` preview ABOVE the facts.
  *   3c a VIDEO node (video/mp4) renders an inline `<video controls>` player ABOVE the
- *       facts (ADR-0026 Phase 2, increment 2) — same mime-driven download authorizer.
+ *       facts (Phase 2, increment 2) — same mime-driven download authorizer.
  *   3d an AUDIO node (audio/wav) renders an inline `<audio controls>` player ABOVE the
  *       facts. 3c/3d assert the facts + Download REMAIN (the player is additive).
  *   4  upload to a `video` node → same path (one substrate serves file & video).
- *   4a org-limit round-trip (ADR-0026 §A4): set `platform.media.max_upload_bytes` LOW at
+ *   4a org-limit round-trip: set `platform.media.max_upload_bytes` LOW at
  *       `organization` scope → the authorizer DENIES (400) an upload exceeding it (the
  *       resolver reflects the set org value); unset → the same upload is AUTHORIZED again
  *       (falls back through the cascade to the 200 MB code default).
@@ -61,7 +61,7 @@
  *       the owner's bytes are unchanged. The regression guard: a read-grantee cannot
  *       overwrite someone else's file bytes.
  *
- *  Purge reap (the ADR-0026 touch-item):
+ *  Purge reap (the touch-item):
  *   12 trashing then PURGING a confirmed media node (resource DELETE → trash-route DELETE)
  *      best-effort reaps its `kb-media` object: after the purge the object no longer
  *      resolves (a service download of the exact path returns no object), and the kmm
@@ -122,7 +122,7 @@ async function uploadAs(
       sizeBytes,
       filename,
     });
-    // Resumable/TUS switch (ADR-0026 §A2): authorize is CONTROL-plane — it returns the
+    // Resumable/TUS switch: authorize is CONTROL-plane — it returns the
     // server-decided storagePath ONLY, no signed URL/token. Upload the bytes to that path
     // under the actor's own session, fenced by the storage.objects INSERT RLS.
     expect(auth.storagePath).toBeTruthy();
@@ -220,7 +220,7 @@ async function readKmm(
   original_filename: string;
   storage_path: string;
 } | null> {
-  // ADR-0027: the kmm row is a reference; byte-intrinsic fields live on the blob.
+  // The kmm row is a reference; byte-intrinsic fields live on the blob.
   // Return the SAME combined shape the matrix asserts on.
   const { data } = await tenant.service
     .schema('kb')
@@ -297,7 +297,7 @@ async function pageFor(
   return context.newPage();
 }
 
-test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-fenced', () => {
+test.describe('@full KB media substrate — real upload/download, RLS-fenced', () => {
   test.describe.configure({ timeout: 240_000 });
 
   let tenant: KnowledgeGraphTenant;
@@ -399,7 +399,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
   test('(3a) an IMAGE node renders an inline <img> preview ABOVE the facts (mime-driven)', async ({
     browser,
   }) => {
-    // ADR-0026 Phase 2, increment 1: an `image/*` mime drives an inline `<img>` in the
+    // Phase 2, increment 1: an `image/*` mime drives an inline `<img>` in the
     // Media section (alt "Preview of <filename>"), minted via the SAME single-node
     // download authorizer. The facts (filename) still show — the preview is ADDITIVE.
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -439,7 +439,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
   test('(3b) a PDF node renders an inline <iframe> preview ABOVE the facts (mime-driven)', async ({
     browser,
   }) => {
-    // ADR-0026 Phase 2, increment 1: an `application/pdf` mime drives a bounded inline
+    // Phase 2, increment 1: an `application/pdf` mime drives a bounded inline
     // `<iframe>` (title "Preview of <filename>") via the SAME download authorizer.
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     try {
@@ -468,7 +468,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
   test('(3c) a VIDEO node renders an inline <video> player ABOVE the facts (mime-driven)', async ({
     browser,
   }) => {
-    // ADR-0026 Phase 2, increment 2: a `video/*` mime drives an inline `<video controls>`
+    // Phase 2, increment 2: a `video/*` mime drives an inline `<video controls>`
     // player (aria-label "Preview of <filename>") ABOVE the facts, minted via the SAME
     // single-node download authorizer (no new endpoint, no getPublicUrl). The facts +
     // Download still show — the player is ADDITIVE.
@@ -508,7 +508,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
   test('(3d) an AUDIO node renders an inline <audio> player ABOVE the facts (mime-driven)', async ({
     browser,
   }) => {
-    // ADR-0026 Phase 2, increment 2: an `audio/*` mime drives an inline `<audio controls>`
+    // Phase 2, increment 2: an `audio/*` mime drives an inline `<audio controls>`
     // player (aria-label "Preview of <filename>") via the SAME download authorizer. The
     // facts + Download still show — the player is ADDITIVE.
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -551,7 +551,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
     expect(await readKmm(tenant, fx.videoOwnedId)).not.toBeNull();
 
     const content =
-      'A fresh video-node upload over the shared media substrate (ADR-0026 assertion 4).\n';
+      'A fresh video-node upload over the shared media substrate (assertion 4).\n';
     await uploadAs(
       fx.owner,
       fx.spaceId,
@@ -578,7 +578,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
   });
 
   test('(4a) org-limit round-trip: a low org max DENIES an over-limit upload (400); unset falls back to the 200 MB default', async () => {
-    // The SOFT limit is the org-governed `platform.media.max_upload_bytes` (ADR-0026 §A4),
+    // The SOFT limit is the org-governed `platform.media.max_upload_bytes`,
     // resolved org → global → 200 MB default under the CALLER's RLS. Drive the round-trip
     // through the REAL authorizer AS the owner (a legit uploader) — reuse the existing
     // runtime-settings set path (no reinvented dial).
@@ -791,7 +791,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
 
   test('(8) a grantee of a granted ANCESTOR folder can download the nested file (inherited grant)', async () => {
     // Bea (`otherOwner`) was granted the ANCESTOR folder, never the nested file directly.
-    // The inherited-grant disjunct (ADR-0023) composes through the storage-RLS SELECT, so
+    // The inherited-grant disjunct composes through the storage-RLS SELECT, so
     // she can mint a signed URL and fetch the bytes.
     const client = await seedClientFor(fx.otherOwner);
     try {
@@ -920,9 +920,9 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
     expect(await data?.text()).toBe(fx.fixtureBytes.nodeGrant);
   });
 
-  // ── Purge reap: destroying a media node reaps its kb-media bytes (ADR-0026) ──
+  // ── Purge reap: destroying a media node reaps its kb-media bytes ──────────────
   //
-  // The ADR-0026 touch-item that was previously unimplemented: purging a CONFIRMED
+  // The touch-item that was previously unimplemented: purging a CONFIRMED
   // media node best-effort deletes its bytes from the private `kb-media` bucket. The
   // lifecycle is driven through the SAME create-vocabulary the demo seed uses — the
   // resource DELETE (soft-trash) then the trash-route DELETE (purge) — so the demo DB
@@ -939,7 +939,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
       .download(fx.purgeReapFilePath);
     expect(before.error, before.error?.message).toBeNull();
     expect(await before.data?.text()).toBe(
-      'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (ADR-0026 purge best-effort reap).\n'
+      'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (purge best-effort reap).\n'
     );
     // …and the kmm satellite row is present (the confirmed-media pre-state).
     expect(await readKmm(tenant, fx.purgeReapFileId)).not.toBeNull();
@@ -974,7 +974,7 @@ test.describe('@full ADR-0026 KB media substrate — real upload/download, RLS-f
     expect(after.error).not.toBeNull();
   });
 
-  // ── ADR-0027 security fences (the /security-review negatives) ───────────────
+  // ── security fences (the /security-review negatives) ──────────────────────────
   test('(13) kmm reference-smuggling is DENIED — a member cannot reference a blob it cannot read', async () => {
     // The revocation-bypass negative: a member (node-only, no space-wide update)
     // must NOT be able to point their OWN node's media reference at ANOTHER owner's

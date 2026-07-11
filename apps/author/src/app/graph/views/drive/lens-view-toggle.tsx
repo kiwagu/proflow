@@ -9,8 +9,8 @@ import * as React from 'react';
 import type { LensView } from '@/app/graph/views/registry/projection-view.types';
 
 /**
- * LensViewToggle — the shared Flat ↔ Advanced lens display-mode segmented control
- * (ADR-0022 Fork 4 + Addendum A). The SAME control the structural lenses (Shared /
+ * LensViewToggle — the shared Flat ↔ Advanced lens display-mode segmented control.
+ * The SAME control the structural lenses (Shared /
  * Shared-by-me / Starred) and the lexical-search lens carry, lifted here so the
  * identical JSX is not inlined at each call-site (ui-primitive-hygiene).
  *

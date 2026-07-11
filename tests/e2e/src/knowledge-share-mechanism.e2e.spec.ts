@@ -1,5 +1,5 @@
 /**
- * "Shared with me" mechanism distinction — ADR-0021 Part C (the DATA layer, Wave 3a).
+ * "Shared with me" mechanism distinction — (the DATA layer, Wave 3a).
  *
  * The graph annotates each node in the `'shared'` lens (visible nodes a user does NOT
  * own) with the single WINNING mechanism that grants THAT user access, precedence
@@ -103,7 +103,7 @@ async function mechanismFor(
   return 'broadcast';
 }
 
-test.describe('shared-with-me mechanism distinction — ADR-0021 Part C @full', () => {
+test.describe('shared-with-me mechanism distinction — @full', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;

@@ -1,9 +1,9 @@
 /**
- * Tariff-gated advanced (structural) view of the STRUCTURAL lenses — ADR-0022 + Addendum
+ * Tariff-gated advanced (structural) view of the STRUCTURAL lenses — Addendum
  * A acceptance.
  *
- * The structural lenses (the two Shared lenses + Starred) ship FLAT (a digest). ADR-0022
- * + Addendum A add an ADVANCED display mode that renders the SAME RLS-visible lens
+ * The structural lenses (the two Shared lenses + Starred) ship FLAT (a digest). Addendum
+ * A adds an ADVANCED display mode that renders the SAME RLS-visible lens
  * node-set as the KB containment TREE, gated by ONE generic COMMERCIAL
  * `advanced_structural_view` entitlement (a scoped `runtime_settings` row, resolved
  * global→org→space with org∧space AND-composition by Wave 1's `rpc_resolve_platform_flag`).
@@ -104,7 +104,7 @@ async function switchToListLayout(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'List view' }).click();
 }
 
-test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', () => {
+test.describe('@full advanced shared view (tariff-gated, view-only)', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;
@@ -214,7 +214,7 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
   test('ENTITLED: drilling a folder in the advanced tree STAYS on the Shared lens; the crumb returns to root', async ({
     browser,
   }) => {
-    // ADR-0022 (amended Fork 4 / TASK 1): the advanced Shared tree is folder-NAVIGABLE
+    // (amended Fork 4 / TASK 1): the advanced Shared tree is folder-NAVIGABLE
     // within its lens — drilling a folder narrows to its subtree WITHIN the shared set
     // and keeps the Shared scope (never breaks out to kb-browse).
     await setAdvancedStructuralEntitlement(tenant, { org: true, space: true });
@@ -270,7 +270,7 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
   test('ENTITLED: from the advanced Shared tree, the Knowledge base lens still activates (regression)', async ({
     browser,
   }) => {
-    // Regression for the folder-drill change (ADR-0022 TASK 1): the KB sidebar lens used
+    // Regression for the folder-drill change: the KB sidebar lens used
     // `navigate(null)`, which the advanced-Shared drill now keeps ON the Shared lens — so
     // clicking "Knowledge base" while in the advanced Shared tree trapped the user there.
     // The lens switch must leave Shared for kb-root regardless of the display mode.
@@ -309,7 +309,7 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
   test('ENTITLED: the Advanced choice PERSISTS across a reload via the server-read cookie (Pro only)', async ({
     browser,
   }) => {
-    // ADR-0022 (amended Fork 4 / TASK 2): the Flat/Advanced choice is remembered across
+    // (amended Fork 4 / TASK 2): the Flat/Advanced choice is remembered across
     // sessions via a server-read `shared-view` cookie (mirroring the grid/list layout
     // cookie), written ONLY on the entitled (Pro) plan. A reload with NO `?view=` in the
     // URL still renders advanced because the cookie carries the preference.
@@ -469,7 +469,7 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
     }
   });
 
-  // ── ADR-0022 Addendum A3 — STARRED advanced (the generalization to a second lens) ──
+  // ── STARRED advanced (the generalization to a second lens) ───────────────────
 
   test('STARRED: entitled → the same structural toggle renders the starred set as a tree; folder-drill stays on Starred', async ({
     browser,
@@ -533,7 +533,7 @@ test.describe('@full ADR-0022 advanced shared view (tariff-gated, view-only)', (
     }
   });
 
-  // ── ADR-0022 Addendum A — the DECIDED exclusions (Recent / Home are NOT structural) ──
+  // ── the DECIDED exclusions (Recent / Home are NOT structural) ─────────────────
 
   test('NEGATIVE: the Flat/Advanced toggle NEVER renders on Recent or Home (structurally excluded)', async ({
     browser,

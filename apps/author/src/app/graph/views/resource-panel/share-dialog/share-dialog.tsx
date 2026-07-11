@@ -35,8 +35,8 @@ import { CohortRow, OwnerRow, PersonRow, SectionLabel } from './share-rows';
 import { useShare } from './use-share';
 
 /**
- * ShareDialog — the ONE Share surface (ADR-0019 Fork 6). It folds the THREE
- * audience controls of a node into a single dialog, mirroring ADR-0017's "ONE
+ * ShareDialog — the ONE Share surface. It folds the THREE
+ * audience controls of a node into a single dialog, mirroring the "ONE
  * broadcast floor + N additive grants" mental model:
  *   (1) the broadcast floor selector (private / space / organization — PATCH);
  *   (2) "Who has access" — owner (read-only) + cohort grants + per-user grants,
@@ -137,7 +137,7 @@ export function ShareDialog({
         ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col gap-5">
-          {/* (1) Broadcast floor — the single per-resource dial (ADR-0017 §1.5). */}
+          {/* (1) Broadcast floor — the single per-resource dial. */}
           <section className="flex flex-col gap-2">
             <SectionLabel icon={<Users className="size-3" aria-hidden />}>
               {t('graph.share.floorSection')}
@@ -198,7 +198,7 @@ export function ShareDialog({
               {/* The ASSIGNED list — FIXED height so adding/removing people never jumps
                   the layout; it scrolls within. */}
               <ul className="flex h-40 flex-col gap-1 overflow-y-auto">
-                {/* Owner — always present, never revocable (intrinsic, ADR-0019 §2). */}
+                {/* Owner — always present, never revocable (intrinsic). */}
                 <OwnerRow
                   t={t}
                   ownerUserId={ownerUserId}
@@ -240,7 +240,7 @@ export function ShareDialog({
               <SectionLabel icon={<Check className="size-3" aria-hidden />}>
                 {t('graph.share.addSection')}
               </SectionLabel>
-              {/* People-picker — the reusable AsyncSearchPicker (ADR-0021 §A4) over the
+              {/* People-picker — the reusable AsyncSearchPicker over the
                 grantable-member directory: a debounced, cursor-paged search (page of 5
                 + "+N more" + "Show more"), SERVER-driven and hard-bounded (≤50).
                 Selecting a row POSTs a per-user grant; the `key` remounts it to page 1

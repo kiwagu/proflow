@@ -55,9 +55,9 @@ export function FolderCard({
   /** Extra line under the subtitle (the "Shared by me" grantee summary). */
   footer?: React.ReactNode;
   /** The access-mirror people-icon badge, shown when the folder is shared out
-   * (ADR-0023 §7a) — direct OR via a granted ancestor. Inline beside the title. */
+   * — direct OR via a granted ancestor. Inline beside the title. */
   sharedBadge?: React.ReactNode;
-  /** The "placement = sharing" hint on a folder that confers access (ADR-0023 §7a) —
+  /** The "placement = sharing" hint on a folder that confers access —
    * names the audience / floor scope. Rendered under the subtitle. */
   folderHint?: React.ReactNode;
   /** Multi-select checkbox (B2) — the bottom-right corner (clear of the leading icon +

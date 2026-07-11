@@ -1,7 +1,7 @@
 /**
  * Drive "Only files" filter + list Size column — the cross-lens uploaded-artifacts filter
- * and the recursive folder-size column over the resolved canvas + `kbData` (ADR-0026
- * render). Making `file`/`video` REAL (a `media` satellite with `byteSize`) let the Drive
+ * and the recursive folder-size column over the resolved canvas + `kbData`. Making
+ * `file`/`video` REAL (a `media` satellite with `byteSize`) let the Drive
  * add two purely-presentational capabilities:
  *
  *  1. the "Only files" toggle chip (`graph.drive.filterUploaded` = "Only files", an
@@ -155,7 +155,7 @@ function onlyFilesChip(page: Page) {
   return page.getByRole('button', { name: ONLY_FILES });
 }
 
-test.describe('@full ADR-0026 render — Drive "Only files" filter + list Size column', () => {
+test.describe('@full render — Drive "Only files" filter + list Size column', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;

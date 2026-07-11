@@ -115,7 +115,7 @@ export function validateScenario(s: SeedScenario): string[] {
         if (!isLexical(rev)) fail(`node "${n.ref}" has a non-Lexical revision`);
       }
     }
-    // Media payload (ADR-0026): only file/video carry bytes; the declared mime must
+    // Media payload: only file/video carry bytes; the declared mime must
     // pass the same denylist gate the upload authorizer enforces, else the live
     // upload would 400 — catch it offline.
     if (n.kind === 'file' || n.kind === 'video') {
@@ -149,7 +149,7 @@ export function validateScenario(s: SeedScenario): string[] {
     if (!nodeRefs.has(ref)) fail(`${where}: unknown node ref "${ref}"`);
   };
 
-  // Actor display names (ADR-0020 directory): if declared, must be non-empty so the
+  // Actor display names (co-member directory): if declared, must be non-empty so the
   // co-member directory resolves a real name rather than the email/short-id fallback.
   for (const a of s.actors ?? []) {
     if (a.displayName !== undefined && a.displayName.trim() === '') {

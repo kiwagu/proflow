@@ -14,7 +14,7 @@ import {
 import { authorizeMediaDownload } from '@/knowledge/media/media-download-authorize';
 
 /**
- * KB media transport (ADR-0026). Thin: it authenticates the Supabase SESSION
+ * KB media transport. Thin: it authenticates the Supabase SESSION
  * (never service-role), zod-validates the body, and delegates to the UI-agnostic
  * authorizer modules — all authorize/mint LOGIC lives there. RLS (the graph
  * predicate + `storage.objects`) is the SOLE fence; the bytes egress ONLY via the

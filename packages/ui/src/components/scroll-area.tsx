@@ -9,8 +9,8 @@ import { cn } from '@workspace/ui/lib/utils';
  * ScrollArea — the shared scroll primitive (shadcn/radix). A bounded-height,
  * styled overflow region with a custom scrollbar, used wherever a list must stay
  * within a max-height and scroll its overflow rather than grow its container (e.g.
- * the ResourcePanel's read-only "Access" grantee / inherited-folder lists, ADR-0023
- * §7b). Prefer this over a raw `overflow-y:auto` div (ui-primitive-hygiene).
+ * the ResourcePanel's read-only "Access" grantee / inherited-folder lists).
+ * Prefer this over a raw `overflow-y:auto` div (ui-primitive-hygiene).
  */
 function ScrollArea({
   className,

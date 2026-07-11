@@ -1,5 +1,5 @@
 /**
- * Owner-scoped, live containment access inheritance — ADR-0023 (the merge gate).
+ * Owner-scoped, live containment access inheritance — (the merge gate).
  *
  * Proves the NEW additive OR'd disjunct on the knowledge-resource visibility predicate
  * (`auth_user_can_access_resource` → `knowledge_resource_inherited_grant`): a node is
@@ -19,11 +19,11 @@
  * hand-built grants. The cycle case injects a `contains` cycle through the owner's RLS
  * client (a cycle is not expressible in the declarative tree).
  *
- * RLS is the SOLE fence (ADR-0017 §1.5 + ADR-0023): a node a viewer may not see is ABSENT
+ * RLS is the SOLE fence: a node a viewer may not see is ABSENT
  * from a direct `knowledge_resources` select under that viewer's RLS client — never returned
  * with a flag. So `canSee` = "the row comes back under your own JWT".
  *
- * The 9 proving tests (ADR-0023 §Implementation outline, Wave 1 §4):
+ * The 9 proving tests (Wave 1 §4):
  *  (1) a granted folder exposes the GRANTOR's OWN descendants (live);
  *  (2) NEGATIVE — owner-scope: a folder grant does NOT expose another owner's nested node;
  *  (3) NEGATIVE — no admin cascade: an admin sharing a folder does NOT expose another

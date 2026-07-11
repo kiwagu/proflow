@@ -2,10 +2,10 @@ import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Body-less resource authoring — UI-agnostic application module (ADR-0005 §b).
+ * Body-less resource authoring — UI-agnostic application module.
  *
  * `link`/`tag`/`folder`/`file`/`video` carry NO Lexical body and NO Payload doc
- * (ADR-0002 §3 / ADR-0015: a folder is a pure container kind; file/video carry
+ * (a folder is a pure container kind; file/video carry
  * their resource via the media-meta satellite, real binary upload deferred). So a
  * create here is a single RLS-scoped INSERT (+ an optional `contains` edge to place
  * the node inside a folder). `text` creation is NOT here — it fans out through
@@ -18,7 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * cleanly with no row. `created_by`/`owner` come from the SESSION, never the body.
  */
 
-/** Containment placement: a FORWARD `contains` edge folder→child (ADR-0015). */
+/** Containment placement: a FORWARD `contains` edge folder→child. */
 export type ParentFolderPlacement = {
   parentFolderId: string; // knr_… of a kind=folder node in the same space
   position?: number;
@@ -132,8 +132,8 @@ export async function createBodylessResource(
     edgeId = edge.edge_id;
   }
 
-  // Optional containment placement: FORWARD `contains` edge folder→new node
-  // (ADR-0015). The new node is the child (to_id); the folder is the from_id.
+  // Optional containment placement: FORWARD `contains` edge folder→new node.
+  // The new node is the child (to_id); the folder is the from_id.
   let containsEdgeId: string | undefined;
   if (input.parentFolder) {
     const placed = await insertEdge(

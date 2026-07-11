@@ -5,8 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { kbSchema } from '@/lib/supabase/kb-schema';
 
 /**
- * KB application-attribute write module — UI-agnostic (ADR-0005 §b / ADR-0011 §4).
- * Each KB attribute is a per-node SATELLITE in the dedicated `kb` schema (ADR-0013):
+ * KB application-attribute write module — UI-agnostic.
+ * Each KB attribute is a per-node SATELLITE in the dedicated `kb` schema:
  * a 1:1 row keyed by `node_id`. These functions are the write seam; the route is a
  * thin transport and the view holds none of this logic. EVERY write runs under the
  * user's RLS-scoped `db`; RLS mirrors the parent node's access (write =
@@ -107,7 +107,7 @@ export type SetResourceMediaInput = {
 
 /**
  * Set/update a node's media REFERENCE (UPSERT by node_id) under the user's RLS
- * (`space.knowledge.update`), the CONFIRM leg of an upload (ADR-0027 §3): called
+ * (`space.knowledge.update`), the CONFIRM leg of an upload: called
  * ONLY after the bytes have landed in the `kb-media` bucket. The kmm row points
  * `{node_id → blob_id}` — the refcount trigger increments on this insert (or
  * re-points on a replace: the old blob's count drops, the reaper collects it at

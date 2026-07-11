@@ -18,7 +18,7 @@ import type {
  *  - `containment` over the resolved canvas — fed to the panel (Move folder picker) AND
  *    the drag-and-drop guard (a folder can't drop into itself / a descendant).
  *  - `sharedByMeGranteesById` / `sharedByMeIds` / `visibilityById` — the access-mirror
- *    inputs the ResourcePanel's Access summary walks (ADR-0023 §7b). SAME source as the
+ *    inputs the ResourcePanel's Access summary walks. SAME source as the
  *    Drive card badges, so summary and badge can never diverge.
  *  - `revealInKb` — the panel's "Open in KB" action, forcing the default 'kb' lens at the
  *    node's PARENT folder so the resource shows among its siblings.
@@ -61,8 +61,8 @@ export function useDriveCanvasDerivations({
     [result.items, kbData]
   );
 
-  // The "shared by me" overlay reshaped for the ResourcePanel's Access summary (ADR-0023
-  // §7b): a per-resource grantee map (the node's explicit grantees) + the SET of ids the
+  // The "shared by me" overlay reshaped for the ResourcePanel's Access summary: a
+  // per-resource grantee map (the node's explicit grantees) + the SET of ids the
   // owner shared OUT (the membership test for the access-mirror ancestor walk). SAME source
   // as the Drive card badge, so the panel summary and the badge can never diverge.
   const sharedByMeGranteesById = React.useMemo(() => {
@@ -76,7 +76,7 @@ export function useDriveCanvasDerivations({
     () => new Set(sharedByMeGranteesById.keys()),
     [sharedByMeGranteesById]
   );
-  // The broadcast-floor lookup for the panel's access-mirror walk (ADR-0023 §7b): each
+  // The broadcast-floor lookup for the panel's access-mirror walk: each
   // node's `visibility` floor from the already-loaded `metaByItem` (no new load). The
   // panel runs `broadcastOut` over it + the containment forest to name an INHERITED
   // broadcast ("Broadcast via folder {X}"), the exact mirror of the card globe badge.

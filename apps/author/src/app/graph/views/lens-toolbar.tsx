@@ -4,8 +4,8 @@ import { Separator } from '@workspace/ui/components/separator';
 import * as React from 'react';
 
 /**
- * LensToolbar — the ONE shared lens "shelf" (toolbar) every lens composes (ADR-0025 §1,
- * lens-feature-component-reuse: parameterize-don't-fork). It owns the common frame (the
+ * LensToolbar — the ONE shared lens "shelf" (toolbar) every lens composes
+ * (lens-feature-component-reuse: parameterize-don't-fork). It owns the common frame (the
  * bordered bar + the `ml-auto` right-cluster) and renders the standard right-cluster
  * controls in ONE FIXED ORDER for EVERY lens, so a control defined once appears on every
  * lens by construction — never per-lens toolbar assembly.
@@ -15,7 +15,7 @@ import * as React from 'react';
  * Drive lens rendered it inline. Because `filter` is a first-class prop, ANY lens that
  * passes it gets the chip in the SAME place: "chip everywhere" is automatic, not copied.
  *
- * PURELY presentational (ADR-0005 §b): no lens logic, no i18n inside — the caller passes
+ * PURELY presentational: no lens logic, no i18n inside — the caller passes
  * already-resolved nodes/strings for every slot. The `left` slot is the lens-specific left
  * region (Drive → breadcrumb/lens-label; Search → the search input). Each optional right
  * slot renders only when provided.

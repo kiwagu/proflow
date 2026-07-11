@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Parameterize the lens — never fork the renderer
 
-The graph render layer is ONE parameterizable lens (ADR-0014, ADR-0025). KB / Shared /
+The graph render layer is ONE parameterizable lens. KB / Shared /
 Shared-by-me / Starred / Recent / Trash / search are CONFIGURATIONS of it, not separate
 view components. This is the render-layer analogue of Invariant #1: a new view is data
 (a config), not a new code path.
@@ -31,12 +31,12 @@ TYPE is needed (course/board), it is still a config of the lens, recorded by an 
 Forbidden without an ADR: a parallel `*-table` / `*-tree` / `*-row` / `*-row-cells` file
 that re-implements the lens's grid/list/tree/cell rendering.
 
-# For the orchestrator / planner (ADR-0025 §7 R4)
+# For the orchestrator / planner
 
 When a task is framed as a NEW render surface (e.g. "the search lens", "a graph view"),
 first ask: is this a new VIEW TYPE or a CONFIG of the existing lens? A data-layer "sibling
-capability" (ADR-0024-style) does NOT imply a sibling VIEW — at the render layer it is "one
-more config of the one lens" (ADR-0014 §2). Default to config. Only an ADR may authorize a
+capability" does NOT imply a sibling VIEW — at the render layer it is "one
+more config of the one lens". Default to config. Only an ADR may authorize a
 new renderer.
 
 Sequence reuse explicitly: if the shared component lacks the slot the new feature needs,

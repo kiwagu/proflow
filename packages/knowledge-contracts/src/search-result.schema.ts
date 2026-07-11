@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { projectionResultItemSchema } from './projection-result.schema.js';
 
 /**
- * SearchResult — the output contract of resolving a SearchQuery (ADR-0024 §1): an
+ * SearchResult — the output contract of resolving a SearchQuery: an
  * ordered (by score, then title) set of knowledge resources the current user may
  * see (under RLS), each annotated with its match score, the field that produced
  * the winning match, and (later) a highlighted snippet.
@@ -20,18 +20,18 @@ import { projectionResultItemSchema } from './projection-result.schema.js';
  * sourced in `projection-result.schema.ts`.
  */
 
-/** Which field produced the winning match tier (ADR-0024 §3b). */
+/** Which field produced the winning match tier. */
 export const matchedFieldSchema = z.enum(['title', 'description']);
 export type MatchedField = z.infer<typeof matchedFieldSchema>;
 
 export const searchResultItemSchema = projectionResultItemSchema
   .omit({ depth: true, via_edge_id: true })
   .extend({
-    // combined match score (ADR-0024 §3 tiers; higher wins)
+    // combined match score (tiers; higher wins)
     score: z.number(),
     // the field that produced the winning tier
     matchedField: matchedFieldSchema,
-    // PLAIN-TEXT lexical excerpt (ADR-0024 §3, Phase 2): for a description match,
+    // PLAIN-TEXT lexical excerpt (Phase 2): for a description match,
     // a leading window of the body; for a title-only match, the title. PLAIN text
     // only — the UI does the term highlighting (no HTML/<mark> crosses the data
     // layer). Optional: a row whose snippet would be empty omits it.

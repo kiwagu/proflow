@@ -17,7 +17,7 @@ import { sendJson } from './panel-fetch';
  * the workbench re-resolves (`onMutated`). Status (workflow) is orthogonal to access
  * (`visibility`) and trash (`deleted_at`); this writes only `status`.
  *
- * Purely presentational (ADR-0005 §b): it POSTs to the landed RLS route; RLS is the
+ * Purely presentational: it POSTs to the landed RLS route; RLS is the
  * sole authority (`space.knowledge.update` on the row). A reader's write fails
  * cleanly with no change — the segment simply does not move.
  */

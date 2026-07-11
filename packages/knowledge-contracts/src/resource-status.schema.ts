@@ -5,7 +5,7 @@ import { z } from 'zod';
  * Resource-status (workflow lifecycle) input contract. `knowledge_resources.status`
  * is a coarse three-state lifecycle — `draft` → `active` → `archived` — held as a
  * plain CHECK-constrained column (migration 20260615190243). The richer
- * workflow-as-data machine (`resource_workflows.definition`, ADR-0007) is a FUTURE
+ * workflow-as-data machine (`resource_workflows.definition`) is a FUTURE
  * per-space overlay; until it lands the lifecycle is this flat enum, so the panel's
  * transition control writes a direct status set (mirrors the visibility floor set).
  *

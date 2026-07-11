@@ -51,7 +51,7 @@ export async function materializeScenario(
     const minted = await deps.mintActor(spec.ref, spec.role ?? 'admin');
     actors.set(spec.ref, minted);
     // Set the actor's own profile display name (own-row RLS update) so the co-member
-    // directory (ADR-0020) resolves a real name in the Share people-picker, not a
+    // directory resolves a real name in the Share people-picker, not a
     // short-id. Authored AS the actor — exactly the path a member would take. The
     // `profiles` row is born WITH the auth user (a synchronous AFTER-INSERT trigger on
     // auth.users seeds user_id + email), so this update reliably hits an existing row —
@@ -197,7 +197,7 @@ export async function materializeScenario(
         parentFolderId
       );
       // A `file`/`video` node with a byte payload becomes REAL through the SAME
-      // upload transport the product drives (ADR-0026): authorize the upload under
+      // upload transport the product drives: authorize the upload under
       // the OWNER's RLS (server-decided path only), upload the bytes to the private
       // `kb-media` bucket at that path under the owner's storage client, then confirm
       // the `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
@@ -236,7 +236,7 @@ export async function materializeScenario(
       if (!tagId) throw new Error(`${scenario.id}: tag "${tagTitle}" missing`);
       await c.tag(spaceId, nodeId, { tagId });
     }
-    // Per-user grants — share the node with one named member (ADR-0019). The grant
+    // Per-user grants — share the node with one named member. The grant
     // is authored by the node's OWNER (owner-sovereign) and widens that actor's read
     // visibility; the grantee must be an active space member (a DB same-space guard).
     for (const granteeRef of node.userGrants ?? []) {
@@ -259,7 +259,7 @@ export async function materializeScenario(
     for (const ref of node.starredBy ?? []) {
       await (await client(ref)).star(spaceId, nodeId, true);
     }
-    // Record opens so the node lands in each actor's "Recent" lens (ADR-0016).
+    // Record opens so the node lands in each actor's "Recent" lens.
     for (const ref of node.openedBy ?? []) {
       await (await client(ref)).open(spaceId, nodeId);
     }
@@ -339,7 +339,7 @@ export async function materializeScenario(
 
 /**
  * Drive a `file`/`video` node's byte payload through the REAL media transport
- * (ADR-0026, resumable/TUS switch), exactly as the product's create flow does — the seed
+ * (resumable/TUS switch), exactly as the product's create flow does — the seed
  * never inserts a media object or `kmm` row via service-role / direct SQL:
  *   1. authorize the upload (`media?op=upload-url`) under the OWNER's RLS
  *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` only

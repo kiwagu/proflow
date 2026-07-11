@@ -2,20 +2,20 @@ import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
- * SearchQuery — the input contract for the lexical search capability (ADR-0024).
+ * SearchQuery — the input contract for the lexical search capability.
  * Search is a SIBLING of projection-resolve, not a sub-case: its own zod
  * contract, its own compiler, its own resolver — REUSING the projection-resolve
- * RLS transport (ADR-0009). RLS is the sole access fence; the `scope.*` narrowing
+ * RLS transport. RLS is the sole access fence; the `scope.*` narrowing
  * below can only SHRINK an already-fenced set, never widen access.
  *
  * Contract boundary (parity with ProjectionSpec): a SearchQuery NEVER carries an
  * access condition. `scope.spaceId` selects the space the user is browsing; the
  * optional `kinds`/`statuses`/`visibility` are user-facing query NARROWING (reuse
  * of the FilterNode-style narrowing), NOT the access fence (the fence is RLS in
- * the transport — ADR-0024 §6).
+ * the transport).
  *
  * The `mode` discriminant is fixed to `'lexical'` today; it is the explicit SEAM
- * where `'semantic'` (pgvector ANN) is added later (ADR-0024 §4/§7) WITHOUT a
+ * where `'semantic'` (pgvector ANN) is added later WITHOUT a
  * contract break — modeled as a discriminated union so a second mode is additive.
  */
 
@@ -63,7 +63,7 @@ const searchQueryBaseSchema = z.object({
 
 /**
  * Lexical mode — the only mode today. `mode: 'lexical'` is the discriminant; a
- * `'semantic'` member is added here later (ADR-0024 §4) as a second union arm.
+ * `'semantic'` member is added here later as a second union arm.
  */
 export const lexicalSearchQuerySchema = searchQueryBaseSchema.extend({
   mode: z.literal('lexical'),
@@ -71,7 +71,7 @@ export const lexicalSearchQuerySchema = searchQueryBaseSchema.extend({
 
 /**
  * SearchQuery — a discriminated union on `mode`. One arm today (`'lexical'`); the
- * union shape is the non-breaking seam for `'semantic'` (ADR-0024 §4/§7).
+ * union shape is the non-breaking seam for `'semantic'`.
  */
 export const searchQuerySchema = z.discriminatedUnion('mode', [
   lexicalSearchQuerySchema,

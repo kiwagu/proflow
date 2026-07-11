@@ -1,6 +1,6 @@
 /**
  * JetStream consumer for knowledge-activity body edits (Mongo body -> Postgres
- * activity-log spine). ADR-0016 §5.2. The Payload `Bodies.afterChange` hook
+ * activity-log spine). The Payload `Bodies.afterChange` hook
  * PUBLISHES a body-edit event onto `knowledge.activity.v1.>`; this durable
  * consumer APPENDS the matching `kb.resource_activity` row (source=`nats-body`),
  * and the DB roll-up trigger advances `knowledge_resources.last_activity_at`.
@@ -15,7 +15,7 @@
  *   - KNOWLEDGE_ACTIVITY_NATS_STREAM    (optional; default KNOWLEDGE_ACTIVITY)
  *   - KNOWLEDGE_ACTIVITY_NATS_CONSUMER  (optional; default author-activity-v1)
  *
- * Trust model (ADR-0016 §0.3, authorize-at-produce): the worker holds no user JWT,
+ * Trust model (authorize-at-produce): the worker holds no user JWT,
  * so it appends via SERVICE-ROLE. This is a NARROW carve-out from "never
  * service-role on a user path" — the body edit was ALREADY authorized at produce
  * time (Payload admitted the body write only after the caller's RLS passed on

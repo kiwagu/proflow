@@ -2,7 +2,7 @@ import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Per-user "starred" write module — UI-agnostic (ADR-0005 §b / ADR-0011 §4). The
+ * Per-user "starred" write module — UI-agnostic. The
  * star flag is a column on the per-user state anchor `public.resource_user_state`
  * (a 1:1 row per (user, resource)), NOT a `kb` satellite. This is the write seam;
  * the route is a thin transport and the view holds none of this logic. EVERY write

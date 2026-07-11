@@ -12,7 +12,7 @@ import { cookies } from 'next/headers';
  * Both the `/author/graph/*` route handlers (slice-03, via `Request`) and the
  * `/author/graph/*` server pages (slice-04, via `cookies()`) reach the graph
  * through an RLS-scoped client, so the single access authority stays Postgres
- * RLS (ADR-0003 §2 / ADR-0005 §4). The cookie jar is read-only here: the proxy
+ * RLS. The cookie jar is read-only here: the proxy
  * owns session refresh (`setAll` is a no-op).
  */
 export async function createRlsClientFromServerCookies(): Promise<

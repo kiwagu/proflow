@@ -10,7 +10,7 @@ import * as React from 'react';
 import type { ShareMechanism } from '@/app/graph/graph-data.types';
 
 /**
- * The "Shared with me" mechanism presentation table (ADR-0021 Part C) — maps each
+ * The "Shared with me" mechanism presentation table — maps each
  * winning mechanism to its badge icon, its short label, and a Hint explaining it. The
  * order is the precedence order (most deliberate first: personal > cohort > broadcast)
  * — it drives BOTH the facet chip row sequence and which chips appear (a chip shows
@@ -51,7 +51,7 @@ export const SHARE_MECHANISM_META: Record<
 
 /**
  * ShareMechanismBadge — the per-card "why is this shared with me" badge in the
- * 'shared' (incoming) lens ONLY (ADR-0021 Part C). A compact shadcn `Badge` (the same
+ * 'shared' (incoming) lens ONLY. A compact shadcn `Badge` (the same
  * chip primitive the cards already use) + a small lucide icon + the mechanism label,
  * wrapped in a `Hint` that explains the mechanism (the label alone is terse). The
  * mechanism is the precomputed WINNING one (personal > cohort > broadcast) — DISPLAY

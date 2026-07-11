@@ -9,10 +9,10 @@ import * as React from 'react';
 
 /**
  * useLexicalSearch — the ONE client-side fetch path to the lexical-search capability
- * (ADR-0024 §5, slice-12). Extracted so EVERY consumer (the Drive search lens, the
+ * (slice-12). Extracted so EVERY consumer (the Drive search lens, the
  * command palette, any future global search) hits the SAME server route the SAME way:
  * a debounced, min-2-char, race-safe POST to `/author/graph/search` that the server
- * compiles + runs AS THE USER (Postgres RLS is the sole fence — ADR-0024 §6). The hook
+ * compiles + runs AS THE USER (Postgres RLS is the sole fence). The hook
  * itself adds NO access logic and NO new route: it is pure transport reuse. Consumers
  * differ only in how they RENDER the identical `SearchResultItem[]` it returns.
  *
@@ -118,7 +118,7 @@ export function useLexicalSearch(
 
   // The server is AUTHORITATIVE on order (`score DESC, title COLLATE kb.text_ci_ai,
   // id`). The client only STABILISES rows of EQUAL score by title — `compareText` is
-  // the JS mirror of the server `kb.text_ci_ai` collation (ADR-0024 §3c), so this
+  // the JS mirror of the server `kb.text_ci_ai` collation, so this
   // re-sort agrees with the server and never reorders across different scores.
   const sortedItems = React.useMemo(
     () =>

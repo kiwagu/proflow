@@ -11,7 +11,7 @@ import {
 
 /**
  * Resolve the effective MAX-UPLOAD size (bytes) for an upload targeting a node in
- * `spaceId` (ADR-0026 AMENDMENT §A3). An upload lands in a SPACE but the governance
+ * `spaceId`. An upload lands in a SPACE but the governance
  * dial is the ORG's, so the cascade is `organization → global → code default`, then
  * CLAMPED to the 5 GB hard system cap (§A4).
  *
@@ -19,7 +19,7 @@ import {
  * registry (`platform.media.max_upload_bytes`, value_type `number`, `isPublic`).
  * Because the row is public, an org MEMBER (the uploader) can SELECT it under RLS —
  * so this is a plain RLS SELECT via the CALLER's `db`, NEVER service-role (the
- * upload path is user-scoped end-to-end, ADR-0009). The org-scope SELECT is fenced
+ * upload path is user-scoped end-to-end). The org-scope SELECT is fenced
  * by `runtime_settings_actor_can_read_scope` (org membership required); the global
  * public row is readable by any authenticated caller.
  *

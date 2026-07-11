@@ -85,7 +85,7 @@ export function DriveWorkbench({
   const advancedStructuralEntitled =
     kbData?.entitlements?.advancedStructuralView ?? false;
 
-  // The command palette (ADR-0024 §5, slice-12 Phase 3) — the SECOND consumer of the
+  // The command palette (slice-12 Phase 3) — the SECOND consumer of the
   // lexical-search capability, proving it is not Drive-bound. Toggled by ⌘K/Ctrl+K (the
   // hook) or the chrome trigger; it reuses the SAME `/author/graph/search` path the
   // Drive lens uses and opens a selected hit through THIS workbench's existing nav.
@@ -192,7 +192,7 @@ export function DriveWorkbench({
   );
 
   // Every trashed id (for Empty Trash) — enumerated from the already-resolved trash set,
-  // never re-queried (ADR-0018). The batch purge pages this at the 200-id contract cap.
+  // never re-queried. The batch purge pages this at the 200-id contract cap.
   const trashIds = React.useMemo(
     () => (kbData?.trash.items ?? []).map((item) => item.id),
     [kbData]
@@ -297,7 +297,7 @@ export function DriveWorkbench({
           right column that shrinks the content beside it when a node is selected */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-w-0 flex-1 overflow-hidden">
-          {/* The lexical-search lens (ADR-0024 §5) REPLACES the projection panes when
+          {/* The lexical-search lens REPLACES the projection panes when
               the 'search' scope is active — it is a substrate-capability surface, not a
               projection over the resolved canvas, so it owns its own toolbar + results
               and needs no DndContext (search rows are not draggable). Single-click a row

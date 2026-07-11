@@ -14,7 +14,7 @@ import {
 } from '@/knowledge/fanout';
 
 /**
- * Edge-write for the consumer authoring surface (ADR-0015 / Variant A).
+ * Edge-write for the consumer authoring surface.
  *
  * POST   — create a `relates_to` (link), `tagged` (tag), `contains` (place/move a
  *          node into a folder) or `shortcut` (Drive cross-folder symlink) edge. The
@@ -55,7 +55,7 @@ const createTaggedSchema = z
     message: 'tagId or tagTitle is required.',
   });
 
-// place a node inside a folder — FORWARD `contains` edge folder→child (ADR-0015).
+// place a node inside a folder — FORWARD `contains` edge folder→child.
 const createContainsSchema = z.object({
   action: z.literal('contain'),
   spaceId: entityIds.space.prefixSchema,
@@ -64,7 +64,7 @@ const createContainsSchema = z.object({
   position: z.number().int().min(0).optional(),
 });
 
-// cross-folder symlink — FORWARD `shortcut` edge folder→target (ADR-0015).
+// cross-folder symlink — FORWARD `shortcut` edge folder→target.
 const createShortcutSchema = z.object({
   action: z.literal('shortcut'),
   spaceId: entityIds.space.prefixSchema,
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     }
 
     if (parsed.data.action === 'contain') {
-      // FORWARD: from_id = folder, to_id = child (ADR-0015). Never inverted.
+      // FORWARD: from_id = folder, to_id = child. Never inverted.
       const result = await createEdge(
         {
           spaceId: parsed.data.spaceId,
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     }
 
     if (parsed.data.action === 'shortcut') {
-      // FORWARD: from_id = folder, to_id = target (ADR-0015). Drive-only symlink.
+      // FORWARD: from_id = folder, to_id = target. Drive-only symlink.
       const result = await createEdge(
         {
           spaceId: parsed.data.spaceId,

@@ -8,7 +8,7 @@ import { type SqlFragment } from './filter.compiler.js';
 
 /**
  * Search compiler: a `SearchQuery` → a fully-parameterized SQL SELECT over the
- * knowledge graph (ADR-0024 §2). Mirrors `filter.compiler.ts` discipline EXACTLY.
+ * knowledge graph. Mirrors `filter.compiler.ts` discipline EXACTLY.
  *
  * Anti-injection contract (the SAME standard the projection compiler holds — this
  * is the injection boundary):
@@ -20,14 +20,14 @@ import { type SqlFragment } from './filter.compiler.js';
  * - Column identifiers / table names / functions / the collation are STATIC SQL
  *   the compiler writes from constants — never built from a user string. The
  *   `pg_trgm`/`fuzzystrmatch` operators are SCHEMA-QUALIFIED (`extensions.*`), as
- *   those extensions live in the `extensions` schema (ADR-0024 §Verified facts).
+ *   those extensions live in the `extensions` schema.
  * - The threshold / distance bounds are compiler-AUTHORED numeric literals (not
  *   env, per `monorepo-env-minimalism`; not user input) — safe inline in SQL.
  * - scope narrowing (`kinds`/`statuses`/`visibility`) NARROWS an already-RLS-
- *   fenced set; it is NOT the access fence (RLS in the transport is — ADR-0024 §6).
+ *   fenced set; it is NOT the access fence (RLS in the transport is).
  *   It is emitted as `column = any($n)` with the array value bound, never inlined.
  *
- * Matching model — ALL THREE TIERS (ADR-0024 §3b), combined into ONE `score`:
+ * Matching model — ALL THREE TIERS, combined into ONE `score`:
  *   (a) normalized prefix/exact — LIKE on the normalized TEXT expression (NOT on
  *       the nondeterministic collation, which PG17 forbids for LIKE — verified).
  *       Exact ranks above prefix; title above description.
@@ -183,7 +183,7 @@ function decodeSearchCursor(cursor: string | undefined): DecodedCursor | null {
  * `score`, the scope narrowing, and the 3-tuple keyset.
  */
 export function compileSearchQuery(query: SearchQuery): SqlFragment {
-  // `mode` is the semantic seam; today only 'lexical' compiles (ADR-0024 §4).
+  // `mode` is the semantic seam; today only 'lexical' compiles.
   if (query.mode !== 'lexical') {
     throw new Error(
       `compileSearchQuery: unsupported mode: ${String(query.mode)}`

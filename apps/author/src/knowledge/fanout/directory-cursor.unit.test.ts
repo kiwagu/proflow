@@ -6,7 +6,7 @@ import {
 } from './directory-cursor';
 
 /**
- * Directory keyset cursor codec (ADR-0021 Part A / A1). The cursor is an opaque
+ * Directory keyset cursor codec. The cursor is an opaque
  * base64url(json{k,u}) token carrying the last seen row's stable position; the round-trip
  * must be lossless, the encoding URL-safe + unpadded, and any null/blank/malformed token
  * must fail SOFT to `null` (= first page — a picker cursor is not a security boundary).

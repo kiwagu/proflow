@@ -41,7 +41,7 @@ function AccessMetaLine({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Floor icon + short label for the read-only Access summary (ADR-0023 §7b). */
+/** Floor icon + short label for the read-only Access summary. */
 const FLOOR_META: Record<
   ResourceFloor,
   { icon: typeof Lock; label: (t: GraphTranslator) => string }
@@ -54,19 +54,19 @@ const FLOOR_META: Record<
   },
 };
 
-// Cap before the grantee / inherited lists scroll within a bounded max-height (ADR-0023
-// §7b — a count header + a ScrollArea, the read-side analogue of ADR-0021's paged picker).
+// Cap before the grantee / inherited lists scroll within a bounded max-height (a count
+// header + a ScrollArea, the read-side analogue of the paged picker).
 const ACCESS_LIST_MAX_H = 'max-h-40';
 
 /**
- * AccessSection — the READ-ONLY "Access" summary in the ResourcePanel (ADR-0023 §7b,
- * Tier 2). It MIRRORS the access predicate; it never mutates. It shows:
+ * AccessSection — the READ-ONLY "Access" summary in the ResourcePanel (Tier 2).
+ * It MIRRORS the access predicate; it never mutates. It shows:
  *   - the broadcast FLOOR (Private / Space / Organization), from the node's `visibility`;
  *   - the explicit GRANTEES by name (from `kbData.sharedByMe`, co-member-labelled);
  *   - an "Inherited from {folder}" line when the node is visible via a granted ANCESTOR,
  *     computed by the SAME client ancestor walk (`sharedOut`) that drives the card badge;
  *   - a "Manage access" affordance opening the EXISTING ShareDialog (the ONLY editor —
- *     unchanged; ADR-0019 holds for MANAGEMENT, this is a distinct read-only tier, §7c).
+ *     unchanged for MANAGEMENT; this is a distinct read-only tier, §7c).
  *
  * The grantee list (and, in principle, a multi-ancestor inherited list) is a count header
  * + a bounded `ScrollArea` so a large audience never grows the panel unbounded. DISPLAY
@@ -101,14 +101,14 @@ export function AccessSection({
 }) {
   const [shareOpen, setShareOpen] = React.useState(false);
 
-  // The access-mirror walk (ADR-0023 §7b) — the SAME `sharedOut` the card badge uses, so
+  // The access-mirror walk — the SAME `sharedOut` the card badge uses, so
   // the panel's "Inherited from" line can never diverge from the badge. `inheritedFrom` is
   // the nearest granted ancestor folder (null when the node is granted directly or not at
   // all). A node carrying its OWN direct grant lists its grantees; a purely-inherited node
   // shows the inherited line instead.
   const shared = sharedOut(containment, node.id, (id) => sharedByMeIds.has(id));
 
-  // The BROADCAST half of the mirror (ADR-0023 §7b, the globe state) — the SAME
+  // The BROADCAST half of the mirror (the globe state) — the SAME
   // `broadcastOut` the card globe badge runs, so the panel's broadcast line can never
   // diverge from the badge. `broadcastVia` is the nearest broadcast-floor ANCESTOR folder
   // when the node is broadcast purely by floor inheritance (null when its OWN floor
@@ -122,7 +122,7 @@ export function AccessSection({
   const FloorIcon = FLOOR_META[floor].icon;
   const floorLabel = FLOOR_META[floor].label(t);
 
-  // The merged audience (ADR-0023 §7) carries BOTH per-user grants and cohort grants,
+  // The merged audience carries BOTH per-user grants and cohort grants,
   // each tagged with `kind`. Split them so a cohort is never miscounted/mislabelled as a
   // "person" — people get a name+email row, cohorts a group row counted as cohorts.
   const people = grantees.filter((g) => g.kind === 'user');

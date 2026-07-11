@@ -4,13 +4,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createBodylessResource } from './bodyless-resource.fanout';
 
 /**
- * Edge authoring — UI-agnostic application module (ADR-0005 §b). Relationships
+ * Edge authoring — UI-agnostic application module. Relationships
  * between nodes are `knowledge_edges` rows (Invariant #1), never a side table.
  *
  * Authorable relations (the write scope of the consumer surface):
  *   - `relates_to` (associative link), `tagged` (resource→tag),
- *   - `contains`   (folder→child, FORWARD — place / move into a folder, ADR-0015),
- *   - `shortcut`   (folder→target, Drive cross-folder symlink, ADR-0015).
+ *   - `contains`   (folder→child, FORWARD — place / move into a folder),
+ *   - `shortcut`   (folder→target, Drive cross-folder symlink).
  * `contains`/`shortcut` direction is ALWAYS folder→child/target (from_id=folder);
  * the caller passes the folder as `fromId`. `part_of`/`prerequisite` stay
  * structural and out of this write scope.
@@ -131,7 +131,7 @@ export type TagResourceInput = {
 /**
  * Tag a resource (`tagged` edge from_id=resource → to_id=tag) under the user's RLS.
  * Two-step: if no `tagId` is given, RESOLVE-OR-CREATE the `kind='tag'` node BY TITLE
- * (ADR-0003 Variant B — the space's tag vocabulary is keyed by title: free-text
+ * (the space's tag vocabulary is keyed by title: free-text
  * tagging with a title that already exists REUSES that tag node, never spawns a
  * duplicate), then the `tagged` edge — both under RLS, both verb-gated on the row.
  * Idempotent by title AND at the edge step: tagging the same resource with the same

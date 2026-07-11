@@ -56,7 +56,7 @@ export function useShare({
   const [copied, setCopied] = React.useState(false);
   // Bumped after every grant/revoke to REMOUNT the picker (`key`), forcing it back
   // to page 1 for a fresh blank-query starter list — the just-granted person drops
-  // out (the directory already excludes them server-side via p_exclude, ADR-0021 A5).
+  // out (the directory already excludes them server-side via p_exclude).
   const [pickerEpoch, setPickerEpoch] = React.useState(0);
   // Local client-side filter over the ASSIGNED list (grants + cohorts) — surfaced only
   // when the assigned set is large (>10) so a long audience stays scannable, no server
@@ -161,7 +161,7 @@ export function useShare({
     await sendJson(VISIBILITY_PATH, body, method);
     // Reload the full audience (floor/cohorts/grants), then remount the picker so it
     // refetches page 1 — the granted person drops out (the directory excludes them
-    // server-side via p_exclude, ADR-0021 A5).
+    // server-side via p_exclude).
     await reload();
     setPickerEpoch((e) => e + 1);
     setWorking(false);

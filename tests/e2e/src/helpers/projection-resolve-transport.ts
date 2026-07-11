@@ -1,5 +1,5 @@
 /**
- * E2E mirror of the author server's projection-resolve transport (ADR-0009).
+ * E2E mirror of the author server's projection-resolve transport.
  *
  * The production resolve path runs the TS-compiled, parameterized recursive-CTE
  * SELECT server-side over a direct pg connection that adopts the user's JWT
@@ -33,7 +33,7 @@ function resolverDatabaseUrl(): string {
   }
   // Dev fallback: the direct (session-mode) Postgres connection of the local
   // self-hosted stack. NOT the transaction pooler — SET LOCAL must stay on one
-  // connection inside the explicit transaction (ADR-0009 gotcha).
+  // connection inside the explicit transaction (gotcha).
   const host = process.env.E2E_DB_HOST?.trim() || '127.0.0.1';
   const port = process.env.E2E_DB_PORT?.trim() || '54322';
   const user = process.env.E2E_DB_USER?.trim() || 'postgres';

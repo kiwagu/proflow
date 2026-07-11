@@ -1,10 +1,10 @@
 /**
  * Lexical search — the full match matrix (prefix + fuzzy/ranking) + the RLS-absence proof
- * (ADR-0024, slice-12; the merge gate). Search is a SUBSTRATE capability, a SIBLING of
+ * (slice-12; the merge gate). Search is a SUBSTRATE capability, a SIBLING of
  * projection-resolve:
  * the browser POSTs only a `term` + `spaceId` to `/author/graph/search`; the server
  * compiles + runs the SELECT AS THE USER (the SAME RLS transport projection-resolve
- * reuses — ADR-0009), so Postgres RLS is the SOLE access fence (ADR-0024 §6). There is
+ * reuses), so Postgres RLS is the SOLE access fence. There is
  * NO app-level status/visibility filter doing the fencing — a private / other-space node
  * is absent because RLS never returns it, not because an app filter dropped it.
  *
@@ -166,7 +166,7 @@ test.describe('lexical search — match matrix (prefix + fuzzy/ranking) + RLS ab
 
   test('(8) an ancestor-shared child is PRESENT for the grantee (inherited-grant disjunct)', async () => {
     // The child was NEVER granted to Bea directly; only its ANCESTOR folder was. The
-    // inherited-grant disjunct (ADR-0023) the reused RLS predicate composes makes the
+    // inherited-grant disjunct the reused RLS predicate composes makes the
     // child readable — and that composes through search verbatim, so it appears.
     const beaHits = await searchIds(fx.searcherB, fx.spaceId, 'договор');
     expect(beaHits.has(fx.inheritedChildId)).toBe(true);

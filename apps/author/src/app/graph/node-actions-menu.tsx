@@ -84,7 +84,7 @@ export function NodeActionsMenu({
   /**
    * The viewer's space-level knowledge verbs, resolved once server-side. Combined
    * with ownership to DISPLAY-GATE the edit/move/delete/new-subfolder items per the
-   * `knowledge_resources` RLS predicate (ADR-0006: gating = display, fail-safe). A
+   * `knowledge_resources` RLS predicate (gating = display, fail-safe). A
    * shared, non-owner viewer without the verbs sees only Copy + Details.
    */
   capabilities: SpaceCapabilities;
@@ -127,9 +127,9 @@ export function NodeActionsMenu({
   const owned = ownerUserId != null && ownerUserId === currentUserId;
   const canModify = owned || capabilities.canUpdate;
   const canDelete = owned || capabilities.canDelete;
-  // Share = audience management (ADR-0019 §4): owner-sovereign OR the space
+  // Share = audience management: owner-sovereign OR the space
   // access verb — the EXACT per-user-grant / cohort INSERT-DELETE RLS authority
-  // (owner OR `space.knowledge.access`). Laxer-not-stricter (ADR-0006 §2.1): a
+  // (owner OR `space.knowledge.access`). Laxer-not-stricter: a
   // shown Share the user cannot perform simply no-ops under RLS on the route.
   const canShare = owned || capabilities.canAccess;
   // New-subfolder INSERTs a folder node (needs the create verb) AND wires a `contains`
@@ -313,7 +313,7 @@ export function NodeActionsMenu({
       hidden: !canDelete,
       separatorBefore: true,
       variant: 'destructive',
-      // Delete now routes through the reference-aware Trash flow (ADR-0018): a soft,
+      // Delete now routes through the reference-aware Trash flow: a soft,
       // reversible trash that PRESERVES references (folders, shortcuts, other-folder
       // containment, the Payload body) as dormant rows — so the N→1 reference-severing
       // that disabled `text` delete is gone. Enabled for ALL kinds; the destructive

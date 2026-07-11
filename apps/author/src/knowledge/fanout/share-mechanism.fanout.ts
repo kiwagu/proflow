@@ -7,15 +7,15 @@ import type {
 } from '@/app/graph/graph-data.types';
 
 /**
- * "Shared with me" mechanism distinction (ADR-0021 Part C) — a READ-ONLY batched
+ * "Shared with me" mechanism distinction — a READ-ONLY batched
  * annotation over the shared-lens node set, telling the current user WHICH additive
  * grant makes each node visible to them. NO new table, NO resolver change, NO new
- * access dimension: it reads the per-user grant table (`knowledge_resource_user_grants`,
- * ADR-0019), the cohort link table (`knowledge_resource_scopes`, ADR-0017) joined to my
+ * access dimension: it reads the per-user grant table (`knowledge_resource_user_grants`),
+ * the cohort link table (`knowledge_resource_scopes`) joined to my
  * scope memberships, and derives the residual — all ALREADY landed. Invariant #1 holds.
  *
  * The resolver returns visible nodes WITHOUT the matched disjunct, and it is FROZEN
- * (`security invoker`, ADR-0003). We re-derive the mechanism by re-checking, for the
+ * (`security invoker`). We re-derive the mechanism by re-checking, for the
  * ALREADY-VISIBLE set, which additive grant admits me. The three mechanisms, in
  * precedence order (most deliberate first):
  *
@@ -26,7 +26,7 @@ import type {
  *   - `broadcast` — the RESIDUAL: any shared id matched by NEITHER above. It is visible,
  *                   so SOME mechanism admits it — that is the space/org floor or the
  *                   supervisory hierarchy (`auth_user_manages_owner`), both FOLDED into
- *                   "broadcast" for v1 (ADR-0021 §7).
+ *                   "broadcast" for v1.
  *
  * Precedence `personal > cohort > broadcast`: a node admitted by several mechanisms
  * reports the most deliberate one.
@@ -77,7 +77,7 @@ async function matchedResourceIds(
 
 /**
  * Annotate each node in the "Shared with me" set with the WINNING mechanism that grants
- * the CURRENT user access (ADR-0021 Part C). All reads RLS-scoped — never service-role.
+ * the CURRENT user access. All reads RLS-scoped — never service-role.
  *
  * @param input.spaceId  the active space (the nodes are already scoped to it).
  * @param input.nodeIds  the shared-set node ids — "visible nodes I do NOT own" (the same

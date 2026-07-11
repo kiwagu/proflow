@@ -1,6 +1,6 @@
 /**
  * KB link substrate — a `kind='link'` node made REAL by its external URL in the
- * `kb.resource_link` satellite (slice-10 §2.4, ADR-0013 satellite machinery).
+ * `kb.resource_link` satellite (slice-10 §2.4, satellite machinery).
  * Unlike media there is no byte plane: the URL is stored text, so the security
  * surface is (a) the http(s)-only allow-list (anti stored-XSS — the URL renders
  * as an <a href>) and (b) the satellite RLS mirroring the parent node (a

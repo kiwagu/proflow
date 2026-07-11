@@ -1,6 +1,6 @@
 /**
  * Shortcut authoring — create, follow, and remove a cross-folder symlink from the
- * Drive UI (ADR-0015 §3). A `shortcut` edge folder→target ("one canonical home,
+ * Drive UI. A `shortcut` edge folder→target ("one canonical home,
  * many appearances") was renderable + seedable but had NO product gesture; this
  * covers the authoring path end-to-end through the REAL routes under the user's RLS:
  *
@@ -78,7 +78,7 @@ async function pageFor(
   return context.newPage();
 }
 
-test.describe('@full ADR-0015 shortcut authoring — create, follow + remove from the Drive UI', () => {
+test.describe('@full shortcut authoring — create, follow + remove from the Drive UI', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;

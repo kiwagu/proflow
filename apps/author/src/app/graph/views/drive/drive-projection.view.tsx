@@ -107,14 +107,14 @@ import { LensToolbar } from '@/app/graph/views/lens-toolbar';
 
 /**
  * DriveProjectionView — the prototype `DriveView`, pixel-1:1 (slice-11 Ф3 §2,
- * ADR-0014 `view='drive'`). The "Google Drive" projection over the SAME graph:
+ * `view='drive'`). The "Google Drive" projection over the SAME graph:
  * folders are container nodes (`kind='folder'`), reached by walking the FORWARD
- * `contains` forest (ADR-0015); a folder may hold `shortcut` cross-links to other
+ * `contains` forest; a folder may hold `shortcut` cross-links to other
  * folders/targets (Drive-only symlinks, EXCLUDED from containment traversal). A
  * familiar 230px sidebar (New + nav + sections) + breadcrumb + grid/list toggle +
  * folder/shortcut/file cards — the graph stays invisible behind the tree.
  *
- * PURELY presentational (ADR-0005 §b): it consumes the resolved canvas + the
+ * PURELY presentational: it consumes the resolved canvas + the
  * server-loaded `contains`/`shortcut` forests (`kbData`); it never queries Supabase
  * or the resolver. Selecting a content node opens the SHARED ResourcePanel (owned
  * by the workbench, via `onSelect`); navigating into a folder is local view state.
@@ -189,12 +189,12 @@ export function DriveProjectionView({
   // `floorOf` (the broadcast badge) which is a `useCallback`/`useMemo` dependency;
   // a fresh `{}` each render would thrash those hooks (react-hooks/exhaustive-deps).
   const metaByItem = React.useMemo(() => kbData?.metaByItem ?? {}, [kbData]);
-  // Per-item tags (ADR-0003 Variant B) — `resource_id → tag nodes` it points at via a
+  // Per-item tags — `resource_id → tag nodes` it points at via a
   // FORWARD `tagged` edge. Memoized for a STABLE `?? {}` default (it feeds the tag-facet
   // predicate + the resolved-set vocabulary, both `useMemo`/`useCallback` deps). Drives
   // the card tag chips, and the client-side tag-facet filter below.
   const tagsByItem = React.useMemo(() => kbData?.tagsByItem ?? {}, [kbData]);
-  // The "Shared with me" mechanism annotation (ADR-0021 Part C): each node in the
+  // The "Shared with me" mechanism annotation: each node in the
   // 'shared' set → the WINNING mechanism that grants ME access (personal > cohort >
   // broadcast, precedence applied server-side). Pure DISPLAY enrichment of an
   // already-RLS-admitted set — drives the per-card badge + the facet chip row, never a
@@ -242,7 +242,7 @@ export function DriveProjectionView({
   // (flat or an advanced tree of a DIFFERENT set) loses the containment context, so it is
   // offered. (Shortcut cards, which point elsewhere, keep their own affordance.)
   const onRevealInKbAction = scope === 'kb' ? undefined : onRevealInKb;
-  // The "Shared with me" facet (ADR-0021 Part C): a client-side filter over the
+  // The "Shared with me" facet: a client-side filter over the
   // mechanism annotation — `null` = All. Local to the lens (a UI filter, never a
   // fence). State is stored raw, but every READER goes through `shareFacet`, which is
   // forced to `null` (All) outside the 'shared' lens — so the facet always resets when
@@ -250,13 +250,13 @@ export function DriveProjectionView({
   const [shareFacetState, setShareFacet] =
     React.useState<ShareMechanism | null>(null);
   const shareFacet = isShared ? shareFacetState : null;
-  // The cross-lens "Only files" filter (ADR-0026 render): ONE toggle over EVERY content
+  // The cross-lens "Only files" filter: ONE toggle over EVERY content
   // lens (KB browse, the flat filter lenses, the advanced structural trees) — NEVER Trash
   // (a holding state, not a content lens). State is raw but every READER goes through
   // `uploadedOnly` (derived below, forced OFF in Trash) so the toggle resets on entering
   // Trash with no setState-in-effect.
   const [uploadedOnlyState, setUploadedOnly] = React.useState(false);
-  // The tag facet (ADR-0003 Variant B) — a set of toggled tag ids. When non-empty the
+  // The tag facet — a set of toggled tag ids. When non-empty the
   // canvas narrows to content carrying ANY active tag (union). A client-side filter over
   // `tagsByItem` (the read-side projection of the incoming `tagged` topology — the same
   // shape the engine's tagged-traversal computes, over the already-RLS-resolved set,
@@ -272,13 +272,13 @@ export function DriveProjectionView({
   // Trash (a holding state, not a content lens) so it resets there with no effect.
   const [statusFacetState, setStatusFacet] =
     React.useState<ResourceStatus | null>(null);
-  // The "Shared by me" lens (ADR-0021 Part B): the owner-direction sibling of
+  // The "Shared by me" lens: the owner-direction sibling of
   // 'shared'. A flat lens = the resolved canvas ∩ the resourceIds I have granted OUT
   // (`kbData.sharedByMe`, SSR-seeded under my RLS). Each entry carries the grantee
   // list so the cards can show who I shared it with.
   const isSharedByMe = scope === 'shared-by-me';
   const isHome = scope === 'home';
-  // The Trash lens (ADR-0018 fork #4): the trashed set (`deleted_at IS NOT NULL`),
+  // The Trash lens: the trashed set (`deleted_at IS NOT NULL`),
   // resolved server-side under the user's RLS and threaded in `kbData.trash`. It is a
   // flat lens — edges among trashed nodes are dormant (both-endpoints-trashed → hidden
   // by the edge SELECT policy), so every trashed node is its own "trashed root". No
@@ -287,17 +287,17 @@ export function DriveProjectionView({
   // When ON: flat mode filters the item set to uploaded artifacts; advanced mode prunes
   // the containment tree to branches that hold ≥1 artifact. OFF in Trash (see above).
   const uploadedOnly = isTrash ? false : uploadedOnlyState;
-  // The STRUCTURAL lenses (ADR-0022 Addendum A) — the lenses that can render their
+  // The STRUCTURAL lenses — the lenses that can render their
   // node-set as a containment TREE (the two Shared lenses + Starred). The toggle shows
   // ONLY here (never Recent/Home). Single source of truth: `STRUCTURAL_LENS_SCOPES`.
   const isStructuralLens = STRUCTURAL_LENS_SCOPES.has(scope);
-  // The COMMERCIAL entitlement (ADR-0022 Fork 1) — a plan-derived signal, resolved
+  // The COMMERCIAL entitlement — a plan-derived signal, resolved
   // server-side from a DIFFERENT authority than the RLS verbs (`capabilities`). Fail-
   // CLOSED default `false` (cheapest plan / no seed). ONE generic unit across all
   // structural lenses (lens-agnostic).
   const advancedStructuralEntitled =
     kbData?.entitlements?.advancedStructuralView ?? false;
-  // The lens DISPLAY MODE (ADR-0022 Fork 5 + Addendum A) — the workbench's server-clamped
+  // The lens DISPLAY MODE — the workbench's server-clamped
   // `?view=`; CONTROLLED when threaded (`lensViewProp`), else 'flat' (standalone).
   const lensView: LensView = lensViewProp ?? 'flat';
   // The advanced (TREE) render is ON only when: a STRUCTURAL lens is active, the mode is
@@ -402,7 +402,7 @@ export function DriveProjectionView({
     return set;
   }, [result.items]);
 
-  // The access-mirror predicate family (ADR-0023 §7) — `isGranted` (direct per-user
+  // The access-mirror predicate family — `isGranted` (direct per-user
   // grant), the globe-XOR-people-XOR-lock `renderAccessBadge`, and the underlying
   // `accessStatus`. ONE source for BOTH the grid card and the list row, so they can
   // never diverge. Pure display over the RLS-seeded `sharedByMe` / node meta / forest.
@@ -413,7 +413,7 @@ export function DriveProjectionView({
     sharedByMeByResource,
   });
 
-  // The lens node-set ids (ADR-0022 Fork 3 + Addendum A) for the ACTIVE structural lens
+  // The lens node-set ids for the ACTIVE structural lens
   // — the SAME set the flat lens computes (the advanced tree shows EXACTLY the flat
   // lens's nodes, only arranged structurally). `'shared'` = visible nodes I do NOT own;
   // `'shared-by-me'` = the canvas ∩ the ids I have granted OUT; `'starred'` = the canvas
@@ -457,13 +457,13 @@ export function DriveProjectionView({
     kbData,
   ]);
 
-  // The advanced lens TREE's containment (ADR-0022 Fork 3 + Addendum A) — the EXISTING
+  // The advanced lens TREE's containment — the EXISTING
   // `buildContainment` fed the lens SUBSET of the resolved items + the already-loaded
   // LIVE `contains` forest. No new data model, no resolver change, no new load
   // (Invariant #1). The forest builder drops any `contains` edge whose endpoint is NOT
   // in the subset, so a node whose containing folder is NOT in the lens set has no
   // parent → it appears at the ROOT of the lens tree — NO synthetic invisible ancestors
-  // (graceful-absence, ADR-0018 §14). Built only when the advanced lens view is active.
+  // (graceful-absence). Built only when the advanced lens view is active.
   const lensContainment = React.useMemo(
     () =>
       buildContainment(
@@ -479,7 +479,7 @@ export function DriveProjectionView({
   // graph, never the lens sub-tree).
   const treeContainment = isLensAdvanced ? lensContainment : containment;
 
-  // The uploaded-artifact machinery (ADR-0026 render) — ONE predicate + two memoized,
+  // The uploaded-artifact machinery — ONE predicate + two memoized,
   // single-pass indexes shared by the filter, the tree prune, and the size column, so
   // "an uploaded artifact" and "a folder's size" can never mean two different things
   // across lenses (lens-feature-component-reuse). Pure over the loaded attributes +
@@ -501,7 +501,7 @@ export function DriveProjectionView({
     [containment, bytesOf]
   );
   // The UNIFIED leaf predicate for the two cross-lens content filters — "Only files"
-  // (ADR-0026: uploaded artifacts) AND the tag facet (ADR-0003: carries an active tag).
+  // (uploaded artifacts) AND the tag facet (carries an active tag).
   // A leaf is KEPT iff it passes BOTH active filters (each a no-op when off), so the two
   // compose: a lens can be filtered to tagged files. Feeding it to the SAME prune index +
   // `pruneKeep` the "Only files" toggle already used means the tag facet prunes the browse
@@ -622,13 +622,13 @@ export function DriveProjectionView({
   // before sorting so we never mutate the cached containment/shortcut arrays.
   const byTitle = byText((node: LensNode) => node.title);
   // Recent ordering: most-recently VIEWED BY ME first — the per-user
-  // `last_opened_at` overlay (ADR-0016), NOT `updated_at`/activity. An item is in
+  // `last_opened_at` overlay, NOT `updated_at`/activity. An item is in
   // Recent BECAUSE I opened it, so its open time is always defined and is the honest
   // timestamp (true whether or not it was edited). ISO strings compare
   // lexicographically = chronologically.
   const byRecency = (a: LensNode, b: LensNode) =>
     (openedAtById[b.id] ?? '').localeCompare(openedAtById[a.id] ?? '');
-  // An advanced structural lens TREE (ADR-0022 + Addendum A) is folder-NAVIGABLE within
+  // An advanced structural lens TREE is folder-NAVIGABLE within
   // its lens: drilling a folder stays on the lens (`?scope=<lens>&folder=…&view=advanced`)
   // and NARROWS the canvas to that folder's subtree WITHIN the lens subset — it never
   // leaves the lens for kb-browse, and never widens beyond the lens node-set (the tree
@@ -672,7 +672,7 @@ export function DriveProjectionView({
     : [];
 
   // Shared with me = the visible nodes I do NOT own (owner ≠ me), folders + content.
-  // A loader lens over the already-RLS-narrowed canvas (ADR-0017 §2.1) — the owner
+  // A loader lens over the already-RLS-narrowed canvas — the owner
   // filter is a DISPLAY path, not a fence (the RLS floor is the authority). At Step 1
   // the floor is still 'space', so this surfaces "space-published by someone else".
   // The full shared-with-me set (owner ≠ me), BEFORE the facet filter — used to derive
@@ -700,8 +700,8 @@ export function DriveProjectionView({
       ? sharedAllNodes.filter((node) => shareMechanism[node.id] === shareFacet)
       : sharedAllNodes;
 
-  // Shared by me = the resolved canvas ∩ the resourceIds I have granted OUT
-  // (ADR-0021 Part B). The data layer already fail-closed it (a resource I can no
+  // Shared by me = the resolved canvas ∩ the resourceIds I have granted OUT.
+  // The data layer already fail-closed it (a resource I can no
   // longer see, or whose only grant I revoked, is absent from `sharedByMe`); a
   // granted id that somehow isn't on the canvas simply doesn't resolve and drops out.
   // Folders + content split exactly like the 'shared' lens, reusing every card path.
@@ -714,7 +714,7 @@ export function DriveProjectionView({
         )
     : [];
 
-  // "For you" home (ADR-0017 §4): a personal DIGEST over the now-personal visible set,
+  // "For you" home: a personal DIGEST over the now-personal visible set,
   // not a flat filter. Two sections, content only (folders excluded): what I recently
   // OPENED ("jump back in", `last_opened_at`) and what recently CHANGED that I can see
   // ("recently updated", `last_modified_at`). Both client-side over already-loaded
@@ -747,7 +747,7 @@ export function DriveProjectionView({
     )
     .slice(0, HOME_LIMIT);
 
-  // The Trash lens set (ADR-0018) — the server-resolved trashed nodes, read from
+  // The Trash lens set — the server-resolved trashed nodes, read from
   // `kbData.trash` (NOT the live `containment`, which is `deleted_at IS NULL`). Sorted
   // by name; folders + content render together (no tree — trashed roots are flat).
   // An empty/ungranted Trash is `[]` → the empty-trash copy.
@@ -825,7 +825,7 @@ export function DriveProjectionView({
     // set either way.
     .filter(leafPass);
 
-  // The advanced lens GRID forest (ADR-0025): the SAME `treeContainment` subset the list
+  // The advanced lens GRID forest: the SAME `treeContainment` subset the list
   // tree (`driveRows`) walks, shaped as a `LensTreeNode[]` for `LensTreeGrid` so the grid +
   // list advanced trees can never drift. Folders recurse their lens children inline (nested
   // sections + indent guides + sticky chain) so EVERY matching node is visible — never
@@ -878,7 +878,7 @@ export function DriveProjectionView({
     }
   };
 
-  // Paste AS SHORTCUT (ADR-0015 §3): drop a `shortcut` symlink to the clipboard source
+  // Paste AS SHORTCUT: drop a `shortcut` symlink to the clipboard source
   // into THIS pane's current folder. Folder-only — a shortcut hangs off a folder, so it
   // is offered only when browsing inside one (`folderId != null`), never at root.
   const canPasteShortcut =
@@ -890,7 +890,7 @@ export function DriveProjectionView({
   };
 
   // Following a shortcut (double-click / Open) must reach the SAME surface as opening
-  // the REAL target — a symlink you cannot follow is pointless (ADR-0015 §3): a folder
+  // the REAL target — a symlink you cannot follow is pointless: a folder
   // navigates IN, a text document opens the reader/editor, and every other kind opens
   // Details (where a file/video Download or a link's Open lives). Mirrors the canonical
   // item-card `onOpen` exactly, so a shortcut behaves identically to its target.
@@ -1133,8 +1133,8 @@ export function DriveProjectionView({
     ) : null;
 
   // The shared Drive left-rail (lens nav + Sections + the "New" launcher), now a
-  // standalone component so the search lens renders the IDENTICAL chrome (ADR-0024
-  // §5). It walks `treeContainment` (the lens subset's forest when advanced, else the
+  // standalone component so the search lens renders the IDENTICAL chrome.
+  // It walks `treeContainment` (the lens subset's forest when advanced, else the
   // full graph) for the Sections roots, exactly as the inline rail did. The scope
   // switch routes through `applyScope`; the uncontrolled fallback (no workbench owning
   // the scope) roots the local folder when switching to 'kb'.
@@ -1362,7 +1362,7 @@ export function DriveProjectionView({
     return columns;
   })();
 
-  // The toolbar filter cluster: the cross-lens "Only files" toggle (ADR-0026) + the
+  // The toolbar filter cluster: the cross-lens "Only files" toggle + the
   // facet-filters dropdown (tag/status/shared), both anchored in the shared LensToolbar's
   // `filter` slot (rendered FIRST in the right cluster with a trailing vertical rule).
   // Collapsing the facets into the dropdown keeps them off a fixed content row (they used
@@ -1506,7 +1506,7 @@ export function DriveProjectionView({
       </Button>
     ) : undefined;
 
-  // The lens display-mode toggle (ADR-0022 Fork 4 + Addendum A): Flat ↔ Advanced, shown
+  // The lens display-mode toggle: Flat ↔ Advanced, shown
   // ONLY on a STRUCTURAL lens (Shared / Shared-by-me / Starred), NEVER on Recent/Home.
   // When the space is NOT entitled it renders DISABLED, wrapped in a Hint with the upsell
   // copy — NEVER hidden (the locked control IS the upsell, Fork 2). The server clamps
@@ -1741,7 +1741,7 @@ export function DriveProjectionView({
                 // mount, so without this it keeps a stale `{id:'viewed'}` sort after
                 // leaving Recent and TanStack throws "Column 'viewed' does not exist".
                 // ALSO remount when the structural mode flips (flat ↔ tree) — a Shared
-                // lens toggling Flat↔Advanced (ADR-0022) changes `tree` in place; without
+                // lens toggling Flat↔Advanced changes `tree` in place; without
                 // a fresh mount TanStack's expanded-row model leaves a stale expand
                 // control behind (a detached duplicate). The mode is part of the table's
                 // identity, so it keys the remount.
@@ -1768,10 +1768,10 @@ export function DriveProjectionView({
                     : [{ id: 'name', desc: false }]
                 }
                 dndEnabled={dndEnabled}
-                // The access-status badge per row (ADR-0023 §7a) — the SAME globe-XOR-people
+                // The access-status badge per row — the SAME globe-XOR-people
                 // taxonomy the cards use (globe precedence), so the list mirrors the grid.
                 sharedBadgeFor={(node) => renderAccessBadge(node.id) ?? null}
-                // The size column (ADR-0026 render): a file/video's own bytes, a folder's
+                // The size column: a file/video's own bytes, a folder's
                 // recursive VISIBLE-descendant sum, "—" otherwise — off the shared index.
                 sizeOf={sizeOf}
                 // Multi-select (B2): a leading checkbox column; shift = a range over the
@@ -1796,7 +1796,7 @@ export function DriveProjectionView({
           ) : (
             <>
               {isLensAdvanced ? (
-                // ADVANCED lens GRID (ADR-0025): the lens subset as a recursive tree-grid —
+                // ADVANCED lens GRID: the lens subset as a recursive tree-grid —
                 // every matching node visible (nested folder sections + indent guides +
                 // sticky ancestor chain), not hidden behind a drill. Folders carry the SAME
                 // jump-to-KB the cards do, even when empty.
@@ -1940,7 +1940,7 @@ export function DriveProjectionView({
                             shortcut
                             // The TARGET's kind icon (doc/file/video/link/folder) + the
                             // shortcut arrow — telegraphs WHAT it points at, not a
-                            // uniform folder-symlink glyph (ADR-0015 §3).
+                            // uniform folder-symlink glyph.
                             icon={iconForKind(target.kind)}
                             onOpen={() => openShortcutTarget(target)}
                             onDetails={() => onSelect(target.id)}

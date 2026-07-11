@@ -5,8 +5,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
 
 /**
- * Text-resource authoring — the ONE node kind that carries a Lexical body
- * (ADR-0002 §1, ADR-0005). A `kind=text` create is a cross-store fan-out: the
+ * Text-resource authoring — the ONE node kind that carries a Lexical body.
+ * A `kind=text` create is a cross-store fan-out: the
  * authoritative node lives in Postgres (under RLS), the Lexical body lives in
  * the Payload `bodies` collection (Mongo). The two are bridged by
  * `knowledge_resources.body_ref = { collection:'bodies', doc_id }` (the column
@@ -55,7 +55,7 @@ const EMPTY_LEXICAL = {
   },
 } as const;
 
-/** Containment placement: a FORWARD `contains` edge folder→child (ADR-0015). */
+/** Containment placement: a FORWARD `contains` edge folder→child. */
 export type TextParentFolderPlacement = {
   parentFolderId: string; // knr_… of a kind=folder node in the same space
   position?: number;
@@ -113,8 +113,8 @@ export async function createTextResource(
   }
   const nodeId = node.id;
 
-  // 2. Optional containment placement: FORWARD `contains` edge folder→new node
-  //    (ADR-0015). On failure compensate the node (its delete is the only thing
+  // 2. Optional containment placement: FORWARD `contains` edge folder→new node.
+  //    On failure compensate the node (its delete is the only thing
   //    persisted so far).
   if (input.parentFolder) {
     const { error: edgeErr } = await db.from('knowledge_edges').insert({
@@ -252,7 +252,7 @@ async function deleteNode(
 
 /**
  * Best-effort: drop a Payload body doc. Used as create-compensation here AND as
- * the purge body-reap (ADR-0018 §13.2) — exported so the purge fan-out can reap
+ * the purge body-reap — exported so the purge fan-out can reap
  * the orphaned body AFTER the node DELETE commits (best-effort, idempotent: a
  * missing body is a no-op; a Mongo failure leaves an unreachable orphan, never a
  * thrown error).

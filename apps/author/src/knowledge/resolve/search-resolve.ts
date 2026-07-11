@@ -13,11 +13,11 @@ import {
 } from './projection-resolve.transport';
 
 /**
- * Server-side search-resolve entry (ADR-0024 §2/§6). A SIBLING of
+ * Server-side search-resolve entry. A SIBLING of
  * `resolveDefaultLensProjection`: it builds the SAME RLS transport
- * (`createProjectionResolveTransport(claims)`, REUSED verbatim — ADR-0009) and
+ * (`createProjectionResolveTransport(claims)`, REUSED verbatim) and
  * calls the engine `resolveSearch`. NO new DB path, NO service-role — RLS is the
- * sole access fence (ADR-0001/0009/0023): the compiled SELECT runs AS THE USER, so
+ * sole access fence: the compiled SELECT runs AS THE USER, so
  * a private / other-space node never appears for a non-grantee. The optional
  * `scope.statuses`/`scope.visibility` narrowing can only shrink the user's already
  * RLS-fenced set, never widen access (`poc-no-fallbacks` — no fake fence).

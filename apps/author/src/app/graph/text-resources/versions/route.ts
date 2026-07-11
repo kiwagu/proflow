@@ -22,8 +22,8 @@ import {
  *        revisions are immutable here). Parent-checked like the others; never a
  *        cross-document delete.
  *
- * Every read/write is gated by node access under the caller's OWN RLS (ADR-0002
- * §2): no node row ⇒ 404; the body is then reached by its bridge key via the
+ * Every read/write is gated by node access under the caller's OWN RLS: no node
+ * row ⇒ 404; the body is then reached by its bridge key via the
  * Local API with `overrideAccess`. Payload caps history at `maxPerDoc` (Bodies);
  * there is no per-version delete.
  */

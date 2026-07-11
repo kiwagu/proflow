@@ -3,11 +3,11 @@
  *
  * Proves the HARD-ACCESS (RLS) generalization: cohort (additive members-only GRANT
  * via `scopes`) + manager → subordinate hierarchy compose over node visibility by the
- * ADR-0017 §1.5 formula `is_owner OR (base AND (floor published OR cohort grant)) OR
+ * formula `is_owner OR (base AND (floor published OR cohort grant)) OR
  * hierarchy`. A node not admitted by any branch is HIDDEN — ABSENT from
  * `ProjectionResult.items`, never
  * present with `available=false`. This is the carrying boundary authorization ≠
- * gating (ADR-0006 §1/§3): contrast slice-05/06 where a closed node stays in
+ * gating: contrast slice-05/06 where a closed node stays in
  * `items` with a display flag.
  *
  * The resolver is `security invoker`, so swapping the knowledge_resources SELECT
@@ -249,7 +249,7 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
 
     // The granted admin owns both the unrestricted (published) and the
     // cohort-restricted (private) demo nodes, so it sees BOTH — the latter via the
-    // ADR-0017 Model B `is_owner` branch ("you always see your own"), even though
+    // Model B `is_owner` branch ("you always see your own"), even though
     // it is NOT a member of the cohort that the node is shared with. (Ownership
     // trumps cohort membership; the resolver is unchanged, only RLS moved the set.)
     const grantedIds = await visibleIds(tenant.granted.client);

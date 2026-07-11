@@ -15,7 +15,7 @@ import type { DriveLayout } from '@/app/graph/views/drive/layout-toggle';
 import { GRID_CARD } from '@/app/graph/views/drive/cards/card-rail';
 
 /**
- * TrashCard — one trashed node in the Trash lens (ADR-0018 §10.7). It is NOT a
+ * TrashCard — one trashed node in the Trash lens. It is NOT a
  * browsable card: a trashed node has no open / navigate / star / ⋯ menu — only the
  * two lifecycle verbs reached from inside Trash, Restore and Purge.
  *

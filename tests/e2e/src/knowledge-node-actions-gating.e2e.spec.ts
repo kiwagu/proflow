@@ -1,5 +1,5 @@
 /**
- * Capability-aware `⋯` node-actions menu — display-gating acceptance (ADR-0006).
+ * Capability-aware `⋯` node-actions menu — display-gating acceptance.
  *
  * The Drive `⋯` menu hides the items a viewer cannot actually perform, mirroring the
  * `knowledge_resources` write/delete RLS predicate EXACTLY:

@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { kbSchema } from '@/lib/supabase/kb-schema';
 
 /**
- * Per-user "open" write module — UI-agnostic (ADR-0005 §b / ADR-0016 §3.3, §5.4).
+ * Per-user "open" write module — UI-agnostic.
  * Records a DELIBERATE open of a knowledge resource by the current user: an
  * append to the `kb.resource_activity` log (`kind=open`, `source=open`,
  * `user_id` from the SESSION). The DB roll-up trigger advances
@@ -13,7 +13,7 @@ import { kbSchema } from '@/lib/supabase/kb-schema';
  *
  * Every write runs under the USER's RLS-scoped `db` — NEVER service-role. The open
  * append is gated by the dedicated `space.knowledge.open` verb — a READ-TIER verb
- * held by whoever holds `space.knowledge.read` (ADR-0017 §3). An RLS rejection is a
+ * held by whoever holds `space.knowledge.read`. An RLS rejection is a
  * clean no-op (best-effort): a failed open must never block the read (§3.3).
  */
 

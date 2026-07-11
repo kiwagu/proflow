@@ -8,11 +8,11 @@ import type {
 } from '@/app/graph/graph-data.types';
 
 /**
- * "Shared by me" lens (ADR-0021 Part B, extended for cohort-by-me per ADR-0023 §7) — a
+ * "Shared by me" lens (extended for cohort-by-me) — a
  * READ-ONLY projection over the OUTBOUND grants the CURRENT user created, across BOTH
- * additive dimensions: per-user (`knowledge_resource_user_grants`, ADR-0019) AND cohort
- * (`knowledge_resource_scopes`, ADR-0017). NO new table, NO resolver change, NO new
- * access dimension — both tables + the co-member directory (ADR-0020) and the scope
+ * additive dimensions: per-user (`knowledge_resource_user_grants`) AND cohort
+ * (`knowledge_resource_scopes`). NO new table, NO resolver change, NO new
+ * access dimension — both tables + the co-member directory and the scope
  * names already landed. Invariant #1 holds: this is the OPPOSITE direction of the same
  * grant graph the "Shared with me" lens reads.
  *
@@ -20,7 +20,7 @@ import type {
  * SOLE authority and the fence is fail-closed by construction:
  *   - `granted_by = (select auth.uid())` / `linked_by = (select auth.uid())` are FILTERS
  *     (which grants I created), not the fence — both are pinned to the session at insert
- *     (`granted_by`: ADR-0019; `linked_by`: the resource-scope fanout), so neither can be
+ *     (`linked_by`: the resource-scope fanout), so neither can be
  *     forged. The cohort filter MIRRORS the per-user `granted_by = me` filter EXACTLY.
  *   - the grant/scope SELECT RLS (any space reader sees the rows of their space) + the
  *     `knowledge_resources` SELECT RLS (node read) are the fence: the resources are
@@ -51,7 +51,7 @@ function memberLabel(input: {
 }
 
 /**
- * The co-member directory for a space keyed by user_id (ADR-0020). One RLS-respecting
+ * The co-member directory for a space keyed by user_id. One RLS-respecting
  * RPC call: the SECURITY-DEFINER function returns co-member `display_name` + `email`
  * ONLY when the caller is an active member of the space (else ∅). One bounded fetch
  * resolves the grantee set for the whole lens (the grantees are co-members, ≤ the cap).
@@ -144,8 +144,8 @@ async function loadVisibleResourceIds(
 
 /**
  * The resources the CURRENT user has shared OUT in a space, each with the AUDIENCE
- * (per-user grantees + cohorts) they granted it to (ADR-0021 Part B, extended for
- * cohort-by-me per ADR-0023 §7). All reads RLS-scoped — never service-role.
+ * (per-user grantees + cohorts) they granted it to (extended for
+ * cohort-by-me). All reads RLS-scoped — never service-role.
  *
  * Mechanism (read-only over landed tables):
  *   1. Per-user grants where `granted_by = me`, AND cohort links where `linked_by = me`
@@ -193,8 +193,8 @@ export async function listResourcesSharedByMe(
     (row) => row as { resource_id: string; user_id: string }
   );
 
-  // The cohort links I CREATED — the EXACT cohort twin of the per-user read (ADR-0023
-  // §7). The scope SELECT RLS scopes the read to my space's link rows; `linked_by = me`
+  // The cohort links I CREATED — the EXACT cohort twin of the per-user read. The scope
+  // SELECT RLS scopes the read to my space's link rows; `linked_by = me`
   // filters to the cohort grants I authored (`linked_by` is pinned to the session at
   // insert, so it cannot be forged — a FILTER, never the fence). The node re-read (step
   // 2) is the fail-closed visibility fence, identical to the per-user path.

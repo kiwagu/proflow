@@ -20,7 +20,7 @@ import {
 } from '@/app/graph/views/drive/badges';
 
 /**
- * useAccessBadge — the access-mirror predicate family (ADR-0023 §7) lifted out of the
+ * useAccessBadge — the access-mirror predicate family lifted out of the
  * Drive view as one cohesive unit, so the grid card and the list row read access through
  * the SAME source and can never diverge.
  *

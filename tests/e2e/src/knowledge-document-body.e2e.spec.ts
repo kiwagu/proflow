@@ -12,7 +12,7 @@
  *     mock.
  *  3. RLS BOUNDARY: an ungranted actor cannot create a document (nothing persists),
  *     and a granted document's body is HIDDEN from the ungranted actor on read
- *     (404) — body access is subordinate to node access (ADR-0002 §2).
+ *     (404) — body access is subordinate to node access.
  *
  * Driven over HTTP as the bootstrapped actors (runtime tenant, never a migration
  * seed). Tagged `@full` — needs the running stack (Next author app + Payload/Mongo).
@@ -237,7 +237,7 @@ test.describe('@full knowledge document body', () => {
     expect(forbiddenRows ?? []).toHaveLength(0);
 
     // A granted document's body is hidden from the ungranted actor on read: body
-    // access is gated by node access, which RLS denies → 404 (ADR-0002 §2).
+    // access is gated by node access, which RLS denies → 404.
     const doc = await createTextDoc(granted, tenant.spaceId, 'Private Doc');
     const readRes = await ungranted.get(
       `/author/graph/text-resources?node_id=${doc.node_id}&space_id=${tenant.spaceId}`

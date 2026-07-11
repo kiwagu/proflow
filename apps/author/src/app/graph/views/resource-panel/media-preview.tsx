@@ -9,7 +9,7 @@ import { postJson } from './panel-fetch';
 
 /**
  * MediaPreview — the inline, MIME-driven preview shown ABOVE the MediaFacts in the
- * ResourcePanel Media section (ADR-0026 Phase 2). The preview is chosen from
+ * ResourcePanel Media section. The preview is chosen from
  * `media.mimeType`, NOT the node kind: `image/*` → an inline `<img>`,
  * `application/pdf` → a bounded inline `<iframe>`, `video/*` → an inline `<video
  * controls>` player, `audio/*` → an inline `<audio controls>` player. Any other mime
@@ -18,7 +18,7 @@ import { postJson } from './panel-fetch';
  * Egress reuses the SAME short-lived, server-authorized download authorizer as the
  * Download button (`media?op=download-url {spaceId,nodeId}`) — NO public URL, no new
  * endpoint. One URL is minted per node ON MOUNT; the download TTL is 3 h so a
- * range-streamed video/audio session does not expire mid-playback (ADR-0026 §2c). RLS
+ * range-streamed video/audio session does not expire mid-playback. RLS
  * is the sole fence: a denied node resolves to null → NO preview is rendered, never a
  * leak (poc-no-fallbacks: a real signed-URL render or nothing).
  */

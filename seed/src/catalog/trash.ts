@@ -4,7 +4,7 @@ import type { SeedScenario } from './types.js';
 /**
  * Trash scenario — the soft-delete lifecycle as demo content. A live folder holds
  * a kept doc beside a trashed one; two more folders are trashed WHOLE (their docs
- * soft-cascade with them, ADR-0018), plus a couple of loose trashed docs — so the
+ * soft-cascade with them), plus a couple of loose trashed docs — so the
  * Trash lens has real content (folders + docs), all reversible.
  */
 export const TRASH_SCENARIO: SeedScenario = {

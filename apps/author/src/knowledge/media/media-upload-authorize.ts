@@ -12,15 +12,14 @@ import { kbSchema } from '@/lib/supabase/kb-schema';
 import { resolveMediaMaxUploadBytes } from './media-limit.resolve';
 
 /**
- * KB media UPLOAD authorizer — UI-agnostic server module (ADR-0026 §3).
+ * KB media UPLOAD authorizer — UI-agnostic server module.
  *
  * The server stays on the CONTROL plane: it authorizes node-`update` under the
  * caller's RLS, validates the DECLARED mime/size, decides a SERVER-generated safe
  * path, and mints a short-lived signed UPLOAD url. The client then PUTs the bytes
  * DIRECTLY to Storage (the server never buffers them). The `storage.objects` INSERT
  * policy (mirroring node-`update`) is the RLS backstop; this explicit authorize
- * only exists so a denied caller gets a clean 403 instead of a Storage error
- * (ADR-0009).
+ * only exists so a denied caller gets a clean 403 instead of a Storage error.
  *
  * EVERY call runs under the user's RLS-scoped `db` — NEVER service-role. The signed
  * url is minted with THAT client, so its JWT is the storage identity and
@@ -48,7 +47,7 @@ export class MediaAuthorizeError extends Error {
 /**
  * A conservative safe extension derived from the filename (letters/digits only,
  * max 12 chars). The extension is cosmetic — the storage key never trusts the raw
- * filename (traversal/collision safety, ADR-0026 §2a); the original filename is
+ * filename (traversal/collision safety); the original filename is
  * display-only metadata.
  */
 function safeExtension(filename: string): string {
@@ -61,7 +60,7 @@ function safeExtension(filename: string): string {
 }
 
 /**
- * `spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>` — the ADR-0027 §2a
+ * `spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>` — the
  * blob-addressed, node-agnostic path. The blob id is a FOLDER segment
  * (`storage.foldername()` excludes the terminal filename, and every
  * `storage.objects` policy resolves the blob via segment [5]); the server key
@@ -90,7 +89,7 @@ export async function authorizeMediaUpload(
     throw new MediaAuthorizeError('Unsupported file type.', 400);
   }
 
-  // SOFT limit (ADR-0026 AMENDMENT §A4): the effective per-org max resolved under
+  // SOFT limit: the effective per-org max resolved under
   // the caller's RLS (org → global → default), clamped to the 5 GB hard cap. This
   // replaces the former hardcoded MAX_MEDIA_SIZE_BYTES — an org admin governs it
   // via the runtime setting. A breach is a clean 400. The HARD cap is also enforced
@@ -104,9 +103,9 @@ export async function authorizeMediaUpload(
   // Existence + READ fence (fail-closed): the SELECT is RLS-scoped, so a node the
   // caller cannot even see yields no row → 404. Then the node-UPDATE fence, mirroring
   // the `knowledge_resources` UPDATE policy EXACTLY: owner-sovereign OR the space-level
-  // `space.knowledge.update` verb. Grants are a READ dimension (ADR-0017 §1.5) and are
+  // `space.knowledge.update` verb. Grants are a READ dimension and are
   // deliberately NOT composed for WRITES — a read-grantee can download the bytes but
-  // must NOT overwrite/delete them (ADR-0026 amended: the write fence mirrors node-edit,
+  // must NOT overwrite/delete them (the write fence mirrors node-edit,
   // not the read-composition predicate). The check is side-effect-free (no UPDATE probe
   // — that would bump `updated_at`/recency); the `storage.objects` INSERT policy enforces
   // the SAME fence as the backstop at mint.
@@ -133,7 +132,7 @@ export async function authorizeMediaUpload(
     }
   }
 
-  // Reserve the blob (ADR-0027 §3): the byte record must EXIST before the PUT —
+  // Reserve the blob: the byte record must EXIST before the PUT —
   // the `storage.objects` INSERT policy authorizes ONLY the uploader's own
   // refcount-0 reservation. The id is minted here (the blob-addressed path embeds
   // it, so a DB-generated default can't work). `provenance_author_id` = the

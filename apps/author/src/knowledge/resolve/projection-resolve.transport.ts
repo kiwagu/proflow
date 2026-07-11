@@ -5,7 +5,7 @@ import { Pool } from 'pg';
 
 /**
  * Projection-resolve transport — server-side execution under the user's RLS
- * (ADR-0009, ratified 2026-06-17, closing P0 finding #1).
+ * (ratified 2026-06-17, closing P0 finding #1).
  *
  * The prior transport (`resolve_projection_query`, `security invoker`, `grant
  * execute … to authenticated`) let any authenticated user run arbitrary SQL via
@@ -26,11 +26,11 @@ import { Pool } from 'pg';
  * The pool connects as the dedicated `projection_resolver` backend role
  * (`PROJECTION_RESOLVER_DATABASE_URL`): NON-owner, NON-bypass-RLS. The SELECT runs
  * AS THE USER (`authenticated` + claims), so Postgres RLS is the sole access
- * authority — the engine can only NARROW what RLS allows, never widen it
- * (ADR-0001/0003 §2). Raw SQL text NEVER crosses the client→server boundary: the
+ * authority — the engine can only NARROW what RLS allows, never widen it.
+ * Raw SQL text NEVER crosses the client→server boundary: the
  * browser sends only a `projectionId`; the compiler builds the SQL on the server.
  *
- * Gotchas honoured (ADR-0009):
+ * Gotchas honoured:
  *  - `SET LOCAL` lives inside a SINGLE explicit transaction on ONE pooled
  *    connection (never split across a transaction-pooled hop) — use a direct /
  *    session connection in `PROJECTION_RESOLVER_DATABASE_URL`, not the pgbouncer

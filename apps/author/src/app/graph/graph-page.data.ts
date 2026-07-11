@@ -39,7 +39,7 @@ import type {
 /**
  * Server-side data access for the `/author/graph/*` render pages. Everything here
  * runs under the USER's RLS-scoped client (`createRlsClientFromServerCookies`) —
- * NEVER service-role (ADR-0003 §2). Postgres RLS is the sole access authority: a
+ * NEVER service-role. Postgres RLS is the sole access authority: a
  * user without `space.knowledge.read` resolves to an empty editor, never an error.
  */
 
@@ -91,8 +91,7 @@ export async function resolveDriveLayout(): Promise<'grid' | 'list'> {
 }
 
 /**
- * The cookie the structural-lens Flat/Advanced toggle persists (ADR-0022, amended Fork 4
- * + Addendum A) — a per-device UI preference, mirroring `DRIVE_LAYOUT_COOKIE`. Lens-
+ * The cookie the structural-lens Flat/Advanced toggle persists — a per-device UI preference, mirroring `DRIVE_LAYOUT_COOKIE`. Lens-
  * agnostic (one cookie across all structural lenses). Only ever written on the ENTITLED
  * (Pro) plan: a locked plan never persists 'advanced' (the toggle is disabled and the
  * server clamps the effective mode to 'flat' regardless). A stale legacy `shared-view`
@@ -131,7 +130,7 @@ export async function resolveCurrentUserId(): Promise<string | null> {
  * the active space, resolved ONCE here server-side under the user's RLS client —
  * the verdict is constant across every node in the space, so the `⋯` menu combines
  * it with per-node ownership client-side (zero per-node round-trips, zero client-side
- * access re-derivation). Used PURELY to display-gate the menu (ADR-0006) — RLS stays
+ * access re-derivation). Used PURELY to display-gate the menu — RLS stays
  * the sole authority; this only spares the user silent no-op route hits.
  *
  * It calls `auth_user_can_access_in_space(space_id, verb)` — the EXACT predicate the
@@ -161,7 +160,7 @@ export async function resolveSpaceCapabilities(
     can('space.knowledge.update'),
     can('space.knowledge.delete'),
     can('space.knowledge.create'),
-    // The audience-management verb (ADR-0019 §4 / ADR-0017 §3 D9) — the non-owner
+    // The audience-management verb — the non-owner
     // half of `canShare`. Mirrors the per-user grant & cohort INSERT/DELETE RLS.
     can('space.knowledge.access'),
   ]);
@@ -179,7 +178,7 @@ const SPACE_ENTITLEMENTS_SCHEMA = z.object({
 });
 
 /**
- * The CURRENT space's COMMERCIAL entitlements (ADR-0022) — resolved ONCE here
+ * The CURRENT space's COMMERCIAL entitlements — resolved ONCE here
  * server-side under the user's RLS client, the EXACT parity of how
  * `resolveSpaceCapabilities` calls its predicate (`auth_user_can_access_in_space`).
  * It calls the platform `rpc_resolve_platform_flag` read-RPC (Wave 1, SECURITY
@@ -215,7 +214,7 @@ export async function resolveSpaceEntitlements(
 }
 
 /**
- * The default implicit lens-spec (ADR-0012 §5). The product entry `/author/graph`
+ * The default implicit lens-spec. The product entry `/author/graph`
  * renders the KB editor ALWAYS — at zero resources and with NO saved projection.
  * The entry resolves this spec built in code:
  *
@@ -253,7 +252,7 @@ export function buildDefaultLensSpec(): ProjectionSpec {
 }
 
 /**
- * The lifecycle lens selector (ADR-0018 fork #4). Trash is a THIRD axis
+ * The lifecycle lens selector. Trash is a THIRD axis
  * (existence), orthogonal to access (RLS) and workflow (status): the same RLS
  * verdict, the same user, sees a node in ONE lens and not the other. So the
  * trashed/normal split is a query lens, NOT an access fence — the engine /
@@ -271,10 +270,10 @@ export type LifecycleScope = 'live' | 'trashed';
 /**
  * Resolve the default implicit lens projection for the active space. No
  * `projections` row is read — the spec is built in code and validated at the
- * boundary (zod), then executed under the user's RLS via the landed transport
- * (ADR-0009), never service-role. An ungranted user resolves to `items=[]`.
+ * boundary (zod), then executed under the user's RLS via the landed transport,
+ * never service-role. An ungranted user resolves to `items=[]`.
  *
- * The lifecycle `scope` (ADR-0018) is applied as a thin POST-RESOLVE filter over
+ * The lifecycle `scope` is applied as a thin POST-RESOLVE filter over
  * the resolved items — the engine resolves the RLS-allowed set (trashed or not),
  * then this narrows to the requested existence lens. Zero engine DDL: the frozen
  * `ProjectionSpec` cannot express `deleted_at`, so the split lives here, not in
@@ -317,7 +316,7 @@ export async function resolveDefaultLensProjection(
 /**
  * The subset of `itemIds` that are LIVE (`deleted_at IS NULL`) in this space,
  * read under the user's RLS. The complement (returned ids minus this set) are the
- * trashed ones. A thin select used by the lifecycle lens split (ADR-0018 fork #4).
+ * trashed ones. A thin select used by the lifecycle lens split.
  */
 async function loadLiveIds(
   spaceId: string,
@@ -346,7 +345,7 @@ async function loadLiveIds(
 
 /**
  * The whole containment forest of a space. The Drive folder tree / breadcrumb /
- * counts walk FORWARD `contains` edges (ADR-0015), read HERE as a thin RLS-scoped
+ * counts walk FORWARD `contains` edges, read HERE as a thin RLS-scoped
  * select over `knowledge_edges` (`relation_type='contains'`) — never a new engine
  * port and never service-role. An ungranted user gets `[]` (RLS) → an empty Drive.
  */
@@ -371,7 +370,7 @@ export async function loadContainmentForest(
 }
 
 /**
- * The whole shortcut forest of a space (ADR-0015 §3). Read as a thin RLS-scoped
+ * The whole shortcut forest of a space. Read as a thin RLS-scoped
  * select over `knowledge_edges` (`relation_type='shortcut'`) — the SAME pattern as
  * `loadContainmentForest`. An ungranted user gets `[]` (RLS) → no shortcuts.
  */
@@ -396,12 +395,12 @@ export async function loadShortcutForest(
 }
 
 /**
- * All tag nodes (`kind='tag'`) of a space (ADR-0003 Variant B) — the "vocabulary"
+ * All tag nodes (`kind='tag'`) of a space — the "vocabulary"
  * of the space, read as a thin RLS-scoped select over `knowledge_resources`. A tag
  * is an ORDINARY node, so it rides the SAME row policy as any resource: an ungranted
  * user gets `[]` (RLS), and a private tag someone else owns simply does not return.
  * Drives the ResourcePanel "pick from existing tags" tray AND the lens tag facet
- * (both space-global by construction — no separate tag-visibility model, ADR-0003).
+ * (both space-global by construction — no separate tag-visibility model).
  * Sorted by title with the canonical text sorter so the tray/facet order is stable.
  */
 export async function loadSpaceTags(spaceId: string): Promise<ResourceTag[]> {
@@ -424,7 +423,7 @@ export async function loadSpaceTags(spaceId: string): Promise<ResourceTag[]> {
 }
 
 /**
- * Batch-load the tags OF a set of nodes (ADR-0003 Variant B) — for each item, the
+ * Batch-load the tags OF a set of nodes — for each item, the
  * `kind='tag'` nodes it points at via a FORWARD `tagged` edge (from=item → to=tag).
  * Two thin RLS-scoped reads, chunked like `loadKbAttributesForItems`: (1) the
  * `tagged` edges whose `from_id` is in the item set, then (2) the titles of the
@@ -444,7 +443,7 @@ export async function loadResourceTagsForItems(
   }
   const db = await createRlsClientFromServerCookies();
   // (1) the `tagged` edges of the item set — from_id = tagged resource, to_id = tag
-  // node (ADR-0003 directed). Chunked to keep each `.in('from_id', …)` URL under the
+  // node. Chunked to keep each `.in('from_id', …)` URL under the
   // REST gateway limit (see `inChunks`).
   const edges = await inChunks(itemIds, async (chunk) => {
     const { data, error } = await db
@@ -500,11 +499,11 @@ export async function loadResourceTagsForItems(
 }
 
 /**
- * Batch-load the KB satellite attributes for a set of nodes (ADR-0013). Each
+ * Batch-load the KB satellite attributes for a set of nodes. Each
  * attribute lives in the dedicated `kb` schema keyed by `node_id`, read under the
  * user's RLS via `kbSchema(db)` (a satellite the user may not read because the
  * parent node is hidden simply does not return — the satellite RLS mirrors node
- * access). Reads the `description`, `link` (slice-10 §2.4) and `media` (ADR-0026)
+ * access). Reads the `description`, `link` (slice-10 §2.4) and `media`
  * satellites; each rides
  * alongside the resolved canvas, never extending the frozen `ProjectionResult`
  * contract. A node with no satellite row simply carries no attribute (empty/absent
@@ -555,7 +554,7 @@ export async function loadKbAttributesForItems(
     (map[row.node_id] ??= {}).link = { url: row.url, host: row.host };
   }
 
-  // The media satellite (ADR-0026) — MIRRORS the description read above (same RLS
+  // The media satellite — MIRRORS the description read above (same RLS
   // client, same `.in('node_id', chunk)`, same `kb` accessor). A `kmm` row means the
   // node has confirmed bytes; its absence means none (no `media` field, poc-no-
   // fallbacks). The card meta line reads size/duration/mime; the ResourcePanel Media
@@ -574,7 +573,7 @@ export async function loadKbAttributesForItems(
     return data ?? [];
   });
 
-  // Resolve the SHARED blobs the references point at (ADR-0027): byte-intrinsic
+  // Resolve the SHARED blobs the references point at: byte-intrinsic
   // fields (size/mime/duration/path) live on `kb.media_blob`, one row per blob no
   // matter how many nodes share it. Same RLS client — the blob SELECT policy
   // grants any holder of a readable reference.
@@ -610,7 +609,7 @@ export async function loadKbAttributesForItems(
 /**
  * Batch-load owner + last-modified for the resolved item set. The Drive meta line
  * shows "{kind} · {owner}" and the "Modified" column reads `last_modified_at` — the
- * EDIT recency roll-up (node + body + satellite + edge, EXCLUDING opens, ADR-0016),
+ * EDIT recency roll-up (node + body + satellite + edge, EXCLUDING opens),
  * so a document BODY edit (which never touches the node row's `updated_at`) is
  * reflected. Neither field is in the frozen result contract, so they ride alongside
  * as a thin RLS-scoped select (same authority as the resolve).
@@ -650,7 +649,7 @@ export async function loadNodeMetaForItems(
 /**
  * Batch-load the CURRENT user's "last opened by me" timestamps (per-user state,
  * own rows under RLS) for the space. Drives the "Recent" filter — recently VIEWED
- * by me — and its "Viewed" column. Maintained by the activity roll-up (ADR-0016):
+ * by me — and its "Viewed" column. Maintained by the activity roll-up:
  * a row exists only once the user has opened the resource, so a missing key means
  * "never opened by me". Returns `resource_id → ISO last_opened_at`.
  */
@@ -698,11 +697,11 @@ export async function loadStarredIds(spaceId: string): Promise<string[]> {
 }
 
 /**
- * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user has
+ * The "Shared by me" lens seed — the resources the CURRENT user has
  * shared OUT in a space, each with the grantee(s) they granted it to. A thin RLS-scoped
  * wrapper over the `listResourcesSharedByMe` fanout: it reads the per-user grant table
  * (`granted_by = me`) joined to the resources I can still SEE under the node SELECT RLS
- * (the fail-closed fence), grantees labelled via the co-member directory (ADR-0020).
+ * (the fail-closed fence), grantees labelled via the co-member directory.
  *
  * Rides alongside the live canvas (parity with `trash`/`starredIds`): the view filters
  * the resolved canvas to these ids client-side, so the 'shared-by-me' scope switch needs
@@ -716,7 +715,7 @@ export async function loadSharedByMe(
 }
 
 /**
- * The "Shared with me" mechanism annotation seed (ADR-0021 Part C) — a map from each
+ * The "Shared with me" mechanism annotation seed — a map from each
  * node in the shared set (visible nodes I do NOT own) to the WINNING mechanism that
  * grants ME access: `personal > cohort > broadcast`. A thin RLS-scoped wrapper over the
  * `annotateShareMechanism` fanout (three batched reads, never per-node), seeded
@@ -741,12 +740,12 @@ export async function loadShareMechanism(
 
 /**
  * The EFFECTIVE per-org max-upload size (bytes) for media uploads in this space
- * (ADR-0026 AMENDMENT §A3/§A4) — resolved server-side under the user's RLS via the
+ * — resolved server-side under the user's RLS via the
  * shared `resolveMediaMaxUploadBytes` (org → global → 200 MB default, clamped to the
  * 5 GB hard cap). Threaded to the client purely so the CreateResource picker can show
  * a friendly "too large (max {size})" hint BEFORE any upload starts. It is a UX hint
  * ONLY — the server authorizer (which re-resolves the same value) + the bucket
- * `file_size_limit` are the real fences (ADR-0009: RLS/storage the sole authority).
+ * `file_size_limit` are the real fences (RLS/storage the sole authority).
  * A member reads the public `runtime_settings` row under RLS — NEVER service-role.
  */
 export async function resolveMaxUploadBytes(spaceId: string): Promise<number> {

@@ -13,7 +13,7 @@ import {
 } from './resource-user-state.schema.js';
 
 /**
- * Contract guards for the ADR-0016 resource-activity boundary: the open-record
+ * Contract guards for the resource-activity boundary: the open-record
  * write body, the per-user `last_opened_at` roll-up field, and the NATS body
  * envelope shared by the producer (`Bodies.afterChange`) and the consumer worker.
  * No live broker — the envelope is the wire contract, validated in isolation.

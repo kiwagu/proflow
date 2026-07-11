@@ -39,15 +39,15 @@ import type { DriveScope } from '@/app/graph/views/registry/projection-view.type
  * lens nav (`NAV_ITEMS` — For you / Knowledge base / Search / Shared / … / Trash,
  * the active one highlighted), and the "Sections" folder shortcuts.
  *
- * Extracted from `DriveProjectionView` so the lexical-search lens (`SearchView`,
- * ADR-0024 §5) sits in the IDENTICAL chrome as the projection lenses instead of a
+ * Extracted from `DriveProjectionView` so the lexical-search lens (`SearchView`)
+ * sits in the IDENTICAL chrome as the projection lenses instead of a
  * full-width breakout — search is a first-class lens, not a separate surface. The
  * caller passes the already-built `Containment` (the workbench builds it once over
  * the resolved canvas; `DriveProjectionView` passes its possibly-narrowed
  * `treeContainment`), the active `scope`, and the navigation callbacks; the sidebar
  * is otherwise self-contained (it mounts its own `CreateResource` dialog).
  *
- * PURELY presentational (ADR-0005 §b): it never queries Supabase / the resolver —
+ * PURELY presentational: it never queries Supabase / the resolver —
  * authoring routes through `CreateResource` → the RLS write routes. RLS is the sole
  * authority; an ungranted user resolves to an empty tree and cannot author.
  */
@@ -132,7 +132,7 @@ export type DriveSidebarProps = {
   containment: Containment;
   /** Active space id — the `CreateResource` write target. */
   spaceId?: string;
-  /** The EFFECTIVE per-org max-upload size in bytes (ADR-0026 §A3), threaded to the
+  /** The EFFECTIVE per-org max-upload size in bytes, threaded to the
    * `CreateResource` picker for its client-side "too large" pre-validation hint. */
   maxUploadBytes?: number;
   /** Re-resolve after a create (the workbench refreshes). */
@@ -182,7 +182,7 @@ export function DriveSidebar({
               onClick={() => {
                 // Every wired lens switches via the scope owner (the workbench roots
                 // the folder on a lens switch). The KB lens must NOT use
-                // `navigate(null)`: in the advanced Shared tree (ADR-0022)
+                // `navigate(null)`: in the advanced Shared tree
                 // `goFolder(null)` deliberately STAYS on the Shared lens, so routing
                 // 'kb' through it would trap the user there.
                 if (!item.scope) {

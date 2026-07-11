@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 /**
- * The workbench refresh + Trash lens lifecycle (ADR-0018) — RESTORE + PURGE.
+ * The workbench refresh + Trash lens lifecycle — RESTORE + PURGE.
  *
  * `refresh` bumps a client `refreshKey` AND `router.refresh()`es so the server page
  * re-resolves under the user's RLS; every mutation in the workbench routes through it.
@@ -82,7 +82,7 @@ export function useDriveMutations({
     [spaceId, refresh]
   );
 
-  // REMOVE SHORTCUT — delete the `shortcut` edge folder→target (ADR-0015 §3). The
+  // REMOVE SHORTCUT — delete the `shortcut` edge folder→target. The
   // symlink card carries both endpoints (its containing folder = from, the target =
   // to), so we delete by the natural (from,to,relation) triple with no id round-trip.
   // Only the edge is removed; the target node and its canonical home are untouched.

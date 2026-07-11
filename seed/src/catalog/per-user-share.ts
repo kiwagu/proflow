@@ -2,7 +2,7 @@ import { prose } from './lexical.js';
 import type { SeedScenario } from './types.js';
 
 /**
- * Per-user (per-person) sharing — the THIRD additive grant dimension (ADR-0019).
+ * Per-user (per-person) sharing — the THIRD additive grant dimension.
  * Beyond the broadcast floor (private/space) and cohort grants, an owner can share
  * ONE resource with ONE named space member, widening just that person's READ
  * visibility on a `private`-floor node. It is additive and fail-closed: granting
@@ -28,13 +28,13 @@ import type { SeedScenario } from './types.js';
  *
  * The space is deliberately MULTI-MEMBER (owner + grantee + outsider + bystander),
  * each carrying a real `displayName`, so the SAME fixture also exercises the co-member
- * identity directory (ADR-0020): the Share dialog people-picker + "who has access"
+ * identity directory: the Share dialog people-picker + "who has access"
  * rows resolve a CO-member's `display_name` (never a bare short-id), search (`?q=`)
  * narrows the picker by a name/email fragment, and a non-member of the space gets an
  * empty directory (the membership fence). The display names are authored through each
  * actor's OWN profile (own-row RLS), exactly as a member would set theirs.
  *
- * BOTH directions of the grant graph from ONE create-vocabulary (ADR-0021 Part B).
+ * BOTH directions of the grant graph from ONE create-vocabulary.
  * The SAME `per-user-share/granted` grant — created exactly once, as the owner (`admin`)
  * sharing OUT to `grantee` — is read from two opposite ends:
  *  - the GRANTER (`admin`) sees the doc in the "Shared by me" lens (`'shared-by-me'`
@@ -55,10 +55,10 @@ export const PER_USER_SHARE_SCENARIO: SeedScenario = {
   id: 'per-user-share',
   title: 'Per-person sharing',
   summary:
-    'A private doc shared with ONE named member (a per-user grant): the grantee sees it in "Shared with me" (DriveScope `shared`), the owner sees it in "Shared by me" (DriveScope `shared-by-me`, a SharedByMeEntry over the same grant), a third un-granted member stays blind — additive, fail-closed (ADR-0019, ADR-0021 Part B). Named co-members feed the Share people-picker directory (ADR-0020).',
+    'A private doc shared with ONE named member (a per-user grant): the grantee sees it in "Shared with me" (DriveScope `shared`), the owner sees it in "Shared by me" (DriveScope `shared-by-me`, a SharedByMeEntry over the same grant), a third un-granted member stays blind — additive, fail-closed. Named co-members feed the Share people-picker directory.',
   presets: ['per-user-share'],
   actors: [
-    // Distinct display names so the co-member directory (ADR-0020) resolves a real
+    // Distinct display names so the co-member directory resolves a real
     // name in the picker / "who has access" rows, and search can narrow by a fragment.
     { ref: 'grantee', role: 'admin', displayName: 'Grace Granger' },
     { ref: 'outsider', role: 'admin', displayName: 'Otis Outerly' },
@@ -81,7 +81,7 @@ export const PER_USER_SHARE_SCENARIO: SeedScenario = {
           title: 'Shared with one person (per-user grant)',
           // floor=private (default) + ONE additive per-user grant to `grantee`.
           // No cohort, no space publish — the grant is the SOLE widening disjunct.
-          // This ONE grant is the worked example for BOTH sharing lenses (ADR-0021 Part B):
+          // This ONE grant is the worked example for BOTH sharing lenses:
           //  - owner (`admin`) reads it via "Shared by me" (DriveScope `shared-by-me`) — the
           //    `SharedByMeEntry` for THIS resourceId, with `grantee` as the sole grantee;
           //  - `grantee` reads the SAME doc via "Shared with me" (DriveScope `shared`).

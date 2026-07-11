@@ -46,14 +46,14 @@ import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
  * modal (shared `Dialog`, not a side sheet). Creates a node of any kind
  * (document/file/video/link/folder/tag) inside an optional parent folder, with an
  * optional description. Each kind routes to its landed RLS write route:
- *   text  → text-resources (node + Lexical body, ADR-0002)
- *   tag/folder → resources (body-less; folder is a pure container, ADR-0015)
+ *   text  → text-resources (node + Lexical body)
+ *   tag/folder → resources (body-less; folder is a pure container)
  *   link  → body-less node + its REAL external URL (slice-10 §2.4): create the
  *           node → write the `link` satellite via the attributes route. The URL is
  *           the link's CONTENT, so it is REQUIRED at create (http(s)-only —
  *           `linkUrlSchema`, the anti-stored-XSS allow-list) and a failed satellite
  *           write ROLLS BACK the node (same no-broken-shell rule as media).
- *   file/video → body-less node + REAL bytes (ADR-0026, AMENDMENT §A2): create the
+ *   file/video → body-less node + REAL bytes: create the
  *               node → authorize the upload (server checks node-`update` under RLS +
  *               decides the safe `storagePath`) → RESUMABLE (TUS) upload of the bytes
  *               DIRECTLY to Storage under the caller's JWT → confirm the `media`
@@ -83,7 +83,7 @@ export type CreateResourceProps = {
   spaceId: string;
   t: GraphTranslator;
   containment: Containment;
-  /** The EFFECTIVE per-org max-upload size in BYTES (ADR-0026 §A3), resolved
+  /** The EFFECTIVE per-org max-upload size in BYTES, resolved
    * server-side under the user's RLS and threaded here for the client-side
    * "too large (max {size})" pre-validation hint. A UX hint ONLY — the server
    * authorizer (which re-resolves the same value) + the bucket `file_size_limit`
@@ -102,19 +102,19 @@ const KINDS: CreateKind[] = ['folder', 'text', 'file', 'video', 'link', 'tag'];
 
 /**
  * The resumable (TUS) chunk size — 6 MiB, the Supabase storage-api-required
- * constant for the `/storage/v1/upload/resumable` endpoint (ADR-0026 AMENDMENT
- * §A2). A CODE constant, NOT env (monorepo-env-minimalism). A sub-chunk (small)
+ * constant for the `/storage/v1/upload/resumable` endpoint. A CODE constant,
+ * NOT env (monorepo-env-minimalism). A sub-chunk (small)
  * file completes in a single PATCH; there is no size-branch on the client.
  */
 const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
 
-/** The kinds whose content IS a real uploaded file (ADR-0026). */
+/** The kinds whose content IS a real uploaded file. */
 function kindNeedsMedia(kind: CreateKind): kind is 'file' | 'video' {
   return kind === 'file' || kind === 'video';
 }
 
 /** Which client-side pre-validation a picked file fails, or null when it passes.
- * `maxBytes` is the RESOLVED per-org soft limit (ADR-0026 §A3). A UX hint only —
+ * `maxBytes` is the RESOLVED per-org soft limit. A UX hint only —
  * the server authorizer + storage RLS + the bucket cap are the real fence. */
 function mediaValidationError(
   file: File,
@@ -174,7 +174,7 @@ export function CreateResource({
     'tooLarge' | 'unsupportedType' | null
   >(null);
   // The resumable upload progress (0–100), or null when not uploading. Surfaced in
-  // the submit button so a large file gives live feedback (ADR-0026 §A2).
+  // the submit button so a large file gives live feedback.
   const [uploadPercent, setUploadPercent] = React.useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   // The live resumable (TUS) upload while bytes are in flight — held so a mid-upload
@@ -292,7 +292,7 @@ export function CreateResource({
         pendingNodeIdRef.current = nodeId;
       }
       // file/video: upload the bytes + confirm the media satellite AFTER the node
-      // exists (ADR-0026). The node MUST exist first (the storage path + the
+      // exists. The node MUST exist first (the storage path + the
       // `storage.objects` update fence need the nodeId), so we cannot defer its
       // create. To avoid a "broken shell" (a bodyless media node with no bytes) when
       // any post-create step fails, we ROLL BACK: on failure — the upload returning
@@ -714,9 +714,9 @@ async function createNode(
     return ((await res.json()) as { node_id: string }).node_id;
   }
 
-  // link/tag/folder/file/video are body-less node inserts (ADR-0002 §3 /
-  // ADR-0015). What makes the node REAL lands right after this insert: file/video
-  // get their bytes via the media flow (ADR-0026), link gets its URL satellite
+  // link/tag/folder/file/video are body-less node inserts. What makes the node
+  // REAL lands right after this insert: file/video get their bytes via the
+  // media flow, link gets its URL satellite
   // (slice-10 §2.4) — each with rollback on failure (no broken shells).
   const res = await fetch('/author/graph/resources', {
     method: 'POST',
@@ -761,10 +761,10 @@ async function purgeOrphanNode(spaceId: string, nodeId: string): Promise<void> {
 
 /**
  * Upload a file's BYTES to a node + confirm its media satellite via the RESUMABLE
- * (TUS) transport (ADR-0026 AMENDMENT §A2). Order:
+ * (TUS) transport. Order:
  *   1. authorize (`media?op=upload-url`) — the server checks node-update under RLS,
  *      validates the declared mime/size against the resolved per-org limit,
- *      reserves the `kb.media_blob` byte record (ADR-0027 §3), and returns the
+ *      reserves the `kb.media_blob` byte record, and returns the
  *      blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<key>`)
  *      + the `blobId` the confirm references.
  *   2. RESUMABLE upload of the bytes DIRECTLY to Storage's TUS endpoint
@@ -849,7 +849,7 @@ async function uploadMedia(
 
 /**
  * Drive ONE resumable (TUS) upload of `file` to Storage's TUS endpoint and resolve
- * `true` on success / `false` on any error (ADR-0026 §A2). Bytes go DIRECT to
+ * `true` on success / `false` on any error. Bytes go DIRECT to
  * Storage under the caller's session JWT — never through Next.js, never a public URL.
  * 6 MiB chunks (`TUS_CHUNK_SIZE`, the Supabase-required constant). `objectName` is
  * the server-decided path within `KB_MEDIA_BUCKET`; the storage-RLS INSERT policy is

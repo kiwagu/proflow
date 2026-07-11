@@ -8,7 +8,7 @@ import * as React from 'react';
  * pane's toolbar and deep-copies the source into THAT pane's current folder. Persists after
  * a paste (multi-paste) until a new Copy replaces it (or Escape clears it).
  *
- * The SAME clipboard drives the second paste verb "Paste as shortcut" (ADR-0015 §3): instead
+ * The SAME clipboard drives the second paste verb "Paste as shortcut": instead
  * of duplicating the source it creates a `shortcut` edge folder→source (a cross-folder
  * symlink — one canonical home, many appearances). A shortcut hangs off a FOLDER
  * (from_id = folder), so it is offered only INSIDE a folder, never at root.
@@ -74,7 +74,7 @@ export function useDriveClipboard({
   );
 
   // PASTE AS SHORTCUT — place a `shortcut` edge from `targetFolderId` to the clipboard
-  // source (ADR-0015 §3), the cross-folder symlink gesture. Folder-only by construction
+  // source, the cross-folder symlink gesture. Folder-only by construction
   // (from_id = folder); the caller only offers it inside a folder. Clipboard persists so
   // the same source can be shortcutted into several folders. RLS is the sole write fence
   // (`space.knowledge.create` on the edge) — a reader's attempt fails cleanly.

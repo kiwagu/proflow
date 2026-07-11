@@ -45,11 +45,11 @@ export function useDriveNavigation({
   const [folderId, setFolderId] = React.useState<string | null>(initialFolder);
   const [docId, setDocId] = React.useState<string | null>(initialDoc);
   const [scope, setScope] = React.useState<DriveScope>(initialScope);
-  // The lexical-search term (ADR-0024 §5), mirrored in the URL (`?q=`) exactly as
+  // The lexical-search term, mirrored in the URL (`?q=`) exactly as
   // `?folder=`/`?scope=` are — so a search lens is shareable + survives refresh. Only
   // carries meaning on the 'search' scope (the other lenses ignore it).
   const [searchTerm, setSearchTerm] = React.useState<string>(initialSearchTerm);
-  // The lens display mode (ADR-0022 + Addendum A) — seeded from the SERVER-resolved
+  // The lens display mode — seeded from the SERVER-resolved
   // EFFECTIVE mode (already clamped to 'flat' when the space is not entitled), so the
   // SSR'd toolbar + canvas agree with the client's first render (no hydration flip).
   // Mirrored in the URL (`?view=`) exactly as `?scope=`. The advanced entitlement is
@@ -76,7 +76,7 @@ export function useDriveNavigation({
       // when it deviates from the default 'flat', and only carries meaning on a
       // Shared scope (the server/view ignore it elsewhere).
       if (loc.view !== 'flat') params.set('view', loc.view);
-      // The search term rides the URL only on the 'search' scope (ADR-0024 §5) — a
+      // The search term rides the URL only on the 'search' scope — a
       // shareable deep-link `?scope=search&q=<term>`. `loc.q` is undefined for every
       // non-search caller, so the param is absent everywhere else.
       if (loc.scope === 'search' && loc.q) params.set('q', loc.q);
@@ -126,7 +126,7 @@ export function useDriveNavigation({
 
   // Browse the tree → a folder (null = root). Clears a now-stale selection + open doc.
   // Normally this returns to the 'kb' scope (the flat filters are not folders you enter)
-  // — EXCEPT an advanced STRUCTURAL lens (ADR-0022 + Addendum A), which IS folder-
+  // — EXCEPT an advanced STRUCTURAL lens, which IS folder-
   // navigable WITHIN its lens: drilling a folder there STAYS on the lens scope
   // (`?scope=<lens>&folder=…&view=advanced`) and narrows to that folder's subtree within
   // the lens node-set (Shared / Shared-by-me / Starred / Trash).
@@ -175,7 +175,7 @@ export function useDriveNavigation({
       // location, and the KB lens returns to the tree root (it must NOT inherit a folder
       // drilled in the advanced Shared tree, whose `?folder=` is a Shared-subset node).
       // This is also what frees the KB lens from the advanced-Shared folder-drill that
-      // keeps `goFolder` on the Shared scope (ADR-0022): the lens switch roots here.
+      // keeps `goFolder` on the Shared scope: the lens switch roots here.
       setFolderId(null);
       pushLocation({
         folder: null,
@@ -190,7 +190,7 @@ export function useDriveNavigation({
     [pushLocation, clearSelection, docId, lensView, searchTerm]
   );
 
-  // Live search-term changes (ADR-0024 §5) — mirror the term into client state +
+  // Live search-term changes — mirror the term into client state +
   // the URL (`?q=`) via `replaceState` (no new history entry per keystroke), so the
   // search lens is shareable + survives refresh without flooding browser history.
   const setSearch = React.useCallback((next: string) => {
@@ -203,7 +203,7 @@ export function useDriveNavigation({
     window.history.replaceState(null, '', `?${params.toString()}`);
   }, []);
 
-  // Switch the lens display mode (ADR-0022 Fork 4 + Addendum A) — Flat ↔ Advanced. Only
+  // Switch the lens display mode — Flat ↔ Advanced. Only
   // reachable from a structural lens's toolbar toggle (shown for the STRUCTURAL_LENS_
   // SCOPES and ENABLED only when entitled), so 'advanced' can never be set on a locked
   // plan from here; the URL clamp (popstate) + the server clamp guard the hand-edited path.
@@ -212,7 +212,7 @@ export function useDriveNavigation({
       const effective =
         next === 'advanced' && advancedStructuralEntitled ? next : 'flat';
       setLensView(effective);
-      // PERSIST the choice (ADR-0022 amended Fork 4) via a server-read cookie, exactly
+      // PERSIST the choice via a server-read cookie, exactly
       // as the grid/list layout toggle does — so the mode is remembered across sessions
       // (the server reads it on the next load with no hydration flip). GATED to the
       // entitled (Pro) plan: a locked plan never writes the cookie, so it can never

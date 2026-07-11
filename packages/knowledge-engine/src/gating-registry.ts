@@ -14,7 +14,7 @@ import { gateSequence } from './sequence-gating.js';
  *
  * A gating rule is a pure, UI-agnostic, DB-free, React-free predicate over the
  * gating context `(user-state | resource-state | graph)`. This is DISPLAY gating,
- * NOT access control (ADR-0006 §2): the resolver already decided access via RLS —
+ * NOT access control: the resolver already decided access via RLS —
  * a gated node STAYS in the result, `available=false` only expresses business
  * closure. Rule keys are neutral by mechanism (`sequence`, `requires_state`),
  * never by application.
@@ -79,10 +79,10 @@ const requiresStateParamsSchema = z.object({
  * the allowed set. The status source is `ctx.resourceStateMap` (built from the
  * already-resolved `result.items[].status`, no second fetch) or `item.status`
  * directly. Pure, no DB, no user-state — it demonstrates the registry hosting
- * rules over DIFFERENT context sources (ADR-0006 §2/§4).
+ * rules over DIFFERENT context sources.
  *
  * DISPLAY gating: a node whose status is not allowed STAYS in the output with
- * `available=false` (ADR-0006 §2 — closure ≠ absence).
+ * `available=false` (closure ≠ absence).
  */
 export const requiresStateRule: GatingRule = (result, ctx) => {
   const { allowed } = requiresStateParamsSchema.parse(ctx.params ?? {});

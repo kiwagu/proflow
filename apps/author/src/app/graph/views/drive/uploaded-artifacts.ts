@@ -20,7 +20,7 @@ import {
 
 /**
  * The SINGLE "is this an uploaded artifact" predicate: a `file`/`video` node that has
- * confirmed bytes (a real `media` satellite — ADR-0026). A `file`/`video` stub with no
+ * confirmed bytes (a real `media` satellite). A `file`/`video` stub with no
  * `media` (byte-less shell) is NOT an artifact; `text`/`link`/`tag`/`folder` never are.
  */
 export function isUploadedArtifact(

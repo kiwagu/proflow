@@ -19,7 +19,7 @@ export const projectionResultItemSchema = z.object({
   title: z.string(),
   status: z.string(),
   visibility: z.string(),
-  // {collection, doc_id} | null — Payload body bridge deferred (ADR-0002)
+  // {collection, doc_id} | null — Payload body bridge deferred
   body_ref: z.unknown().nullable(),
   // --- traversal context (for course/graph views) ---
   depth: z.number().int().min(0), // distance from the start node

@@ -8,7 +8,7 @@ import {
 import { setResourceStarred } from '@/knowledge/fanout';
 
 /**
- * Per-user "starred" toggle for the consumer authoring surface (ADR-0011 §4).
+ * Per-user "starred" toggle for the consumer authoring surface.
  *
  * One thin route: validate the body, then delegate to the UI-agnostic
  * resource-starred.fanout module. The star flag is a column on the per-user state

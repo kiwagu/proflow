@@ -1,5 +1,5 @@
 /**
- * KB tags made REAL (ADR-0003 Variant B) — a tag is an ORDINARY node (`kind='tag'`)
+ * KB tags made REAL (Variant B) — a tag is an ORDINARY node (`kind='tag'`)
  * and "resource R has tag T" a directed `tagged` edge (from=R → to=T); there is NO
  * tag table or column (Invariant #1: one graph). The backend (the `action:'tag'`
  * edge route + the idempotent `tagResource` fan-out + the tagged-traversal engine)
@@ -107,7 +107,7 @@ async function pageFor(
   return context.newPage();
 }
 
-test.describe('@full ADR-0003 KB tags — real tagged edges, read-path + facet + RLS', () => {
+test.describe('@full KB tags — real tagged edges, read-path + facet + RLS', () => {
   test.describe.configure({ timeout: 240_000 });
 
   let tenant: KnowledgeGraphTenant;

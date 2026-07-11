@@ -1,16 +1,16 @@
 /**
- * The access-mirror invariant on the RENDER — ADR-0023 Wave 2 (Tier 1 + Tier 2),
+ * The access-mirror invariant on the RENDER — (Tier 1 + Tier 2),
  * extended to the access-STATUS taxonomy (globe = broadcast, people = targeted, none =
- * private) per ADR-0023 §7 refinement.
+ * private).
  *
  * Wave 1 proved the DATA predicate (`knowledge-containment-inheritance.e2e.spec.ts`):
  * a node is readable if it OR a granted ANCESTOR folder is granted (owner-scoped, live).
  * Wave 2 renders that SAME predicate as two read-only surfaces over the OWNER's own
- * client view, and this spec proves they MIRROR it (ADR-0023 §7 — `badge ≡ panel-summary
+ * client view, and this spec proves they MIRROR it (`badge ≡ panel-summary
  * ≡ access predicate`, never divergent), now as the three mutually-exclusive states:
  *
  *   - GLOBE (broadcast) — flagged ONLY for an ORGANIZATION-wide broadcast (wider than the
- *     space). SPACE-FIRST refinement (ADR-0023 §7a): a SPACE-wide broadcast is the TYPICAL
+ *     space). SPACE-FIRST refinement: a SPACE-wide broadcast is the TYPICAL
  *     KB audience, so it shows NO badge — a clean card reads as "shared with the space";
  *     the panel still names the "Space" floor. Broadcast outranks people.
  *   - PEOPLE (targeted) — the node is in the owner's outbound grant set (per-user OR
@@ -34,7 +34,7 @@
  *
  * Rendered AS THE OWNER (`admin` = the grantor): the badge + panel Access summary are the
  * owner's mirror of the grants THEY authored (`kbData.sharedByMe`, SSR-seeded under the
- * owner's own RLS — no service-role, ADR-0009). Display-only — RLS untouched.
+ * owner's own RLS — no service-role). Display-only — RLS untouched.
  *
  * Tagged `@full` — needs the running stack (Next author app + Postgres).
  */
@@ -118,7 +118,7 @@ async function openDetailsPanel(page: Page, title: string): Promise<Page> {
   return page;
 }
 
-test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ access)', () => {
+test.describe('@full access-mirror on the render (badge ≡ panel ≡ access)', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;
@@ -253,7 +253,7 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
       await gotoDriveRoot(page);
       await expect(card(page, FLOOR_FOLDER)).toBeVisible({ timeout: 30_000 });
 
-      // Tier 1 — SPACE-FIRST (ADR-0023 §7a): a space-wide broadcast is the typical KB
+      // Tier 1 — SPACE-FIRST: a space-wide broadcast is the typical KB
       // audience, so a clean card IS the signal — neither a GLOBE (that's reserved for the
       // wider organization-wide broadcast) NOR a people "Shared with" badge.
       await expect(
@@ -289,7 +289,7 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
       });
 
       // Tier 1 — the child is broadcast purely via its space-floor ANCESTOR, which under
-      // SPACE-FIRST (ADR-0023 §7a) is the typical audience → a clean card, NO globe (the
+      // SPACE-FIRST is the typical audience → a clean card, NO globe (the
       // inherited space broadcast is blank, exactly like its parent folder).
       await expect(
         card(page, FLOOR_OWN_CHILD).getByLabel(/Visible to everyone/i)
@@ -329,7 +329,7 @@ test.describe('@full ADR-0023 access-mirror on the render (badge ≡ panel ≡ a
       // Tier 2 — the cohort appears in the bounded grantee list by its scope name (the
       // extended `sharedByMe` cohort-by-me path), labelling the audience as the group. The
       // summary header counts/labels it as a COHORT — "Shared with 1 cohort", NOT "person"
-      // (cohorts are a distinct audience kind, ADR-0020 / the cohort-vs-people fix). The
+      // (cohorts are a distinct audience kind, the cohort-vs-people fix). The
       // EXACT-text match on the cohort name targets the grantee list item (the cohort name
       // standalone), not the description blurb that merely mentions it.
       await openDetailsPanel(page, COHORT_FOLDER);

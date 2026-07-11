@@ -1,6 +1,6 @@
 /**
- * KB media reconcile reaper — the plan/apply core (ADR-0027 §7). The ONLY
- * sanctioned `service_role` user on the media path (ADR-0009 carve-out: a
+ * KB media reconcile reaper — the plan/apply core. The ONLY
+ * sanctioned `service_role` user on the media path (a
  * background job off every user request), and the authoritative backstop the
  * refcount model leans on:
  *
@@ -26,8 +26,7 @@
  *
  * Residual (documented, out of scope): hard-crash TUS PARTIALS on the file
  * backend live on the storage VOLUME (a file-store configstore), invisible to
- * every API — reaping those needs a disk-level sidecar
- * (refs/arch/slice-14-kb-media-large-uploads.md §7).
+ * every API — reaping those needs a disk-level sidecar.
  *
  * PLAN (pure, unit-testable) is separated from APPLY (service-role I/O).
  */
@@ -123,7 +122,7 @@ export function planReconcile(input: {
       refcountFixes.push({ blobId: blob.id, refcount: actual });
     }
     if (actual === 0 && pastGrace(blob.created_at)) {
-      // Defence-in-depth (ADR-0027 security fix): the reaper deletes under
+      // Defence-in-depth: the reaper deletes under
       // service-role (RLS-blind), so it NEVER trusts the row's stored bucket —
       // it removes ONLY from kb-media and ONLY a path scoped to this blob's own
       // space + id. The DB CHECK (media_blob_bucket_pinned / _path_scoped) makes a

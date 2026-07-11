@@ -13,7 +13,7 @@ import { PanelSectionLabel } from './panel-section-label';
 import { sendJson } from './panel-fetch';
 
 /**
- * TagsSection — the ResourcePanel tag editor (ADR-0003 Variant B). A tag is an
+ * TagsSection — the ResourcePanel tag editor. A tag is an
  * ORDINARY node and "R is tagged T" a directed `tagged` edge (from=R → to=T), so
  * every affordance here is an edge write to the landed `/author/graph/edges` route,
  * NEVER a scalar field:

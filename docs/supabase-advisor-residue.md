@@ -86,7 +86,7 @@ name) — neither closes an exploit, and both must stay REST-reachable to functi
 These ~17 are the documented baseline: a new migration should not increase the
 count, and any NEW lint of a different kind must be fixed, not absorbed here.
 
-## 2026-07-01 — KB media substrate Phase 0 (ADR-0026): no new residue
+## 2026-07-01 — KB media substrate Phase 0: no new residue
 
 Migrations `20260701085100_kb_resource_media_meta.sql` (the `kb.resource_media_meta`
 satellite) and `20260701085200_storage_bucket_kb_media.sql` (the private `kb-media`
@@ -101,11 +101,11 @@ new lint kind**. The count sits within the documented `~17` baseline band (RPC c
 drifts as features land; the invariant is "no new lint kind, no new residue", which
 holds).
 
-## 2026-07-02 — KB media shared-blob substrate (ADR-0027): NO new residue
+## 2026-07-02 — KB media shared-blob substrate: NO new residue
 
 The rewritten `20260701085100_kb_resource_media_meta.sql` adds `SECURITY DEFINER`
 functions, but NONE reach the REST-exposed surface, so the advisor count is
-UNCHANGED from the pre-ADR-0027 baseline:
+UNCHANGED from the previously documented baseline:
 
 - `kb.media_blob_refcount_apply()` — trigger-only (sole writer of
   `media_blob.refcount`). `EXECUTE` **revoked** from `public/anon/authenticated`
@@ -123,5 +123,5 @@ UNCHANGED from the pre-ADR-0027 baseline:
   `kb.media_blob_set_checksum` SECDEF was replaced by this column-RLS approach after
   it bumped the count by one.
 
-Net: ADR-0027 adds **zero** new advisor entries and no new lint kind; both
+Net: this change adds **zero** new advisor entries and no new lint kind; both
 `kb.media_blob` and `kb.resource_media_meta` have RLS enabled from birth.

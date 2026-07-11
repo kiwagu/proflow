@@ -99,7 +99,7 @@ export type PurgeBatchSkip = {
  * (`Promise.allSettled`), so a denied id is `skipped`, never aborting the rest. */
 export type PurgeBatchResult = { purged: string[]; skipped: PurgeBatchSkip[] };
 
-/** One row of the lexical-search result (ADR-0024 §1) — a knowledge resource the
+/** One row of the lexical-search result — a knowledge resource the
  * caller may see under RLS, annotated with its match `score` + `matchedField`. The
  * shape mirrors `SearchResultItem`; the seed/e2e only needs `id`/`title` to assert
  * presence/absence by `ref`. */
@@ -111,11 +111,11 @@ export type SearchHit = {
   matchedField: 'title' | 'description';
 };
 
-/** The `/author/graph/search` POST result (ADR-0024 §5): the ordered first page of
+/** The `/author/graph/search` POST result: the ordered first page of
  * hits the caller may see under RLS (the SOLE access fence). */
 export type SearchHits = { items: SearchHit[]; nextCursor?: string };
 
-/** The `/author/graph/media?op=upload-url` result (ADR-0027 §3): CONTROL-plane only —
+/** The `/author/graph/media?op=upload-url` result: CONTROL-plane only —
  * the server reserves the `kb.media_blob` byte record and returns its `blobId` + the
  * blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>`) the
  * caller uploads the bytes to under its OWN session JWT. `blobId` is echoed back on
@@ -127,12 +127,12 @@ export type MediaUploadUrl = {
   blobId: string;
 };
 
-/** The `/author/graph/media?op=download-url` result (ADR-0026 §2c): the short-lived
+/** The `/author/graph/media?op=download-url` result: the short-lived
  * signed DOWNLOAD url + its absolute expiry. Fails CLOSED (403/404) when the caller
  * cannot read the node (no satellite row → no url) — the RLS byte fence. */
 export type MediaDownloadUrl = { signedUrl: string; expiresAt: string };
 
-/** One grantable co-member as the Share dialog people-picker reads it (ADR-0019/0020):
+/** One grantable co-member as the Share dialog people-picker reads it:
  * `displayName` + `email` resolved via the co-member directory (`email` may be null). */
 export type GrantableMember = {
   userId: string;
@@ -140,7 +140,7 @@ export type GrantableMember = {
   email: string | null;
 };
 
-/** One per-user grant row as the "who has access" list reads it (ADR-0019/0020):
+/** One per-user grant row as the "who has access" list reads it:
  * the grantee with a directory-resolved `displayName` + `email`. */
 export type UserGrant = {
   userId: string;
@@ -149,7 +149,7 @@ export type UserGrant = {
   grantedBy: string;
 };
 
-/** ONE keyset page of the grantable-member people-picker (ADR-0021 Part A). The
+/** ONE keyset page of the grantable-member people-picker. The
  * directory pages a keyset cursor over the stable `coalesce(display_name,email) asc,
  * user_id asc` order with the owner + already-granted removed server-side (`p_exclude`),
  * so `items` is a page of REAL grantable candidates, `total` is the count of grantable
@@ -163,7 +163,7 @@ export type GrantableMembersPage = {
 
 /** The `/author/graph/visibility` GET projection — the Share dialog's whole audience:
  * the broadcast floor, the cohort `choices`, the per-user `grants` ("who has access"),
- * and the searchable, paginated `members` people-picker page (ADR-0020 + ADR-0021). */
+ * and the searchable, paginated `members` people-picker page. */
 export type Visibility = {
   choices: { id: string; name: string; linked: boolean }[];
   floor: Floor;
@@ -254,7 +254,7 @@ export type SeedClient = SeedFetcher & {
     resourceId: string,
     status: ResourceStatus
   ): Promise<void>;
-  /** Read a node's Share-dialog audience (ADR-0019/0020/0021): the floor, cohort choices,
+  /** Read a node's Share-dialog audience: the floor, cohort choices,
    * the per-user `grants` ("who has access"), and the searchable, PAGINATED `members`
    * people-picker page. `query` narrows the directory server-side (`?q=`); `cursor` is the
    * opaque keyset token from a prior page's `nextCursor` (omit for page 1); `limit` overrides
@@ -268,15 +268,15 @@ export type SeedClient = SeedFetcher & {
   ): Promise<Visibility>;
   linkScope(resourceId: string, scopeId: string): Promise<void>;
   /** Share a resource to ONE person — a per-user grant that widens that user's
-   * READ access (ADR-0019). Owner-sovereign or `space.knowledge.access`; the
+   * READ access. Owner-sovereign or `space.knowledge.access`; the
    * grantee must be an active member of the resource's space. */
   grantUser(resourceId: string, userId: string): Promise<void>;
-  /** Revoke a per-user grant (ADR-0019) — symmetric to `grantUser`. Narrows that
+  /** Revoke a per-user grant — symmetric to `grantUser`. Narrows that
    * user's READ access back, non-destructively (the node returns to owner-only when
    * it was the sole widening disjunct). Owner-sovereign or `space.knowledge.access`. */
   revokeUser(resourceId: string, userId: string): Promise<void>;
   star(spaceId: string, nodeId: string, starred: boolean): Promise<void>;
-  /** Run a lexical search as THIS actor (ADR-0024 §5): POST `/author/graph/search`
+  /** Run a lexical search as THIS actor: POST `/author/graph/search`
    * with a `term` + `spaceId`. The server compiles + runs the SELECT under the
    * caller's RLS session, so the returned hits are exactly the resources the caller
    * may see — a private / other-space node never appears for a non-grantee (RLS is
@@ -288,7 +288,7 @@ export type SeedClient = SeedFetcher & {
     term: string,
     opts?: { limit?: number }
   ): Promise<SearchHits>;
-  /** Authorize an upload for a `file`/`video` node (ADR-0026 §3, resumable/TUS switch):
+  /** Authorize an upload for a `file`/`video` node (resumable/TUS switch):
    * `POST /author/graph/media?op=upload-url`. The server checks node-`update` under THIS
    * actor's RLS + validates the declared mime/size, then returns the SERVER-decided
    * `storagePath` only — CONTROL-plane, no signed URL/token. The caller uploads the bytes
@@ -315,7 +315,7 @@ export type SeedClient = SeedFetcher & {
     blobId: string;
     originalFilename: string;
   }): Promise<void>;
-  /** Authorize a signed DOWNLOAD url for a node's media (ADR-0026 §2c):
+  /** Authorize a signed DOWNLOAD url for a node's media:
    * `POST /author/graph/media?op=download-url`. The server resolves the satellite
    * under THIS actor's RLS (absence → no url) and mints a short-lived signed url the
    * caller GETs for the bytes. A non-grantee / wrong-space caller fails closed. */

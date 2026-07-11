@@ -11,7 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  *
  * Both the `/author/graph/*` endpoints and the `bodies` collection access
  * functions reach the graph through THIS, so the single access authority stays
- * Postgres RLS (ADR-0002 §2 / ADR-0005 §4). The cookie jar is read-only here:
+ * Postgres RLS. The cookie jar is read-only here:
  * endpoints/access functions never mutate the session (the proxy refreshes it).
  */
 

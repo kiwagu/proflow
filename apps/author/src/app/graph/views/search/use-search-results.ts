@@ -77,7 +77,7 @@ export function useSearchResults({
   containment: Containment;
   lensView: LensView;
   /**
-   * The cross-lens "Only files" filter (ADR-0026 render) — when ON, the flat search RESULT
+   * The cross-lens "Only files" filter — when ON, the flat search RESULT
    * set is narrowed to uploaded artifacts via the SHARED `isUploadedArtifact` predicate
    * (search results are a flat leaf list → keep only artifacts). Owned by the view, mirroring
    * the Drive lens; the same chip the Drive shelf shows, now on Search by construction.
@@ -110,7 +110,7 @@ export function useSearchResults({
     () => kbData?.attributesByItem ?? {},
     [kbData]
   );
-  // The COMMERCIAL entitlement (ADR-0022 Fork 1) — the Pro gate for the Flat↔Advanced
+  // The COMMERCIAL entitlement — the Pro gate for the Flat↔Advanced
   // toggle. Resolved server-side from the platform registry, fail-CLOSED `false`. The
   // toggle shows either way (the locked control is the upsell); only its ENABLED state
   // depends on it.
@@ -147,7 +147,7 @@ export function useSearchResults({
   );
 
   // The advanced (GROUPED) render is ON only when the lens mode is 'advanced' AND the
-  // space is entitled (ADR-0022 — the same Pro gate the structural lenses use). The
+  // space is entitled (the same Pro gate the structural lenses use). The
   // server clamps `?view=` to 'flat' on a locked plan; this client clamp is belt-and-braces.
   const isAdvanced = lensView === 'advanced' && advancedStructuralEntitled;
 

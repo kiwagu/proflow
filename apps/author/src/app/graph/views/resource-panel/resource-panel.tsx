@@ -36,16 +36,16 @@ import { VersionsSection } from './versions-section';
  * here — they are one click from the card / toolbar via the shared
  * {@link NodeActionsMenu}, which the header re-uses (sans its Details item) so the
  * same actions are reachable from inside the drawer too. Sharing (the broadcast
- * floor + cohort + per-user grants) is the unified Share dialog (ADR-0019 Fork 6),
+ * floor + cohort + per-user grants) is the unified Share dialog,
  * opened from that menu's `Share` entry — NOT a separate panel section. Landed
  * sections:
  *   - header (kind + title) + the `⋯` action menu (Share lives here now)
  *   - workflow status transition (draft → active → archived; content kinds only)
  *   - editable description (kb satellite; indexed for lexical search only)
  *   - link (slice-10 §2.4 — the external URL of a link node, editable + Open)
- *   - media (ADR-0026 — filename / size / mime + Download + an inline MIME-driven
+ *   - media (filename / size / mime + Download + an inline MIME-driven
  *     preview: image / pdf / video / audio, when the node has bytes)
- *   - tags (ADR-0003 Variant B — the node's `tagged` edges: remove-chips + a
+ *   - tags (the node's `tagged` edges: remove-chips + a
  *     free-text adder + a "pick from existing" tray; read-only on folder/tag kinds)
  *
  * Deferred (their backend is not ported yet, so the section is omitted rather than
@@ -69,40 +69,40 @@ export type ResourcePanelProps = {
   node: SelectedNode | null;
   /** KB satellite attributes of the node (description; media/link as they land). */
   attributes?: KbAttributes;
-  /** The node's CURRENT tags (`kbData.tagsByItem[node.id]`, ADR-0003 Variant B) —
+  /** The node's CURRENT tags (`kbData.tagsByItem[node.id]`) —
    * the `tagged` edges it points at. Empty when it carries none. */
   tags?: ResourceTag[];
   /** ALL tags of the space (`kbData.spaceTags`) — the tag section's "pick from
-   * existing tags" tray vocabulary. Space-global (ADR-0003). */
+   * existing tags" tray vocabulary. Space-global. */
   spaceTags?: ResourceTag[];
   containment: Containment;
   /** The viewer's own id — combined with `ownerUserId` to display-gate the `⋯` menu. */
   currentUserId: string | null;
   /** The selected node's owner (`knowledge_resources.owner_user_id`). */
   ownerUserId: string | null;
-  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu (ADR-0006). */
+  /** The viewer's space-level knowledge verbs — display-gate the `⋯` menu. */
   capabilities: SpaceCapabilities;
   /**
    * The node's BROADCAST FLOOR (`knowledge_resources.visibility`) — drives the read-only
-   * "Access" section's visibility line (ADR-0023 §7b). Null when unknown (no meta loaded).
+   * "Access" section's visibility line. Null when unknown (no meta loaded).
    */
   visibility?: ResourceFloor | null;
   /**
    * The DIRECT per-user grantees of THIS node (from `kbData.sharedByMe`, already labelled
-   * via the co-member directory, ADR-0020) — the "Shared with N people" list. Empty when
+   * via the co-member directory) — the "Shared with N people" list. Empty when
    * the node has no direct grant.
    */
   grantees?: SharedByMeEntry['grantees'];
   /**
    * The ids the owner has shared OUT (the keys of `kbData.sharedByMe`) — the membership
-   * test for the access-mirror ancestor walk (ADR-0023 §7b): a node is visible via an
+   * test for the access-mirror ancestor walk: a node is visible via an
    * "Inherited from {folder}" line when a granted ANCESTOR is in this set. SAME source as
    * the card badge, so the panel summary can never diverge from it.
    */
   sharedByMeIds?: Set<string>;
   /**
    * Each node's broadcast FLOOR (`knowledge_resources.visibility`) keyed by id — the
-   * read-side lookup for the access-mirror BROADCAST walk (ADR-0023 §7b). The panel runs
+   * read-side lookup for the access-mirror BROADCAST walk. The panel runs
    * `broadcastOut` over it + `containment` to name an INHERITED broadcast ("Broadcast via
    * folder {X}"), the exact mirror of the card globe badge. SAME source as the card, so
    * the panel and badge can never diverge. Empty map → no inherited-broadcast detection.
@@ -147,7 +147,7 @@ export function ResourcePanel({
   if (!node || !open) {
     return null;
   }
-  // Share = audience management (ADR-0019 §4): owner-sovereign OR the space access verb —
+  // Share = audience management: owner-sovereign OR the space access verb —
   // mirrors the per-user-grant/cohort RLS authority. The "Manage access" affordance is
   // shown on the same gate the ⋯ Share item uses (display courtesy; RLS re-checks).
   const owned = ownerUserId != null && ownerUserId === currentUserId;
@@ -259,7 +259,7 @@ export function ResourcePanel({
           onSave={onSaveDescription}
         />
 
-        {/* Tags (ADR-0003 Variant B) — the node's `tagged` edges. Editable on a
+        {/* Tags — the node's `tagged` edges. Editable on a
             content node (remove-chips + free-text adder + a "pick from existing"
             tray); read-only badges on a folder/tag node (which cannot be tagged),
             omitted there when it carries none. Self-contained writes to the edges
@@ -288,7 +288,7 @@ export function ResourcePanel({
         ) : null}
 
         {/* Media — shown ONLY when the node has confirmed bytes (a media satellite
-            row, ADR-0026); a bodyless file/video stub carries no `media` and the
+            row); a bodyless file/video stub carries no `media` and the
             section is omitted (poc-no-fallbacks). Download is server-authorized +
             signed per click, RLS the fence. */}
         {attributes?.media ? (

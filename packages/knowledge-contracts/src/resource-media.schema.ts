@@ -6,13 +6,12 @@ import {
 import { z } from 'zod';
 
 /**
- * KB media substrate contracts (ADR-0026). A `file`/`video` node becomes REAL by
+ * KB media substrate contracts. A `file`/`video` node becomes REAL by
  * pairing the (bodyless) `knowledge_resources` node with BYTES in a private
  * `kb-media` Storage bucket and one generic 1:1 satellite `kb.resource_media_meta`
  * (prefix `kmm`, keyed by `node_id`). One generic satellite serves
  * `file`/`video`/`image`/`pdf`/`audio`; per-kind extras (dimensions, page count,
- * codec) are a LATER seam — add nullable fields here, never a per-kind table
- * (ADR-0013 §2).
+ * codec) are a LATER seam — add nullable fields here, never a per-kind table.
  *
  * These are DOMAIN + boundary shapes only. Access is NEVER enforced here: the
  * fence is Postgres RLS (the graph predicate `auth_user_can_access_resource`) +
@@ -22,7 +21,7 @@ import { z } from 'zod';
  */
 
 /**
- * MIME posture — owner decision "any-except-dangerous" (ADR-0026 §3): the bucket
+ * MIME posture — owner decision "any-except-dangerous": the bucket
  * is UNRESTRICTED by design; this small DENYLIST of active-content/executable
  * types (XSS/exec risks even from a private bucket, since a signed URL streams the
  * bytes to the browser) is THE server-side gate. It is deliberately NOT a positive
@@ -59,7 +58,7 @@ export function isAllowedMediaMime(mime: string): boolean {
 }
 
 /**
- * Upload-size limits — layered SOFT-over-HARD (ADR-0026 AMENDMENT §A4), CODE
+ * Upload-size limits — layered SOFT-over-HARD, CODE
  * constants, NOT env (monorepo-env-minimalism).
  *
  * - `DEFAULT_MAX_UPLOAD_BYTES` (200 MB) is the SOFT default — the registry
@@ -90,7 +89,7 @@ export const HARD_MAX_UPLOAD_BYTES = MEDIA_MAX_UPLOAD_HARD_CAP_BYTES; // 5 GiB
 export const MAX_MEDIA_SIZE_BYTES = DEFAULT_MAX_UPLOAD_BYTES;
 
 /**
- * Signed-URL TTLs — CODE constants, short-lived, NOT env (ADR-0026 §2c). Bytes
+ * Signed-URL TTLs — CODE constants, short-lived, NOT env. Bytes
  * are re-minted per download/upload; the URL is the only egress.
  *
  * The DOWNLOAD TTL is 3 hours (owner-approved 2026-07-01): video/audio stream via
@@ -100,7 +99,7 @@ export const MAX_MEDIA_SIZE_BYTES = DEFAULT_MAX_UPLOAD_BYTES;
  * longer-lived signed URL is an accepted trade-off. This TTL applies to ALL media
  * downloads (image/pdf/video/audio/generic file) — intended.
  *
- * The UPLOAD TTL is 6 hours (owner-approved 2026-07-01, ADR-0026 AMENDMENT §A5):
+ * The UPLOAD TTL is 6 hours (owner-approved 2026-07-01):
  * a resumable (TUS) session for a multi-GB file on a modest link can run long, so
  * the authorize-response validity must cover a realistic worst-case upload
  * duration. Still a code constant, not env; the byte fence is UNCHANGED (the TUS
@@ -110,11 +109,11 @@ export const MAX_MEDIA_SIZE_BYTES = DEFAULT_MAX_UPLOAD_BYTES;
 export const MEDIA_DOWNLOAD_URL_TTL_SECONDS = 10800 as const;
 export const MEDIA_UPLOAD_URL_TTL_SECONDS = 21600 as const;
 
-/** The private bucket that holds KB media bytes (ADR-0026 §2a). */
+/** The private bucket that holds KB media bytes. */
 export const KB_MEDIA_BUCKET = 'kb-media' as const;
 
 /**
- * The satellite row shape — `kb.resource_media_meta` (ADR-0027 §2b). 1:1 by
+ * The satellite row shape — `kb.resource_media_meta`. 1:1 by
  * `nodeId`, now a thin REFERENCE to a shared `kb.media_blob`: the byte-intrinsic
  * metadata (path, bucket, mime, size, checksum, duration) lives on the BLOB; the
  * reference carries only the per-reference display filename (a copier may rename
@@ -149,7 +148,7 @@ export const mediaUploadAuthorizeRequestSchema = z.object({
   filename: z.string().min(1),
   // Byte-intrinsic media duration (video/audio), known client-side BEFORE the
   // upload — recorded on the blob at reservation (blob UPDATE is not granted to
-  // authenticated, so it cannot be added later; ADR-0027 §2a).
+  // authenticated, so it cannot be added later).
   durationMs: z.number().int().nonnegative().nullable().optional(),
 });
 export type MediaUploadAuthorizeRequest = z.infer<
@@ -158,7 +157,7 @@ export type MediaUploadAuthorizeRequest = z.infer<
 
 /**
  * Upload-authorize response. Control-plane ONLY: the server creates a
- * `kb.media_blob` RESERVATION (ADR-0027 §3) and returns its `blobId` + the
+ * `kb.media_blob` RESERVATION and returns its `blobId` + the
  * blob-addressed `storagePath` (`spaces/<spaceId>/kb/blobs/<blobId>/<serverKey>`)
  * the client uploads the bytes to via the resumable (TUS) transport under its own
  * session JWT. `blobId` is echoed back on confirm (`setResourceMedia`) — the kmm
@@ -178,7 +177,7 @@ export type MediaUploadAuthorizeResponse = z.infer<
  * The confirm/UPSERT input — written ONLY after a successful upload
  * (`attribute:'media'` on the attributes route → `setResourceMedia`). The kmm
  * reference is `{nodeId → blobId}` + the display filename; byte-intrinsic fields
- * were declared at authorize and live on the blob (ADR-0027 §3). `createdBy` is
+ * were declared at authorize and live on the blob. `createdBy` is
  * NOT here: it comes from the SESSION. `checksum` (client-computed sha256) is a
  * best-effort write-once blob extra — kept cheap so B2 content-dedup stays a
  * later index, not a backfill.

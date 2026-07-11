@@ -1,6 +1,6 @@
 /**
  * Search-lens "Only files" filter — the cross-lens uploaded-artifacts chip on the SEARCH
- * shelf (ADR-0026 render). The "Only files" chip now lives on EVERY lens shelf by
+ * shelf. The "Only files" chip now lives on EVERY lens shelf by
  * construction (the shared `LensToolbar`), so the SAME `ToggleChip` the Drive lenses
  * carry appears on Search — and it FUNCTIONALLY filters the search RESULT set (a flat leaf
  * list) with the SAME `isUploadedArtifact` predicate: ON keeps only uploaded artifacts.
@@ -88,7 +88,7 @@ function resultFor(page: Page, title: string) {
     .getByText(title, { exact: true });
 }
 
-test.describe('@full ADR-0026 render — Search-lens "Only files" filter', () => {
+test.describe('@full render — Search-lens "Only files" filter', () => {
   test.describe.configure({ timeout: 180_000 });
 
   let tenant: KnowledgeGraphTenant;

@@ -14,7 +14,7 @@ import {
 } from '@/knowledge/fanout';
 
 /**
- * KB application-attribute write for the consumer authoring surface (ADR-0011 §4).
+ * KB application-attribute write for the consumer authoring surface.
  *
  * One thin route for ALL node satellites, discriminated by `attribute` — every
  * satellite is the SAME operation shape (a 1:1 UPSERT keyed by node_id under the
@@ -37,7 +37,7 @@ const descriptionSchema = z.object({
   body: z.string(),
 });
 
-// The CONFIRM leg of a media upload (ADR-0027 §3): written ONLY after the bytes
+// The CONFIRM leg of a media upload: written ONLY after the bytes
 // landed in the `kb-media` bucket. The kmm reference is `{nodeId → blobId}` (the
 // blob was reserved at authorize and carries the byte-intrinsic fields); the
 // optional client-computed `checksum` is a write-once blob extra. Mirrors

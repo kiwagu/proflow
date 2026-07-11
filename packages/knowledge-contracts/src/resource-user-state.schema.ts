@@ -32,7 +32,7 @@ export const resourceUserStateSchema = z.object({
   // Per-(user, resource) pin flag. Mirrors the NOT NULL DEFAULT false column:
   // the row always carries it; absent input defaults to unstarred.
   starred: z.boolean().default(false),
-  // Per-user "recently opened by me" roll-up (ADR-0016 §3.1): the greatest
+  // Per-user "recently opened by me" roll-up: the greatest
   // occurred_at over this user's `kind=open` activity rows for the resource.
   // Null/absent = never opened by this user. Maintained by the DB roll-up
   // trigger; it is read-only state here (the open-route never writes it).
@@ -57,7 +57,7 @@ export function parseStarredToggle(raw: unknown) {
 }
 
 /**
- * Open-record write contract (ADR-0016 §5.4). The thin `POST /author/graph/opened`
+ * Open-record write contract. The thin `POST /author/graph/opened`
  * body: the resource the caller deliberately opened, in a space. Identity comes
  * from the SESSION (RLS), never the body — so this carries only the targeting keys.
  */
@@ -72,7 +72,7 @@ export function parseOpenedRecord(raw: unknown) {
 }
 
 /**
- * NATS activity envelope for the body-edit path (ADR-0016 §5.2 / §5.3). The
+ * NATS activity envelope for the body-edit path. The
  * Payload `Bodies.afterChange` hook PUBLISHES this; the activity consumer worker
  * VALIDATES + ingests it into `kb.resource_activity` (source=`nats-body`). The
  * `event_id` doubles as the JetStream `Nats-Msg-Id` (producer dedupe) and the
@@ -94,8 +94,8 @@ export function parseKnowledgeActivityBodyEvent(raw: unknown) {
 }
 
 /**
- * JetStream stream / subject contract for the knowledge-activity namespace
- * (ADR-0016 §5.2). One stream over `knowledge.activity.v1.>`; the body-edit
+ * JetStream stream / subject contract for the knowledge-activity namespace.
+ * One stream over `knowledge.activity.v1.>`; the body-edit
  * producer publishes on `knowledge.activity.v1.body`. Fixed infra contracts live
  * in code, not env (monorepo-env-minimalism) — env may OVERRIDE the stream /
  * consumer name, but these are the defaults both producer and consumer share.

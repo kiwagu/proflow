@@ -25,17 +25,17 @@ export function buildKnowledgeBaseSpec(tagNodeId: string) {
 const KB_TAG = 'Knowledge Base';
 
 /**
- * Deterministic, few-KB fixture byte payloads for the KB media substrate (ADR-0026).
+ * Deterministic, few-KB fixture byte payloads for the KB media substrate.
  * Plain text (an allowed mime — NOT in the denylist), so the e2e can round-trip the
  * EXACT bytes on download (assertion 2). Kept tiny — reference content, not a real
  * asset. Distinct contents per node so a download assertion can prove it fetched the
  * RIGHT object, not just any object.
  */
 const FILE_FIXTURE_BYTES =
-  'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n';
+  'ProFlow KB media fixture — the generic file substrate.\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n';
 
 /**
- * BINARY fixtures for the inline MIME-driven preview (ADR-0026 Phase 2): genuine tiny
+ * BINARY fixtures for the inline MIME-driven preview (Phase 2): genuine tiny
  * renderable/playable assets, base64-encoded (decoded to the exact binary by the
  * materializer before the signed PUT). They must be REAL bytes — a mangled/utf8-encoded
  * asset would fail the element's load and the preview would collapse to null.
@@ -56,13 +56,13 @@ const AUDIO_FIXTURE_B64 =
 
 /**
  * Knowledge-base scenario — a tagged slice of articles surfaced as a grid, AND the
- * lexical-search corpus (slice-12, ADR-0024). The KB grid shows the canonical
+ * lexical-search corpus (slice-12). The KB grid shows the canonical
  * projection (tag content with one shared tag, then a saved KB projection selects
  * exactly the tagged nodes; an untagged article proves the traversal selects rather
  * than returning everything). Layered on top is the SEARCH corpus: a multi-locale set
  * of titled nodes that exercise every Phase-1 match class and the RLS-absence proof.
  *
- * Search corpus (consumed by `knowledge-search.e2e.spec.ts`, ADR-0024 §3):
+ * Search corpus (consumed by `knowledge-search.e2e.spec.ts`):
  *  - `kb/getting-started` ('Getting Started') ........ case-insensitive prefix vs 'GETTING'.
  *  - `kb/lease-cyrillic` ('Договор аренды') .......... Cyrillic + case-insensitive prefix.
  *  - `kb/egerie-accent` ('Égérie') ................... accent fold (`unaccent`).
@@ -80,13 +80,13 @@ const AUDIO_FIXTURE_B64 =
  *      levels below the KB root. A search for `abyssal` matches only the leaf; the
  *      advanced view must render the whole nested path expanded down to the highlight.
  *
- * RLS-absence corpus (the security proof, ADR-0024 §6/§8 — RLS is the SOLE fence):
+ * RLS-absence corpus (the security proof — RLS is the SOLE fence):
  *  - `kb/private-other-owner` ('Договорённость приватная', owned by `searcherB`, NO grant)
  *      — a PRIVATE node owned by ANOTHER user; must be ABSENT from `admin`'s search even
  *      though its title prefix-matches `договор` (assertion 6). Owner-scoped, fail-closed.
  *  - `kb/inherited-folder` ⊃ `kb/inherited-child` ('Договор унаследованный', owned by
  *      `admin`, the folder shared → `searcherB` via a per-user grant) — the inherited-grant
- *      disjunct (ADR-0023): `searcherB` cannot see the child directly, but the ANCESTOR
+ *      disjunct: `searcherB` cannot see the child directly, but the ANCESTOR
  *      folder grant makes it visible, so it PRESENT in `searcherB`'s search (assertion 8).
  *
  * The ANOTHER-SPACE node (assertion 7) is NOT expressible in this single-space scenario
@@ -101,14 +101,14 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
   id: 'knowledge-base',
   title: 'Knowledge base',
   summary:
-    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus (ADR-0024): a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate (ADR-0026): a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png), a real PDF (application/pdf), a real VIDEO (video/mp4) and a real AUDIO (audio/wav) for the inline MIME-driven preview (ADR-0026 Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`, video/* → an inline `<video controls>` player, audio/* → an inline `<audio controls>` player; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload), and a REAL confirmed file reserved for the trash → purge lifecycle whose kb-media object is best-effort reaped when the node is purged from Trash (ADR-0026 touch-item).',
+    'A tagged slice of articles surfaced as a grid projection (tag membership = an incoming `tagged` walk), PLUS the lexical-search corpus: a multi-locale match set (Cyrillic / accented / case-insensitive prefix / typo target), the RLS-absence proof (another user’s PRIVATE node stays absent; an ancestor-shared child is present for the grantee), and a six-level-deep folder chain (`abyssal` leaf) for deep-tree ADVANCED search. It ALSO carries the KB MEDIA substrate: a real `file` + a real `video` node whose bytes are uploaded through the product’s signed-upload transport (a `kb-media` object + a `kmm` satellite both exist), a real IMAGE (image/png), a real PDF (application/pdf), a real VIDEO (video/mp4) and a real AUDIO (audio/wav) for the inline MIME-driven preview (Phase 2: image/* → an inline `<img>`, application/pdf → an inline `<iframe>`, video/* → an inline `<video controls>` player, audio/* → an inline `<audio controls>` player; the text files cover the no-preview case), a PRIVATE file owned by another user (the download RLS-negative), a file nested under the ancestor-shared folder (the inherited-grant positive), and a file per-user-granted to a node-only member who lacks space-wide update (the read/write asymmetry: the read-grant allows download but the write fence blocks upload), and a REAL confirmed file reserved for the trash → purge lifecycle whose kb-media object is best-effort reaped when the node is purged from Trash (touch-item).',
   presets: ['knowledge-base', 'search', 'media'],
   actors: [
     // A SECOND owner in the same space: owns the private-other-owner search negative
     // and is the grantee of the inherited-folder positive. `admin` role so base read
     // holds — the access DIMENSION (privacy / inheritance), not the verb, is the subject.
     { ref: 'searcherB', role: 'admin', displayName: 'Searcher Bea' },
-    // A NODE-ONLY grantee for the media read/write asymmetry (ADR-0026, assertions
+    // A NODE-ONLY grantee for the media read/write asymmetry (assertions
     // 11a/11b): a plain `member` (read + create, but NOT `space.knowledge.update`
     // space-wide). It receives a PER-USER READ grant on `kb/file-node-grant`. That grant
     // composes into the storage-RLS SELECT (download), so the grantee CAN read the bytes
@@ -161,7 +161,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           ),
         },
 
-        // ── KB media substrate: real file/video bytes (ADR-0026) ─────────────────
+        // ── KB media substrate: real file/video bytes ─────────────────────────────
         // These nodes are made REAL through the product's OWN signed-upload transport:
         // the materializer authorizes an upload URL, PUTs `media.bytes` to the private
         // `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kmm` satellite —
@@ -182,7 +182,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
         },
         {
           // Owned video — assertion 4 (the SAME substrate serves `video`) AND the inline
-          // VIDEO PLAYER happy path (ADR-0026 Phase 2, increment 2): a `video/*` mime → the
+          // VIDEO PLAYER happy path (Phase 2, increment 2): a `video/*` mime → the
           // ResourcePanel Media section renders an inline `<video controls>` (aria-label
           // "Preview of intro-clip.mp4") ABOVE the facts, minting its URL via the SAME
           // download authorizer. Real H.264/MP4 bytes (base64) so the player genuinely
@@ -200,7 +200,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           },
         },
         {
-          // Owned AUDIO — the inline AUDIO PLAYER happy path (ADR-0026 Phase 2, increment
+          // Owned AUDIO — the inline AUDIO PLAYER happy path (Phase 2, increment
           // 2): an `audio/*` mime → the Media section renders an inline `<audio controls>`
           // (aria-label "Preview of intro-tone.wav") ABOVE the facts, again via the SAME
           // download authorizer. A genuine tiny PCM/WAV tone (base64) so the player has
@@ -219,7 +219,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           },
         },
         {
-          // Owned IMAGE — the inline preview happy path (ADR-0026 Phase 2, increment 1):
+          // Owned IMAGE — the inline preview happy path (Phase 2, increment 1):
           // an `image/*` mime → the ResourcePanel Media section renders an inline `<img>`
           // (alt "Preview of media-preview.png") ABOVE the facts, minting its URL via the
           // SAME single-node download authorizer. Real PNG bytes (base64) so the image
@@ -237,7 +237,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           },
         },
         {
-          // Owned PDF — the inline preview PDF path (ADR-0026 Phase 2, increment 1): an
+          // Owned PDF — the inline preview PDF path (Phase 2, increment 1): an
           // `application/pdf` mime → the Media section renders a bounded inline `<iframe>`
           // (title "Preview of media-preview.pdf") ABOVE the facts, again via the SAME
           // download authorizer. A genuine minimal single-page PDF (base64) so the iframe
@@ -272,13 +272,13 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           userGrants: ['mediaGrantee'],
           media: {
             bytes:
-              'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
+              'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (write-fence).\n',
             mimeType: 'text/plain',
             filename: 'node-granted-read-target.txt',
           },
         },
         {
-          // Purge-reap target (ADR-0026 touch-item): a REAL confirmed media node
+          // Purge-reap target (touch-item): a REAL confirmed media node
           // whose bytes travel the same upload transport (a `kb-media` object + a
           // `kmm` satellite both exist). It is reserved for the trash → purge
           // lifecycle: the media matrix e2e trashes it (resource DELETE), purges it
@@ -292,13 +292,13 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
             'A real confirmed file reserved for the trash → purge lifecycle — purging it reaps its kb-media object.',
           media: {
             bytes:
-              'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (ADR-0026 purge best-effort reap).\n',
+              'ProFlow KB media fixture — these bytes are reaped from the kb-media bucket when the node is purged from Trash (purge best-effort reap).\n',
             mimeType: 'text/plain',
             filename: 'purge-reap-target.txt',
           },
         },
 
-        // ── search corpus: the multi-locale match set (ADR-0024 §3) ──────────────
+        // ── search corpus: the multi-locale match set ─────────────────────────────
         {
           // Cyrillic + case-insensitive prefix: `договор` finds it (assertion 1).
           ref: 'kb/lease-cyrillic',
@@ -338,7 +338,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           ),
         },
 
-        // ── search corpus: the title>description ranking pair (ADR-0024 §3, Phase 2) ──
+        // ── search corpus: the title>description ranking pair (Phase 2) ──────────
         // Two nodes that BOTH match `onboarding`, but at the SAME tier via DIFFERENT
         // fields: this node carries it in its TITLE (title-prefix), its sibling below
         // carries it as a description PREFIX (description-prefix). The banded scorer puts
@@ -372,7 +372,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
           ),
         },
 
-        // ── inherited-grant positive (ADR-0023 disjunct through search, assertion 8) ──
+        // ── inherited-grant positive (disjunct through search, assertion 8) ──────
         {
           // A's folder, shared per-user to `searcherB`. Its OWN child inherits the grant,
           // so `searcherB` (who was never granted the child directly) finds the child in
@@ -398,7 +398,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
               ),
             },
             {
-              // Inherited-grant DOWNLOAD positive (ADR-0026, assertion 8): a real file
+              // Inherited-grant DOWNLOAD positive (assertion 8): a real file
               // owned by `admin`, nested under the folder shared to `searcherB`. Bea was
               // NEVER granted this file directly — only its ancestor folder — yet the
               // inherited-grant disjunct composes through the storage-RLS SELECT, so she
@@ -412,7 +412,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
                 'A file inside the shared folder — Bea downloads it via inheritance.',
               media: {
                 bytes:
-                  'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
+                  'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder.\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
                 mimeType: 'text/plain',
                 filename: 'inherited-lease-attachment.txt',
               },
@@ -525,7 +525,7 @@ export const KNOWLEDGE_BASE_SCENARIO: SeedScenario = {
         "Bea's private file — its bytes must NOT reach a non-grantee.",
       media: {
         bytes:
-          'ProFlow KB media fixture — a PRIVATE file owned by another user (ADR-0026 assertion 5).\nThese bytes exist in the bucket but only the owner (or a grantee) may mint a signed URL.\n',
+          'ProFlow KB media fixture — a PRIVATE file owned by another user (assertion 5).\nThese bytes exist in the bucket but only the owner (or a grantee) may mint a signed URL.\n',
         mimeType: 'text/plain',
         filename: 'bea-private-attachment.txt',
       },

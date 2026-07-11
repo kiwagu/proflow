@@ -75,7 +75,7 @@ export {
 /**
  * Course ProjectionSpec — an OUTGOING `prerequisite` walk over the graph. Used ONLY
  * by the knowledge-graph e2e suites as the generative-core PROOF (a SECOND app type
- * = pure configuration over the same graph; Invariant #1 / ADR-0004). It is NOT
+ * = pure configuration over the same graph; Invariant #1). It is NOT
  * seed/demo content — there is no Course product surface yet — so it lives HERE, in
  * the e2e harness, not in the `@workspace/seed` catalog.
  */
@@ -803,7 +803,7 @@ export type AccessLayerActors = {
 export type AccessLayerGraph = {
   /** scope-A id (the cohort restricting `cohortRestrictedNodeId`). */
   scopeAId: string;
-  /** floor=private + scope-A grant: visible to cohort members + owner only (ADR-0017 Model B). */
+  /** floor=private + scope-A grant: visible to cohort members + owner only (Model B). */
   cohortRestrictedNodeId: string;
   cohortRestrictedTitle: string;
   /** A published node (floor='space', no grant needed): visible to all space members. */
@@ -917,7 +917,7 @@ export async function bootstrapAccessLayerActors(
  *  - a cohort scope-B with NOBODY enrolled (an empty grant: a private node linked to
  *    scope-B is admitted by no cohort, so only the hierarchy branch can reveal it);
  *  - a `reporting_lines` chain managerOfManager → manager → subordinate;
- *  - four demo nodes tagged into an 'Access KB' tag (ADR-0017 Model B — floor +
+ *  - four demo nodes tagged into an 'Access KB' tag (Model B — floor +
  *    additive grants):
  *      • cohortRestricted — floor=private + scope-A grant (members + owner see it);
  *      • unrestricted — floor='space' (published), visible to all space members;
@@ -1025,7 +1025,7 @@ export async function seedAccessLayerDemo(
   const tagNodeId = tag.id;
 
   // Each node is created BY ITS OWNER, through that owner's RLS — production has no
-  // system/service account, so the fixture must not either. Under ADR-0017 Model B a
+  // system/service account, so the fixture must not either. Under Model B a
   // private node is RETURNING-readable only by its owner (is_owner), so a non-owner
   // could not create-and-read it back. (Bulk insert also forces every row to set
   // `visibility` explicitly: PostgREST NULLs a key missing on only SOME rows, so the
@@ -1284,7 +1284,7 @@ export async function materializeFixture(
   });
 }
 
-// ── ADR-0022 Addendum A: tariff-gated advanced STRUCTURAL-view entitlement (config seed) ──
+// ── tariff-gated advanced STRUCTURAL-view entitlement (config seed) ──
 //
 // The advanced (structural) display of the STRUCTURAL lenses (the two Shared lenses +
 // Starred + Trash) is gated by the COMMERCIAL `advanced_structural_view` entitlement — a
@@ -1324,7 +1324,7 @@ async function upsertEntitlementRow(
 }
 
 /**
- * Set the advanced-structural-view entitlement for a tenant's space (ADR-0022 Addendum A).
+ * Set the advanced-structural-view entitlement for a tenant's space.
  * The resolver AND-composes org∧space, so an ENTITLED space needs BOTH rows true; a
  * "locked" space = either row false/absent. Common cases:
  *   - entitle a space:  setAdvancedStructuralEntitlement(t, { org: true,  space: true })
@@ -1349,7 +1349,7 @@ export async function setAdvancedStructuralEntitlement(
   );
 }
 
-// ── ADR-0022: the advanced-shared CONTENT fixture (the shared node-set) ──────
+// ── the advanced-shared CONTENT fixture (the shared node-set) ────────────────
 //
 // The advanced (structural) view renders the SAME RLS-visible shared node-set as the
 // flat digest. That node-set is now a CATALOG scenario (`ADVANCED_SHARED_SCENARIO`) so
@@ -1413,7 +1413,7 @@ export async function seedAdvancedSharedFixture(
   };
 }
 
-// ── ADR-0019: per-person (per-user) sharing fixture ──────────────────────────
+// ── per-person (per-user) sharing fixture ─────────────────────────────────────
 //
 // The access-matrix spec (grantee sees / third blind / revoke narrows / re-grant
 // restores / authority / cross-space) draws ENTIRELY from the shared
@@ -1428,7 +1428,7 @@ export async function seedAdvancedSharedFixture(
 // through the SAME shared vocabulary (`seedClientFor(owner).revokeUser` /
 // `.grantUser`), so the spec never inlines a raw `del('/author/graph/visibility')`.
 
-/** The display names the per-user-share scenario gives its co-members (ADR-0020):
+/** The display names the per-user-share scenario gives its co-members:
  * the directory must resolve THESE, never a bare short-id. Kept in sync with the
  * `displayName` fields on `PER_USER_SHARE_SCENARIO.actors`. */
 export const PER_USER_SHARE_DISPLAY_NAMES = {
@@ -1439,7 +1439,7 @@ export const PER_USER_SHARE_DISPLAY_NAMES = {
 
 /** The per-person-sharing fixture, resolved from the shared catalog scenario. */
 export type PerUserShareFixture = {
-  /** The space the multi-member directory is scoped to (ADR-0020 GET param). */
+  /** The space the multi-member directory is scoped to (GET param). */
   spaceId: string;
   /** The private folder that contains the shared + control docs. */
   folderId: string;
@@ -1496,7 +1496,7 @@ export async function seedPerUserShareFixture(
   };
 }
 
-// ── ADR-0021 Part C: "Shared with me" mechanism-distinction fixture ──────────
+// ── "Shared with me" mechanism-distinction fixture ────────────────────────────
 //
 // Wave 3a landed the DATA layer: the graph annotates each node in the `'shared'` lens
 // (visible-not-owned) with the WINNING mechanism that admits the current user, precedence
@@ -1595,7 +1595,7 @@ export async function seedShareMechanismFixture(
   };
 }
 
-// ── ADR-0021 Part A: directory-v2 paginated picker fixture ───────────────────
+// ── directory-v2 paginated picker fixture ─────────────────────────────────────
 //
 // The Wave-1 picker e2e needs a space with MORE THAN 5 grantable co-members so the
 // page-of-5 people-picker can show 5 + "+N more", a keyset "Show more" next page with
@@ -1614,7 +1614,7 @@ export const DIRECTORY_PICKER_NAMES = DIRECTORY_PICKER_DISPLAY_NAMES;
 
 /** The directory-v2 picker fixture, resolved from the shared catalog scenario. */
 export type DirectoryPickerFixture = {
-  /** The space the ten-member grantable directory is scoped to (ADR-0021 GET param). */
+  /** The space the ten-member grantable directory is scoped to (GET param). */
   spaceId: string;
   /** The private folder containing the share target + control docs. */
   folderId: string;
@@ -1680,7 +1680,7 @@ export async function seedDirectoryPickerFixture(
   };
 }
 
-// ── ADR-0023: owner-scoped, live containment inheritance fixture ─────────────
+// ── owner-scoped, live containment inheritance fixture ────────────────────────
 //
 // The access-matrix spec (granted folder exposes the owner's OWN descendants; owner-scope
 // holds against a third party's nested node, even under an admin's folder-share; new child
@@ -1793,7 +1793,7 @@ export async function seedContainmentInheritanceFixture(
   };
 }
 
-// ── ADR-0024 (slice-12): lexical-search corpus fixture ───────────────────────
+// ── (slice-12): lexical-search corpus fixture ─────────────────────────────────
 //
 // The Phase-1 search e2e (`knowledge-search.e2e.spec.ts`, the merge gate) draws its
 // corpus ENTIRELY from the shared `KNOWLEDGE_BASE_SCENARIO` catalog entry (via
@@ -1810,7 +1810,7 @@ export async function seedContainmentInheritanceFixture(
 // space-A searcher searches space A; RLS + the per-space scope fence the foreign node out.
 
 /** The lexical-search corpus fixture, resolved from the shared `KNOWLEDGE_BASE_SCENARIO`
- * plus a second tenant for the other-space negative (ADR-0024 §3). Every `…Id` is a
+ * plus a second tenant for the other-space negative. Every `…Id` is a
  * `knr_…`; the spec asserts presence/absence by these named refs. */
 export type SearchCorpusFixture = {
   /** Space A — the space the searcher (`admin`) browses + searches. */
@@ -1968,7 +1968,7 @@ export async function teardownSearchCorpusFixture(
   }
 }
 
-// ── ADR-0026 (slice-13): KB media substrate fixture (the merge gate) ─────────
+// ── (slice-13): KB media substrate fixture (the merge gate) ───────────────────
 //
 // The media e2e (`knowledge-media-substrate.e2e.spec.ts`) drives the REAL signed-upload/
 // download transport (`/author/graph/media` + `attribute:'media'`) against REAL Storage,
@@ -1990,15 +1990,15 @@ export const MEDIA_BUCKET = KB_MEDIA_BUCKET;
  * by the signed URL equal THESE. */
 export const MEDIA_FIXTURE_BYTES = {
   fileOwned:
-    'ProFlow KB media fixture — the generic file substrate (ADR-0026).\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n',
+    'ProFlow KB media fixture — the generic file substrate.\nThese bytes travel the real signed-upload transport into the private kb-media bucket.\nDownloaded via a short-lived signed URL; the same exact bytes come back.\n',
   inherited:
-    'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder (ADR-0023 + ADR-0026).\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
+    'ProFlow KB media fixture — an attachment inherited through a shared ancestor folder.\nThe grantee reaches these bytes with no direct grant on the file itself.\n',
   nodeGrant:
-    'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (ADR-0026 write-fence).\n',
+    'ProFlow KB media fixture — the OWNER uploaded these bytes; a read-grantee may DOWNLOAD but never OVERWRITE them (write-fence).\n',
 } as const;
 
 /** The KB media substrate fixture, resolved from the shared `KNOWLEDGE_BASE_SCENARIO`
- * plus a second tenant for the cross-space negative (ADR-0026 §3). Every `…Id` is a
+ * plus a second tenant for the cross-space negative. Every `…Id` is a
  * `knr_…`; storage paths are the seeded `kmm.storage_path` (for the direct-fetch fences). */
 export type MediaSubstrateFixture = {
   /** Space A — the space the owner (`admin`) authors + downloads in. */
@@ -2010,22 +2010,22 @@ export type MediaSubstrateFixture = {
   fileOwnedId: string;
   fileOwnedPath: string;
   /** Owned video (real H.264/MP4 bytes, `video/mp4`) — one substrate serves file &
-   * video (assertion 4) AND the inline `<video controls>` player (ADR-0026 Phase 2,
+   * video (assertion 4) AND the inline `<video controls>` player (Phase 2,
    * increment 2). Its filename powers the `aria-label="Preview of <name>"`. */
   videoOwnedId: string;
   videoOwnedPath: string;
   videoOwnedFilename: string;
   /** Owned AUDIO (real PCM/WAV bytes, `audio/wav`) — the inline `<audio controls>`
-   * player (ADR-0026 Phase 2, increment 2). Its filename powers the
+   * player (Phase 2, increment 2). Its filename powers the
    * `aria-label="Preview of <name>"`. */
   fileAudioId: string;
   fileAudioFilename: string;
   /** Owned IMAGE (real PNG bytes, `image/png`) — the inline `<img>` preview happy path
-   * (ADR-0026 Phase 2, increment 1). Its filename powers the `alt="Preview of <name>"`. */
+   * (Phase 2, increment 1). Its filename powers the `alt="Preview of <name>"`. */
   fileImageId: string;
   fileImageFilename: string;
   /** Owned PDF (real bytes, `application/pdf`) — the inline `<iframe>` preview path
-   * (ADR-0026 Phase 2, increment 1). Its filename powers the `title="Preview of <name>"`. */
+   * (Phase 2, increment 1). Its filename powers the `title="Preview of <name>"`. */
   filePdfId: string;
   filePdfFilename: string;
   /** A REAL file (owner-uploaded bytes) per-user-granted to `nodeGrantee` (a node-only
@@ -2034,7 +2034,7 @@ export type MediaSubstrateFixture = {
   nodeGrantFileId: string;
   /** The seeded storage path of `nodeGrantFile` — for the 11b direct-upload-attempt fence. */
   nodeGrantFilePath: string;
-  /** A REAL confirmed file reserved for the trash → purge lifecycle (ADR-0026 touch-item):
+  /** A REAL confirmed file reserved for the trash → purge lifecycle (touch-item):
    * the media matrix e2e trashes it, purges it via the trash-route DELETE, and asserts
    * `purgeResource` best-effort reaps its `kb-media` object (the object stops resolving). */
   purgeReapFileId: string;
@@ -2073,7 +2073,7 @@ async function mediaStoragePath(
   tenant: KnowledgeGraphTenant,
   nodeId: string
 ): Promise<string> {
-  // ADR-0027: the path lives on the shared blob; the kmm row is the reference.
+  // The path lives on the shared blob; the kmm row is the reference.
   const { data, error } = await tenant.service
     .schema('kb')
     .from('resource_media_meta')
@@ -2145,7 +2145,7 @@ export async function seedMediaSubstrateFixture(
     'Cross-Space File'
   );
   const otherContent =
-    'ProFlow KB media fixture — a file in ANOTHER space (ADR-0026 assertion 7).\n';
+    'ProFlow KB media fixture — a file in ANOTHER space (assertion 7).\n';
   const otherSize = new TextEncoder().encode(otherContent).byteLength;
   const otherAuth = await otherClient.uploadMediaUrl(
     otherTenant.spaceId,
@@ -2213,7 +2213,7 @@ export async function teardownMediaSubstrateFixture(
   }
 }
 
-// ── ADR-0026 render: "Only files" filter + list Size column fixture ───────────
+// ── render: "Only files" filter + list Size column fixture ────────────────────
 //
 // The size/filter render e2e (`knowledge-drive-size-filter.e2e.spec.ts`) drives the
 // cross-lens "Only files" (uploaded-artifacts) filter + the list-view Size column purely

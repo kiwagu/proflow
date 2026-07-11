@@ -20,8 +20,7 @@ import type {
  * View components are PURELY presentational: their only inputs are the already-
  * resolved `ProjectionResult` (RLS already narrowed it), the i18n message catalog
  * (a plain serializable object — NOT the `t` function, which cannot cross the RSC
- * boundary), and the server-loaded KB seed. They never touch Supabase/the resolver
- * (ADR-0005 §b).
+ * boundary), and the server-loaded KB seed. They never touch Supabase/the resolver.
  */
 
 /**
@@ -30,14 +29,14 @@ import type {
  * `contains`), the shortcut forest (Drive cross-folder symlinks), the KB satellite
  * attributes (link/media), node meta (owner/updated), the current user id
  * (owner "You" label), and the tag topology (per-item tags + the space tag
- * vocabulary — ADR-0003 Variant B). Fields for the not-yet-ported surfaces (derived
+ * vocabulary). Fields for the not-yet-ported surfaces (derived
  * node health) are added when those are pulled under the front.
  */
 export type KbViewData = {
   attributesByItem: Record<string, KbAttributes>;
   metaByItem: Record<string, NodeMeta>;
   /**
-   * The tags OF each resolved item (ADR-0003 Variant B) — `resource_id → tag nodes`
+   * The tags OF each resolved item — `resource_id → tag nodes`
    * it points at via a FORWARD `tagged` edge. A presentation fan-out alongside the
    * canvas (`loadResourceTagsForItems`), NEVER a field on the frozen contract: a tag
    * is an ordinary node, "R is tagged T" a directed edge, so this is the read-side
@@ -48,7 +47,7 @@ export type KbViewData = {
    */
   tagsByItem: Record<string, ResourceTag[]>;
   /**
-   * ALL tag nodes of the space (ADR-0003 Variant B) — the space's tag vocabulary,
+   * ALL tag nodes of the space — the space's tag vocabulary,
    * loaded once (`loadSpaceTags`) under the user's RLS. Space-global by construction:
    * a tag is an ordinary node on the same row policy, and there is no separate tag-
    * visibility model, so every reader of the space sees the space's tags (the
@@ -63,20 +62,20 @@ export type KbViewData = {
   /**
    * The CURRENT user's space-level knowledge verbs (`update`/`delete`/`create`),
    * resolved ONCE server-side (constant across the space). The `⋯` node-actions menu
-   * combines these with per-node ownership to DISPLAY-GATE its destructive/edit items
-   * (ADR-0006) — a shared, non-owner viewer without the verbs sees only Copy + Details.
+   * combines these with per-node ownership to DISPLAY-GATE its destructive/edit items —
+   * a shared, non-owner viewer without the verbs sees only Copy + Details.
    * Fail-SAFE UX, never the security boundary (RLS is the sole authority).
    */
   capabilities: SpaceCapabilities;
   /**
-   * The CURRENT space's COMMERCIAL entitlements (ADR-0022) — a plan-derived signal,
+   * The CURRENT space's COMMERCIAL entitlements — a plan-derived signal,
    * resolved ONCE server-side from the platform `runtime_settings` registry, NOT from
    * RLS verbs. Rides as a SIBLING of `capabilities` (NOT inside it): an entitlement is
    * a DIFFERENT authority (commercial plan vs RLS permission), kept ORTHOGONAL so the
    * verb namespace is never polluted with billing state (Fork 1). Today the only
    * dimension is `advancedStructuralView` — the gate for the advanced (structural /
    * containment-tree) display of the STRUCTURAL lenses (the two Shared lenses + Starred
-   * + Trash; ADR-0022 Addendum A). A DISPLAY gate, never a fence: the same RLS-visible
+   * + Trash). A DISPLAY gate, never a fence: the same RLS-visible
    * node-set renders either way (Fork 2). Defaults all-`false` (cheapest plan) on the
    * no-space / fail-closed branch.
    */
@@ -94,7 +93,7 @@ export type KbViewData = {
    */
   openedAtById: Record<string, string>;
   /**
-   * The TRASH lens seed (ADR-0018 fork #4) — the same machinery as the live canvas,
+   * The TRASH lens seed — the same machinery as the live canvas,
    * resolved server-side under the user's RLS with the `deleted_at IS NOT NULL`
    * selector. Trash is a THIRD axis (existence), orthogonal to access + workflow:
    * the same user sees a node in ONE lens and not the other, so the trashed/normal
@@ -109,7 +108,7 @@ export type KbViewData = {
    */
   trash: TrashLensData;
   /**
-   * The "Shared by me" lens seed (ADR-0021 Part B) — the resources the CURRENT user
+   * The "Shared by me" lens seed — the resources the CURRENT user
    * has shared OUT, each with the people they granted it to. A read-only projection
    * over `knowledge_resource_user_grants WHERE granted_by = me` joined to the resources
    * I can still SEE (RLS the fence, fail-closed): a resource I revoked the only grant on
@@ -121,7 +120,7 @@ export type KbViewData = {
    */
   sharedByMe: SharedByMeEntry[];
   /**
-   * The "Shared with me" mechanism annotation (ADR-0021 Part C) — a map from each node
+   * The "Shared with me" mechanism annotation — a map from each node
    * in the shared set (visible nodes I do NOT own — the same set the `'shared'` lens
    * filters to) to the WINNING mechanism that grants ME access: `personal` (a per-user
    * grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the floor/supervisory
@@ -133,7 +132,7 @@ export type KbViewData = {
    */
   shareMechanism: ShareMechanismByItem;
   /**
-   * The EFFECTIVE per-org max-upload size in BYTES (ADR-0026 AMENDMENT §A3/§A4),
+   * The EFFECTIVE per-org max-upload size in BYTES,
    * resolved server-side under the user's RLS (org → global → 200 MB default,
    * clamped to the 5 GB hard cap). Drives the CreateResource picker's client-side
    * "too large (max {size})" pre-validation — a UX hint ONLY; the server authorizer
@@ -144,7 +143,7 @@ export type KbViewData = {
 };
 
 /**
- * The server-resolved Trash lens (ADR-0018). The trashed node set + its owner meta,
+ * The server-resolved Trash lens. The trashed node set + its owner meta,
  * resolved under the user's RLS with `deleted_at IS NOT NULL`. An ungranted/empty
  * Trash is `items=[]`, never an error.
  */
@@ -160,13 +159,13 @@ export type TrashLensData = {
  * (`?scope=`) so the lenses are shareable + survive refresh. 'kb' browses the
  * containment tree; 'home'/'starred'/'recent'/'shared'/'shared-by-me' are flat
  * cross-cutting lenses. 'shared' = visible nodes I do NOT own (owner ≠ me) — a loader
- * lens on top of the already-personal RLS floor, NOT a security boundary (ADR-0017
- * §2.1). 'shared-by-me' = the resources I have shared OUT (owner-direction sibling of
+ * lens on top of the already-personal RLS floor, NOT a security boundary. 'shared-by-me'
+ * = the resources I have shared OUT (owner-direction sibling of
  * 'shared'): the canvas ∩ the `kbData.sharedByMe` resourceId set, the read-only
- * projection over my per-user grants (ADR-0021 Part B). 'home' = the personalized
+ * projection over my per-user grants. 'home' = the personalized
  * "For you" digest (recently opened + recently updated) over the now-personal visible
- * set (ADR-0017 §4, personalization on the activity spine). 'search' = the lexical
- * search lens (ADR-0024 §5, slice-12 Phase 1) — NOT a projection over the resolved
+ * set (personalization on the activity spine). 'search' = the lexical
+ * search lens (slice-12 Phase 1) — NOT a projection over the resolved
  * canvas but a SUBSTRATE-capability surface that resolves its own `SearchResult` live
  * (debounced `?q=` term) under the same RLS transport; the first consumer of the
  * search capability, rendered in the Drive workbench but not bound to it.
@@ -182,8 +181,8 @@ export type DriveScope =
   | 'search';
 
 /**
- * The lenses that get the advanced (structural / containment-tree) DISPLAY MODE
- * (ADR-0022 Addendum A) — a render-side OPT-IN set, the single source of truth for the
+ * The lenses that get the advanced (structural / containment-tree) DISPLAY MODE —
+ * a render-side OPT-IN set, the single source of truth for the
  * `lensView` gate. A lens here can toggle Flat↔Advanced (gated by the
  * `advancedStructuralView` entitlement); a lens NOT here (Recent, Home) NEVER shows the
  * toggle and is never structural:
@@ -193,7 +192,7 @@ export type DriveScope =
  * 'recent' is omitted BY DECISION (a log / ordering, not a containment projection);
  * 'home' is a personal digest, likewise excluded.
  *
- * NOTE — `trash` is INTENTIONALLY NOT here yet (ADR-0022 Addendum A4). Its structural
+ * NOTE — `trash` is INTENTIONALLY NOT here yet. Its structural
  * tree needs the `contains` edges AMONG trashed nodes, but those edges are DORMANT: the
  * edge SELECT RLS requires BOTH endpoints `deleted_at IS NULL`, so a both-trashed edge
  * is not selectable under the user's RLS client at all (not merely filtered). Building
@@ -205,7 +204,7 @@ export const STRUCTURAL_LENS_SCOPES: ReadonlySet<DriveScope> =
   new Set<DriveScope>(['shared', 'shared-by-me', 'starred']);
 
 /**
- * The DISPLAY-MODE axis for the STRUCTURAL lenses (ADR-0022 Fork 5 + Addendum A) —
+ * The DISPLAY-MODE axis for the STRUCTURAL lenses —
  * ORTHOGONAL to `DriveScope` (it modulates HOW a lens renders, never WHICH scope is
  * active, so it adds NO new `DriveScope` member). It applies to the lenses in
  * `STRUCTURAL_LENS_SCOPES` (the two Shared lenses + Starred + Trash) — NEVER Recent or
@@ -288,7 +287,7 @@ export type ProjectionViewProps = {
   /** Switch the filter scope. The workbench writes it to the URL. */
   onScopeChange?: (scope: DriveScope) => void;
   /**
-   * The active lens DISPLAY MODE (ADR-0022 + Addendum A), owned by the workbench in the
+   * The active lens DISPLAY MODE, owned by the workbench in the
    * URL (`?view=flat|advanced`) — the SERVER-resolved EFFECTIVE mode (already forced to
    * 'flat' when the space is not entitled), so the toolbar toggle + the canvas render
    * agree SSR-side with no hydration flip. Read by the view only for the STRUCTURAL
@@ -337,13 +336,13 @@ export type ProjectionViewProps = {
   /** PASTE the clipboard source into a folder (null → top level). The VIEW builds the
    * "X (copy)" rootTitle (it has `t`); the workbench just POSTs the deep-copy. */
   onPaste?: (targetFolderId: string | null, rootTitle: string) => void;
-  /** PASTE the clipboard source AS A SHORTCUT into a folder (ADR-0015 §3) — a
+  /** PASTE the clipboard source AS A SHORTCUT into a folder — a
    * `shortcut` edge folder→source instead of a deep copy. Folder-only (a shortcut
    * hangs off a folder), so the view offers it only inside a folder, never at root. */
   onPasteShortcut?: (targetFolderId: string) => void;
   /** CLEAR the clipboard (the ✕ on the Paste control / Escape). */
   onClearClipboard?: () => void;
-  /** REMOVE a shortcut card — delete the `shortcut` edge folder→target (ADR-0015 §3).
+  /** REMOVE a shortcut card — delete the `shortcut` edge folder→target.
    * Only the symlink is removed; the target node + its canonical home stay. Resolves
    * `true` on success; `delete`-verb gated in the DB (a disallowed remove is a no-op). */
   onRemoveShortcut?: (folderId: string, targetId: string) => Promise<boolean>;

@@ -2,10 +2,10 @@ import { prose } from './lexical.js';
 import type { SeedScenario } from './types.js';
 
 /**
- * Tariff-gated ADVANCED (structural) view of the Shared lenses — ADR-0022.
+ * Tariff-gated ADVANCED (structural) view of the Shared lenses.
  *
  * The two Shared lenses (`'shared'` = "Shared with me" = visible nodes I do NOT own;
- * `'shared-by-me'` = the resources I have shared OUT) ship FLAT (a digest). ADR-0022
+ * `'shared-by-me'` = the resources I have shared OUT) ship FLAT (a digest). This scenario
  * adds an ADVANCED display mode that renders the SAME RLS-visible shared node-set as
  * the KB containment TREE, gated by the COMMERCIAL `advanced_shared_view` entitlement
  * (a scoped control-plane `runtime_settings` row, resolved global→org→space with
@@ -43,7 +43,7 @@ export const ADVANCED_SHARED_SCENARIO: SeedScenario = {
   id: 'advanced-shared',
   title: 'Advanced shared view (structural)',
   summary:
-    'The tariff-gated ADVANCED (tree) layout of the Shared lenses over the SAME RLS-visible shared set as the flat digest: a shared folder ⊃ a shared doc that NESTS under it, plus a doc whose parent folder is NOT shared so it sits at the ROOT (graceful-absence) — view-only, entitlement-gated, no resolver change (ADR-0022, Invariant #1).',
+    'The tariff-gated ADVANCED (tree) layout of the Shared lenses over the SAME RLS-visible shared set as the flat digest: a shared folder ⊃ a shared doc that NESTS under it, plus a doc whose parent folder is NOT shared so it sits at the ROOT (graceful-absence) — view-only, entitlement-gated, no resolver change (Invariant #1).',
   presets: ['shared'],
   tree: [
     {

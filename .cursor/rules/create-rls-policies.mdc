@@ -27,7 +27,7 @@ alwaysApply: false
 
 ## Default Posture — Fail-Closed (always)
 
-Before writing any policy: the default access posture is **fail-closed**. A row is invisible unless a predicate **deliberately** admits it; new user content defaults to **private (owner-only)**; sharing is an **additive, OR'd widening**, never the baseline. The forgotten case must fail **closed** (un-shared, recoverable), never **open** (leaked, irrecoverable). The fence is the **RLS predicate** — never an app `where` filter or a `status` flag (ADR-0009; `poc-no-fallbacks`). Detail: `rls-policy-authoring-basics.mdc` → "Default Posture"; the knowledge-graph instance: `refs/arch/adr/0017-per-person-visibility-and-deliberate-sharing.md`.
+Before writing any policy: the default access posture is **fail-closed**. A row is invisible unless a predicate **deliberately** admits it; new user content defaults to **private (owner-only)**; sharing is an **additive, OR'd widening**, never the baseline. The forgotten case must fail **closed** (un-shared, recoverable), never **open** (leaked, irrecoverable). The fence is the **RLS predicate** — never an app `where` filter or a `status` flag (`poc-no-fallbacks`). Detail: `rls-policy-authoring-basics.mdc` → "Default Posture".
 
 RLS policy work splits into three narrow concerns:
 

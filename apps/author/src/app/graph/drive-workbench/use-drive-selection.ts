@@ -12,7 +12,7 @@ import type { SelectedNode } from '../views/resource-panel';
  * signal, and the derived `selectedNode` / `openDoc` the panel + reader read.
  *
  * `recordOpen` records a DELIBERATE open of a node — viewing it in Details, opening it in
- * the reader, or navigating INTO a folder (ADR-0016 §3.3). Fire-and-forget under the
+ * the reader, or navigating INTO a folder. Fire-and-forget under the
  * user's RLS via the opened route (gated by `space.knowledge.open`); a failure NEVER
  * blocks the UI (best-effort, an RLS rejection is a clean no-op). The DB roll-up advances
  * `resource_user_state.last_opened_at` from the appended row. We do NOT re-resolve on an
@@ -29,7 +29,7 @@ export function useDriveSelection({
   const [selectedId, setSelectedId] = React.useState<string | undefined>(
     undefined
   );
-  // The renderable meta of a SEARCH hit opened from the search lens (ADR-0024 §5
+  // The renderable meta of a SEARCH hit opened from the search lens (a search
   // follow-up). The Details panel derives `selectedNode` + its meta from the resolved
   // canvas (`result.items` / `kbData`), keyed by the resolved set — but a search hit can
   // be OUTSIDE that set (it resolves its own live result, a superset of the canvas). For
@@ -78,7 +78,7 @@ export function useDriveSelection({
     [recordOpen]
   );
 
-  // The canvas-keyed fallback for a search hit OUTSIDE the resolved canvas (ADR-0024 §5).
+  // The canvas-keyed fallback for a search hit OUTSIDE the resolved canvas.
   // Only honoured when its id matches the live selection (a stale stash from a previous
   // search row is ignored — a canvas node always wins).
   const fallbackSelection =

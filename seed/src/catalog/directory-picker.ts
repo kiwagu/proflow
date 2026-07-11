@@ -3,11 +3,11 @@ import type { ActorSpec, SeedScenario } from './types.js';
 
 /**
  * Directory-v2 picker cohort — a space LARGE ENOUGH to exercise the paginated
- * co-member people-picker (ADR-0021 Part A, decisions A1/A2/A5).
+ * co-member people-picker (decisions A1/A2/A5).
  *
- * ADR-0020 gave the Share dialog a searchable co-member directory; the
+ * The Share dialog already has a searchable co-member directory; the
  * `per-user-share` scenario seeds the small (4-member) directory that proves
- * resolve-a-name / search-narrows / non-member-is-blind. ADR-0021 makes that
+ * resolve-a-name / search-narrows / non-member-is-blind. This scenario makes that
  * directory *scalable*: `space_member_directory` gains a keyset cursor
  * (`p_after_key,p_after_user`), a windowed `total_count`, and `p_exclude` (owner +
  * already-granted, removed BEFORE the page limit and the count). The picker pages 5
@@ -110,7 +110,7 @@ export const DIRECTORY_PICKER_SCENARIO: SeedScenario = {
   id: 'directory-picker',
   title: 'Directory-v2 picker cohort',
   summary:
-    'A space with TEN grantable co-members + one private share target, so the paginated people-picker (ADR-0021) can demonstrate a page of 5 + "+N more", a keyset "Show more" next page with no overlap, and p_exclude dropping the owner + already-granted from both the page and the count.',
+    'A space with TEN grantable co-members + one private share target, so the paginated people-picker can demonstrate a page of 5 + "+N more", a keyset "Show more" next page with no overlap, and p_exclude dropping the owner + already-granted from both the page and the count.',
   presets: ['per-user-share'],
   actors: PICKER_MEMBERS,
   tree: [
