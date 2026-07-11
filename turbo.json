@@ -10,6 +10,9 @@
     "lint": {
       "dependsOn": ["^lint"]
     },
+    "lint:strict": {
+      "dependsOn": ["^lint:strict"]
+    },
     "format": {
       "dependsOn": ["^format"]
     },
@@ -52,12 +55,17 @@
     "NODE_ENV",
     "VERCEL_URL",
     "AUTHOR_DEV_PORT",
+    "DEV_BROWSER_PROFILE",
+    "DEV_BROWSER_EXTENSIONS",
     "GATEWAY_ENTRY_ORIGIN",
     "GATEWAY_UPSTREAM_HOST",
     "GATEWAY_UPSTREAM_PROBE_TIMEOUT_MS",
     "PLATFORM_DEV_PORT",
     "PLAYWRIGHT_BASE_URL",
     "PLAYWRIGHT_WEB_SERVER_URL",
+    "SEED_BASE_URL",
+    "SEED_INSECURE_TLS",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
     "PAYLOAD_SECRET",
     "MONGO_URL",
     "NEXT_PUBLIC_SUPABASE_URL",
@@ -112,6 +120,8 @@
     "IDENTITY_NATS_CONSUMER",
     "SPACE_ORG_NATS_STREAM",
     "SPACE_ORG_NATS_CONSUMER",
+    "KNOWLEDGE_ACTIVITY_NATS_STREAM",
+    "KNOWLEDGE_ACTIVITY_NATS_CONSUMER",
     "NOTIFICATIONS_DEFAULT_LOCALE",
     "LOG_LEVEL",
     "LOG_FORMAT",

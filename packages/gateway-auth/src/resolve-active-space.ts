@@ -6,11 +6,7 @@ export type ActiveSpaceMembership = Readonly<{
 }>;
 
 export type ResolveActiveSpaceResolution =
-  | 'none'
-  | 'single_auto'
-  | 'multi_default'
-  | 'from_cookie'
-  | 'from_query';
+  'none' | 'single_auto' | 'multi_default' | 'from_cookie' | 'from_query';
 
 export type ResolveActiveSpaceResult =
   | {

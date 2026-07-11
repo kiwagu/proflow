@@ -27,28 +27,15 @@
  */
 
 -- ---------------------------------------------------------------------------
--- permission verb + role mapping (dedicated write verb for own-progress)
+-- permission verb — own-progress. READ-TIER: it touches only one's OWN state,
+-- so it follows whoever holds space.knowledge.read. The role mapping is the
+-- consolidated read-tier derive in 20260623193000 (ADR-0017 §3), NOT a
+-- name-by-name grant here.
 -- ---------------------------------------------------------------------------
 
 insert into public.permissions (key, description) values
   ('space.knowledge.progress', 'Advance one''s own progress on knowledge resources in one space.')
 on conflict (key) do nothing;
-
-with mapping(role_key, permission_key) as (
-  values
-    ('admin', 'space.knowledge.progress'),
-    ('author', 'space.knowledge.progress')
-)
-insert into public.role_permission (role_id, permission_id)
-select r.id, p.id
-from mapping m
-join public.roles r
-  on r.key = m.role_key
- and r.role_kind = 'system'
- and r.owner_organization_id is null
- and r.archived_at is null
-join public.permissions p on p.key = m.permission_key
-on conflict (role_id, permission_id) do nothing;
 
 -- ---------------------------------------------------------------------------
 -- resource_user_state (per-user progress anchor)

@@ -185,6 +185,7 @@ export async function AccountShellWithNav({
         spaceSettings: t('shell.nav.spaceSettings'),
         organizations: t('shell.nav.organizations'),
         superAdmin: t('shell.nav.superAdmin'),
+        toggleSidebar: t('shell.nav.toggleSidebar'),
         appTitle: t('shell.appTitle'),
         activeOrganization: t('shell.superAdmin.activeOrganization'),
         noActiveOrganization: t('shell.superAdmin.noActiveOrganization'),

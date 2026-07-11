@@ -6,11 +6,7 @@ export type NotificationChannel = 'email' | 'sms' | 'push';
 
 /** GoTrue / Supabase auth email_action_type values */
 export type AuthEmailActionType =
-  | 'signup'
-  | 'magiclink'
-  | 'recovery'
-  | 'email_change'
-  | 'invite';
+  'signup' | 'magiclink' | 'recovery' | 'email_change' | 'invite';
 
 export type EmailTemplateKey = 'auth_email_action' | 'space_invite';
 
@@ -59,9 +55,7 @@ export type PushNotificationInput = {
 };
 
 export type NotificationRequest =
-  | EmailNotificationInput
-  | SmsNotificationInput
-  | PushNotificationInput;
+  EmailNotificationInput | SmsNotificationInput | PushNotificationInput;
 
 export type RenderedEmail = {
   subject: string;

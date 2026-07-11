@@ -40,6 +40,11 @@ export const config = [
       // React scope no longer necessary with new JSX transform.
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
+      // Informational React-Compiler diagnostic — fires when a file uses a library the
+      // compiler can't optimize (e.g. TanStack Table). NOT an actionable code smell (the
+      // dependency is legitimate); silencing it keeps `lint:strict` honest while every
+      // other React-Compiler rule (set-state-in-effect, etc.) stays ON.
+      'react-hooks/incompatible-library': 'off',
     },
   },
   {

@@ -10,12 +10,18 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/ai-artifacts-generic-wording.mdc
 @.cursor/rules/entity-first-module-naming.mdc
 @.cursor/rules/static-imports-only.mdc
+@.cursor/rules/text-sorting-centralized.mdc
 @.cursor/rules/use-bun-instead-of-node-vite-npm-pnpm-yarn.mdc
 @.cursor/rules/domain-context-first-analysis.mdc
 @.cursor/rules/process-check-rules-skills.mdc
+@.cursor/rules/reuse-first-discovery.mdc
 @.cursor/rules/standard-design-patterns.mdc
 @.cursor/rules/zod-schema-first-contracts.mdc
 @.cursor/rules/ui-i18n-json-required.mdc
+@.cursor/rules/seed-dictionary-coverage.mdc
+@.cursor/rules/ui-primitive-hygiene.mdc
+@.cursor/rules/security-review-before-commit.mdc
+@.cursor/rules/lint-warnings-block-commit.mdc
 
 ## Architecture & routing
 
@@ -42,6 +48,8 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/nextjs-blocking-routes-suspense.mdc
 @.cursor/rules/shadcn-patterns-required.mdc
 @.cursor/rules/shadcn-patterns-react-ui.mdc
+@.cursor/rules/ui-hints-tooltips.mdc
+@.cursor/rules/lens-feature-component-reuse.mdc
 
 ## Payload CMS (Author app)
 

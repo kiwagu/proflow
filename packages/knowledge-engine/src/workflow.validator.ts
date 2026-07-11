@@ -5,7 +5,7 @@ import type { WorkflowDefinition } from '@workspace/knowledge-contracts';
  * DB-free, React-free domain function: given a workflow DEFINITION (data) and a
  * requested `from → to` move, it decides whether the move is legal and authorized.
  *
- * It reads the XState-compatible definition (ADR-0007): a move `from → to` is
+ * It reads the XState-compatible definition: a move `from → to` is
  * legal iff (1) `to` is a declared state, (2) some event in `states[from].on`
  * targets `to`, and (3) if that transition declares a `guard`, the caller holds
  * that verb. The engine is generic; a new lifecycle is a new `resource_workflows`

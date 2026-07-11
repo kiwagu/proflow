@@ -8,7 +8,7 @@ import { z } from 'zod';
  * ProjectionSpec is parsed at the boundary). A new lifecycle is one more row, zero
  * migration.
  *
- * NORMATIVE FORM (ADR-0007): the definition is stored in an XState-compatible
+ * NORMATIVE FORM: the definition is stored in an XState-compatible
  * shape — `{ initial, states: { <state>: { on: { <event>: { target, guard? } } } } }`
  * — NOT a `transitions[]` array. Guards reference a permission-verb by STRING KEY.
  * This lets the thin in-house `validateTransition` read the definition directly
@@ -38,7 +38,7 @@ export type WorkflowState = z.infer<typeof workflowStateSchema>;
 export const workflowDefinitionSchema = z
   .object({
     initial: z.string(),
-    states: z.record(z.string(), workflowStateSchema), // XState-compatible (ADR-0007)
+    states: z.record(z.string(), workflowStateSchema), // XState-compatible
   })
   .refine((d) => d.initial in d.states, {
     message: 'initial must be a declared state',

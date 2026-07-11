@@ -5,6 +5,10 @@ import {
 } from 'ulid';
 import { z } from 'zod';
 
+import { ENTITY_PREFIXES, type EntityKind, prefixFor } from './registry.js';
+
+export * from './registry.js';
+
 export type EntityId = string & z.BRAND<'EntityId'>;
 
 /**
@@ -51,7 +55,7 @@ export type ParsedEntityId = Readonly<
 >;
 
 const CROCKFORD_BASE32 = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]+$/;
-const PREFIX_RE = /^[a-z][a-z0-9]{1,15}$/;
+export const PREFIX_RE = /^[a-z][a-z0-9]{1,15}$/;
 const TS_RE = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{10}$/;
 
 const ENTITY_ID_RE =
@@ -238,12 +242,27 @@ export function createEntityId(
   return fromUlid(p, u);
 }
 
+/**
+ * Registry-safe variant of {@link createEntityId}: takes a semantic
+ * {@link EntityName} instead of a raw prefix string, so the prefix is resolved
+ * from the canonical registry and typos / duplicate prefixes cannot reach here.
+ * Prefer this over `createEntityId('literal')` at app call sites.
+ */
+export function createEntityIdFor<K extends EntityKind>(
+  kind: K,
+  options: CreateEntityIdOptions = {}
+): EntityIdOf<K> {
+  return createEntityId(prefixFor(kind), options) as EntityIdOf<K>;
+}
+
 export function isEntityId(value: string): value is EntityId {
   return ENTITY_ID_RE.test(value);
 }
 
 /**
- * Schema requiring a specific prefix (normalized via `normalizePrefix`).
+ * Schema requiring a specific prefix (normalized via `normalizePrefix`). The
+ * prefix is a runtime argument, so this doubles as the dynamic zod-schema
+ * factory for a prefix known only at runtime. Output is branded `EntityId`.
  */
 export function entityIdWithPrefixSchema(prefix: string) {
   const p = normalizePrefix(prefix);
@@ -255,6 +274,62 @@ export function entityIdWithPrefixSchema(prefix: string) {
       });
     }
   });
+}
+
+/**
+ * A distinctly-branded entity id: `EntityId` narrowed by an extra brand tag, so
+ * e.g. a `UserId` and a `SpaceId` are different compile-time types (the checker
+ * catches passing one where the other is expected) while both remain assignable
+ * to `EntityId`. Fixes the "single brand for every id" hazard where the type
+ * system could not tell one kind of id from another.
+ */
+export type BrandedEntityId<Brand extends string> = EntityId & z.BRAND<Brand>;
+
+/**
+ * The branded id type for a registered entity kind — the registry-driven
+ * per-kind brand. `EntityIdOf<'user'>` is distinct from `EntityIdOf<'space'>`.
+ * Prefer the named aliases (`UserId`, `SpaceId`, …) at call sites.
+ */
+export type EntityIdOf<K extends EntityKind> = BrandedEntityId<K>;
+
+/**
+ * Per-type branded schema for a fixed prefix.
+ * `brandedEntityIdSchema<'UserId'>('usr')` yields a schema whose parsed output is
+ * a `UserId`, distinct from any other branded id. Parsing is the only way to
+ * obtain the branded value (parse-to-brand) — the lever behind the repo's
+ * parse-at-the-boundary discipline for identifiers.
+ */
+export function brandedEntityIdSchema<Brand extends string>(prefix: string) {
+  return entityIdWithPrefixSchema(prefix).brand<Brand>();
+}
+
+/**
+ * Runtime type-guard: is `value` a well-formed entity id whose prefix equals
+ * `prefix` (known only at runtime)? Narrows to `EntityId`.
+ */
+export function isEntityIdWithPrefix(
+  value: string,
+  prefix: string
+): value is EntityId {
+  return isEntityId(value) && value.startsWith(`${normalizePrefix(prefix)}_`);
+}
+
+/**
+ * Throwing assert: `value` must be an entity id with `prefix`; returns it
+ * normalized + branded. For a compile-time-known type prefer
+ * `brandedEntityIdSchema(...).parse(...)`.
+ */
+export function assertEntityIdWithPrefix(
+  value: string,
+  prefix: string
+): EntityId {
+  const p = normalizePrefix(prefix);
+  if (!isEntityIdWithPrefix(value, p)) {
+    throw new Error(
+      `Expected an entity id with prefix "${p}_", got "${value}".`
+    );
+  }
+  return normalizeEntityId(value);
 }
 
 export function parseEntityId(value: string): ParsedEntityId {
@@ -357,3 +432,128 @@ export function compareEntityIds(
       return assertNever(mode);
   }
 }
+
+/* ------------------------------------------------------------------------- *
+ * Registry-driven per-kind branded ids
+ *
+ * Named aliases + a runtime toolkit, both derived from `ENTITY_PREFIXES`, so
+ * every registered entity kind gets a distinct compile-time id type and a
+ * create/guard/assert/schema set — all sharing the one canonical format. Adding
+ * a kind to the registry is the only edit needed for the toolkit; the aliases
+ * below are hand-mirrored for import ergonomics (`id: UserId`).
+ * ------------------------------------------------------------------------- */
+
+export type UserId = EntityIdOf<'user'>;
+export type OrganizationId = EntityIdOf<'organization'>;
+export type SpaceId = EntityIdOf<'space'>;
+export type SpaceInviteId = EntityIdOf<'spaceInvite'>;
+export type SpaceAdminAuditLogId = EntityIdOf<'spaceAdminAuditLog'>;
+export type RoleId = EntityIdOf<'role'>;
+export type PermissionId = EntityIdOf<'permission'>;
+export type UserRoleId = EntityIdOf<'userRole'>;
+export type OperatorCapabilityGrantId = EntityIdOf<'operatorCapabilityGrant'>;
+export type OperatorCapabilitySessionId =
+  EntityIdOf<'operatorCapabilitySession'>;
+export type OperatorCapabilityAuditId = EntityIdOf<'operatorCapabilityAudit'>;
+export type ContentItemId = EntityIdOf<'contentItem'>;
+export type ScopeId = EntityIdOf<'scope'>;
+export type OutboxJobId = EntityIdOf<'outboxJob'>;
+export type RuntimeSettingId = EntityIdOf<'runtimeSetting'>;
+export type KnowledgeResourceId = EntityIdOf<'knowledgeResource'>;
+export type KnowledgeEdgeId = EntityIdOf<'knowledgeEdge'>;
+export type ProjectionId = EntityIdOf<'projection'>;
+export type ResourceUserStateId = EntityIdOf<'resourceUserState'>;
+export type ReportingLineId = EntityIdOf<'reportingLine'>;
+export type KbResourceDescriptionId = EntityIdOf<'kbResourceDescription'>;
+export type KbResourceActivityId = EntityIdOf<'kbResourceActivity'>;
+export type KbResourceLinkId = EntityIdOf<'kbResourceLink'>;
+export type KbMediaBlobId = EntityIdOf<'kbMediaBlob'>;
+export type KbResourceMediaMetaId = EntityIdOf<'kbResourceMediaMeta'>;
+export type BodyId = EntityIdOf<'body'>;
+
+/**
+ * The create/guard/assert/schema toolkit for one registered entity kind. All
+ * members are branded to `EntityIdOf<K>`, so mixing kinds is a compile error.
+ */
+export type EntityIdToolkit<K extends EntityKind> = Readonly<{
+  /** The entity kind this toolkit is bound to. */
+  kind: K;
+  /** The registered wire prefix (e.g. `'usr'`). */
+  prefix: (typeof ENTITY_PREFIXES)[K];
+  /** Mint a fresh, branded id for this kind. Trusted construction. */
+  create: (options?: CreateEntityIdOptions) => EntityIdOf<K>;
+  /** Runtime type-guard narrowing to this kind's branded id. */
+  is: (value: string) => value is EntityIdOf<K>;
+  /** Throwing assert → normalized, branded id (parse-at-the-boundary). */
+  assert: (value: string) => EntityIdOf<K>;
+  /**
+   * Explicit UNSTRICT brand: cast a raw string to this kind's branded id with NO
+   * runtime validation. For TRUSTED construction only — test fixtures, seed
+   * builders, DB-row mapping where the value is already known-good. Never use on
+   * untrusted input (use {@link assert} / {@link prefixSchema} / {@link schema}).
+   */
+  brand: (value: string) => EntityIdOf<K>;
+  /**
+   * Strict zod schema: validates the FULL `<prefix>_<rand16>.<ts10>` format and
+   * brands the parsed output as this kind's id.
+   */
+  schema: z.ZodType<EntityIdOf<K>>;
+  /**
+   * Prefix-gated zod schema (the recommended DEFAULT for contract id fields):
+   * runtime-checks that the value carries this kind's `<prefix>_` prefix and is
+   * non-empty, then brands it — WITHOUT enforcing the full `<rand16>.<ts10>`
+   * canonical suffix. This catches a swapped-KIND id at the boundary (a `usr_…`
+   * handed to a `spc_…` slot is rejected in runtime, not only at compile time)
+   * while tolerating non-canonical placeholder suffixes (`knr_this_id_...`), so
+   * fixtures/negative tests that pass a correctly-prefixed but fake id still flow
+   * through to the handler's own not-found/denied path. Upgrade to {@link schema}
+   * for full-format validation.
+   */
+  prefixSchema: z.ZodType<EntityIdOf<K>>;
+  /**
+   * Lenient zod schema: validates only that the value is a non-empty string but
+   * brands the output as `EntityIdOf<K>` — a compile-time-only brand with NO
+   * runtime prefix check. Use only where the prefix genuinely cannot be
+   * guaranteed; prefer {@link prefixSchema} for id fields.
+   */
+  looseSchema: z.ZodType<EntityIdOf<K>>;
+}>;
+
+function makeEntityIdToolkit<K extends EntityKind>(
+  kind: K
+): EntityIdToolkit<K> {
+  const prefix = ENTITY_PREFIXES[kind];
+  return {
+    kind,
+    prefix,
+    create: (options?: CreateEntityIdOptions) =>
+      createEntityId(prefix, options) as EntityIdOf<K>,
+    is: (value: string): value is EntityIdOf<K> =>
+      isEntityIdWithPrefix(value, prefix),
+    assert: (value: string) =>
+      assertEntityIdWithPrefix(value, prefix) as EntityIdOf<K>,
+    brand: (value: string) => value as EntityIdOf<K>,
+    schema: brandedEntityIdSchema<K>(prefix) as unknown as z.ZodType<
+      EntityIdOf<K>
+    >,
+    prefixSchema: z
+      .string()
+      .min(1)
+      .refine((v) => v.startsWith(`${prefix}_`), {
+        message: `Must be a "${prefix}_" entity id`,
+      }) as unknown as z.ZodType<EntityIdOf<K>>,
+    looseSchema: z.string().min(1) as unknown as z.ZodType<EntityIdOf<K>>,
+  };
+}
+
+/**
+ * Registry-derived toolkit map: one {@link EntityIdToolkit} per entity kind, so
+ * `entityIds.user.create()` returns a `UserId`, `entityIds.space.is(x)` guards a
+ * `SpaceId`, `entityIds.knowledgeResource.assert(x)` parses at a boundary, etc.
+ */
+export const entityIds = Object.fromEntries(
+  (Object.keys(ENTITY_PREFIXES) as EntityKind[]).map((kind) => [
+    kind,
+    makeEntityIdToolkit(kind),
+  ])
+) as unknown as { readonly [K in EntityKind]: EntityIdToolkit<K> };

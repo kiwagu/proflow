@@ -19,6 +19,29 @@ const buttonVariants = cva(
         destructive:
           'bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40',
         link: 'text-primary underline-offset-4 hover:underline',
+        // A zero-chrome inline text affordance: muted text that brightens to
+        // foreground on hover, with no box, border, or background at any state.
+        // Pair with `size={null}` (it carries no height/padding of its own) and
+        // a per-site weight (`font-semibold`/`font-normal`). Used for breadcrumb
+        // crumbs and similar inline navigational text.
+        crumb:
+          'text-muted-foreground hover:text-foreground h-auto rounded-none p-0 font-normal',
+        // A segmented-strip toggle item: muted when off, lifted onto `--accent`
+        // when on, driven entirely by `aria-pressed`. No hover treatment (a
+        // segmented control signals state, not hover). `rounded-none` so it sits
+        // flush inside an `overflow-hidden` strip; a standalone toggle re-adds
+        // its own `rounded-md`/`border` per site. Geometry and dividers are the
+        // caller's (segments vary: text vs icon, first vs middle).
+        segmented:
+          'text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground rounded-none',
+        // A standalone on/off FILTER CHIP: a bordered pill that reads muted when off
+        // (hovering it to `--accent` previews the toggle) and lifts onto `--accent`
+        // with a seamless border when on, driven entirely by `aria-pressed`. Unlike
+        // `segmented` (a flush strip item), a chip stands alone — it keeps its own
+        // border and hover treatment. Pair with `size="pill"`. Used by every lens
+        // display filter (share-facet chips, cross-lens toggles).
+        filterChip:
+          'text-muted-foreground border-border hover:bg-accent hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground aria-pressed:border-transparent',
       },
       size: {
         default:
@@ -26,6 +49,7 @@ const buttonVariants = cva(
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),8px)] px-2 text-xs in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: 'h-8 gap-1 rounded-[min(var(--radius-md),10px)] px-2.5 in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',
         lg: 'h-10 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
+        pill: "h-7 gap-1.5 rounded-full px-3 text-xs [&_svg:not([class*='size-'])]:size-3",
         icon: 'size-9',
         'icon-xs':
           "size-6 rounded-[min(var(--radius-md),8px)] in-data-[slot=button-group]:rounded-md [&_svg:not([class*='size-'])]:size-3",

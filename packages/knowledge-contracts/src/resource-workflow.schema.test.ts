@@ -9,7 +9,7 @@ import {
  * The `document_review` workflow definition is the exact jsonb the seed migration
  * writes into `public.resource_workflows.definition`; parsing it here keeps the
  * stored data and the contract in lock-step (a new lifecycle is one parse-valid
- * row, never a schema change). XState-compatible form (ADR-0007).
+ * row, never a schema change). XState-compatible form.
  */
 const documentReview = {
   initial: 'draft',

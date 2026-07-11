@@ -1,0 +1,64 @@
+---
+description: "Use when: implementing or changing a user-facing knowledge capability, or writing/changing e2e that needs seed data — keep the @workspace/seed dictionary the single source and the e2e drawing from it."
+globs: ["seed/**", "tests/e2e/**", "apps/author/src/app/graph/**", "apps/author/src/knowledge/**", "supabase/migrations/**"]
+alwaysApply: true
+---
+
+# Seed dictionary is the single source of reference content + e2e fixtures
+
+## Pyramid Layer
+
+- Layer: L1 core rule.
+
+## Use This When
+
+- Keep this rule active for any work that adds or changes a USER-FACING knowledge
+  capability (a node kind, edge type, projection/app, access dimension, lifecycle
+  action, lens), or any e2e spec that needs seed data.
+
+## Stop Here If
+
+- Stop after the coverage + dedup obligations are clear; this is a leaf rule.
+
+## Descend To
+
+- Methodology + execution: the **`seed-curator`** agent (`.claude/agents/seed-curator.md`).
+- The dictionary itself: `seed/` (`@workspace/seed`) and its `README.md`.
+
+## The single source
+
+`@workspace/seed` (the `seed/` workspace) is the ONE home of reference content. It serves
+four masters at once: e2e consistency, demo population, no-more-hand-built-trees, and
+self-documentation. The `seed-curator` agent owns it. All content is created at RUNTIME
+through the live `/author/graph/*` endpoints under RLS — NEVER via migrations (that
+poisons the author identity-sync worker).
+
+`bun run seed --manifest=<file>` dumps the seeded `{scenario: {ref: id}}` map as JSON —
+the machine-readable dictionary (gitignored runtime artifact) for grounding/verification
+and LLM↔human feedback. Generate it to confirm a scenario materialized; read it on hand-off
+to know what already exists. The `seed-curator` agent both generates and consumes it.
+
+## Required behavior
+
+1. **Feature work extends the seed.** When a change adds or alters a user-facing capability,
+   the seed dictionary MUST gain a scenario (or an extended one) that demonstrates it —
+   declarative data + a real Lexical body + a one-line `summary`, wired into a preset. Do
+   this as the **close-out of the feature**, by **chaining the `seed-curator` agent** when
+   you can spawn sub-agents, or INLINE following its methodology when you cannot. A purely
+   internal change (no node/edge/view/lifecycle a user can see) is exempt — say so.
+
+2. **e2e draws seed data from the catalog.** An e2e spec that needs a tree, actors, or a
+   projection takes them from `@workspace/seed` — `materializeFixture(scenario, tenant)` +
+   `seedClientFor(actor)` (the shared `/author/graph/*` create-vocabulary), and asserts
+   against the scenario's named `ref`s. Relevant fixtures live in `seed/src/catalog/*`, NOT
+   inline in the spec.
+
+3. **No duplicated test data.** Do NOT re-implement `createFolder` / `createDoc` / inline
+   resource trees in a spec when the shared client + a catalog fixture exist. Reducing
+   duplication and keeping one create-vocabulary is the whole point.
+
+## Rationale
+
+One dictionary means the demo, the tests, and the docs tell the exact same story, and
+LLM↔human feedback can name a resource by its `ref` rather than a UUID. Drift (a feature
+with no seed; a spec with its own inline tree) is the thing this rule prevents.

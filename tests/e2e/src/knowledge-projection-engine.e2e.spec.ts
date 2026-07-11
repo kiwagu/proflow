@@ -119,7 +119,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
     expect(result.view).toBe('grid');
     expect(result.projection_id).toBe(graph.knowledgeBaseProjectionId);
 
-    const ids = new Set(result.items.map((i) => i.id));
+    const ids = new Set(result.items.map((i) => String(i.id)));
     // Exactly the tagged lessons (L1, L2) — L3 is untagged, the tag node itself
     // is not kind in (text, link), so neither appears.
     expect(ids).toEqual(new Set(graph.taggedLessonIds));
@@ -151,7 +151,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
       graph.lessonIds[2],
     ]);
 
-    const byId = new Map(result.items.map((i) => [i.id, i]));
+    const byId = new Map(result.items.map((i) => [String(i.id), i]));
     // depth 0/1/2 along the chain; via_edge_id null only for the start node.
     expect(byId.get(graph.lessonIds[0])?.depth).toBe(0);
     expect(byId.get(graph.lessonIds[1])?.depth).toBe(1);
@@ -227,7 +227,7 @@ test.describe('knowledge graph — projection engine (KB + course over one graph
 
     const maxDepth = Math.max(...result.items.map((i) => i.depth));
     expect(maxDepth).toBe(1);
-    const ids = new Set(result.items.map((i) => i.id));
+    const ids = new Set(result.items.map((i) => String(i.id)));
     expect(ids).toEqual(new Set([graph.lessonIds[0], graph.lessonIds[1]]));
     expect(ids.has(graph.lessonIds[2])).toBe(false);
   });

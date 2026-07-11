@@ -7,8 +7,8 @@ import {
   hasCriticalCapability,
 } from '@workspace/rbac/critical-capability';
 import {
+  isPlatformEntitlementRuntimeSettingKey,
   isPlatformFeatureFlagRuntimeSettingKey,
-  type PlatformFeatureFlagRuntimeSettingKey,
 } from '@workspace/settings-runtime';
 
 import { createClient } from '@/lib/supabase/server';
@@ -29,8 +29,7 @@ const featureFlagMutationSchema = z
   .strict();
 
 export type MutatePlatformFeatureFlagResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 function mapFeatureFlagError(message?: string): string {
   if (!message) {
@@ -74,7 +73,10 @@ export async function mutatePlatformFeatureFlagAction(
     };
   }
 
-  if (!isPlatformFeatureFlagRuntimeSettingKey(parsed.data.key)) {
+  if (
+    !isPlatformFeatureFlagRuntimeSettingKey(parsed.data.key) &&
+    !isPlatformEntitlementRuntimeSettingKey(parsed.data.key)
+  ) {
     return { ok: false, message: 'Unknown feature flag key.' };
   }
 
@@ -109,7 +111,7 @@ export async function mutatePlatformFeatureFlagAction(
   const { error } = await supabase.rpc('rpc_set_platform_feature_flag', {
     p_scope: parsed.data.scope,
     p_scope_id: scopeId ?? undefined,
-    p_key: parsed.data.key satisfies PlatformFeatureFlagRuntimeSettingKey,
+    p_key: parsed.data.key,
     p_enabled: parsed.data.enabled,
   });
 

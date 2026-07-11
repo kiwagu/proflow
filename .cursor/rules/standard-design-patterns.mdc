@@ -26,7 +26,7 @@ alwaysApply: true
 - Add abstractions only when they simplify the codebase. Do not introduce ceremonial layers with no concrete benefit.
 - Prefer extending a registry or adding a new strategy over editing a long chain of `if` / `switch` branches in core flows.
 - Keep pattern boundaries testable: validate the seam where the orchestrator selects a strategy, adapter, or policy.
-- Reuse established patterns already present in the repository before inventing new internal frameworks.
+- Reuse established patterns already present in the repository before inventing new internal frameworks. Reuse-first is a pre-step for ALL artifacts (not just patterns) — see `/.cursor/rules/reuse-first-discovery.mdc`.
 
 ## Anti-patterns
 
@@ -34,3 +34,12 @@ alwaysApply: true
 - Mixing transport details, payload normalization, and business decisions in one function.
 - Creating custom pseudo-patterns when a common, named pattern already fits.
 - Hiding simple logic behind unnecessary indirection when one small helper would do.
+
+## Feature-component reuse (render layer)
+
+Recognizable design patterns apply to FEATURE components, not just primitives. The graph
+lens is the canonical example: one parameterizable renderer, every cross-cutting concern a
+prop/slot, each lens a config. When a task adds a "new view" (search, a future
+course/board), the pattern is "add a config + inject the new provider," NEVER "add a parallel
+renderer." Re-deriving an existing list/tree/card/cell renderer is the anti-pattern this rule
+forbids — see `lens-feature-component-reuse.mdc`.

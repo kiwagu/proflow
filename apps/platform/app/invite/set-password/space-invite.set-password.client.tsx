@@ -205,9 +205,9 @@ export function SpaceInviteSetPasswordClient({
             </form.Field>
           </FieldGroup>
           {submitError ? (
-            <p className="text-destructive text-sm" role="alert">
+            <FieldError className="text-destructive text-sm">
               {submitError}
-            </p>
+            </FieldError>
           ) : null}
           <Button type="submit" className="w-fit">
             Continue

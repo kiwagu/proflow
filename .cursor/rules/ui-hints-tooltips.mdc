@@ -1,0 +1,51 @@
+---
+description: Use when: adding hover/focus hints (tooltips) over UI controls, or wiring icon-only controls so the project keeps ONE accessible, i18n'd hint system.
+alwaysApply: false
+---
+
+# UI Hints (Tooltips) Are Centralized
+
+## Pyramid Layer
+
+- Layer: L1 core UI rule.
+
+## Use This When
+
+- Keep this rule active when adding a hover/focus hint over a control, or when an icon-only / ambiguous control needs a label.
+
+## Stop Here If
+
+- Stop once the control is wrapped in `<Hint>` with i18n'd text and a provider is in scope.
+
+## Descend To
+
+- Pairs with `/.cursor/rules/ui-i18n-json-required.mdc` (hint text is UI text — JSON keys required).
+- Pairs with `/.cursor/rules/shadcn-patterns-required.mdc` (Hint composes the shared shadcn `Tooltip`).
+
+## Policy
+
+- Use the shared `Hint` wrapper for ALL supplementary hover/focus hints over controls:
+  `import { Hint } from '@workspace/ui/components/hint'` → `<Hint label={...}>{control}</Hint>`.
+- Do NOT use native `title=` for interactive UI hints, and do NOT hand-roll `Tooltip`/`TooltipTrigger`/`TooltipContent` per call site — wrap with `<Hint>` so the app has ONE styled, keyboard-reachable, portal-rendered surface. Upgrade any existing `title=` hint to `<Hint>` when you touch that markup.
+- `Hint` requires a `TooltipProvider` ancestor — exactly ONE per app/surface root (the canonical Radix shape: the provider "wraps your app"; e.g. `apps/platform/app/layout.tsx`, `apps/author/src/app/graph/layout.tsx`). One shared provider gives consistent open delay + skip-delay grouping (neighbouring hints open instantly in a sweep). Do NOT give individual hints their own provider — that throws the grouping away.
+- In unit/integration tests, render hint-bearing components through the shared test-utils `render` (RTL's recommended custom-render wrapper, which injects the same provider) — e.g. `apps/author/tests/test-utils.tsx`. Don't render such components straight from `@testing-library/react` (no provider → "must be used within `TooltipProvider`"), and don't sprinkle a provider per test.
+
+## Accessibility — `aria-label` stays the source
+
+- The hint is a VISUAL affordance, not the accessibility name. Icon-only controls MUST keep their `aria-label`; `Hint` does not replace it.
+- Pass the SAME text (same i18n key) to `label` and to the control's `aria-label` so the visible hint and the accessible name never drift.
+
+## i18n
+
+- Hint text is user-facing UI text — it MUST come from a translation key in `packages/i18n-catalogs/src/catalogs/<domain>/` (never a hardcoded literal). Reuse the control's existing `aria-label` key when one exists.
+
+## When NOT to hint
+
+- Don't hide ESSENTIAL information behind a hint (it's hover/focus-only and invisible on touch).
+- Don't hint a control whose visible text label already says the same thing (e.g. a `Button` with both an icon and a word). Hints are for icon-only or otherwise ambiguous controls, or to add genuinely supplementary detail (a destination path, a shortcut).
+
+## Mechanics
+
+- `Hint` renders its child via `asChild`: pass exactly ONE child element that forwards `ref`/props (the shared `Button`, a native `<button>`/`<div>`, etc.).
+- Graceful absence is built in: with no `label` (or `hidden`), the child renders bare — pass a conditional label without branching the JSX.
+- Tunables: `side` / `align` / `sideOffset` for placement, `delayDuration` (default 300ms) for open delay, `keys` for a trailing `kbd` shortcut chip.

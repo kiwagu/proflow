@@ -54,3 +54,4 @@ CLAUDE.local.md
 
 .claude/agents/*
 !.claude/agents/dependency-updater.md
+!.claude/agents/seed-curator.md

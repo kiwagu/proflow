@@ -1,3 +1,4 @@
+import { entityIds } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -13,21 +14,23 @@ import { z } from 'zod';
 
 // one resolved projection node + its traversal context for the view layer
 export const projectionResultItemSchema = z.object({
-  id: z.string(), // knr_…
+  id: entityIds.knowledgeResource.prefixSchema, // knr_…
   kind: z.string(),
   title: z.string(),
   status: z.string(),
   visibility: z.string(),
-  // {collection, doc_id} | null — Payload body bridge deferred (ADR-0002)
+  // {collection, doc_id} | null — Payload body bridge deferred
   body_ref: z.unknown().nullable(),
   // --- traversal context (for course/graph views) ---
   depth: z.number().int().min(0), // distance from the start node
-  via_edge_id: z.string().nullable(), // edge we arrived through (null for start nodes)
+  via_edge_id: entityIds.knowledgeEdge.prefixSchema.nullable(), // edge we arrived through (null for start nodes)
 });
 export type ProjectionResultItem = z.infer<typeof projectionResultItemSchema>;
 
 export const projectionResultSchema = z.object({
-  projection_id: z.string(), // prj_…
+  // NOT prefix-gated: a real projection is `prj_…`, but the default lens uses the
+  // `default-lens` sentinel (graph-page.data.ts), so this is not always an entity id.
+  projection_id: z.string(),
   view: z.string(), // echo of spec.view — the view layer picks the renderer
   items: z.array(projectionResultItemSchema), // already in order (see traversal order_by)
 });

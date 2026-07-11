@@ -5,6 +5,7 @@ import { cookies, headers } from 'next/headers';
 
 import { AuthButton } from '@/components/auth-button';
 import { ExternalGatewayLink } from '@workspace/ui/common/external-gateway-link';
+import { Skeleton } from '@workspace/ui/components/skeleton';
 import {
   PLATFORM_LOCALE_COOKIE,
   parsePlatformLocale,
@@ -47,10 +48,7 @@ function buildLoginFormCopy(t: SpaceSettingsTranslator): LoginFormCopy {
 
 function LoginFormFallback() {
   return (
-    <div
-      className="bg-muted/50 h-[280px] w-full animate-pulse rounded-xl"
-      aria-hidden
-    />
+    <Skeleton className="bg-muted/50 h-[280px] w-full rounded-xl" aria-hidden />
   );
 }
 

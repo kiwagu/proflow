@@ -64,6 +64,28 @@ Relevant permission keys:
 - `space.content.delete`
 - `space.content.publish`
 - `space.content.access`
+- `space.knowledge.read`
+- `space.knowledge.create`
+- `space.knowledge.update`
+- `space.knowledge.delete`
+- `space.knowledge.access`
+- `space.knowledge.transition`
+- `space.knowledge.approve`
+
+> **`space.content.*` vs `space.knowledge.*`.** `space.content.*` governs the reference
+> `content_items` table (the section-4 RLS pattern). The knowledge graph
+> (`knowledge_resources`) uses the parallel `space.knowledge.*` family. The role bundles
+> are *similar but not identical*: a `member` is a read-only consumer of `content_items`
+> but is granted `space.knowledge.create` (knowledge members author their **own** content —
+> owner-sovereign). See the role bundles below.
+>
+> **Scope note (verb possession vs per-resource visibility).** This matrix tests whether a
+> role *holds a verb in a space* (capability). Whether a user can read a *specific*
+> knowledge resource is a separate, additive decision (visibility floor + per-user/cohort/
+> inherited grants + ownership/supervisory branches) made by the RLS access predicate —
+> documented in [`docs/knowledge-access-model.md`](../knowledge-access-model.md), not here.
+> The two compose: the access predicate uses `space.knowledge.read` (read tier) and
+> `space.knowledge.access` (sharing authority) as inputs.
 
 ## Matrix
 
@@ -102,6 +124,16 @@ Relevant permission keys:
 | `rbac-author-content-update` | `author` | `space` | `same_space` | `space.content.update` | update content in assigned space | `allow` | author seed grants create/read/update |
 | `rbac-author-no-publish` | `author` | `space` | `same_space` | `space.content.publish` | publish content without moderation | `deny` | author requires admin moderation to publish |
 | `rbac-author-no-delete` | `author` | `space` | `same_space` | `space.content.delete` | delete content in assigned space | `deny` | author cannot delete; delete is admin-only |
+| `rbac-member-knowledge-create` | `member` | `space` | `same_space` | `space.knowledge.create` | create a knowledge resource | `allow` | knowledge members author their **own** content (owner-sovereign) — diverges from the read-only `content_items` member |
+| `rbac-member-knowledge-read` | `member` | `space` | `same_space` | `space.knowledge.read` | read tier for knowledge resources | `allow` | member seed grants read (the verb; per-resource visibility is the access predicate) |
+| `rbac-member-knowledge-delete` | `member` | `space` | `same_space` | `space.knowledge.delete` | delete a knowledge resource | `deny` | delete is admin-only |
+| `rbac-member-knowledge-access` | `member` | `space` | `same_space` | `space.knowledge.access` | manage knowledge sharing/access rules | `deny` | sharing authority is owner-sovereign OR admin; a member cannot curate others' audiences |
+| `rbac-author-knowledge-update` | `author` | `space` | `same_space` | `space.knowledge.update` | update a knowledge resource | `allow` | author bundle = read/create/update/transition |
+| `rbac-author-knowledge-no-delete` | `author` | `space` | `same_space` | `space.knowledge.delete` | delete a knowledge resource | `deny` | delete is admin-only (parity with content) |
+| `rbac-author-knowledge-no-access` | `author` | `space` | `same_space` | `space.knowledge.access` | manage knowledge access rules | `deny` | `access` (sharing curation) is admin-only |
+| `rbac-admin-knowledge-access` | `admin` | `space` | `same_space` | `space.knowledge.access` | share/curate on behalf of any owner | `allow` | admin is the cross-owner curator for **explicit** grants |
+| `rbac-admin-knowledge-delete` | `admin` | `space` | `same_space` | `space.knowledge.delete` | delete a knowledge resource | `allow` | admin seed grants full knowledge CRUD |
+| `rbac-admin-knowledge-transition` | `admin` | `space` | `same_space` | `space.knowledge.transition` | move a resource through its workflow state | `allow` | admin moderates the publish lifecycle |
 
 ## Suggested grouping for implementation
 

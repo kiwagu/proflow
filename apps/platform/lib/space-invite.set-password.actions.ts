@@ -8,8 +8,7 @@ import {
 } from '@/lib/space-invite.set-password.schema';
 
 export type SetPasswordForSpaceInviteResult =
-  | { ok: true; nextPath: string }
-  | { ok: false; message: string };
+  { ok: true; nextPath: string } | { ok: false; message: string };
 
 /**
  * Sets password for the signed-in invitee, then client navigates to invite/complete.

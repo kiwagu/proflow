@@ -1,0 +1,32 @@
+{
+  "name": "@workspace/seed",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" tsx src/cli.ts",
+    "lint": "bunx eslint .",
+    "lint:strict": "bunx eslint . --max-warnings 0",
+    "format": "bunx prettier --write \"src/**/*.ts\" \"*.{json,md,ts}\"",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "bunx vitest run"
+  },
+  "dependencies": {
+    "@supabase/ssr": "catalog:",
+    "@supabase/supabase-js": "catalog:",
+    "@workspace/knowledge-contracts": "workspace:*",
+    "cross-env": "catalog:",
+    "dotenv": "catalog:",
+    "tsx": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@workspace/eslint-config": "workspace:*",
+    "@workspace/typescript-config": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

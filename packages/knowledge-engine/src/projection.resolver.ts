@@ -18,10 +18,10 @@ import { compileTraversal } from './traversal.compiler.js';
  * join + order, executes it under the user's RLS, and validates the output
  * against the domain `ProjectionResult` contract.
  *
- * RLS safety (ADR-0003 §2): the resolve MUST run AS THE USER, NEVER service-role.
+ * RLS safety: the resolve MUST run AS THE USER, NEVER service-role.
  * The resolver can only NARROW what RLS already allows.
  *
- * Transport (ADR-0009 — RATIFIED 2026-06-17, supersedes the slice-02 §8.4 open
+ * Transport (RATIFIED 2026-06-17, supersedes the slice-02 §8.4 open
  * item and closes P0 finding #1): the prior transport was a `security invoker`
  * RPC `resolve_projection_query(p_sql, p_params)` `grant`ed to `authenticated`.
  * Because it `execute`d caller-supplied `p_sql` behind only a `with recursive%`
@@ -35,11 +35,10 @@ import { compileTraversal } from './traversal.compiler.js';
  * `SET LOCAL request.jwt.claims`), via a dedicated non-owner / non-bypass-RLS
  * backend role. RLS is enforced natively as the user; raw SQL never crosses the
  * client→server boundary (the client sends only `projectionId`). Compilation
- * stays entirely in TS (ADR-0003 §1.1): the engine is transport-agnostic and
+ * stays entirely in TS: the engine is transport-agnostic and
  * receives the execution transport by injection (`args.transport`) — it never
- * imports `pg`. The implementing transport lives in `apps/author`
- * (`projection-resolve.transport.ts`); `security definer` is forbidden (bypasses
- * RLS).
+ * imports `pg`. The implementing transport lives in the consuming app;
+ * `security definer` is forbidden (bypasses RLS).
  */
 
 const RESOURCE_ALIAS = 'kr';
@@ -49,7 +48,7 @@ const RESOURCE_ALIAS = 'kr';
  * the engine's own compiler output (recursive-CTE SELECT, `$1` = bound jsonb
  * param array); the implementation runs it under the user's RLS context and
  * returns the resolved rows. Injected so the engine never depends on a Postgres
- * driver (ADR-0009 §C) — the author server supplies the pg-based transport, the
+ * driver — the author server supplies the pg-based transport, the
  * e2e harness supplies one built on the actor's session.
  */
 export type ResolveQueryTransport = (request: {
@@ -67,7 +66,7 @@ type ResolveProjectionArgs = {
    */
   db: SupabaseClient<Database>;
   /**
-   * Server-side execution transport (ADR-0009). MUST run the compiled SQL under
+   * Server-side execution transport. MUST run the compiled SQL under
    * the requesting user's RLS context (`SET LOCAL ROLE authenticated` +
    * `request.jwt.claims`), never service-role.
    */
@@ -151,7 +150,7 @@ type ResolveRow = {
  * text reaches the SQL (values live only in the jsonb param).
  *
  * `$1` is referenced as `($1::jsonb)` so the rendered SELECT is self-typed and
- * runs identically whoever binds it: the ADR-0009 server transport binds `$1` as
+ * runs identically whoever binds it: the server transport binds `$1` as
  * a plain JSON string and the `::jsonb` cast lifts it to jsonb at execution
  * (the old `security invoker` RPC relied on a declared `p_params jsonb` arg for
  * the same cast; that RPC is gone).
@@ -170,7 +169,13 @@ export function renderRpcQuery(fragment: SqlFragment): {
       return `array(select jsonb_array_elements_text(($1::jsonb) -> ${idx}))`;
     }
     if (typeof value === 'number') {
-      return `((($1::jsonb) ->> ${idx})::int)`;
+      // `::numeric` (not `::int`): the search compiler's keyset cursor carries a
+      // FUZZY `score` that is fractional (a tier-band floor + `word_similarity ∈
+      // [0,1)`), so an `::int` cast would TRUNCATE it and the `score = $cursor`
+      // keyset arm would never match a fuzzy row. `numeric` round-trips both the
+      // integer params (limit, max_depth, prefix/exact scores) and the fractional
+      // fuzzy score; `LIMIT (numeric)` and `depth < (numeric)` both coerce fine.
+      return `((($1::jsonb) ->> ${idx})::numeric)`;
     }
     // scalar text (kind/status/visibility/title/id/space_id/relation_type)
     return `(($1::jsonb) ->> ${idx})`;
@@ -187,7 +192,7 @@ export async function resolveProjection(
   });
   const { sql, paramsJson } = renderRpcQuery(fragment);
 
-  // Defence-in-depth (ADR-0009 §F): the compiler only ever emits a
+  // Defence-in-depth: the compiler only ever emits a
   // `with recursive … select` resolve. This is NOT the security boundary (that
   // is the REVOKE + per-user RLS transport); it guards against the engine being
   // handed a non-resolve shape by a future caller.
@@ -198,7 +203,9 @@ export async function resolveProjection(
   }
 
   const rows = await args.transport({ sql, paramsJson });
-  const result: ProjectionResult = {
+  // Raw literal (string ids from the DB transport); `projectionResultSchema.parse`
+  // below validates the prefixes and brands the ids at this boundary.
+  const result = {
     projection_id: args.projectionId,
     view: spec.view,
     items: rows.map((row) => ({

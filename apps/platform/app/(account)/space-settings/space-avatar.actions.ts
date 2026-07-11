@@ -1,5 +1,6 @@
 'use server';
 
+import { entityIds } from '@workspace/entity-id';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -15,7 +16,14 @@ import { createClient } from '@/lib/supabase/server';
 
 const spaceAvatarSchema = z
   .object({
-    spaceId: z.string().trim().min(1, 'Space is required.'),
+    spaceId: z
+      .string()
+      .trim()
+      .min(1, 'Space is required.')
+      .refine((v) => v.startsWith(`${entityIds.space.prefix}_`), {
+        message: 'Space is required.',
+      })
+      .transform((v) => entityIds.space.brand(v)),
     avatar_url: z
       .string()
       .trim()
@@ -27,8 +35,7 @@ const spaceAvatarSchema = z
   .strict();
 
 export type UpdateSpaceAvatarResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 export async function updateSpaceAvatarAction(
   values: z.input<typeof spaceAvatarSchema>

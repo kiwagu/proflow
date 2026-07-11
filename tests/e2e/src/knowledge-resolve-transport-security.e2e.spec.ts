@@ -77,7 +77,7 @@ test.describe('knowledge resolve transport — no authenticated arbitrary SQL @f
     await closeResolveTransportPool();
   });
 
-  // P0 acceptance (ADR-0009, ratified 2026-06-17). The exploitable transport
+  // P0 acceptance (ratified 2026-06-17). The exploitable transport
   // (`resolve_projection_query`, `security invoker`, `grant execute to
   // authenticated`) is now DROPPED/REVOKED: the compiled resolve runs server-side
   // under the user's RLS over a dedicated non-bypass-RLS connection, never as a

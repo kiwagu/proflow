@@ -1,8 +1,24 @@
 #!/usr/bin/env sh
 set -e
 . "$(dirname -- "$0")/ensure-path.sh"
+
+# Keep packages/db/src/database.types.ts in lock-step with the schema. Type drift
+# can ONLY come from a schema change, so regenerate (from the live self-hosted
+# Postgres) and stage the result ONLY when this commit touches a migration —
+# non-migration commits stay DB-independent. This closes the gap that let the
+# 2026-06-27 private-schema move ship with stale types. Requires the stack to be
+# up, which it definitionally is when you've just authored a migration.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '^supabase/migrations/'; then
+  echo "pre-commit: migration staged → regenerating database.types.ts"
+  bun run db:types
+  git add -- packages/db/src/database.types.ts
+fi
+
 bun run typecheck
-bun run lint
+# Strict: lint warnings BLOCK the commit (the `onlyWarn` plugin makes plain `lint`
+# always exit 0, so warnings silently accumulated). `lint:strict` runs eslint with
+# `--max-warnings 0` per package — touch a file, it must be warning-clean.
+bun run lint:strict
 bun run format
 
 # Re-stage paths that were already part of this commit so formatter output is included.

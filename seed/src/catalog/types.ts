@@ -1,0 +1,208 @@
+import type { ResourceStatus } from '@workspace/knowledge-contracts';
+
+import type { Floor } from '../engine/http.js';
+
+/**
+ * The DICTIONARY model — a declarative description of reference content addressed
+ * by stable `ref` strings. The materializer walks it through the `/author/graph/*`
+ * endpoints and returns `ref → nodeId`, so the demo database and the e2e specs
+ * name the very same nodes. New features extend this vocabulary, never the
+ * imperative seed code.
+ */
+
+/** A logical participant; resolved to a concrete user by the materializer. */
+export type ActorRef = string;
+/** A stable node handle, unique within a scenario (e.g. `drive/handbook`). */
+export type NodeRef = string;
+/** A stable cohort handle, unique within a scenario. */
+export type ScopeRef = string;
+
+/** Role a scenario actor is granted in the space. */
+export type ActorRole = 'admin' | 'member' | 'space_admin';
+
+export type ActorSpec = {
+  ref: ActorRef;
+  /** Defaults to `admin` (base read holds; the access DIMENSION is the subject). */
+  role?: ActorRole;
+  /** A human display name for the actor's own profile. Seeded actors are born with
+   * a NULL `profiles.display_name` (only their email is set), so the co-member
+   * directory — the Share dialog people-picker + "who has access" rows —
+   * would render them as a bare short-id. Setting this authors the name through the
+   * actor's OWN RLS client (the own-row profile update), exactly as a member would,
+   * so the directory resolves a real `display_name` for the people-picker demo. */
+  displayName?: string;
+};
+
+export type ScopeSpec = {
+  ref: ScopeRef;
+  name: string;
+  /** Actor refs enrolled as members of this cohort. */
+  members?: ActorRef[];
+};
+
+export type ReportingLine = {
+  manager: ActorRef;
+  subordinate: ActorRef;
+};
+
+/** Common fields shared by every node kind. */
+type NodeBase = {
+  ref: NodeRef;
+  title: string;
+  description?: string;
+  /** Owner actor ref; defaults to the scenario's primary actor (`admin`). */
+  owner?: ActorRef;
+  /** Floor visibility; omit for private-by-default. */
+  visibility?: Floor;
+  /** Cohort refs this node is shared into (additive grants). */
+  scopes?: ScopeRef[];
+  /** Actor refs this node is shared with PER-PERSON (additive per-user grants):
+   * each named member's READ visibility is widened on top of the floor
+   * + cohort grants. Authored via the owner's (or an access-manager's) Share call;
+   * the grantee must be an active member of the node's space. */
+  userGrants?: ActorRef[];
+  /** Tag titles to attach via `tagged` edges (tag nodes are deduped by title). */
+  tags?: string[];
+  /** Pin the node in the OWNER's "Starred" lens (per-user; the owner needs the
+   * `space.knowledge.progress` verb — `admin`/`author`, not `member`). */
+  starred?: boolean;
+  /** Pin the node for these specific actors (each must be able to SEE it and hold
+   * `space.knowledge.progress`) — e.g. star a doc someone else shared with you. */
+  starredBy?: ActorRef[];
+  /** Record a per-user "open" for these actors (verb `space.knowledge.open`) so the
+   * node lands in their "Recent" lens. The actor must be able to SEE it. */
+  openedBy?: ActorRef[];
+  /** Workflow-LIFECYCLE status — `draft` → `active` → `archived` (B1). A CONTENT-only
+   * dimension (invalid on `folder`). The create endpoints do NOT expose it, and the
+   * create-time default differs by kind (a text doc is born `active` via the text-resource
+   * fan-out; a bodyless node defaults `draft`), so when declared the materializer writes
+   * the state through the product's OWN new route (`PATCH /author/graph/status`) as the
+   * node's OWNER — exactly as the panel's transition control does, NEVER a direct column
+   * write. Omit to leave the kind's create default.
+   *
+   * This is the RESOURCE lifecycle (a coarse three-state, migration
+   * 20260615190243) — distinct from the board demo's `status`/`workflowKey` pair
+   * (`draft`/`in_review`/`approved`), which is a bodyless direct-insert workflow demo;
+   * the two are mutually exclusive on one node (the validator enforces it). */
+  lifecycleStatus?: ResourceStatus;
+};
+
+export type FolderNode = NodeBase & {
+  kind: 'folder';
+  children?: SeedNode[];
+};
+
+export type TextNode = NodeBase & {
+  kind: 'text';
+  /** Lexical body (build via `prose`/`lexicalDoc`); omit for an empty body. */
+  body?: unknown;
+  /** Leave the body UNPUBLISHED (a draft). Text docs are published by default so
+   * read mode shows them; set this on the few nodes that demo the draft state. */
+  draft?: boolean;
+  /** Additional published body states applied after the initial one (each a Lexical
+   * doc) — every entry is a new published version, so the reader shows a version
+   * history. Only meaningful for a published (non-draft) doc. */
+  revisions?: unknown[];
+  /** Workflow status; when set, the node is authored via the owner's RLS client
+   * (the create endpoints do not expose `status`) and carries no Payload body. */
+  status?: string;
+  /** Workflow definition key (pairs with `status` for board/gating demos). */
+  workflowKey?: string;
+};
+
+/**
+ * A small, deterministic byte payload uploaded through the REAL media transport:
+ * the materializer creates the bodyless node, authorizes a signed
+ * upload URL (`/author/graph/media?op=upload-url`), PUTs these bytes to the private
+ * `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kb.resource_media_meta`
+ * satellite (`attribute:'media'`). NEVER a service-role insert / direct SQL — the
+ * bytes are born the product's way so the `storage.objects` + satellite RLS is the
+ * fence exactly as in production. Keep the payload tiny (a few KB) — it is reference
+ * content, not a real asset.
+ */
+export type MediaPayload = {
+  /** The literal file bytes. By default (`encoding` omitted / `'utf8'`) this is a
+   * small text/`text-like` fixture encoded as UTF-8. For a BINARY fixture (a real
+   * image or PDF whose bytes must render in the inline preview — Phase 2),
+   * set `encoding: 'base64'` and put the base64-encoded bytes here; the materializer
+   * decodes them to the exact binary before the signed PUT, so the object holds a
+   * genuine renderable asset (a corrupt/utf8-mangled image would fail the `<img>`
+   * load and the preview would collapse to null). */
+  bytes: string;
+  /** How `bytes` is encoded. `'utf8'` (default) = the string IS the content;
+   * `'base64'` = decode to binary first (for images/PDFs). */
+  encoding?: 'utf8' | 'base64';
+  /** Declared MIME (must pass `isAllowedMediaMime` — not in the denylist). */
+  mimeType: string;
+  /** Display filename (metadata only; NEVER the storage path). */
+  filename: string;
+};
+
+export type BodylessNode = NodeBase & {
+  kind: 'link' | 'file' | 'video';
+  /** For `file`/`video`: a byte payload uploaded through the real media path so a
+   * `kmm` satellite row + a `kb-media` object both exist. Omit for a
+   * bodyless stub (a `link`, or a `file`/`video` with no bytes yet). */
+  media?: MediaPayload;
+  /** For `link`: the external URL written to the `kb.resource_link` satellite
+   * through the attributes route (slice-10 §2.4) — http(s)-only. Omit for a bare
+   * link shell (no URL yet). */
+  url?: string;
+};
+
+export type SeedNode = FolderNode | TextNode | BodylessNode;
+
+export type ContainEdge = {
+  folder: NodeRef;
+  child: NodeRef;
+  /** Actor that AUTHORS the containment edge; defaults to `admin`. Set this for a
+   * CROSS-OWNER filing where `admin` cannot see both endpoints (the edge RETURNING
+   * read needs the filer to see the folder AND the child): the filer must own/see the
+   * folder and see the child (e.g. via a per-user grant the child owner authored). */
+  by?: ActorRef;
+};
+export type ShortcutEdge = { folder: NodeRef; target: NodeRef };
+
+/**
+ * A typed relation edge authored directly via the owner's RLS client — for
+ * relations the `/author/graph/edges` endpoint does not expose (e.g.
+ * `prerequisite`), exactly as the e2e seeders author them.
+ */
+export type RelationEdge = {
+  from: NodeRef;
+  to: NodeRef;
+  relation: string;
+  position?: number;
+};
+
+/** A saved projection over the scenario's graph (KB grid / board / …). */
+export type ProjectionSeed = {
+  ref: string;
+  appType: 'knowledge_base';
+  name: string;
+  view: string;
+  /** Built from a tag ref's node id at materialize time, or a static spec. */
+  spec: (refs: ReadonlyMap<string, string>) => unknown;
+  owner?: ActorRef;
+};
+
+export type SeedScenario = {
+  id: string;
+  title: string;
+  /** One-line capability the scenario demonstrates — the self-documentation. */
+  summary: string;
+  /** Presets that include this scenario (besides the implicit `all`). */
+  presets: string[];
+  actors?: ActorSpec[];
+  scopes?: ScopeSpec[];
+  reportingLines?: ReportingLine[];
+  tree: SeedNode[];
+  /** Extra containment beyond the tree (multi-parent / cross-folder filing). */
+  contains?: ContainEdge[];
+  shortcuts?: ShortcutEdge[];
+  /** Typed relation edges authored via the owner's RLS client (e.g. prerequisite). */
+  edges?: RelationEdge[];
+  projections?: ProjectionSeed[];
+  /** Node refs to soft-delete after creation (demonstrates the Trash lifecycle). */
+  trash?: NodeRef[];
+};

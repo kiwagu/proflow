@@ -8,10 +8,4 @@ export type LogContext = {
 };
 
 export type LogLevelName =
-  | 'trace'
-  | 'debug'
-  | 'info'
-  | 'warn'
-  | 'error'
-  | 'fatal'
-  | 'silent';
+  'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';

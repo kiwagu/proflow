@@ -106,8 +106,7 @@ export async function createSpaceInviteAction(
 }
 
 export type RevokeSpaceInviteResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 export async function revokeSpaceInviteAction(
   inviteId: string

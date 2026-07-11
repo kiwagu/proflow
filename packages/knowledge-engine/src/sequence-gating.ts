@@ -8,7 +8,7 @@ import type {
  * §3 / docs/knowledge-graph-plan.md §2). It overlays a user's per-resource state
  * onto an ordered (e.g. course) result and computes a per-step locked/unlocked flag.
  *
- * This is DISPLAY gating, NOT access control (ADR-0004 §3). The resolver already
+ * This is DISPLAY gating, NOT access control. The resolver already
  * decided access via RLS — every step the user may see is in `result.items`. A
  * locked step is still present in `items`; `locked` only expresses pedagogical
  * closure. The resolver stays projection-PURE; this is a separate layer merged at

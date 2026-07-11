@@ -10,7 +10,7 @@ import type {
  * query-builder" pattern: the AST/contract lives in the domain (zod) layer, the
  * SQL compilation lives here in the infrastructure adapter.
  *
- * Anti-injection contract (ADR-0003):
+ * Anti-injection contract:
  * - column identifiers come ONLY from a fixed `FilterField → column-expr` map;
  *   a field outside the map throws (never "skip"). The compiler NEVER builds an
  *   identifier from a user string.

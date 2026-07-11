@@ -61,7 +61,7 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       course step (nodes stay in the projection result); the lock is decided by a pure, UI-agnostic
       gating function (ordered steps + the user's state map → per-step locked/unlocked) in
       `@workspace/knowledge-engine`. The resolver stays projection-PURE; the per-user overlay is a
-      SEPARATE fetch merged at render time. A thin `POST /author/graph/progress` (under the user's
+      SEPARATE fetch merged at render time. A thin progress endpoint (under the user's
       RLS client, never service-role; `user_id` from the session) upserts the coarse status; a
       "mark complete" action advances a step to `done` and the next step unlocks
 - [ ] Child-satellite pattern (FK to the anchor; a child's growth never alters core) — design
@@ -154,7 +154,7 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       as the field is additive/compatible); both unit-covered, resolver untouched (projection-PURE)
 - [x] Workflow as data: states + allowed transitions + guards held as data (`resource_workflows`
       definition jsonb over `knowledge_resources.status`), validated by one generic transition
-      validator; a thin `POST /author/graph/transition` under `space.knowledge.transition` (+ optional
+      validator; a thin transition endpoint under `space.knowledge.transition` (+ optional
       per-transition guard verb, e.g. `space.knowledge.approve`) rejects illegal transitions. This is
       the state source for the `requires_state` rule. Landed: the `resource_workflows` vocab table
       (natural-key PK, XState-compatible `definition` jsonb, select-only RLS), an additive nullable
@@ -169,10 +169,10 @@ plan facts; the deliberation behind them is kept out of this document on purpose
   a `projections` row filtering/segmenting by status with a `requires_state` gate (only `approved`
   docs are "available"). Adding it = vocabulary rows + a projection row + (optional) a workflow
   row, ZERO engine fork — the third vertical as pure configuration. Landed: the status-segmented
-  `board-projection.view.tsx` + its `board` registry entry, a separate optional `nodeGates`
+  board projection view + its `board` registry entry, a separate optional `nodeGates`
   view-prop, server wiring (`resolveProjectionGating` builds the resource-state map from the
   already-resolved items and applies the declared rule under the user's RLS client), and the
-  `knowledge-workflow-gating` e2e (board renders all docs; non-approved gated as display)
+  a workflow-gating e2e (board renders all docs; non-approved gated as display)
 - [x] Enforce the authorization ≠ gating boundary (RLS for access; gating layer for pacing/process) —
       the gating layer never denies access; a gated node stays in the result, RLS is the sole hard
       authority. Proven e2e: a non-approved doc stays in the board with `available=false` (display),
@@ -196,6 +196,116 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       are never placed in the gating registry; a hidden node is ABSENT, never a visible `available=false`
       flag — keeping the authorization ≠ gating boundary intact. Demo data lives in the e2e harness, not
       a migration
+- [x] Third access dimension — PER-PERSON sharing: a `knowledge_resource_user_grants` link (a calque of
+      the cohort link, composite PK `(resource_id, user_id)`, same-space guard) plus one top-level OR in
+      `auth_user_can_access_resource` — "share this node with one identified member". Owner-sovereign OR
+      `space.knowledge.access` to grant/revoke (the audience-management verb); additive + fail-closed
+      (grant widens, revoke narrows; live `security invoker` resolve ⇒ revoke hides, re-grant restores,
+      zero reindex). Surfaced through ONE unified **Share dialog** (folding the broadcast floor + cohort
+      grants + per-user grants into a single surface — the old cohort "Visibility" panel section is
+      folded in, not a sibling), opened from a capability-gated `Share` entry in the node `⋯` menu
+      (`canShare = owned || canAccess`, server-derived, laxer-not-stricter — RLS the sole fence). "Copy
+      link" is pure navigation (grants nothing; RLS re-evaluates at open).
+- [x] Co-member identity directory — a `space_member_directory` SECURITY-DEFINER RPC resolves
+      `display_name` + `email` for co-members (the own-row `profiles` posture untouched), gated by the
+      caller's own active membership (the fence — non-member → ∅, zero service-role), searchable +
+      hard-limited (≤50). Powers the Share dialog people-picker; reusable for @mentions / assignment.
+- [x] Directory v2 (data/route — picker scalability): keyset cursor (`p_after_key`,`p_after_user` over the
+      stable `(sort_key, user_id)` order — drift-free, not offset) + a windowed `total_count` (the count of
+      grantable matches, one round-trip) + `p_exclude uuid[]` (owner + already-granted removed BEFORE the
+      limit AND the count, so a small page is full of real candidates and "+N more" is accurate). The fanout
+      builds the exclusion set server-side + encodes the opaque cursor; the GET `members` slice becomes one
+      `{ items, nextCursor, total }` page. The reusable picker UI + lenses/badges are later waves.
+- [x] Directory v2 (reusable picker UI — Wave 1b): a generic, props-driven `AsyncSearchPicker<T>` in
+      `@workspace/ui` `components/platform/` (the "типовая функция" — `fetchPage(query,cursor)→{items,
+      nextCursor,total}` + `getKey`/`renderItem`/`onPick`/`labels`, NO i18n inside, render-prop rows). It
+      owns the debounce + the cursor "load more" append + the "+N more" count footer, with a stale-response
+      guard. The Share dialog people-picker is refit as a thin caller (fixed page of 5 + "+N more — keep
+      typing to narrow" + "Show more"; granting drops the person out via server-side `p_exclude`).
+- [x] "Shared by me" lens (Wave 2): the owner-direction sibling of "Shared with me". Data (Wave 2a) — a
+      `listResourcesSharedByMe` fanout over `knowledge_resource_user_grants WHERE granted_by = me` joined to
+      the resources I can still SEE (RLS the fence, fail-closed: a resource I revoked the only grant on, or
+      can no longer see, never appears), SSR-seeded into `KbViewData.sharedByMe` (parity with Trash, no
+      re-navigation). Render (Wave 2b) — a flat `'shared-by-me'` `DriveScope` + a sidebar nav item beside
+      "Shared with me" (a send/outgoing `Send` icon vs the incoming `Users`); the lens is the resolved canvas
+      ∩ the granted resourceId set, and each card shows a compact grantee summary (avatar cluster + "Shared
+      with {name}" / "+{n}", per-avatar `Hint` name+email tooltip via `EntityAvatar`). v1 = per-user grants
+      only (cohort-by-me deferred).
+- [x] "Shared with me" mechanism distinction — DATA (Wave 3a): the `'shared'` lens (visible nodes I do
+      NOT own) mixed three reasons a node is visible to me; this annotates each with the single WINNING
+      mechanism — `personal` (a per-user grant to me) > `cohort` (a cohort I'm in) > `broadcast` (the
+      space/org floor, with supervisory folded in for v1). A batched read-only fanout
+      (`annotateShareMechanism({ spaceId, nodeIds })` → `Record<nodeId, ShareMechanism>`) — NOT per-node,
+      NOT a resolver change: a constant cohort-membership read (via the `knowledge_user_scope_ids`
+      security-definer RPC — the batched twin of the cohort predicate, needed because `scope_memberships`
+      SELECT RLS gates on the legacy `space.content.read` a plain `member` lacks) plus two node-keyed
+      IN-list reads (personal grants + cohort links), `broadcast` the in-memory residual. Seeded SSR as
+      `KbViewData.shareMechanism` over the visible-not-owned set (parity with `sharedByMe`). Pure display
+      enrichment over an already-RLS-admitted set — never a fence, Invariant #1 holds (no new table, no
+      resolver change, no new access dimension). The per-card badges + facet chip-row are the Wave 3b
+      render agent.
+- [x] "Shared with me" mechanism distinction — RENDER (Wave 3b): the `'shared'` (incoming) lens now makes
+      each node's WINNING mechanism LEGIBLE. A compact per-card mechanism badge (shadcn `Badge` + a lucide
+      icon + a `Hint`): `personal` → "Shared with you" (UserCheck), `cohort` → "Via a group" (UsersRound),
+      `broadcast` → "Whole space" (Radio) — threaded through the SAME card `footer` slot Wave 2b's grantee
+      summary uses (no new card surface). Plus a facet chip row above the lens ("All" + one chip per
+      mechanism PRESENT in the shared set — absent-mechanism chips hidden, the row appears only with ≥2
+      mechanisms) that filters the rendered set client-side over the precomputed annotation; the facet is
+      local lens state (reset on leave) with a "nothing shared this way" filtered-empty message. Badges +
+      facet are scoped to the `'shared'` lens ONLY (not shared-by-me/home/trash). Pure DISPLAY over the
+      already-fenced, already-resolved Wave 3a annotation — never recomputes access. en+es i18n in lockstep.
+- [x] Tariff-gated ADVANCED (structural) view of the STRUCTURAL lenses — a commercial, VIEW-ONLY display
+      mode that renders the SAME RLS-visible lens node-set as the KB containment TREE instead of a flat
+      digest, gated by ONE generic platform ENTITLEMENT (`platform.entitlement.advanced_structural_view`,
+      resolved global→org→space with org∧space AND-composition; zero service-role on the read path). Platform
+      entitlement substrate landed first (Wave 1, re-keyed generic in Addendum A1); the author render threads
+      it as `entitlements.advancedStructuralView` — a SIBLING of the RLS-verb `capabilities`, kept orthogonal
+      (commercial plan ≠ permission) — into `KbViewData`. The display axis is lens-agnostic (`lensView`), gated
+      by a render-side opt-in set `STRUCTURAL_LENS_SCOPES = {shared, shared-by-me, starred}`: a Flat/Advanced
+      toolbar toggle appears ONLY on those lenses (NEVER Recent/Home), default Flat; the choice is an explicit
+      `?view=` deep-link override AND a REMEMBERED preference (a server-read `lens-view` cookie, mirroring the
+      grid/list `drive-layout` cookie, written only on the entitled Pro plan) — precedence `?view=` › cookie ›
+      flat, then server-clamped to flat when not entitled (a forged URL or a stale cookie on a locked plan stays
+      flat). A locked plan shows the toggle DISABLED + an upsell `Hint` (never hidden — the locked control IS the
+      upsell). Advanced reuses the EXISTING `buildContainment` over the lens subset + the already-loaded LIVE
+      `contains` forest — no new data model, no resolver change, no new load (Invariant #1); the advanced tree is
+      folder-NAVIGABLE WITHIN the lens (drilling narrows to the folder's subtree in the lens set and STAYS on the
+      lens scope, never breaking out to kb-browse), and a node whose parent is not in the lens set roots
+      gracefully (no synthetic ancestors). RLS untouched: the same node-set renders in both modes.
+      en+es i18n. Proven by `tests/e2e/src/knowledge-advanced-shared-view.e2e.spec.ts` (Shared: toggles flat↔tree
+      over the same set, orphan-at-root, folder-drill stays + crumb returns, cookie-persist Pro-only, locked =
+      disabled+hint + `?view=advanced`/stale-cookie still flat, org-off forces space-off; Starred: the same
+      structural toggle renders the starred set as a tree + drill stays on Starred; negative: no toggle on
+      Recent/Home). A1 platform re-key + A2 generic axis + A3 Starred.
+      TRASH (Addendum A4) is DEFERRED pending a backend decision: its structural tree needs the dormant
+      `contains` edges among trashed nodes, which the edge SELECT RLS hides (both-endpoints-trashed → not
+      selectable under the user's RLS), so it cannot be built from a thin RLS select without a SECURITY DEFINER
+      dormant-edge read or an edge-policy change — surfaced, not silently shipped flat-rooted.
+- [x] Owner-scoped, live containment access INHERITANCE — a node is readable if it OR an ancestor folder
+      (up the forward `contains` forest) is granted to the viewer, owner-scoped (same-owner spine, no admin
+      cross-owner cascade), live (new child auto-appears, revoke removes the subtree), additive across the
+      per-user / cohort / broadcast-floor dimensions. Wave 1 = ONE new `knowledge_resource_inherited_grant`
+      recursive sub-function + one top-level OR in `auth_user_can_access_resource` (depth-32 + `union` cycle
+      guard); the 9-case access matrix is the merge gate. Wave 2 = the three-tier access-mirror RENDER
+      (`badge ≡ panel-summary ≡ access predicate`, one client `pathTo`/`sharedOut` walk over the loaded
+      forest, no new server load): Tier 1 — the Drive card people-icon "Shared" badge (direct OR
+      inherited-via-granted-ancestor, in ALL scopes) + the load-bearing shared-folder hint that NAMES the
+      audience and, for a space/org-floor folder, the floor SCOPE explicitly (the only guardrail against an
+      accidental broadcast, since there is no detach); Tier 2 — a read-only "Access" section in the
+      ResourcePanel (floor + grantees-by-name in a bounded `ScrollArea` + "Inherited from {folder}" + a
+      "Manage access" affordance opening the EXISTING ShareDialog, unchanged); Tier 3 — the ShareDialog is
+      the sole EDIT surface (untouched). en+es. (management = ShareDialog,
+      read-only status = badge + panel summary).
+  - [x] Access-STATUS taxonomy — the single people-badge becomes three
+        mutually-exclusive states so the owner can tell at a glance which resources are "for others" vs
+        "only mine": GLOBE = broadcast (effective floor space/org, own OR via a broadcast-floor ancestor —
+        `broadcastOut`, the floor sibling of `sharedOut`), PEOPLE = targeted (per-user OR cohort, direct OR
+        inherited), NONE = private (the absence is the signal); globe outranks people. Closes the cohort-by-me
+        gap: `sharedByMe` now also reads my outbound cohort links (`knowledge_resource_scopes WHERE
+        linked_by = me`, under RLS, a FILTER never a fence — display-only), so a cohort-shared node gets the
+        people badge AND a cohort grantee row in the panel; the panel floor line now also names an inherited
+        broadcast ("Broadcast … via {folder}"). Same `badge ≡ panel ≡ predicate` mirror; grid + list, all
+        scopes; en+es. e2e proves all three states direct + inherited.
 
 ## 6. First projection — validate the invariant
 
@@ -210,8 +320,8 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       gating deferred to §2), and a projection switcher that toggles the SAME graph between apps (the
       visible Invariant #1). Server-side resolution runs the engine under the user's RLS (never
       service-role); blocking resolve + Suspense. Render is an END-USER surface → shadcn (`@workspace/ui`).
-      Pages live at `apps/author/src/app/graph/*`; proven by
-      `tests/e2e/src/knowledge-projection-render.e2e.spec.ts` (grid ⇆ course over one graph; ungranted →
+      Pages live at `apps/author/src/app/graph/*`; proven by a projection-render e2e
+      (grid ⇆ course over one graph; ungranted →
       empty by RLS; guest GET → sign-in redirect, guest POST → 401 JSON)
 - [x] Confirm a second app type (a course) is pure configuration (vocabulary rows +
       ProjectionSpec) with zero core migration — proven by the slice 01 acceptance test
@@ -219,6 +329,79 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       identical resource/edge set, the course is one removable `projections` row, and the
       empty-schema-diff is asserted at the data level (demo data lives in the e2e harness, not a
       migration — production carries zero hardcoded demo rows)
+
+## 7. Resource recency & activity
+
+One append-only activity-log spine (`kb.resource_activity`); node `last_activity_at` and
+per-user `last_opened_at` are roll-ups of it via one DB trigger. Hybrid ingest: Postgres-origin
+in-txn triggers, the Mongo body path through a durable JetStream stream, and per-user opens under
+the user's RLS.
+
+- [x] Data layer (`kb.resource_activity` spine + roll-up trigger + Postgres-origin triggers +
+      both roll-up columns + the `space.knowledge.open` verb) — append-only log, RLS read
+      node-scoped + own-rows, INSERT split (open under `space.knowledge.open`, trigger definer,
+      consumer service-role)
+- [x] NATS activity worker + Bodies publish — `Bodies.afterChange` PUBLISHES a body-edit event on
+      `knowledge.activity.v1.body` (best-effort, never throws on the save path; `Nats-Msg-Id =
+      event_id` for dedupe); a durable consumer (`knowledge-activity.jetstream.worker`, stream
+      `KNOWLEDGE_ACTIVITY`, consumer `author-activity-v1`) appends `kb.resource_activity`
+      (`source=nats-body`) via service-role (authorize-at-produce, §0.3), idempotent on `event_id`.
+      The roll-up trigger advances `last_activity_at` via `greatest()` — replay/out-of-order safe.
+      Bootstrapped exactly like the identity & space-org workers (concurrently in `dev`; standalone
+      `bun run knowledge-activity:jetstream`)
+- [x] Opened route + contracts — `POST /author/graph/opened` (`{ spaceId, nodeId }`, zod-validated)
+      under the user's RLS appends an `open` row (`source=open`, `kind=open`, `user_id` from the
+      session) gated by `space.knowledge.open`; never service-role; best-effort. Contracts in
+      `@workspace/knowledge-contracts`: `openedRecordSchema` + `parseOpenedRecord`,
+      `last_opened_at` on `resourceUserStateSchema`, the `knowledgeActivityBodyEventSchema` NATS
+      envelope shared by producer + consumer, and the stream/subject constants
+- [ ] Read-path swap (Drive front) — loader selects `last_activity_at`, `byRecency` sorts by it,
+      the deliberate-open call site POSTs `/author/graph/opened`, optional "Opened by me"
+      (render-implementer, §5.5)
+
+## 8. Drive Trash — reference-aware soft-delete lifecycle
+
+A reversible holding state (live → trashed → purged) so a delete no longer severs
+references (shortcuts, cross-folder containment, the Payload body) with no undo.
+Lifecycle is a THIRD axis (`deleted_at`), orthogonal to access (`visibility`) and
+workflow (`status`): the trashed/normal split is a query lens, not an access fence;
+the access fence (`auth_user_can_access_resource`) is unchanged. Trash/restore are
+owner-sovereign OR `space.knowledge.delete` (no new verb); purge is a real DELETE
+guarded for in-use cross-owner references.
+
+- [x] Data layer (Phase A) — `deleted_at` + `trashed_by` columns + the partial
+      `(space_id, deleted_at)` index on `knowledge_resources`; the edge SELECT policy
+      gains a per-endpoint `deleted_at IS NULL` conjunct (a trashed endpoint makes
+      the edge dormant/hidden, preserved-not-pruned); the soft-cascade trigger
+      `kb_cascade_trash_containment_orphans` (orphans trashed with the SAME stamp, a
+      multi-parent child with a LIVING parent survives); the authority guard
+      `assert_trash_change_authorized` (delete-tier, trash+restore) and the in-use
+      purge guard `assert_purge_not_in_use`; the lifecycle audit trail on the EXISTING
+      substrates (`kb.resource_activity` `kind=trashed/restored`, actor-stamped; a
+      durable `space_admin_audit_log` `knowledge.resource.purged` row that outlives
+      the node). No new table, no new verb, no new entity-id prefix, zero engine DDL
+- [x] Fan-out + routes (Phase A) — `trashResource` / `restoreResource` / `purgeResource`
+      application modules; the resource `DELETE` re-pointed to the soft trash path
+      (text delete re-enabled — the N→1 severing reason is gone); a DISTINCT
+      `/author/graph/trash` route (PATCH restore, DELETE purge with best-effort inline
+      `deleteBody` after commit); zod input contracts in `@workspace/knowledge-contracts`
+- [x] Lifecycle lens split (Phase A) — the resolver/loader excludes trashed in normal
+      browse (`deleted_at IS NULL`) via a thin post-resolve filter + the dormant-edge
+      RLS policy; the Trash lens selector is `deleted_at IS NOT NULL`. The frozen
+      `ProjectionSpec`/engine contract (`schema_version=1`) is untouched
+- [x] e2e (Phase A) — trash hides/round-trips references; soft-cascade orphan +
+      multi-parent survival; cross-owner trash/restore gated; purge destroys + body
+      reap (failure non-fatal); graceful-absence (parent renders); immutable kra
+      trail (actor); durable purge audit survives the node + its kra rows
+- [x] Trash lens UI (Phase B, render-implementer) — `DriveScope += 'trash'`, the
+      `navTrash` sidebar entry (drop `comingSoon`, `scope: 'trash'`), the Trash lens
+      resolved server-side under RLS (`deleted_at IS NOT NULL`) and threaded alongside
+      the live canvas as a flat lens, Restore/Purge per-row affordances (purge confirms;
+      the in-use guard rejection surfaces the cooperative "in use" message — never
+      thrown), the tree-builder graceful-absence audit (no non-null assertions on
+      cross-query lookups; dangling edges dropped at `buildForest`, every lookup guarded;
+      int test asserts a parent renders when a contained child is absent), i18n keys
+      (`graph.trash.restore/purge/purgeConfirm/inUse/empty`, en+es)
 
 ## Open items
 
@@ -228,4 +411,12 @@ plan facts; the deliberation behind them is kept out of this document on purpose
       natural-key PKs, so no prefix is needed there
 - [x] Concrete filter/traversal schema — `FilterNode` + `TraversalSpec` landed in
       `@workspace/knowledge-contracts`; the remaining concrete work is the compiler (tracked in §4)
+- [x] Findability — lexical search (Phase 1): search is a standalone substrate capability (its own
+      `SearchQuery`/`SearchResult` contracts + `compileSearchQuery`/`resolveSearch` engine artifacts),
+      a SIBLING of projection-resolve that REUSES the same per-user RLS transport (never service-role) —
+      RLS is the sole access fence. The first consumer is the Drive `search` lens: a debounced, min-2-char
+      input that renders the first page of results by REUSING the existing Drive resource card +
+      ResourcePanel (the search-result shape is a superset of the projection item, so zero adapter), with
+      en+es i18n. Fuzzy/ranking + score/snippet + "load more" (Phase 2), a second consumer / command palette
+      (Phase 3), and semantic search via pgvector (Phase 4) are the deferred next rungs
 - [ ] Verify `pg_graphql` and (future) graph-extension feasibility on self-hosted Supabase

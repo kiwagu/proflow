@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
+import { FieldError } from '@workspace/ui/components/field';
 
 import { SpaceInviteForm } from '@/app/(account)/organizations/space-invite.form';
 import {
@@ -126,9 +127,9 @@ export function SpaceInviteManagerClient({
       />
 
       {bannerClipboardError ? (
-        <p className="text-destructive text-sm" role="alert">
+        <FieldError className="text-destructive text-sm">
           {bannerClipboardError}
-        </p>
+        </FieldError>
       ) : null}
 
       {displayCreatedBanner ? (
@@ -205,9 +206,7 @@ export function SpaceInviteManagerClient({
       ) : null}
 
       {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
+        <FieldError className="text-destructive text-sm">{error}</FieldError>
       ) : null}
 
       <div className="flex flex-col gap-2">

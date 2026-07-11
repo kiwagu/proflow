@@ -9,6 +9,7 @@ import { es } from '@payloadcms/translations/languages/es';
 import { multiTenantPlugin } from '@payloadcms/plugin-multi-tenant';
 import { s3Storage } from '@payloadcms/storage-s3';
 
+import { ENTITY_PREFIXES } from '@workspace/entity-id';
 import { customIdPlugin } from '@workspace/payload-plugins';
 
 import { Organizations } from './collections/Organizations';
@@ -53,17 +54,14 @@ export default buildConfig({
       baseDir: path.resolve(dirname),
     },
     components: {
-      providers: ['/admin/active-space.sync-provider.client'],
+      // The active-space sync provider is NOT registered here: config-level
+      // providers render OUTERMOST (NestProviders: providers[0] wraps the rest),
+      // while the multi-tenant plugin PUSHES its TenantSelectionProvider after
+      // them — so a provider listed here mounts OUTSIDE the tenant context and
+      // `useTenantSelection()` silently returns the DEFAULT (empty, noop)
+      // context. It is appended via a mini-plugin AFTER multiTenantPlugin below.
       logout: {
         Button: '/admin/logout-button',
-      },
-      views: {
-        knowledgeNewText: {
-          // Thin custom admin-view: the single authoring flow (slice-03 §4).
-          // Reachable at /admin/knowledge/new-text.
-          path: '/knowledge/new-text',
-          Component: '/admin/knowledge/new-text-resource.view.client',
-        },
       },
     },
   },
@@ -102,8 +100,25 @@ export default buildConfig({
             .hasAuthorAllTenantsCapability
         ),
     }),
+    // Registers the active-space sync provider AFTER multiTenantPlugin pushed
+    // its TenantSelectionProvider, so ours nests INSIDE the tenant context and
+    // `useTenantSelection()` is the real one (options/setTenant/syncTenants).
+    // Order matters: NestProviders nests in array order (earlier = outer).
+    (config) => {
+      config.admin = config.admin ?? {};
+      config.admin.components = config.admin.components ?? {};
+      config.admin.components.providers = [
+        ...(config.admin.components.providers ?? []),
+        '/admin/active-space.sync-provider.client',
+      ];
+      return config;
+    },
     customIdPlugin(
-      { organizations: 'org', spaces: 'spc', bodies: 'bod' },
+      {
+        organizations: ENTITY_PREFIXES.organization,
+        spaces: ENTITY_PREFIXES.space,
+        bodies: ENTITY_PREFIXES.body,
+      },
       { field: 'id', mode: 'validate' }
     ),
     s3Storage({

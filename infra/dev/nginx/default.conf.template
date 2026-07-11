@@ -70,11 +70,26 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    # KB media large uploads (ADR-0026 amendment / slice-14): the edge must allow a
+    # request body up to the 5 GiB HARD cap, else nginx's DEFAULT 1 MB limit 413s the
+    # resumable (TUS) POST/PATCH before it reaches Kong→storage-api. Resumable chunks
+    # are ~6 MiB, but creation-with-upload can carry a whole small-but->1 MB file in
+    # one POST — so cap at the system max, not the chunk size. Stream, don't buffer the
+    # body to disk, so multi-GB uploads don't fill the proxy.
+    client_max_body_size 5g;
+    proxy_request_buffering off;
+
     location / {
         if ($request_method = OPTIONS) {
             add_header Access-Control-Allow-Origin $supabase_cors_origin;
-            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, upload-length, tus-resumable, upload-metadata";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS";
+            # The tus-resumable (TUS) headers are load-bearing for BROWSER uploads: a
+            # PATCH chunk sends `upload-offset`, so it MUST be in the allow-list or the
+            # browser blocks every chunk on preflight (the creation POST — which sends
+            # only upload-length/upload-metadata — would still 201, so the symptom is
+            # "create OK, chunks CORS-error, upload never finishes"). Node (e2e) skips
+            # CORS, which is why this only bites the real browser client (slice-14).
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
             add_header Access-Control-Allow-Credentials true;
             add_header Access-Control-Max-Age 86400;
             return 204;
@@ -97,5 +112,10 @@ server {
 
         add_header Access-Control-Allow-Origin $supabase_cors_origin always;
         add_header Access-Control-Allow-Credentials true always;
+        # tus-js-client reads these off the POST/PATCH/HEAD responses (the upload
+        # `Location`, the resumed `Upload-Offset`, …). Cross-origin JS can only see
+        # them when they are explicitly exposed; add it at the edge so the browser
+        # TUS client works regardless of the upstream's own CORS emission.
+        add_header Access-Control-Expose-Headers "Location, Tus-Resumable, Tus-Version, Tus-Extension, Tus-Max-Size, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Expires, Content-Type" always;
     }
 }

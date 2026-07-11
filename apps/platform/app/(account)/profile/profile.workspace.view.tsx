@@ -5,8 +5,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@workspace/ui/components/card';
-import { Badge } from '@workspace/ui/components/badge';
 import { EntityAvatar } from '@workspace/ui/components/entity-avatar';
+import { RoleBadgeList } from '@workspace/ui/components/platform/role-badge-list';
 
 import type { ProfileWorkspaceContext } from '@/lib/profile-workspace-context';
 import type { PlatformPendingSpaceInvite } from '@/lib/platform-shell.types';
@@ -94,19 +94,12 @@ export function ProfileWorkspaceView({
                   Slug:{' '}
                   <span className="font-mono text-xs">{activeSpace.slug}</span>
                 </div>
-                {activeSpace.roles.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {activeSpace.roles.map((role) => (
-                      <Badge
-                        key={`active-space-${activeSpace.spaceId}-${role.key}`}
-                        variant="secondary"
-                        className="text-[11px]"
-                      >
-                        {role.label}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
+                <RoleBadgeList
+                  roles={activeSpace.roles}
+                  keyPrefix={`active-space-${activeSpace.spaceId}`}
+                  className="mt-2"
+                  badgeClassName="text-[11px]"
+                />
               </div>
               <div>
                 <div className="text-muted-foreground mb-1 text-xs font-medium uppercase">
@@ -127,19 +120,12 @@ export function ProfileWorkspaceView({
                     {activeSpace.orgSlug}
                   </span>
                 </div>
-                {activeSpace.orgRoles.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {activeSpace.orgRoles.map((role) => (
-                      <Badge
-                        key={`active-org-${activeSpace.organizationId}-${role.key}`}
-                        variant="secondary"
-                        className="text-[11px]"
-                      >
-                        {role.label}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
+                <RoleBadgeList
+                  roles={activeSpace.orgRoles}
+                  keyPrefix={`active-org-${activeSpace.organizationId}`}
+                  className="mt-2"
+                  badgeClassName="text-[11px]"
+                />
               </div>
             </div>
           ) : !needsSpaceChoice ? (
@@ -171,19 +157,12 @@ export function ProfileWorkspaceView({
                     <span className="text-muted-foreground text-xs">
                       {s.orgName} · {s.slug}
                     </span>
-                    {s.roles.length > 0 ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {s.roles.map((role) => (
-                          <Badge
-                            key={`${s.spaceId}-${role.key}`}
-                            variant="secondary"
-                            className="text-[11px]"
-                          >
-                            {role.label}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
+                    <RoleBadgeList
+                      roles={s.roles}
+                      keyPrefix={s.spaceId}
+                      className="mt-1"
+                      badgeClassName="text-[11px]"
+                    />
                   </li>
                 ))}
               </ul>

@@ -1,0 +1,153 @@
+'use client';
+
+import { createGraphTranslator } from '@workspace/i18n-catalogs/graph';
+import * as React from 'react';
+
+import { AUTHOR_BASE_PATH } from '@/lib/author-base-path';
+import { getSupabaseBrowserClient } from '@/lib/supabase-browser';
+
+import {
+  ChooseEditSourceDialog,
+  type DraftVersion,
+  type EditSource,
+} from './choose-edit-source';
+
+/**
+ * useEditLauncher — the ONE entry point for "edit this text document", shared by
+ * the reader's Edit button and the `⋯` context menus (cards + Details panel) so
+ * the experience is identical wherever it starts. Read mode shows the PUBLISHED
+ * version, so editing must be a deliberate choice when a divergent draft exists:
+ *
+ *  - no published version (only drafts / brand-new) → open the latest draft,
+ *  - published is the latest (no newer drafts)      → new draft from published,
+ *  - published + newer draft(s)                     → ask via the chooser.
+ *
+ * It derives that purely from the version list, then hard-navigates to the editor
+ * route with the seed (`?source=published` / `?version=<id>` / none). Render the
+ * returned `chooser` once at the host; call `requestEdit(nodeId)` from any trigger.
+ */
+export function useEditLauncher({
+  spaceId,
+  messages,
+}: {
+  spaceId: string;
+  messages: Record<string, string>;
+}) {
+  const t = React.useMemo(() => createGraphTranslator(messages), [messages]);
+  const [open, setOpen] = React.useState(false);
+  const [drafts, setDrafts] = React.useState<DraftVersion[]>([]);
+  const [preparing, setPreparing] = React.useState(false);
+  const targetNode = React.useRef<string | null>(null);
+
+  // Cold-start hardening for a stable Edit UX. The doc-editor route gates on a
+  // PAYLOAD session that the identity worker normally mirrors from Supabase. After a
+  // stack reset — or before the worker has mirrored the current user — that Payload
+  // user / session can be missing, and the editor would bounce to platform sign-in.
+  // Re-establish it on demand from the LIVE Supabase session (the route verifies the
+  // token server-side, syncs the Payload user, and issues the session cookie). Best-
+  // effort: a genuine no-session falls through to the editor's own gate (the backstop).
+  const ensurePayloadSession = React.useCallback(async () => {
+    try {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        return;
+      }
+      await fetch(`${AUTHOR_BASE_PATH}/api/auth/supabase-payload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: token }),
+      });
+    } catch {
+      // best-effort; the editor's auth gate is the backstop.
+    }
+  }, []);
+
+  const navigate = React.useCallback((nodeId: string, source?: EditSource) => {
+    const base = `${AUTHOR_BASE_PATH}/doc/${encodeURIComponent(nodeId)}`;
+    const url = !source
+      ? base
+      : source === 'published'
+        ? `${base}?source=published`
+        : `${base}?version=${encodeURIComponent(source)}`;
+    window.location.assign(url);
+  }, []);
+
+  const requestEdit = React.useCallback(
+    async (nodeId: string) => {
+      setPreparing(true);
+      // Establish the Payload session in parallel with the version lookup; await it
+      // before navigating so the editor route loads already authenticated.
+      const sessionReady = ensurePayloadSession();
+      try {
+        const res = await fetch(
+          `/author/graph/text-resources/versions?node_id=${encodeURIComponent(
+            nodeId
+          )}&space_id=${encodeURIComponent(spaceId)}`
+        );
+        const versions = res.ok
+          ? (
+              (await res.json()) as {
+                versions: {
+                  id: string;
+                  status: string | null;
+                  updatedAt: string;
+                }[];
+              }
+            ).versions
+          : [];
+
+        // The Payload session cookie must be set before we hit the editor route.
+        await sessionReady;
+
+        // No published version yet → just continue the latest draft.
+        if (!versions.some((v) => v.status === 'published')) {
+          navigate(nodeId);
+          return;
+        }
+        // Drafts NEWER than the latest published (newest-first list → take the
+        // leading drafts, stop at the first published).
+        const leadingDrafts: DraftVersion[] = [];
+        for (const v of versions) {
+          if (v.status === 'published') {
+            break;
+          }
+          if (v.status === 'draft') {
+            leadingDrafts.push({ id: v.id, updatedAt: v.updatedAt });
+          }
+        }
+        if (leadingDrafts.length === 0) {
+          navigate(nodeId, 'published');
+          return;
+        }
+        targetNode.current = nodeId;
+        setDrafts(leadingDrafts);
+        setOpen(true);
+      } finally {
+        setPreparing(false);
+      }
+    },
+    [spaceId, navigate, ensurePayloadSession]
+  );
+
+  const chooser = (
+    <ChooseEditSourceDialog
+      open={open}
+      onOpenChange={setOpen}
+      t={t}
+      drafts={drafts}
+      onConfirm={(source) => {
+        setOpen(false);
+        if (targetNode.current) {
+          navigate(targetNode.current, source);
+        }
+      }}
+    />
+  );
+
+  return { requestEdit, chooser, preparingEdit: preparing };
+}

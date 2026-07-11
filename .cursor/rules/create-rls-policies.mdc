@@ -25,6 +25,10 @@ alwaysApply: false
 - Performance and execution-plan guidance: `/.cursor/rules/rls-performance-patterns.mdc`
 - Return to `/.cursor/rules/space-scoped-resource-tables.mdc` if the task broadens into space-scoped schema design.
 
+## Default Posture — Fail-Closed (always)
+
+Before writing any policy: the default access posture is **fail-closed**. A row is invisible unless a predicate **deliberately** admits it; new user content defaults to **private (owner-only)**; sharing is an **additive, OR'd widening**, never the baseline. The forgotten case must fail **closed** (un-shared, recoverable), never **open** (leaked, irrecoverable). The fence is the **RLS predicate** — never an app `where` filter or a `status` flag (`poc-no-fallbacks`). Detail: `rls-policy-authoring-basics.mdc` → "Default Posture".
+
 RLS policy work splits into three narrow concerns:
 
 1. Authoring syntax and operation-specific policy shape.

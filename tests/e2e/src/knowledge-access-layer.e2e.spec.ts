@@ -1,12 +1,13 @@
 /**
  * Access-layer acceptance test — slice 07 (docs/knowledge-graph-plan.md §5).
  *
- * Proves the HARD-ACCESS (RLS) generalization: cohort (members-only-read via
- * `scopes`) + manager → subordinate hierarchy compose over node visibility by the
- * formula `(base_access AND scope_gate) OR hierarchy`. Failing a required
- * dimension HIDES the node — it is ABSENT from `ProjectionResult.items`, never
+ * Proves the HARD-ACCESS (RLS) generalization: cohort (additive members-only GRANT
+ * via `scopes`) + manager → subordinate hierarchy compose over node visibility by the
+ * formula `is_owner OR (base AND (floor published OR cohort grant)) OR
+ * hierarchy`. A node not admitted by any branch is HIDDEN — ABSENT from
+ * `ProjectionResult.items`, never
  * present with `available=false`. This is the carrying boundary authorization ≠
- * gating (ADR-0006 §1/§3): contrast slice-05/06 where a closed node stays in
+ * gating: contrast slice-05/06 where a closed node stays in
  * `items` with a display flag.
  *
  * The resolver is `security invoker`, so swapping the knowledge_resources SELECT
@@ -17,12 +18,12 @@
  *
  * Coverage maps to slice-07 §6:
  *  (1) cohort hides (RLS hard): member sees the restricted node; stranger → ABSENT.
- *  (2) unrestricted nodes unaffected (scope_gate default true) — both see them.
+ *  (2) published nodes (floor='space') unaffected — both members and strangers see them.
  *  (3) hierarchy: manager sees subordinate-owned; peer does NOT; transitivity
  *      (manager-of-manager) also sees via recursion.
  *  (4) space isolation: a manager does NOT see a subordinate-owned node in ANOTHER
  *      space (auth_user_manages_owner checks space inside).
- *  (5) composition `(base AND scope) OR hierarchy`: a node both scope-restricted and
+ *  (5) composition (floor=private + cohort + hierarchy): a node both scope-granted and
  *      subordinate-owned — manager (not cohort member) still sees via hierarchy;
  *      cohort member (not manager) sees via scope; stranger sees neither.
  *  (6) authz ≠ gating boundary: a hidden node is ABSENT from `items` (not a flag);
@@ -113,7 +114,7 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
     expect(strangerIds.has(graph.cohortRestrictedNodeId)).toBe(false);
   });
 
-  test('(2) unrestricted nodes are unaffected (scope_gate default true)', async () => {
+  test('(2) published nodes (floor=space) are visible to all space members', async () => {
     const memberIds = await visibleIds(actors.cohortMember.client);
     const strangerIds = await visibleIds(actors.cohortStranger.client);
 
@@ -246,10 +247,13 @@ test.describe('knowledge access layer (cohort + hierarchy RLS dimensions) @full'
     expect(gatingKeys).not.toContain('reporting');
     expect(gatingKeys).not.toContain('manages');
 
-    // And the unrestricted, granted-owned node is still visible to the granted
-    // admin — the resolver is unchanged; only the visible set moved (via RLS).
+    // The granted admin owns both the unrestricted (published) and the
+    // cohort-restricted (private) demo nodes, so it sees BOTH — the latter via the
+    // Model B `is_owner` branch ("you always see your own"), even though
+    // it is NOT a member of the cohort that the node is shared with. (Ownership
+    // trumps cohort membership; the resolver is unchanged, only RLS moved the set.)
     const grantedIds = await visibleIds(tenant.granted.client);
     expect(grantedIds.has(graph.unrestrictedNodeId)).toBe(true);
-    expect(grantedIds.has(graph.cohortRestrictedNodeId)).toBe(false); // granted is not a member
+    expect(grantedIds.has(graph.cohortRestrictedNodeId)).toBe(true);
   });
 });

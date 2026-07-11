@@ -205,3 +205,23 @@ merged by hand, never blanket-overwritten.
   report rather than silently rewriting feature code.
 - One logical upgrade per branch/PR when possible (e.g. "Payload 3.83→3.84 + Next
   sync" as one unit), so a regression is easy to bisect and revert.
+
+## Security review (mandatory close-out)
+
+A dependency bump is a supply-chain surface, so the review matters here too. A
+vulnerability/security review is a mandatory feature close-out (the always-on
+`security-review-before-commit` rule): the coordinator runs the `/security-review` skill over
+the full diff BEFORE committing. You cannot invoke that skill (skills run in the main
+conversation), so before you report done:
+
+- **Self-review the upgrade**: flag any bumped package with a known advisory, a changed
+  transitive that touches auth/crypto/serialization, or a postinstall/script change.
+- **FLAG the dependency changes** in your report (the manifests + lockfile diff) so the
+  coordinator runs `/security-review` over it before the commit.
+
+## Reuse-first & project rules (you do NOT inherit them automatically)
+
+You run in your own context — the repo's `.cursor/rules/` and root `CLAUDE.md` are NOT auto-loaded into a subagent. Before producing or changing code, **Read and follow the project's always-on rules in `.cursor/rules/`** (router: `process-check-rules-skills.mdc`). Binding, in particular:
+
+- **Reuse-first discovery (`.cursor/rules/reuse-first-discovery.mdc`)** — BEFORE creating any new artifact (component, hook, primitive, util/formatter, zod contract, server action, policy/factory, pattern), SEARCH the repo for an existing one to reuse or extend. Ladder: **reuse → parameterize/extend (never fork) → only then create**. Check `@workspace/ui` (`components/`, `components/platform/`, `hooks/`, `lib/`), `@workspace/std`, the `*-contracts` packages, and the lens components first; `bun run refactor:scan` for oversized files. This is your DEFAULT — not a per-task reminder.
+- the other always-on gates in `CLAUDE.md`: domain-context-first, standard-design-patterns, entity-first-module-naming, static-imports-only, zod-schema-first-contracts, ui-i18n-json-required, ui-primitive-hygiene, security-review-before-commit, lint-warnings-block-commit.

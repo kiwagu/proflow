@@ -13,8 +13,7 @@ import { revalidatePlatformPath } from '@/lib/platform-revalidate';
 import { createClient } from '@/lib/supabase/server';
 
 export type SetActiveSpaceResult =
-  | { ok: true }
-  | { ok: false; message: string };
+  { ok: true } | { ok: false; message: string };
 
 export async function setActiveSpaceAction(
   spaceId: string

@@ -65,3 +65,25 @@ Write Postgres-compatible SQL code for Supabase migration files that:
   - Include comments explaining the rationale and intended behavior of each security policy
 
 The generated SQL code should be production-ready, well-documented, and aligned with Supabase's best practices.
+
+## Post-apply: run the Supabase advisors (mandatory close-out)
+
+After applying a migration (`make db-push` / a forward apply), RUN THE SUPABASE ADVISORS
+and fix any NEW warning before reporting done / committing — DDL routinely introduces them,
+and nothing else catches them (they silently reached 168 once because no step checked). This
+is the DB-level analogue of the `lint:strict` / `security-review` close-outs.
+
+- **Get them DYNAMICALLY:** the `mcp__supabase-self-hosted__get_advisors` tool — call with
+  `type: "security"` and `type: "performance"`. It runs splinter against the LIVE DB and
+  returns every lint with a `remediation` URL (the result can be large — aggregate with `jq`
+  by `.name`, read `.detail` for the exact object). Run it after each migration, compare to the
+  prior state, fix new WARN/ERROR. (No static/pre-commit check can do this — advisors read live
+  DB state, so this runs post-`db-push`.)
+- **Common DDL findings + fixes:** every `security definer` function MUST pin `set search_path
+  = ''` (or `= public`, matching its siblings); put INTERNAL RLS-helper definers in a
+  NON-exposed schema (`private`) so they aren't REST-callable (PostgREST only exposes `public`),
+  keeping them callable inside RLS; `revoke` from `anon` on anything the (auth-only) app doesn't
+  need; enable RLS on every new table; don't expose tables via `graphql_public` if GraphQL is
+  unused.
+- A genuinely-intended public RPC (authenticated-callable by design) is an ACCEPTED residue —
+  document it, don't break it. Drive the rest to zero.

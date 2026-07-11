@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
     "format": "bunx prettier --write .",
     "typecheck": "tsc --noEmit"
   },

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { Button } from '@workspace/ui/components/button';
+import { FieldError } from '@workspace/ui/components/field';
 
 import { setActiveSpaceAction } from '@/lib/space.active.actions';
 
@@ -48,9 +49,9 @@ export function SupportSpaceActivateButton({
         {label}
       </Button>
       {error ? (
-        <p className="text-destructive text-right text-xs" role="alert">
+        <FieldError className="text-destructive text-right text-xs">
           {error}
-        </p>
+        </FieldError>
       ) : null}
     </div>
   );

@@ -5,7 +5,7 @@ import { assertValidLocale, CATALOG_MANIFEST } from '../manifest.js';
  * Loader for the knowledge-graph CONSUMER render surface catalog (shadcn pages
  * under `/author/graph/*`, NOT the Payload admin). Mirrors `loadAuthorMessages`
  * but reads `catalogs/graph/graph.{locale}.json` so the consumer strings stay
- * isolated from the operator `admin.*` catalog (ADR-0005 §7 carve-out).
+ * isolated from the operator `admin.*` catalog (carve-out).
  */
 
 const CATALOGS: Record<I18nLocale, Record<string, string> | undefined> = {

@@ -6,3 +6,10 @@ coverage/
 pnpm-lock.yaml
 .pnpm-store/
 bun.lock
+
+# Generated code — the GENERATOR is the single basis; never let Prettier reformat it
+# (Payload regenerates payload-types.ts on every dev/e2e/build boot in its own,
+# non-Prettier style; the importMap is regenerated on predev/prebuild). Letting
+# Prettier touch them creates an eternal generator<->formatter diff flicker.
+src/payload-types.ts
+src/app/(payload)/admin/importMap.js

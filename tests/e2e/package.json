@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "lint": "bunx eslint .",
+    "lint:strict": "bunx eslint . --max-warnings 0",
     "format": "bunx prettier --write \"src/**/*.ts\" \"*.{json,md,ts}\"",
     "typecheck": "tsc --noEmit",
     "test:e2e": "cross-env NODE_OPTIONS=\"--use-system-ca --no-deprecation --import=tsx/esm\" playwright test --config=playwright.config.ts",
@@ -26,6 +27,8 @@
     "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/knowledge-engine": "workspace:*",
     "@workspace/rbac": "workspace:*",
+    "@workspace/seed": "workspace:*",
+    "@workspace/settings-runtime": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@types/pg": "catalog:",
     "cross-env": "catalog:",
@@ -33,6 +36,7 @@
     "mongodb": "^7.3.0",
     "pg": "catalog:",
     "tsx": "catalog:",
+    "tus-js-client": "^4.3.1",
     "typescript": "catalog:",
     "zod": "catalog:"
   }
