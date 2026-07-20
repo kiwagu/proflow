@@ -24,6 +24,7 @@ services:
       timeout: 10s
       interval: 5s
       retries: 3
+      start_period: 20s
     environment:
       # Binds nestjs listener to both IPv4 and IPv6 network interfaces
       HOSTNAME: "::"
@@ -46,6 +47,8 @@ services:
       SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
       AUTH_JWT_SECRET: ${JWT_SECRET}
 
       ENABLED_FEATURES_LOGS_ALL: "false"
