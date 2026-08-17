@@ -1,5 +1,10 @@
 # Docker Image Versions
 
+## 2026-08-17
+- supabase/studio:2026.08.03-sha-022b374 (prev supabase/studio:2026.07.07-sha-a6a04f2)
+- kong/kong:3.9.3 (prev kong/kong:3.9.1)
+- NOTE: upstream switched default gateway to Envoy; we keep Kong inline (see docker-compose.kong.yml for upstream's Kong overlay)
+
 ## 2026-07-07
 - supabase/studio:2026.07.07-sha-a6a04f2 (prev supabase/studio:2026.06.03-sha-0bca601)
 
