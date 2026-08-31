@@ -65,6 +65,29 @@ export const ENTITY_PREFIXES = {
 
   // Payload (Author app) documents
   body: 'bod',
+
+  // Local-first document workbench (ported domain layer)
+  /** A native document: the CRDT and everything derived from it. */
+  document: 'doc',
+  /** A named version of a document — a frontier, not a snapshot. */
+  documentVersion: 'ver',
+  /** One embedded passage of a document, in the search index. */
+  documentChunk: 'chk',
+  /** A node of the file tree: a folder, a document, or a blob-backed file. */
+  fileNode: 'fil',
+  /** A chat conversation. */
+  chat: 'cht',
+  /** One message in a chat. */
+  chatMessage: 'msg',
+  /** One part of an assistant turn — text, a tool call, reasoning. */
+  chatMessagePart: 'prt',
+  /** One streaming run of the model, so an interrupted turn stays representable. */
+  chatStream: 'stm',
+  /**
+   * A writing client: each tab and the agent worker mint one for the life of
+   * the instance, and sign their saves with it.
+   */
+  writer: 'wrt',
 } as const satisfies Record<string, string>;
 
 /** Semantic entity name — a key of {@link ENTITY_PREFIXES}. */
