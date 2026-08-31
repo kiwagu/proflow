@@ -52,6 +52,7 @@
         "dotenv": "catalog:",
         "graphql": "^16.14.2",
         "jose": "^6.2.3",
+        "lucide-react": "catalog:",
         "next": "catalog:",
         "payload": "catalog:payload",
         "pg": "catalog:",
