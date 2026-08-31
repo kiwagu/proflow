@@ -463,6 +463,31 @@
         "typescript": "catalog:",
       },
     },
+    "packages/persistence-pglite": {
+      "name": "@workspace/persistence-pglite",
+      "version": "0.1.0",
+      "dependencies": {
+        "@electric-sql/pglite": "catalog:",
+        "@electric-sql/pglite-pgvector": "catalog:",
+        "@workspace/doc-crdt": "workspace:*",
+        "@workspace/domain": "workspace:*",
+        "@workspace/embedding": "workspace:*",
+        "neverthrow": "catalog:",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@types/react": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "react": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "catalog:",
+      },
+    },
     "packages/rbac": {
       "name": "@workspace/rbac",
       "version": "0.1.0",
@@ -615,6 +640,8 @@
   "catalog": {
     "@ai-sdk/anthropic": "^4.0.41",
     "@ai-sdk/provider": "^4.0.7",
+    "@electric-sql/pglite": "^0.5.5",
+    "@electric-sql/pglite-pgvector": "^0.0.6",
     "@huggingface/transformers": "^4.2.0",
     "@lexical/code": "0.45.0",
     "@lexical/headless": "0.45.0",
@@ -880,6 +907,10 @@
     "@dotenvx/dotenvx": ["@dotenvx/dotenvx@1.57.2", "", { "dependencies": { "commander": "^11.1.0", "dotenv": "^17.2.1", "eciesjs": "^0.4.10", "execa": "^5.1.1", "fdir": "^6.2.0", "ignore": "^5.3.0", "object-treeify": "1.1.33", "picomatch": "^4.0.2", "which": "^4.0.0" }, "bin": { "dotenvx": "src/cli/dotenvx.js" } }, "sha512-lv9+UZPnl/KOvShepevLWm3+/wc1It5kgO5Q580evnvOFMZcgKVEYFwxlL7Ohl9my1yjTsWo28N3PJYUEO8wFQ=="],
 
     "@ecies/ciphers": ["@ecies/ciphers@0.2.6", "", { "peerDependencies": { "@noble/ciphers": "^1.0.0" } }, "sha512-patgsRPKGkhhoBjETV4XxD0En4ui5fbX0hzayqI3M8tvNMGUoUvmyYAIWwlxBc1KX5cturfqByYdj5bYGRpN9g=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.8", "", {}, "sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q=="],
+
+    "@electric-sql/pglite-pgvector": ["@electric-sql/pglite-pgvector@0.0.6", "", { "peerDependencies": { "@electric-sql/pglite": "0.5.5" } }, "sha512-KiPeiS/BMmjO71igzgexJAu5aPb3Y2yUjNTSMdti4ZL3zlqZFl4eLgbzLBGyG5Cxr9xFwYFmHh61ZTq6w6hUJA=="],
 
     "@emnapi/core": ["@emnapi/core@1.9.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.0", "tslib": "^2.4.0" } }, "sha512-mukuNALVsoix/w1BJwFzwXBN/dHeejQtuVzcDsfOEsdpCumXb/E9j8w11h5S54tT1xhifGfbbSm/ICrObRb3KA=="],
 
@@ -1828,6 +1859,8 @@
     "@workspace/package-kinds": ["@workspace/package-kinds@workspace:packages/package-kinds"],
 
     "@workspace/payload-plugins": ["@workspace/payload-plugins@workspace:packages/payload-plugins"],
+
+    "@workspace/persistence-pglite": ["@workspace/persistence-pglite@workspace:packages/persistence-pglite"],
 
     "@workspace/rbac": ["@workspace/rbac@workspace:packages/rbac"],
 

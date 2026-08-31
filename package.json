@@ -55,6 +55,8 @@
     "catalog": {
       "@ai-sdk/anthropic": "^4.0.41",
       "@ai-sdk/provider": "^4.0.7",
+      "@electric-sql/pglite": "^0.5.5",
+      "@electric-sql/pglite-pgvector": "^0.0.6",
       "@huggingface/transformers": "^4.2.0",
       "@lexical/code": "0.45.0",
       "@lexical/headless": "0.45.0",
