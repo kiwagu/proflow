@@ -157,6 +157,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/domain": {
+      "name": "@workspace/domain",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workspace/entity-id": "workspace:*",
+        "neverthrow": "catalog:",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/domain-events": {
       "name": "@workspace/domain-events",
       "version": "0.1.0",
@@ -319,6 +335,21 @@
         "esbuild": "^0.28.1",
         "eslint": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "packages/package-kinds": {
+      "name": "@workspace/package-kinds",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workspace/domain": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/payload-plugins": {
@@ -495,10 +526,11 @@
     "eslint": "^10.5.0",
     "eslint-config-next": "16.2.10",
     "lucide-react": "^1.18.0",
+    "neverthrow": "^8.2.0",
     "next": "16.2.10",
     "next-themes": "^0.4.6",
     "pg": "^8.22.0",
-    "prettier": "^3.9.4",
+    "prettier": "^3.9.5",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "shadcn": "^4.13.0",
@@ -1304,6 +1336,8 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
+    "@rollup/rollup-linux-x64-gnu": ["@rollup/rollup-linux-x64-gnu@4.63.1", "", { "os": "linux", "cpu": "x64" }, "sha512-gfI5T24WLLuFfSKw7Go/zDXjAAV0fny0swTaDv+WjK7vqcw4cRhFfdsyKL1n+ukI+ooBxn3bVQnyrn06WpI50w=="],
+
     "@rtsao/scc": ["@rtsao/scc@1.1.0", "", {}, "sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g=="],
 
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
@@ -1620,6 +1654,8 @@
 
     "@workspace/db": ["@workspace/db@workspace:packages/db"],
 
+    "@workspace/domain": ["@workspace/domain@workspace:packages/domain"],
+
     "@workspace/domain-events": ["@workspace/domain-events@workspace:packages/domain-events"],
 
     "@workspace/e2e": ["@workspace/e2e@workspace:tests/e2e"],
@@ -1641,6 +1677,8 @@
     "@workspace/notifications": ["@workspace/notifications@workspace:packages/notifications"],
 
     "@workspace/notifications-service": ["@workspace/notifications-service@workspace:services/notifications"],
+
+    "@workspace/package-kinds": ["@workspace/package-kinds@workspace:packages/package-kinds"],
 
     "@workspace/payload-plugins": ["@workspace/payload-plugins@workspace:packages/payload-plugins"],
 
@@ -2623,6 +2661,8 @@
     "natural-compare": ["natural-compare@1.4.0", "", {}, "sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw=="],
 
     "negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
+
+    "neverthrow": ["neverthrow@8.2.0", "", { "optionalDependencies": { "@rollup/rollup-linux-x64-gnu": "^4.24.0" } }, "sha512-kOCT/1MCPAxY5iUV3wytNFUMUolzuwd/VF/1KCx7kf6CutrOsTie+84zTGTpgQycjvfLdBBdvBvFLqFD2c0wkQ=="],
 
     "next": ["next@16.2.10", "", { "dependencies": { "@next/env": "16.2.10", "@swc/helpers": "0.5.15", "baseline-browser-mapping": "^2.9.19", "caniuse-lite": "^1.0.30001579", "postcss": "8.4.31", "styled-jsx": "5.1.6" }, "optionalDependencies": { "@next/swc-darwin-arm64": "16.2.10", "@next/swc-darwin-x64": "16.2.10", "@next/swc-linux-arm64-gnu": "16.2.10", "@next/swc-linux-arm64-musl": "16.2.10", "@next/swc-linux-x64-gnu": "16.2.10", "@next/swc-linux-x64-musl": "16.2.10", "@next/swc-win32-arm64-msvc": "16.2.10", "@next/swc-win32-x64-msvc": "16.2.10", "sharp": "^0.34.5" }, "peerDependencies": { "@opentelemetry/api": "^1.1.0", "@playwright/test": "^1.51.1", "babel-plugin-react-compiler": "*", "react": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "react-dom": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0", "sass": "^1.3.0" }, "optionalPeers": ["@opentelemetry/api", "@playwright/test", "babel-plugin-react-compiler", "sass"], "bin": { "next": "dist/bin/next" } }, "sha512-2som5AVXb3kE6Yjine3/mNbBayYF58eguBWIVVUdr1y/L426xyVEgYxgBG+1QC34P2x5E+tcDup6XkuOAX3dCA=="],
 
