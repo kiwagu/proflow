@@ -53,6 +53,9 @@
       "seed"
     ],
     "catalog": {
+      "@ai-sdk/anthropic": "^4.0.41",
+      "@ai-sdk/provider": "^4.0.7",
+      "@huggingface/transformers": "^4.2.0",
       "@lexical/code": "0.45.0",
       "@lexical/headless": "0.45.0",
       "@lexical/link": "0.45.0",
@@ -70,10 +73,13 @@
       "@types/pg": "^8.20.0",
       "@types/react": "^19.2.17",
       "@types/react-dom": "^19.2.3",
+      "@zip.js/zip.js": "^2.8.57",
+      "ai": "^7.0.77",
       "cross-env": "^10.1.0",
       "dotenv": "^17.4.2",
       "eslint": "^10.5.0",
       "eslint-config-next": "16.2.10",
+      "hash-wasm": "^4.12.0",
       "loro-crdt": "^1.14.1",
       "bitf": "^1.0.2",
       "diff": "^9.0.0",
