@@ -157,6 +157,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/doc-crdt": {
+      "name": "@workspace/doc-crdt",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workspace/domain": "workspace:*",
+        "loro-crdt": "catalog:",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/domain": {
       "name": "@workspace/domain",
       "version": "0.1.0",
@@ -525,6 +541,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^10.5.0",
     "eslint-config-next": "16.2.10",
+    "loro-crdt": "^1.14.1",
     "lucide-react": "^1.18.0",
     "neverthrow": "^8.2.0",
     "next": "16.2.10",
@@ -1654,6 +1671,8 @@
 
     "@workspace/db": ["@workspace/db@workspace:packages/db"],
 
+    "@workspace/doc-crdt": ["@workspace/doc-crdt@workspace:packages/doc-crdt"],
+
     "@workspace/domain": ["@workspace/domain@workspace:packages/domain"],
 
     "@workspace/domain-events": ["@workspace/domain-events@workspace:packages/domain-events"],
@@ -2529,6 +2548,8 @@
     "longest-streak": ["longest-streak@3.1.0", "", {}, "sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g=="],
 
     "loose-envify": ["loose-envify@1.4.0", "", { "dependencies": { "js-tokens": "^3.0.0 || ^4.0.0" }, "bin": { "loose-envify": "cli.js" } }, "sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q=="],
+
+    "loro-crdt": ["loro-crdt@1.15.1", "", {}, "sha512-J3568cXG75MNotTJg2XVhlIEW8POjAZRFhK+3yXYBaQVB1LHn/Ksk3DIqoTOBUf+cgE4yVeqPbh7VUTX2QLV2g=="],
 
     "lru-cache": ["lru-cache@11.5.1", "", {}, "sha512-RPimw/7aMdv2oqRrxKwvZXcPfwBrn/JZ2xYcY9Hus/6LaS3VOAKVWKWgNLCFSiOm1ESXinjsDlidVU7JlnCN2A=="],
 
