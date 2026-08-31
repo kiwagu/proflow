@@ -114,6 +114,123 @@ export type Database = {
           },
         ]
       }
+      crdt_document_versions: {
+        Row: {
+          created_at: string
+          created_by: string
+          doc_id: string
+          frontiers: Json
+          id: string
+          kind: string
+          label: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          doc_id: string
+          frontiers: Json
+          id?: string
+          kind: string
+          label?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          doc_id?: string
+          frontiers?: Json
+          id?: string
+          kind?: string
+          label?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crdt_document_versions_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "crdt_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crdt_documents: {
+        Row: {
+          created_at: string
+          created_by: string
+          format: string
+          id: string
+          snapshot: string | null
+          snapshot_seq: number
+          space_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          format?: string
+          id?: string
+          snapshot?: string | null
+          snapshot_seq?: number
+          space_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          format?: string
+          id?: string
+          snapshot?: string | null
+          snapshot_seq?: number
+          space_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crdt_documents_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crdt_updates: {
+        Row: {
+          bytes: string
+          created_at: string
+          created_by: string
+          doc_id: string
+          seq: number
+          writer: string
+        }
+        Insert: {
+          bytes: string
+          created_at?: string
+          created_by: string
+          doc_id: string
+          seq?: never
+          writer: string
+        }
+        Update: {
+          bytes?: string
+          created_at?: string
+          created_by?: string
+          doc_id?: string
+          seq?: never
+          writer?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crdt_updates_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "crdt_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_edges: {
         Row: {
           created_at: string
@@ -1279,6 +1396,10 @@ export type Database = {
           p_space_slug: string
         }
         Returns: Json
+      }
+      rpc_compact_document: {
+        Args: { p_covers_seq: number; p_doc_id: string; p_snapshot: string }
+        Returns: boolean
       }
       rpc_create_global_system_role: {
         Args: {
