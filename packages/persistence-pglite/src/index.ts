@@ -16,6 +16,7 @@ export { createPgliteDocumentRepository } from './document/document.repository.j
 export { createPgliteDocumentVersionStore } from './document/document-version.store.js';
 export { createPgliteFileTreeReader } from './file/file.reader.js';
 export { createPgliteFileRepository } from './file/file.repository.js';
+export { createPgliteBlobSyncLocal } from './file/blob-sync.local.js';
 export { watchQuery } from './live/watch.js';
 export { liveValue, type LiveValue, type Watch } from './live/live-value.js';
 export { createPglitePackageReader } from './package/package.reader.js';

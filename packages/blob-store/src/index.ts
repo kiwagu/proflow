@@ -2,6 +2,11 @@ export { type BlobWorkerClient, createBlobWorkerClient } from './client.js';
 export { hashBlob } from './hash.js';
 export { confinePath } from './path.js';
 export {
+  type MediaSyncLoop,
+  type MediaSyncLoopOptions,
+  startMediaSyncLoop,
+} from './media-sync.loop.js';
+export {
   ensureLocal,
   type PushOutcome,
   type PushResult,

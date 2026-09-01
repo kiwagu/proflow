@@ -231,6 +231,23 @@
         "vitest": "catalog:",
       },
     },
+    "packages/blob-sync-supabase": {
+      "name": "@workspace/blob-sync-supabase",
+      "version": "0.1.0",
+      "dependencies": {
+        "@supabase/supabase-js": "catalog:",
+        "@workspace/db": "workspace:*",
+        "@workspace/domain": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/db": {
       "name": "@workspace/db",
       "version": "0.1.0",
@@ -1910,6 +1927,8 @@
     "@workspace/ai-ops": ["@workspace/ai-ops@workspace:packages/ai-ops"],
 
     "@workspace/blob-store": ["@workspace/blob-store@workspace:packages/blob-store"],
+
+    "@workspace/blob-sync-supabase": ["@workspace/blob-sync-supabase@workspace:packages/blob-sync-supabase"],
 
     "@workspace/db": ["@workspace/db@workspace:packages/db"],
 
