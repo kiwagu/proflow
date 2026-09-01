@@ -356,7 +356,7 @@ describe('markdownToEmbeddingText', () => {
 
   it('drops watermarks and unrecognized m-* tags entirely', () => {
     const input =
-      'before <m-watermark>{"content":"made with pero"}</m-watermark>' +
+      'before <m-watermark>{"content":"made with the workbench"}</m-watermark>' +
       '<m-future-thing>{"some":"payload"}</m-future-thing> after';
     expect(markdownToEmbeddingText(input)).toBe('before  after');
   });

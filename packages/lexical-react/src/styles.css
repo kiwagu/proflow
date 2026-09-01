@@ -560,7 +560,7 @@ mark {
 }
 
 /* Await placeholders are visible only on the originating peer. */
-.pero-await-node:not(.local) {
+.md-await-node:not(.local) {
   display: none;
 }
 

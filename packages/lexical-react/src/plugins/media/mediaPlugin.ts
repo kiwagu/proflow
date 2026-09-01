@@ -34,7 +34,7 @@ export const TRY_INSERT_ATTACHMENT_UPLOAD_COMMAND = createCommand<
 >('TRY_INSERT_ATTACHMENT_UPLOAD_COMMAND');
 
 /** The reference a media node carries for blob-backed bytes. */
-export const blobUrl = (hash: string) => `pero-blob://${hash}`;
+export const blobUrl = (hash: string) => `docblob://${hash}`;
 
 async function imageSize(
   file: File

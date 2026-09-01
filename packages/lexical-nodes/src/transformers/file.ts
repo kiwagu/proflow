@@ -42,11 +42,11 @@ export const I_FILE: ElementTransformer = {
 export const FILE_LINK: ElementTransformer = {
   dependencies: [FileNode],
   type: 'element',
-  regExp: /^\[([^\]]*)\]\(pero-blob:\/\/([0-9a-f]{64})\)$/,
+  regExp: /^\[([^\]]*)\]\(docblob:\/\/([0-9a-f]{64})\)$/,
   export: (node: LexicalNode) => {
     if (!$isFileNode(node) || !node.getHash()) return null;
     const info = node.getInfo();
-    return `[${info.fileName}](pero-blob://${info.hash})`;
+    return `[${info.fileName}](docblob://${info.hash})`;
   },
   replace: (parent: ElementNode, _, match: string[]) => {
     parent.append(
