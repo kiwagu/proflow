@@ -1,3 +1,13 @@
+// This package is consumed as source (its `exports` map points at src/*.ts), so
+// consuming packages compile this file inside their own tsconfig `include`.
+// Ambient declarations are only loaded when a file is part of the program, and
+// sql.d.ts is not reachable from a consumer's `include` — the reference below
+// pins it to this file so the `?raw` module shape travels with every consumer.
+// The lint rule's "use import instead" advice cannot apply: sql.d.ts is a global
+// script declaring a wildcard module, which an `import` would turn into a module
+// and silently drop the declaration.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="./sql.d.ts" />
 import entityId from './migrations/001_entity_id.sql?raw';
 import documents from './migrations/002_documents.sql?raw';
 import files from './migrations/003_files.sql?raw';
