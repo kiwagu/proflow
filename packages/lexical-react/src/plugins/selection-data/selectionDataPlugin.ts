@@ -22,7 +22,11 @@ import {
   type NodeKey,
   type RangeSelection,
 } from 'lexical';
-import { createStore, type SetStoreFunction } from '../../reactive/store';
+import {
+  createStore,
+  type SetStoreFunction,
+  type StoreHandle,
+} from '../../reactive/store';
 import type { LexicalWrapper } from '../../context/LexicalWrapperContext';
 
 /**
@@ -208,7 +212,7 @@ export function selectionDataPlugin(lexicalWrapper?: LexicalWrapper) {
 
 export function customSelectionDataPlugin(
   wrapper: LexicalWrapper,
-  selectionData: SelectionData,
+  selectionData: StoreHandle<SelectionData>,
   setSelectionData: SetStoreFunction<SelectionData>
 ) {
   wrapper.selection = selectionData;

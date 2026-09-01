@@ -9,21 +9,23 @@ import {
   HorizontalRuleNode,
   ImageNode,
 } from '@workspace/lexical-nodes';
-import CodeBlock from '@phosphor/code-block.svg';
-import MathIcon from '@phosphor/function.svg';
-import TableIcon from '@phosphor/grid-four.svg';
-import ImageIcon from '@phosphor/image.svg';
-import LinkIcon from '@phosphor/link.svg';
-import ListBullets from '@phosphor/list-bullets.svg';
-import ListChecks from '@phosphor/list-checks.svg';
-import ListNumbers from '@phosphor/list-numbers.svg';
-import Minus from '@phosphor/minus.svg';
-import Paperclip from '@phosphor/paperclip.svg';
-import Quote from '@phosphor/quotes.svg';
-import TextH1 from '@phosphor/text-h-one.svg';
-import TextH3 from '@phosphor/text-h-three.svg';
-import TextH2 from '@phosphor/text-h-two.svg';
-import TextT from '@phosphor/text-t.svg';
+import {
+  CodeIcon as CodeBlock,
+  ImageIcon,
+  LinkIcon,
+  ListIcon as ListBullets,
+  ListChecksIcon as ListChecks,
+  ListOrderedIcon as ListNumbers,
+  MinusIcon as Minus,
+  PaperclipIcon as Paperclip,
+  QuoteIcon as Quote,
+  SigmaIcon as MathIcon,
+  Table2Icon as TableIcon,
+  Heading1Icon as TextH1,
+  Heading3Icon as TextH3,
+  Heading2Icon as TextH2,
+  TypeIcon as TextT,
+} from 'lucide-react';
 import type { LexicalEditor } from 'lexical';
 import { INSERT_HORIZONTAL_RULE_COMMAND } from '..';
 import { TRY_INSERT_EQUATION_COMMAND } from '../katex';

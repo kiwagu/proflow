@@ -506,6 +506,7 @@
         "@lexical/table": "catalog:",
         "@lexical/utils": "catalog:",
         "@workspace/lexical-nodes": "workspace:*",
+        "@workspace/ui": "workspace:*",
         "emojibase-data": "catalog:",
         "emojilib": "catalog:",
         "fast-deep-equal": "catalog:",

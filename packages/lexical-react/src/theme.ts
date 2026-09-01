@@ -1,0 +1,250 @@
+import './styles.css';
+import type { EditorThemeClasses } from 'lexical';
+
+const VERTICAL_GAP = 'my-4 first:mt-1.5 last:mb-1.5';
+
+// Syntax highlighting consumes the theme's authored named palette directly.
+const codeHighlight: Record<string, string> = {
+  atrule: 'text-red',
+  attr: 'text-orange',
+  boolean: 'text-yellow',
+  builtin: 'text-lime',
+  cdata: 'text-ink-muted',
+  char: 'text-green',
+  class: 'text-teal',
+  'class-name': 'text-teal',
+  comment: 'text-ink-muted',
+  constant: 'text-violet',
+  deleted: 'text-purple',
+  doctype: 'text-pink',
+  entity: 'text-red',
+  function: 'text-orange',
+  important: 'text-yellow',
+  inserted: 'text-lime',
+  keyword: 'text-green',
+  namespace: 'text-teal',
+  number: 'text-lime',
+  operator: 'text-purple',
+  prolog: 'text-ink-muted',
+  property: 'text-violet',
+  punctuation: 'text-ink',
+  regex: 'text-orange',
+  selector: 'text-yellow',
+  string: 'text-red',
+  symbol: 'text-orange',
+  tag: 'text-yellow',
+  url: 'text-lime',
+  variable: 'text-green',
+};
+
+export const theme: EditorThemeClasses = {
+  root: 'md',
+  text: {
+    bold: 'font-bold',
+    italic: 'italic',
+    code: 'bg-code-buffer font-mono rounded-xs md-inline-code p-0.5',
+    strikethrough: 'md-strike',
+    underline: 'md-underline',
+    highlight: 'text-accent font-semibold',
+  },
+  paragraph: `${VERTICAL_GAP} md-p text-[1em]`,
+  heading: {
+    h1: 'text-xl text-[1.25em] font-semibold mb-3',
+    h2: 'text-lg text-[1.125em] font-semibold mb-2',
+    h3: 'text-base text-[1em] font-bold mb-0',
+    h4: 'text-base text-[1em] font-semibold',
+    h5: 'text-base text-[1em] font-medium',
+    h6: 'text-base text-[1em] font-medium',
+  },
+  list: {
+    ul: `${VERTICAL_GAP} list-none md-list md-bullet`,
+    ol: `${VERTICAL_GAP} list-decimal md-list md-number`,
+    listitem: 'my-[0.25em] [&>ul]:my-0! [&>ol]:my-0!',
+    nested: {
+      listitem: 'list-none nested',
+    },
+    checklist: 'md-list md-check',
+    listitemChecked: 'checked md-strike text-ink-extra-muted',
+  },
+  link: 'text-link hover:text-link-hover visited:text-link-visited underline hover:underline cursor-default underline-offset-[0.15em]',
+  quote:
+    'md-quote border-l-2 border-edge pl-4 py-2 italic text-ink-muted my-4 first:mt-1.5',
+  code: 'bg-code-buffer font-mono p-3 rounded block md-code-box before:text-ink-extra-muted/70 whitespace-pre mb-4',
+  static: {
+    'code-container': 'bg-code-buffer rounded',
+    'table-container': 'my-4 max-w-full',
+  },
+  codeHighlight,
+  'inline-search': 'md-inline-search bg-hover text-ink-muted rounded-sm p-0.5',
+
+  table: 'md-table',
+  tableAddColumns: 'md-table-add-columns',
+  tableAddRows: 'md-table-add-rows',
+  tableAlignment: {
+    center: 'md-table-alignment-center',
+    right: 'md-table-alignment-right',
+  },
+  tableCell: 'md-table-cell',
+  tableCellActionButton: 'md-table-cell-action-button',
+  tableCellActionButtonContainer: 'md-table-cell-action-button-container',
+  tableCellHeader: 'md-table-cell-header',
+  tableCellResizer: 'md-table-cell-resizer',
+  tableCellSelected: 'md-table-cell-selected',
+  tableFrozenColumn: 'md-table-frozen-column',
+  tableFrozenRow: 'md-table-frozen-row',
+  tableRowStriping: 'md-table-row-striping',
+  tableScrollableWrapper: 'md-table-scrollable-wrapper first:mt-1.5',
+  tableSelected: 'md-table-selected',
+  tableSelection: 'md-table-selection',
+  mark: 'md-mark',
+  markOverlap: 'md-mark-overlap',
+  searchMatch: 'search-match',
+
+  // Note: In an active editor, HRs are rendered as decorators by HoritzontalRule
+  // component so this class only applies to static md
+  hr: 'my-7 h-px bg-edge',
+};
+
+/**
+ * Deep merges two themes.
+ * @param overrideTheme The new styles.
+ * @param baseTheme The optional base theme, falls back to the default theme.
+ * @param options.join If true, concatenates the new styles with the base styles for the same key
+ *     instead of overriding. @returns The merged theme.
+ */
+export function createTheme(
+  overrideTheme: EditorThemeClasses,
+  baseTheme: EditorThemeClasses = theme,
+  options?: { join?: true }
+): EditorThemeClasses {
+  const mergedTheme = structuredClone(baseTheme);
+
+  const deepMerge = (
+    target: EditorThemeClasses,
+    source: EditorThemeClasses
+  ) => {
+    Object.entries(source).forEach(([key, value]) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (!target[key] || typeof target[key] !== 'object') {
+          target[key] = {};
+        }
+        deepMerge(target[key], value);
+      } else {
+        if (options?.join && target[key]) {
+          if (!target[key].includes(value)) {
+            target[key] = `${target[key]} ${value}`.trim();
+          }
+        } else {
+          target[key] = value;
+        }
+      }
+    });
+    return target;
+  };
+
+  return deepMerge(mergedTheme, overrideTheme);
+}
+
+export const aiChatTheme = createTheme(
+  {
+    heading: {
+      h1: 'text-2xl font-semibold mb-5',
+      h2: 'text-xl font-semibold mb-4',
+      h3: 'text-l font-semibold mb-3',
+      h4: 'text-base font-medium',
+      h5: 'text-base font-medium',
+      h6: 'text-base font-medium',
+    },
+    code: 'w-full bg-transparent',
+    static: {
+      'code-container': 'bg-code-buffer m-2',
+    },
+  },
+  theme,
+  { join: true }
+);
+
+export const channelTheme = createTheme(
+  {
+    root: 'channel-markdown max-w-full min-w-0',
+    code: 'rounded w-full bg-transparent',
+    static: {
+      'code-container': 'bg-code-buffer rounded m-2',
+    },
+  },
+  theme,
+  { join: true }
+);
+
+export const channelThemeSender = createTheme(
+  {
+    text: {
+      base: 'text-current',
+      code: 'chat-blue font-mono rounded md-inline-code border pt-0.5 bg-[navy]/20 border border-[navy]/23',
+    },
+    quote: 'border-l-2 border-current/20 pl-4 py-2 italic text-current/80 my-4',
+    list: {
+      listitemChecked: 'checked chat-blue md-strike text-current/50',
+    },
+    link: 'text-link hover:text-link-hover visited:text-link-visited underline',
+    code: `chat-blue font-mono p-3 rounded block md-code-box before:text-current/50`,
+    static: {
+      'code-container': `bg-[navy]/20 rounded m-2`,
+    },
+    'user-mention': 'chat-blue',
+    'document-mention': 'chat-blue',
+  },
+  channelTheme
+);
+
+export const embeddedCodeBlock = createTheme({
+  code: 'font-mono p-3 rounded block md-code-box before:text-ink-extra-muted/70 whitespace-pre overflow-y-scroll h-full',
+});
+
+export const unifiedListMarkdownTheme = createTheme({
+  code: 'font-mono overflow-hidden px-1.5 py-0.5 rounded bg-code-buffer inline-block',
+  quote: 'border-l-2 border-current/20 pl-1 italic text-current/80',
+  static: {
+    'code-container':
+      'font-mono md-code-box no-accessory overflow-hidden flex items-center',
+    'table-container': 'hidden',
+  },
+  table: 'hidden',
+  paragraph: `${theme.paragraph} inline`,
+  heading: {
+    h1: 'text-[1em] font-semibold',
+    h2: 'text-[1em] font-semibold',
+    h3: 'text-[1em] font-semibold',
+    h4: 'text-[1em] font-medium',
+    h5: 'text-[1em] font-medium',
+    h6: 'text-[1em] font-medium',
+  },
+  // padding right to prevent italics being clipped by overflow properties such as truncation
+  root: `${theme.root} inline pr-[2px] cursor-default truncate`,
+});
+
+export const searchContentHitMarkdownTheme = createTheme({
+  ...unifiedListMarkdownTheme,
+  root: `${theme.root} pr-[2px] cursor-default overflow-x-auto`,
+});
+
+export const singleLineMarkdownTheme = createTheme({
+  ...unifiedListMarkdownTheme,
+  root: `${theme.root} pr-[2px] cursor-default overflow-hidden truncate`,
+  paragraph: 'md-p text-[1em] truncate',
+});
+
+export const twoLineClampMarkdownTheme = createTheme({
+  ...unifiedListMarkdownTheme,
+  root: `${theme.root} pr-[2px] cursor-default`,
+  paragraph: 'md-p text-[1em] line-clamp-2',
+  text: {
+    ...theme.text,
+    bold: 'font-medium',
+  },
+  // .md .search-match sets display:inline-block, which iOS Safari treats as a
+  // box item inside -webkit-line-clamp, causing the clamp to count one fewer
+  // visual line (line-clamp-3 appears as 2 lines). Override to inline so the
+  // span participates in normal inline text flow and clamping is counted correctly.
+  searchMatch: 'search-match inline!',
+});
