@@ -48,6 +48,7 @@
     "linkify-it": "catalog:",
     "nanoid": "catalog:",
     "ts-pattern": "catalog:",
+    "unicode-emoji-json": "catalog:",
     "virtua": "catalog:"
   },
   "peerDependencies": {

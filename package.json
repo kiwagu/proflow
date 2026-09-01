@@ -99,6 +99,7 @@
       "linkify-it": "^5.0.0",
       "@testing-library/react": "^16.4.1",
       "virtua": "0.48.8",
+      "unicode-emoji-json": "^0.8.0",
       "loro-crdt": "^1.14.1",
       "bitf": "^1.0.2",
       "diff": "^9.0.0",
