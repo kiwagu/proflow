@@ -4,10 +4,12 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n activity,mediareap -c cyan,yellow \"bun --env-file=.env --watch src/knowledge-activity.worker.ts\" \"bun --env-file=.env --watch src/kb-media-reconcile.worker.ts\"",
+    "dev": "concurrently -n activity,mediareap,blobreap -c cyan,yellow,magenta \"bun --env-file=.env --watch src/knowledge-activity.worker.ts\" \"bun --env-file=.env --watch src/kb-media-reconcile.worker.ts\" \"bun --env-file=.env --watch src/workbench-blob-reap.worker.ts\"",
     "start:knowledge-activity": "bun --env-file=.env src/knowledge-activity.worker.ts",
     "start:kb-media-reconcile": "bun --env-file=.env src/kb-media-reconcile.worker.ts",
     "kb-media-reconcile:once": "bun --env-file=.env src/kb-media-reconcile.worker.ts --once",
+    "start:workbench-blob-reap": "bun --env-file=.env src/workbench-blob-reap.worker.ts",
+    "workbench-blob-reap:once": "bun --env-file=.env src/workbench-blob-reap.worker.ts --once",
     "build": "tsc",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
