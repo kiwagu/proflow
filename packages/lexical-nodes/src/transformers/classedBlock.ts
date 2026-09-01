@@ -232,7 +232,7 @@ export const I_MACRO_QUOTE: ElementTransformer = {
       );
 
       if (!metadataMatch || !metadataMatch[1]) {
-        throw new Error('Missing pero-quote metadata');
+        throw new Error('Missing classed-block metadata');
       }
 
       const metadata = JSON.parse(metadataMatch[1]);
@@ -242,7 +242,7 @@ export const I_MACRO_QUOTE: ElementTransformer = {
         !isAllowedTagName(tag) ||
         !Array.isArray(classes)
       ) {
-        throw new Error('Invalid pero-quote metadata');
+        throw new Error('Invalid classed-block metadata');
       }
 
       // Extract content after metadata
@@ -265,7 +265,7 @@ export const I_MACRO_QUOTE: ElementTransformer = {
 
       node.replace(classedBlockNode);
     } catch (error) {
-      console.error('Error parsing pero-quote:', error);
+      console.error('Error parsing classed block:', error);
       replaceElementWithUnknownMention(node, 'Unknown Email Thread');
     }
   },

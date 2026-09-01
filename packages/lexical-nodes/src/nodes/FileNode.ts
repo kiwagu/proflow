@@ -92,7 +92,7 @@ export class FileNode extends DecoratorBlockNode<
 
   exportDOM(): DOMExportOutput {
     const element = document.createElement('a');
-    element.setAttribute('href', `pero-blob://${this.__hash}`);
+    element.setAttribute('href', `docblob://${this.__hash}`);
     element.setAttribute('data-file-hash', this.__hash);
     element.setAttribute('data-file-size', String(this.__size));
     element.setAttribute('type', this.__mimeType);

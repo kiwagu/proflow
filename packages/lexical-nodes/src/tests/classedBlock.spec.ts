@@ -178,8 +178,8 @@ describe('ClassedBlockNode - macro_quote transformer', () => {
       markdown = $convertToMarkdownString(INTERNAL_TRANSFORMERS);
     });
 
-    // Should not contain pero-quote tags
-    expect(markdown).not.toContain('<pero-quote>');
+    // Should not contain classed-block tags
+    expect(markdown).not.toContain('<classed-quote>');
     expect(markdown).toContain('Not a quote block');
   });
 

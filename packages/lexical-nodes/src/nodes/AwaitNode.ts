@@ -117,7 +117,7 @@ export class AwaitNode extends DecoratorNode<
   createDOM(_config: EditorConfig): HTMLElement {
     const elem = document.createElement(this.__inline ? 'span' : 'div');
     elem.setAttribute('data-await-id', this.__awaitId);
-    elem.classList.add('pero-await-node');
+    elem.classList.add('md-await-node');
     elem.classList.toggle('local', this.isLocal());
     return elem;
   }
