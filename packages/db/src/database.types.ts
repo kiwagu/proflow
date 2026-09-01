@@ -1067,6 +1067,99 @@ export type Database = {
           },
         ]
       }
+      server_document_chunk: {
+        Row: {
+          char_start: number
+          document_id: string
+          embedded_at: string
+          embedding: string
+          fts: unknown
+          model_id: string
+          ord: number
+          space_id: string
+          text: string
+        }
+        Insert: {
+          char_start: number
+          document_id: string
+          embedded_at?: string
+          embedding: string
+          fts?: unknown
+          model_id: string
+          ord: number
+          space_id: string
+          text: string
+        }
+        Update: {
+          char_start?: number
+          document_id?: string
+          embedded_at?: string
+          embedding?: string
+          fts?: unknown
+          model_id?: string
+          ord?: number
+          space_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "server_document_chunk_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "crdt_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "server_document_chunk_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      server_document_index_state: {
+        Row: {
+          document_id: string
+          indexed_watermark: number
+          model_id: string
+          space_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          document_id: string
+          indexed_watermark?: number
+          model_id: string
+          space_id: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          document_id?: string
+          indexed_watermark?: number
+          model_id?: string
+          space_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "server_document_index_state_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "crdt_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "server_document_index_state_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       space_admin_audit_log: {
         Row: {
           action: string
@@ -1495,6 +1588,14 @@ export type Database = {
         Args: { p_reason: string; p_target_user_id: string }
         Returns: Json
       }
+      rpc_list_documents_to_index: {
+        Args: { p_model_id: string }
+        Returns: {
+          document_id: string
+          space_id: string
+          watermark: number
+        }[]
+      }
       rpc_outbox_claim_jobs: {
         Args: { p_channels?: string[]; p_consumer: string; p_limit?: number }
         Returns: {
@@ -1550,6 +1651,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      rpc_replace_server_document_chunks: {
+        Args: {
+          p_chunks: Json
+          p_document_id: string
+          p_model_id: string
+          p_space_id: string
+          p_title: string
+          p_watermark: number
+        }
+        Returns: undefined
+      }
       rpc_resolve_platform_flag: {
         Args: { p_key: string; p_space_id?: string }
         Returns: boolean
@@ -1559,6 +1671,20 @@ export type Database = {
         Returns: Json
       }
       rpc_revoke_space_invite: { Args: { p_invite_id: string }; Returns: Json }
+      rpc_search_server_documents: {
+        Args: {
+          p_embedding: string
+          p_limit?: number
+          p_model_id: string
+          p_query: string
+        }
+        Returns: {
+          document_id: string
+          excerpt: string
+          score: number
+          title: string
+        }[]
+      }
       rpc_service_role_grant_platform_super_admin: {
         Args: { p_reason?: string; p_target_user_id: string }
         Returns: Json
