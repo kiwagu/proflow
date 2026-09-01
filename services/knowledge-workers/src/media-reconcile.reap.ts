@@ -34,7 +34,7 @@ import type { Database } from '@workspace/db';
 import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 
 /**
  * A minimal typed view of `storage.objects` for the READ-only stray sweep (the

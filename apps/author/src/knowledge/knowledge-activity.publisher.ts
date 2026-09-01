@@ -16,7 +16,7 @@ import { connect, type NatsConnection } from '@nats-io/transport-node';
  * Knowledge-activity PRODUCER — the publish seam used by the
  * Payload `Bodies.afterChange` hook to emit a body-edit activity event onto the
  * `knowledge.activity.v1.>` JetStream. It does NOT write Postgres — the durable
- * `knowledge-activity.jetstream.worker` consumer owns the `kb.resource_activity`
+ * consumer in `services/knowledge-workers` owns the `kb.resource_activity`
  * append (service-role, authorize-at-produce, §0.3). The hook stays best-effort:
  * `publishBodyActivity` NEVER throws on the user's save path; a publish hiccup
  * self-heals on the next body touch (and the at-least-once consumer covers a
