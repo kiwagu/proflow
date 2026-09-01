@@ -4,7 +4,7 @@ import type { BodyRef } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Payload } from 'payload';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 
 /**
  * Deep-copy a resource and its `contains` SUBTREE — UI-agnostic application

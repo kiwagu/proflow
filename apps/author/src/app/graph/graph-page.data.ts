@@ -20,7 +20,7 @@ import {
   createProjectionResolveTransport,
   resolveJwtClaimsFromSession,
 } from '@/knowledge/resolve';
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 import { createRlsClientFromServerCookies } from '@/lib/supabase/rls-from-cookies';
 
 import type {

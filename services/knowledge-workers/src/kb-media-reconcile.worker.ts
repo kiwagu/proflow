@@ -7,38 +7,36 @@
  * media path (background, off every user request) — all
  * user-facing reads/writes stay under the caller's RLS.
  *
- * Local dev: `bun run dev` in `apps/author` starts Next + the workers
- * (concurrently). For this worker only: `bun run kb-media-reconcile:worker`.
- * One-shot manual sweep (dev tooling): pass `--once`, optionally with
- * `--grace-ms=<n>` to override the safety grace (e.g. 0 to reap everything
- * dead RIGHT NOW after a test run).
+ * Local dev: `bun run dev` in `services/knowledge-workers` starts both workers
+ * (concurrently). For this worker only: `bun run start:kb-media-reconcile`.
+ * One-shot manual sweep (dev tooling): `bun run kb-media-reconcile:once`,
+ * optionally with `--grace-ms=<n>` to override the safety grace (e.g. 0 to
+ * reap everything dead RIGHT NOW after a test run).
  *
- * Env:
- *   - NEXT_PUBLIC_SUPABASE_URL   (required)
+ * Env (loaded via bun --env-file=.env):
+ *   - SUPABASE_URL               (required)
  *   - SUPABASE_SERVICE_ROLE_KEY  (required; the trusted background channel)
  *
- * Runtime: tsx (Node), mirroring the sibling jetstream workers.
+ * Runtime: bun, like the other services here.
  */
-import 'dotenv/config';
-
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-import { runMediaReconcileSweep } from '@/knowledge/media/media-reconcile.reap';
+import { runMediaReconcileSweep } from './media-reconcile.reap.js';
+import {
+  createServiceRoleSupabaseClient,
+  isServiceRoleSupabaseConfigured,
+} from './supabase.js';
 
 /** Sweep cadence — frequent enough that dead bytes never pile up, cheap enough
  * to be invisible (the sweep is a few small reads when there is nothing to do). */
 const SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 
 function serviceSupabaseClient(): SupabaseClient<Database> | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceRole) {
+  if (!isServiceRoleSupabaseConfigured()) {
     return null;
   }
-  return createClient<Database>(url, serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createServiceRoleSupabaseClient();
 }
 
 function parseGraceMs(argv: string[]): number | undefined {
@@ -75,7 +73,7 @@ async function main(): Promise<void> {
   const service = serviceSupabaseClient();
   if (!service) {
     console.error(
-      '[kb-media-reconcile] missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — not starting'
+      '[kb-media-reconcile] missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — not starting'
     );
     process.exit(1);
   }
