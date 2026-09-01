@@ -1,4 +1,5 @@
 export * from './blob/blob.store.js';
+export * from './blob/blob.sync.js';
 export * from './chat/chat.do.js';
 export * from './chat/chat.optimistic.js';
 export * from './chat/chat.reader.js';

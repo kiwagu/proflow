@@ -1327,6 +1327,41 @@ export type Database = {
         }
         Relationships: []
       }
+      workbench_blobs: {
+        Row: {
+          created_at: string
+          created_by: string
+          hash: string
+          mime: string
+          size: number
+          space_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          hash: string
+          mime: string
+          size: number
+          space_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          hash?: string
+          mime?: string
+          size?: number
+          space_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workbench_blobs_space_id_fkey"
+            columns: ["space_id"]
+            isOneToOne: false
+            referencedRelation: "spaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
