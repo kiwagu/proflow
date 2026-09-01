@@ -1,5 +1,6 @@
-import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+import type { Database } from './database.types.js';
 
 /**
  * Typed view of the `kb` application-satellite schema for supabase-js.

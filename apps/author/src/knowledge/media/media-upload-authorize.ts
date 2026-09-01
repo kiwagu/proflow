@@ -7,7 +7,7 @@ import {
   type MediaUploadAuthorizeResponse,
 } from '@workspace/knowledge-contracts';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 
 import { resolveMediaMaxUploadBytes } from './media-limit.resolve';
 

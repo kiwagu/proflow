@@ -235,6 +235,7 @@
       "name": "@workspace/db",
       "version": "0.1.0",
       "dependencies": {
+        "@supabase/supabase-js": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -637,6 +638,27 @@
         "@types/node": "catalog:",
         "@workspace/eslint-config": "workspace:*",
         "@workspace/typescript-config": "workspace:*",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "services/knowledge-workers": {
+      "name": "@workspace/knowledge-workers-service",
+      "version": "0.1.0",
+      "dependencies": {
+        "@nats-io/jetstream": "3.4.0",
+        "@nats-io/transport-node": "3.4.0",
+        "@supabase/supabase-js": "catalog:",
+        "@workspace/db": "workspace:*",
+        "@workspace/knowledge-contracts": "workspace:*",
+        "concurrently": "^10.0.3",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
@@ -1912,6 +1934,8 @@
     "@workspace/knowledge-contracts": ["@workspace/knowledge-contracts@workspace:packages/knowledge-contracts"],
 
     "@workspace/knowledge-engine": ["@workspace/knowledge-engine@workspace:packages/knowledge-engine"],
+
+    "@workspace/knowledge-workers-service": ["@workspace/knowledge-workers-service@workspace:services/knowledge-workers"],
 
     "@workspace/lexical-nodes": ["@workspace/lexical-nodes@workspace:packages/lexical-nodes"],
 

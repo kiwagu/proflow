@@ -2,7 +2,7 @@ import type { Database } from '@workspace/db';
 import { deriveLinkHost } from '@workspace/knowledge-contracts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 
 /**
  * KB application-attribute write module — UI-agnostic.
