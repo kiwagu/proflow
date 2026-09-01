@@ -16,6 +16,42 @@ export { createPgliteDocumentRepository } from './document/document.repository.j
 export { createPgliteDocumentVersionStore } from './document/document-version.store.js';
 export { createPgliteFileTreeReader } from './file/file.reader.js';
 export { createPgliteFileRepository } from './file/file.repository.js';
+export {
+  createPgliteGraphReader,
+  GRAPH_SEARCH_DEFAULT_LIMIT,
+  type GraphReader,
+} from './graph/graph.reader.js';
+export {
+  createPgliteGraphReplicaWriter,
+  type GraphReplicaWriter,
+  type PulledRow,
+} from './graph/graph.replica.js';
+export {
+  type CreateNodeInput,
+  createPgliteGraphRepository,
+  GRAPH_OPS,
+  type GraphOpKind,
+  type GraphRepository,
+  type UpsertEdgeInput,
+} from './graph/graph.repository.js';
+export {
+  createPgliteGraphSyncLedger,
+  GRAPH_SYNC_TABLES,
+  type GraphSyncLedger,
+  type GraphSyncTable,
+  INVENTORY_INTERVAL_MS,
+  PULL_OVERLAP_MS,
+} from './graph/graph.sync-ledger.js';
+export type {
+  GraphEdge,
+  GraphNode,
+  GraphOp,
+  KbAttributes,
+  LifecycleScope,
+  ResourceFloor,
+  ResourceTag,
+  UserResourceState,
+} from './graph/graph.types.js';
 export { watchQuery } from './live/watch.js';
 export { liveValue, type LiveValue, type Watch } from './live/live-value.js';
 export { createPglitePackageReader } from './package/package.reader.js';
