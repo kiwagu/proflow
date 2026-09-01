@@ -3,6 +3,7 @@ import documents from './migrations/002_documents.sql?raw';
 import files from './migrations/003_files.sql?raw';
 import packages from './migrations/004_packages.sql?raw';
 import documentSync from './migrations/005_document_sync.sql?raw';
+import graph from './migrations/006_graph.sql?raw';
 
 type Executor = {
   query: <T = unknown>(
@@ -23,6 +24,7 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 3, sql: files },
   { version: 4, sql: packages },
   { version: 5, sql: documentSync },
+  { version: 6, sql: graph },
 ];
 
 /**
