@@ -23,7 +23,8 @@
     "@workspace/domain": "workspace:*",
     "@workspace/persistence-pglite": "workspace:*",
     "@workspace/ui": "workspace:*",
-    "lucide-react": "catalog:"
+    "lucide-react": "catalog:",
+    "neverthrow": "catalog:"
   },
   "peerDependencies": {
     "react": "catalog:",

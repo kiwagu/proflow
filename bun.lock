@@ -650,6 +650,7 @@
         "@workspace/persistence-pglite": "workspace:*",
         "@workspace/ui": "workspace:*",
         "lucide-react": "catalog:",
+        "neverthrow": "catalog:",
       },
       "devDependencies": {
         "@testing-library/react": "catalog:",
