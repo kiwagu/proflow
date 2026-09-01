@@ -31,22 +31,13 @@ import {
   TableCellHeaderStates,
   type TableNode,
 } from '@lexical/table';
-import { $createContactMentionNode } from '@workspace/lexical-nodes/nodes/ContactMentionNode';
-import {
-  $createDateMentionNode,
-  $isDateMentionNode,
-} from '@workspace/lexical-nodes/nodes/DateMentionNode';
-import { $createDocumentCardNode } from '@workspace/lexical-nodes/nodes/DocumentCardNode';
-import { $createDocumentMentionNode } from '@workspace/lexical-nodes/nodes/DocumentMentionNode';
 import { $createEquationNode } from '@workspace/lexical-nodes/nodes/EquationNode';
-import { $createGroupMentionNode } from '@workspace/lexical-nodes/nodes/GroupMentionNode';
 import { $createHorizontalRuleNode } from '@workspace/lexical-nodes/nodes/HorizontalRuleNode';
-import { $createHtmlRenderNode } from '@workspace/lexical-nodes/nodes/HtmlRenderNode';
 import {
   $createImageNode,
   ImageNode,
 } from '@workspace/lexical-nodes/nodes/ImageNode';
-import { $createUserMentionNode } from '@workspace/lexical-nodes/nodes/UserMentionNode';
+import { $createResourceMentionNode } from '@workspace/lexical-nodes/nodes/ResourceMentionNode';
 import {
   $createVideoNode,
   VideoNode,

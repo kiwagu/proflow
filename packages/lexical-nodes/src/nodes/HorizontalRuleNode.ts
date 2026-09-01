@@ -1,24 +1,48 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ */
+
+/*
+ * Adapted from facebook/lexical v0.45.0
+ * (packages/lexical-react/src/LexicalHorizontalRuleNode.tsx), MIT.
+ *
+ * Divergences, both forced by this package being headless: the node extends
+ * `DecoratorNode` directly rather than re-exporting the React binding, and
+ * `decorate()` asks the decorator registry instead of returning JSX. The type
+ * string, command, DOM conversion and `$create`/`$is` helpers are upstream's.
+ */
 import {
   $applyNodeReplacement,
+  createCommand,
+  DecoratorNode,
   type DOMConversionMap,
   type DOMConversionOutput,
   type DOMExportOutput,
   type EditorConfig,
+  type LexicalCommand,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
 } from 'lexical';
 import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
-import { $applyPeerIdFromSerialized } from '../plugins/peerIdPlugin';
-import { DecoratorBlockNode } from './DecoratorBlockNode';
 
 export type SerializedHorizontalRuleNode = SerializedLexicalNode;
-export type HorizontalRuleDecoratorProps = {
-  key: NodeKey;
-};
 
-export class HorizontalRuleNode extends DecoratorBlockNode<
+export type HorizontalRuleDecoratorProps = { nodeKey: NodeKey };
+
+export const INSERT_HORIZONTAL_RULE_COMMAND: LexicalCommand<void> =
+  createCommand('INSERT_HORIZONTAL_RULE_COMMAND');
+
+function $convertHorizontalRuleElement(): DOMConversionOutput {
+  return { node: $createHorizontalRuleNode() };
+}
+
+export class HorizontalRuleNode extends DecoratorNode<
   DecoratorComponent<HorizontalRuleDecoratorProps> | undefined
 > {
   static getType(): string {
@@ -26,7 +50,7 @@ export class HorizontalRuleNode extends DecoratorBlockNode<
   }
 
   static clone(node: HorizontalRuleNode): HorizontalRuleNode {
-    return new HorizontalRuleNode(undefined, node.__key);
+    return new HorizontalRuleNode(node.__key);
   }
 
   static importJSON(
@@ -34,7 +58,6 @@ export class HorizontalRuleNode extends DecoratorBlockNode<
   ): HorizontalRuleNode {
     const node = $createHorizontalRuleNode().updateFromJSON(serializedNode);
     $applyIdFromSerialized(node, serializedNode);
-    $applyPeerIdFromSerialized(node, serializedNode);
     return node;
   }
 
@@ -47,13 +70,20 @@ export class HorizontalRuleNode extends DecoratorBlockNode<
     };
   }
 
+  exportJSON(): SerializedHorizontalRuleNode {
+    return { ...super.exportJSON(), type: 'horizontalrule', version: 1 };
+  }
+
+  createDOM(_config: EditorConfig): HTMLElement {
+    return document.createElement('hr');
+  }
+
   exportDOM(): DOMExportOutput {
     return { element: document.createElement('hr') };
   }
 
-  createDOM(_config: EditorConfig): HTMLElement {
-    const element = document.createElement('div');
-    return element;
+  updateDOM(): false {
+    return false;
   }
 
   getTextContent(): string {
@@ -64,23 +94,14 @@ export class HorizontalRuleNode extends DecoratorBlockNode<
     return false;
   }
 
-  updateDOM(): boolean {
-    return false;
+  decorate(): DecoratorComponent<HorizontalRuleDecoratorProps> | undefined {
+    const decorator = getDecorator<HorizontalRuleDecoratorProps>(
+      HorizontalRuleNode
+    );
+    if (!decorator) return undefined;
+    const props = { nodeKey: this.__key };
+    return () => decorator(props);
   }
-
-  decorate() {
-    const dec = getDecorator<HorizontalRuleDecoratorProps>(HorizontalRuleNode);
-    if (dec) {
-      return () =>
-        dec({
-          key: this.getKey(),
-        });
-    }
-  }
-}
-
-function $convertHorizontalRuleElement(): DOMConversionOutput {
-  return { node: $createHorizontalRuleNode() };
 }
 
 export function $createHorizontalRuleNode(): HorizontalRuleNode {

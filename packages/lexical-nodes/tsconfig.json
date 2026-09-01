@@ -1,7 +1,9 @@
 {
-  "extends": "@workspace/typescript-config/vendored.json",
+  "extends": "@workspace/typescript-config/base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

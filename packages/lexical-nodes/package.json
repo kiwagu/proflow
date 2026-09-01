@@ -48,15 +48,9 @@
     "@lexical/rich-text": "catalog:",
     "@lexical/table": "catalog:",
     "@lexical/utils": "catalog:",
-    "bitf": "catalog:",
-    "diff": "catalog:",
-    "fast-xml-parser": "catalog:",
-    "flat": "catalog:",
     "lexical": "catalog:",
     "nanoid": "catalog:",
-    "prismjs": "^1.30.0",
-    "ts-pattern": "catalog:",
-    "zod": "catalog:"
+    "prismjs": "^1.30.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

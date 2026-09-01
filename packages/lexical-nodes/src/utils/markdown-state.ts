@@ -1,64 +1,86 @@
+/**
+ * @file The headless markdown round trip.
+ *
+ * Markdown in, serialized editor state out — with ids already assigned. Used
+ * by every non-browser producer of document content: import, seed, and the
+ * agent.
+ *
+ * The id pass runs before the state is returned, deliberately. A tree without
+ * ids is rejected by the sync layer, and the failure would surface far from
+ * here (at commit time, in a different package) with nothing pointing back at
+ * the import that produced it.
+ */
 import { createHeadlessEditor } from '@lexical/headless';
 import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
+  type Transformer,
 } from '@lexical/markdown';
-import type { SerializedEditorState } from 'lexical';
-import { NodeReplacements, SupportedNodeTypes } from '../node-list';
 import {
-  $updateAllNodeIds,
+  $getRoot,
+  type LexicalEditor,
+  type SerializedEditorState,
+} from 'lexical';
+import { SupportedNodeTypes } from '../node-list';
+import {
+  createNodeIdMappings,
   type NodeIdMappings,
+  $updateAllNodeIds,
 } from '../plugins/nodeIdPlugin';
-import { ALL_TRANSFORMERS } from '../transformers';
+import { INTERNAL_TRANSFORMERS } from '../transformers';
 
-function createNodeIdMappings(): NodeIdMappings {
-  return {
-    idToNodeKeyMap: new Map(),
-    nodeKeyToIdMap: new Map(),
-  };
-}
+export type MarkdownStateResult = {
+  state: SerializedEditorState;
+  ids: NodeIdMappings;
+};
 
-/**
- * Converts markdown to a serialized Lexical editor state and assigns durable
- * node ids to every node. This is the headless equivalent of the markdown block
- * migration path used by the app.
- */
-export function markdownToSerializedEditorStateWithIds(
-  markdown: string
-): SerializedEditorState {
-  const editor = createHeadlessEditor({
-    nodes: [...SupportedNodeTypes, ...NodeReplacements],
+function headlessEditor(): LexicalEditor {
+  return createHeadlessEditor({
+    nodes: [...SupportedNodeTypes],
+    onError: (error) => {
+      throw error;
+    },
   });
-  const mappings = createNodeIdMappings();
-
-  editor.update(
-    () => {
-      $convertFromMarkdownString(markdown, ALL_TRANSFORMERS);
-    },
-    { discrete: true }
-  );
-
-  editor.update(
-    () => {
-      $updateAllNodeIds(mappings);
-    },
-    { discrete: true }
-  );
-
-  return editor.getEditorState().toJSON();
 }
 
 /**
- * Converts a serialized Lexical editor state back to a markdown string. Headless
- * inverse of {@link markdownToSerializedEditorStateWithIds}; useful for comparing
- * two document versions by their rendered markdown.
+ * Markdown to serialized editor state, every node carrying a durable id.
  */
-export function serializedEditorStateToMarkdown(
-  state: SerializedEditorState
+export function markdownToState(
+  markdown: string,
+  transformers: Transformer[] = INTERNAL_TRANSFORMERS
+): MarkdownStateResult {
+  const editor = headlessEditor();
+  const ids = createNodeIdMappings();
+
+  editor.update(
+    () => {
+      $getRoot().clear();
+      $convertFromMarkdownString(markdown, transformers);
+    },
+    { discrete: true }
+  );
+
+  editor.update(
+    () => {
+      $updateAllNodeIds(ids);
+    },
+    { discrete: true }
+  );
+
+  return { state: editor.getEditorState().toJSON(), ids };
+}
+
+/** Serialized editor state back to markdown. */
+export function stateToMarkdown(
+  state: SerializedEditorState,
+  transformers: Transformer[] = INTERNAL_TRANSFORMERS
 ): string {
-  const editor = createHeadlessEditor({
-    nodes: [...SupportedNodeTypes, ...NodeReplacements],
+  const editor = headlessEditor();
+  editor.setEditorState(editor.parseEditorState(state));
+  let markdown = '';
+  editor.getEditorState().read(() => {
+    markdown = $convertToMarkdownString(transformers);
   });
-  const parsed = editor.parseEditorState(state);
-  return parsed.read(() => $convertToMarkdownString(ALL_TRANSFORMERS));
+  return markdown;
 }

@@ -4,12 +4,14 @@ import {
   type DOMExportOutput,
   type LexicalNode,
   type NodeKey,
-  type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
 import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
-import { DecoratorBlockNode } from './DecoratorBlockNode';
+import {
+  DecoratorBlockNode,
+  type SerializedDecoratorBlockNode,
+} from './DecoratorBlockNode';
 
 /**
  * A file attached to the document: a card naming the file, pointing at its
@@ -27,7 +29,10 @@ export type FileInfo = {
   size: number;
 };
 
-export type SerializedFileNode = Spread<FileInfo, SerializedLexicalNode>;
+export type SerializedFileNode = Spread<
+  FileInfo,
+  SerializedDecoratorBlockNode
+>;
 export type FileDecoratorProps = FileInfo & { key: NodeKey };
 
 export class FileNode extends DecoratorBlockNode<
@@ -92,7 +97,7 @@ export class FileNode extends DecoratorBlockNode<
 
   exportDOM(): DOMExportOutput {
     const element = document.createElement('a');
-    element.setAttribute('href', `docblob://${this.__hash}`);
+    element.setAttribute('href', `blob://${this.__hash}`);
     element.setAttribute('data-file-hash', this.__hash);
     element.setAttribute('data-file-size', String(this.__size));
     element.setAttribute('type', this.__mimeType);

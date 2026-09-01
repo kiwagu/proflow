@@ -1,139 +1,105 @@
+/**
+ * @file What each editor is allowed to contain.
+ *
+ * Lexical fixes an editor's node set at construction: a node class that was
+ * not passed to `createEditor` cannot appear in that editor at all, and
+ * importing content that references it throws. So this map is the only place
+ * an editor's capabilities are declared, and adding a node to the vocabulary
+ * means adding it here or it is unreachable.
+ */
 import { CodeHighlightNode, CodeNode } from '@lexical/code';
-import { AutoLinkNode, LinkNode } from '@lexical/link';
+import { LinkNode } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { MarkNode } from '@lexical/mark';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
-  type KlassConstructor,
+  type Klass,
   type LexicalNode,
-  type LexicalNodeReplacement,
   LineBreakNode,
   ParagraphNode,
   TabNode,
   TextNode,
 } from 'lexical';
-import { AwaitNode } from './nodes/AwaitNode';
-import { ClassedBlockNode } from './nodes/ClassedBlockNode';
-import { CommentNode } from './nodes/CommentNode';
-import { CompletionNode } from './nodes/CompletionNode';
-import { ContactMentionNode } from './nodes/ContactMentionNode';
-import { CustomCodeNode } from './nodes/CustomCodeNode';
-import { DateMentionNode } from './nodes/DateMentionNode';
-import { DiffDeleteNode } from './nodes/DiffDeleteNode';
-import { DiffInsertNode } from './nodes/DiffInsertNode';
-import { DiffNode } from './nodes/DiffNode';
-import { DiffTextNode } from './nodes/DiffTextNode';
-import { DocumentCardNode } from './nodes/DocumentCardNode';
-import { DocumentMentionNode } from './nodes/DocumentMentionNode';
 import { EquationNode } from './nodes/EquationNode';
 import { FileNode } from './nodes/FileNode';
-import { GroupMentionNode } from './nodes/GroupMentionNode';
 import { HorizontalRuleNode } from './nodes/HorizontalRuleNode';
-import { HtmlRenderNode } from './nodes/HtmlRenderNode';
 import { ImageNode } from './nodes/ImageNode';
-import { InlineSearchNode } from './nodes/InlineSearchNode';
-import { MagicChipNode } from './nodes/MagicChipNode';
-import { PasteNode } from './nodes/PasteNode';
-import { PullRequestMentionNode } from './nodes/PullRequestMentionNode';
-import { SearchMatchNode } from './nodes/SearchMatchNode';
-import { SnapshotNode } from './nodes/SnapshotNode';
-import { TagMentionNode } from './nodes/TagMentionNode';
-import { ThemeMentionNode } from './nodes/ThemeMentionNode';
-import { UnknownMentionNode } from './nodes/UnknownMentionNode';
-import { UnlinkedTextNode } from './nodes/UnlinkedTextNode';
-import { UserMentionNode } from './nodes/UserMentionNode';
+import { ResourceMentionNode } from './nodes/ResourceMentionNode';
+import { UnknownEmbedNode } from './nodes/UnknownEmbedNode';
 import { VideoNode } from './nodes/VideoNode';
-import { WatermarkNode } from './nodes/WatermarkNode';
 
-/**
- * The pre-specified types of base editor we have configured.
- */
-export type EditorType =
-  | 'plain-text'
-  | 'markdown'
-  | 'markdown-sync'
-  | 'chat'
-  | 'title';
-
-// Valid nodes must be enumerated at Editor construction. We can set up plugins
-// lazily, but the node list must be specified fully upfront.
-export type ValidNode =
-  | KlassConstructor<typeof LexicalNode>
-  | LexicalNodeReplacement;
-
-export const SupportedNodeTypes = [
+/** Lexical's own nodes, always present. */
+const CORE_NODES = [
   ParagraphNode,
   TextNode,
-  CodeNode,
-  CustomCodeNode,
+  LineBreakNode,
+  TabNode,
+] as const satisfies ReadonlyArray<Klass<LexicalNode>>;
+
+/** Rich-text structure from the official packages. */
+const RICH_TEXT_NODES = [
   HeadingNode,
-  LinkNode,
-  AutoLinkNode,
+  QuoteNode,
   ListNode,
   ListItemNode,
-  QuoteNode,
-  LineBreakNode,
-  DocumentMentionNode,
-  DocumentCardNode,
-  PasteNode,
-  UserMentionNode,
-  ContactMentionNode,
-  DateMentionNode,
-  PullRequestMentionNode,
-  GroupMentionNode,
-  InlineSearchNode,
-  UnlinkedTextNode,
+  LinkNode,
+  MarkNode,
+  CodeNode,
   CodeHighlightNode,
-  TabNode,
+  TableNode,
+  TableRowNode,
+  TableCellNode,
+] as const satisfies ReadonlyArray<Klass<LexicalNode>>;
+
+/** This vocabulary's own nodes. */
+const OWN_NODES = [
+  HorizontalRuleNode,
+  EquationNode,
+  ResourceMentionNode,
   ImageNode,
   VideoNode,
   FileNode,
-  TableNode,
-  TableCellNode,
-  TableRowNode,
-  CompletionNode,
-  MarkNode,
-  CommentNode,
-  SearchMatchNode,
-  EquationNode,
-  SnapshotNode,
-  HorizontalRuleNode,
-  DiffNode,
-  DiffInsertNode,
-  DiffDeleteNode,
-  DiffTextNode,
-  HtmlRenderNode,
-  ClassedBlockNode,
-  WatermarkNode,
-  ThemeMentionNode,
-  TagMentionNode,
-  UnknownMentionNode,
-  AwaitNode,
-  MagicChipNode,
-] as const;
+  UnknownEmbedNode,
+] as const satisfies ReadonlyArray<Klass<LexicalNode>>;
 
-export const NodeReplacements: LexicalNodeReplacement[] = [
-  {
-    replace: CodeNode,
-    with: (node: CodeNode) => new CustomCodeNode(node.getLanguage()),
-    withKlass: CustomCodeNode,
-  },
+/** Every node class this package defines or adopts. */
+export const SupportedNodeTypes: ReadonlyArray<Klass<LexicalNode>> = [
+  ...CORE_NODES,
+  ...RICH_TEXT_NODES,
+  ...OWN_NODES,
 ];
 
-function exclude(exclusions: ValidNode[]) {
-  return SupportedNodeTypes.filter((n) => !exclusions.includes(n));
-}
-
 /**
- * You cannot add nodes to the editor after it has been created. This is a
- * mapping of the editor type to the nodes that are available for that editor.
- * If you want an editor with a custom set of nodes, this is the place for that.
+ * The editors the product builds.
+ *
+ * `markdown-sync` is deliberately absent: whether a document syncs is a
+ * provider concern, not a node-set one, and having had it as an editor type
+ * meant the same document had two node sets depending on how it was opened.
  */
-export const RegisteredNodesByType: { [K in EditorType]: ValidNode[] } = {
-  'plain-text': [ParagraphNode, TextNode],
-  markdown: [...SupportedNodeTypes],
-  'markdown-sync': [...SupportedNodeTypes],
-  chat: exclude([ImageNode, VideoNode, FileNode]),
-  title: [ParagraphNode, TextNode, InlineSearchNode],
-} as const;
+export type EditorType = 'plain-text' | 'markdown' | 'chat' | 'title';
+
+const PLAIN_TEXT_NODES: ReadonlyArray<Klass<LexicalNode>> = [
+  ParagraphNode,
+  TextNode,
+];
+
+/** Chat is markdown minus the things you cannot put in a chat message. */
+const CHAT_NODES: ReadonlyArray<Klass<LexicalNode>> = [
+  ...CORE_NODES,
+  ...RICH_TEXT_NODES,
+  HorizontalRuleNode,
+  EquationNode,
+  ResourceMentionNode,
+  UnknownEmbedNode,
+];
+
+export const RegisteredNodesByType: Record<
+  EditorType,
+  ReadonlyArray<Klass<LexicalNode>>
+> = {
+  'plain-text': PLAIN_TEXT_NODES,
+  markdown: SupportedNodeTypes,
+  chat: CHAT_NODES,
+  title: PLAIN_TEXT_NODES,
+};

@@ -1,3 +1,22 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ */
+
+/*
+ * Adapted from facebook/lexical v0.45.0
+ * (packages/lexical-playground/src/nodes/EquationNode.tsx), MIT.
+ *
+ * Divergences, both from this package being headless: `decorate()` goes
+ * through the decorator registry instead of returning a React element, and
+ * `exportDOM` emits the equation without invoking KaTeX (rendering the TeX is
+ * the view layer's business, and importing KaTeX here would put a browser
+ * dependency in a package that runs server-side). The base64 `data-lexical-*`
+ * attribute contract, type string and helpers are upstream's.
+ */
 import {
   $applyNodeReplacement,
   DecoratorNode,
@@ -5,13 +24,13 @@ import {
   type DOMConversionOutput,
   type DOMExportOutput,
   type EditorConfig,
-  type LexicalEditor,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
 import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
+import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
 
 export type SerializedEquationNode = Spread<
   {
@@ -24,21 +43,31 @@ export type SerializedEquationNode = Spread<
 export type EquationDecoratorProps = {
   equation: string;
   inline: boolean;
-  key: NodeKey;
+  nodeKey: NodeKey;
+};
+
+const encode = (value: string): string => {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+const decode = (value: string): string => {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 };
 
 function $convertEquationElement(
   domNode: HTMLElement
 ): null | DOMConversionOutput {
-  let equation = domNode.getAttribute('data-lexical-equation');
+  const encoded = domNode.getAttribute('data-lexical-equation');
   const inline = domNode.getAttribute('data-lexical-inline') === 'true';
-  // Decode the equation from base64
-  equation = atob(equation || '');
+  const equation = decode(encoded || '');
   if (equation) {
-    const node = $createEquationNode(equation, inline);
-    return { node };
+    return { node: $createEquationNode(equation, inline) };
   }
-
   return null;
 }
 
@@ -56,98 +85,95 @@ export class EquationNode extends DecoratorNode<
     return new EquationNode(node.__equation, node.__inline, node.__key);
   }
 
-  constructor(equation: string, inline?: boolean, key?: NodeKey) {
+  constructor(equation: string = '', inline?: boolean, key?: NodeKey) {
     super(key);
     this.__equation = equation;
     this.__inline = inline ?? false;
   }
 
+  afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__equation = prevNode.__equation;
+    this.__inline = prevNode.__inline;
+  }
+
   static importJSON(serializedNode: SerializedEquationNode): EquationNode {
-    return $createEquationNode(
+    const node = $createEquationNode(
       serializedNode.equation,
       serializedNode.inline
     ).updateFromJSON(serializedNode);
+    $applyIdFromSerialized(node, serializedNode);
+    return node;
   }
 
   exportJSON(): SerializedEquationNode {
     return {
       ...super.exportJSON(),
       equation: this.getEquation(),
-      inline: this.__inline,
+      inline: this.isInline(),
+      type: 'equation',
+      version: 1,
     };
   }
 
   createDOM(_config: EditorConfig): HTMLElement {
     const element = document.createElement(this.__inline ? 'span' : 'div');
-    // EquationNodes should implement `user-action:none` in their CSS to avoid issues with deletion on Android.
-    element.className = 'md-editor-equation';
+    element.className = 'editor-equation';
     return element;
   }
 
   exportDOM(): DOMExportOutput {
     const element = document.createElement(this.__inline ? 'span' : 'div');
-    // Encode the equation as base64 to avoid issues with special characters
-    const equation = btoa(this.__equation);
-    element.setAttribute('data-lexical-equation', equation);
+    element.setAttribute('data-lexical-equation', encode(this.__equation));
     element.setAttribute('data-lexical-inline', `${this.__inline}`);
+    element.textContent = this.__equation;
     return { element };
   }
 
   static importDOM(): DOMConversionMap | null {
     return {
       div: (domNode: HTMLElement) => {
-        if (!domNode.hasAttribute('data-lexical-equation')) {
-          return null;
-        }
-        return {
-          conversion: $convertEquationElement,
-          priority: 2,
-        };
+        if (!domNode.hasAttribute('data-lexical-equation')) return null;
+        return { conversion: $convertEquationElement, priority: 2 };
       },
       span: (domNode: HTMLElement) => {
-        if (!domNode.hasAttribute('data-lexical-equation')) {
-          return null;
-        }
-        return {
-          conversion: $convertEquationElement,
-          priority: 1,
-        };
+        if (!domNode.hasAttribute('data-lexical-equation')) return null;
+        return { conversion: $convertEquationElement, priority: 1 };
       },
     };
   }
 
   updateDOM(prevNode: this): boolean {
-    // If the inline property changes, replace the element
     return this.__inline !== prevNode.__inline;
   }
 
   getTextContent(): string {
-    return this.__equation;
+    return this.getEquation();
+  }
+
+  isInline(): boolean {
+    return this.getLatest().__inline;
   }
 
   getEquation(): string {
-    return this.__equation;
+    return this.getLatest().__equation;
   }
 
-  setEquation(equation: string): void {
+  setEquation(equation: string): this {
     const writable = this.getWritable();
     writable.__equation = equation;
+    return writable;
   }
 
-  getInline(): boolean {
-    return this.__inline;
-  }
-
-  decorate(__: LexicalEditor, _: EditorConfig) {
+  decorate(): DecoratorComponent<EquationDecoratorProps> | undefined {
     const decorator = getDecorator<EquationDecoratorProps>(EquationNode);
-    if (decorator) {
-      return () =>
-        decorator({
-          equation: this.__equation,
-          inline: this.__inline,
-          key: this.getKey(),
-        });
-    }
+    if (!decorator) return undefined;
+    const props = {
+      equation: this.__equation,
+      inline: this.__inline,
+      nodeKey: this.__key,
+    };
+    return () => decorator(props);
   }
 }
 
@@ -155,8 +181,7 @@ export function $createEquationNode(
   equation = '',
   inline = false
 ): EquationNode {
-  const equationNode = new EquationNode(equation, inline);
-  return $applyNodeReplacement(equationNode);
+  return $applyNodeReplacement(new EquationNode(equation, inline));
 }
 
 export function $isEquationNode(

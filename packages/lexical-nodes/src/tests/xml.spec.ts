@@ -1,173 +1,175 @@
+/**
+ * The model's view of the document (ADR 0032 §5.6). These are golden tests:
+ * the output shape is a behaviour contract with the agent layer, whose edit
+ * ops address nodes by the `id` attribute emitted here.
+ */
+import { createHeadlessEditor } from '@lexical/headless';
+import { $convertFromMarkdownString } from '@lexical/markdown';
+import { $createParagraphNode, $getRoot, type LexicalEditor } from 'lexical';
 import { describe, expect, it } from 'vitest';
-import { type SerializedEditorState, toXml } from '../transformers/xml';
+import { SupportedNodeTypes } from '../node-list';
+import {
+  $updateAllNodeIds,
+  createNodeIdMappings,
+  nodeIdPlugin,
+} from '../plugins/nodeIdPlugin';
+import { INTERNAL_TRANSFORMERS } from '../transformers';
+import { MissingXmlIdError, toXml } from '../transformers/xml';
 
-function root(children: any[]): SerializedEditorState {
-  return {
-    root: {
-      children,
-      direction: 'ltr',
-      format: '',
-      indent: 0,
-      type: 'root',
-      version: 1,
-      $: {
-        documentMetadata: { version: 1.4, environmentTags: null },
-        id: 'root',
-      },
+function xmlOf(markdown: string): string {
+  const editor: LexicalEditor = createHeadlessEditor({
+    nodes: [...SupportedNodeTypes],
+    onError: (error) => {
+      throw error;
     },
-  } as SerializedEditorState;
+  });
+  const ids = createNodeIdMappings();
+  nodeIdPlugin({ nodes: SupportedNodeTypes, mappings: ids })(editor);
+
+  editor.update(
+    () => {
+      $getRoot().clear();
+      $convertFromMarkdownString(markdown, INTERNAL_TRANSFORMERS);
+    },
+    { discrete: true }
+  );
+  editor.update(
+    () => {
+      $updateAllNodeIds(ids);
+    },
+    { discrete: true }
+  );
+
+  return toXml(editor.getEditorState().toJSON());
 }
 
-function text(value: string, format = 0, id = 't') {
-  return {
-    detail: 0,
-    format,
-    mode: 'normal',
-    style: '',
-    text: value,
-    type: 'text',
-    version: 1,
-    $: { id },
-  };
+/** Replace the generated ids so the shape can be asserted exactly. */
+function stable(xml: string): string {
+  let counter = 0;
+  const seen = new Map<string, string>();
+  return xml.replace(/id="([^"]+)"/g, (_match, id: string) => {
+    if (!seen.has(id)) seen.set(id, `id${++counter}`);
+    return `id="${seen.get(id)}"`;
+  });
 }
 
-function paragraph(children: any[], id = 'p') {
-  return {
-    children,
-    direction: 'ltr',
-    format: '',
-    indent: 0,
-    type: 'paragraph',
-    version: 1,
-    $: { id },
-    textFormat: 0,
-    textStyle: '',
-  };
-}
-
-const FORMAT = {
-  bold: 1,
-  italic: 2,
-  strikethrough: 4,
-  underline: 8,
-  code: 16,
-} as const;
-
-describe('xml', () => {
-  it('serializes an empty paragraph as self-closing', () => {
-    const state = root([paragraph([], 'p1')]);
-    const xml = toXml(state);
-    expect(xml).toContain('<p id="p1"/>');
+describe('element vocabulary', () => {
+  it('renders a heading and a paragraph', () => {
+    expect(stable(xmlOf('## Notes\n\nSome text.'))).toBe(
+      [
+        '<root>',
+        '  <h2 id="id1">',
+        '    <text id="id2">Notes</text>',
+        '  </h2>',
+        '  <p id="id3">',
+        '    <text id="id4">Some text.</text>',
+        '  </p>',
+        '</root>',
+      ].join('\n')
+    );
   });
 
-  it('serializes table colWidths', () => {
-    const cell = (txt: string, id: string) => ({
-      children: [paragraph([text(txt, 0, `t-${id}`)], `p-${id}`)],
-      direction: 'ltr',
-      format: '',
-      indent: 0,
-      type: 'tablecell',
-      version: 1,
-      $: { id },
-      backgroundColor: null,
-      colSpan: 1,
-      headerState: 0,
-      rowSpan: 1,
-    });
-    const row = (cells: any[], id: string) => ({
-      children: cells,
-      direction: 'ltr',
-      format: '',
-      indent: 0,
-      type: 'tablerow',
-      version: 1,
-      $: { id },
-    });
-    const state = root([
-      {
-        children: [
-          row([cell('a', 'c1'), cell('b', 'c2')], 'r1'),
-          row([cell('c', 'c3'), cell('d', 'c4')], 'r2'),
-        ],
-        direction: 'ltr',
-        format: '',
-        indent: 0,
-        type: 'table',
+  it('nests list items inside the list', () => {
+    const xml = xmlOf('- one\n- two');
+    expect(xml).toContain('<ul');
+    expect(xml).toContain('<li');
+  });
+
+  it('marks an ordered list', () => {
+    const xml = xmlOf('1. one\n2. two');
+    expect(xml).toContain('<ol');
+    expect(xml).not.toContain('<ul');
+  });
+
+  it('renders a quote', () => {
+    expect(xmlOf('> quoted')).toContain('<blockquote');
+  });
+
+  it('renders a table', () => {
+    expect(xmlOf('| a | b |\n| --- | --- |\n| c | d |')).toContain('<table');
+  });
+});
+
+describe('addressability', () => {
+  it('gives every element an id attribute', () => {
+    const xml = xmlOf('# Title\n\nBody\n\n- item');
+    const elements = xml.match(/<[a-z][a-z0-9-]*/gi) ?? [];
+    // Every opening tag except the root carries an id.
+    const withId = xml.match(/<[a-z][a-z0-9-]*[^>]*\sid="/gi) ?? [];
+    expect(withId.length).toBe(elements.length - 1);
+  });
+
+  it('fails loudly rather than emitting an unaddressable element', () => {
+    // A tree that never went through the id pass.
+    const state = {
+      root: {
+        type: 'root',
+        children: [{ type: 'paragraph', children: [], version: 1 }],
         version: 1,
-        $: { id: 't1' },
-        colWidths: [120, 120],
       },
-    ]);
-    expect(toXml(state)).toContain('colWidths="120,120"');
+    } as unknown as Parameters<typeof toXml>[0];
+
+    expect(() => toXml(state)).toThrow(MissingXmlIdError);
+  });
+});
+
+describe('text and formatting', () => {
+  it('emits formatting as attributes on the text element', () => {
+    const xml = xmlOf('**bold** and *italic*');
+    expect(xml).toContain('bold="true"');
+    expect(xml).toContain('italic="true"');
   });
 
-  it('stamps each table cell with its 0-based row/column', () => {
-    const cell = (txt: string, id: string) => ({
-      children: [paragraph([text(txt, 0, `t-${id}`)], `p-${id}`)],
-      direction: 'ltr',
-      format: '',
-      indent: 0,
-      type: 'tablecell',
-      version: 1,
-      $: { id },
-      backgroundColor: null,
-      colSpan: 1,
-      headerState: 0,
-      rowSpan: 1,
-    });
-    const row = (cells: ReturnType<typeof cell>[], id: string) => ({
-      children: cells,
-      direction: 'ltr',
-      format: '',
-      indent: 0,
-      type: 'tablerow',
-      version: 1,
-      $: { id },
-    });
-    const state = root([
-      {
-        children: [
-          row([cell('a', 'c1'), cell('b', 'c2')], 'r1'),
-          row([cell('c', 'c3'), cell('d', 'c4')], 'r2'),
-        ],
-        direction: 'ltr',
-        format: '',
-        indent: 0,
-        type: 'table',
-        version: 1,
-        $: { id: 't1' },
-      },
-    ]);
-    const xml = toXml(state);
-    expect(xml).toContain('id="c1" row="0" column="0"');
-    expect(xml).toContain('id="c2" row="0" column="1"');
-    expect(xml).toContain('id="c3" row="1" column="0"');
-    expect(xml).toContain('id="c4" row="1" column="1"');
-  });
-
-  it('serializes a horizontal rule as self-closing', () => {
-    const state = root([
-      { type: 'horizontalrule', version: 1, $: { id: 'hr1' } },
-    ]);
-    expect(toXml(state)).toContain('<hr id="hr1"/>');
-  });
-
-  it('emits the expected XML for a simple known input (snapshot)', () => {
-    const state = root([
-      paragraph([text('hi ', 0, 'ta'), text('bold', FORMAT.bold, 'tb')], 'p1'),
-    ]);
-    const xml = toXml(state);
-    expect(xml).toContain('<doc>');
-    expect(xml).toContain('<p id="p1">');
-    expect(xml).toContain('<t id="ta">hi </t>');
-    expect(xml).toContain('<t id="tb" bold="true">bold</t>');
-  });
-
-  it('escapes special characters in text and attributes', () => {
-    const state = root([paragraph([text('a < b & c > d "q"', 0, 't1')], 'p1')]);
-    const xml = toXml(state);
+  it('escapes markup characters in text', () => {
+    const xml = xmlOf('a < b & c');
     expect(xml).toContain('&lt;');
     expect(xml).toContain('&amp;');
-    expect(xml).toContain('&gt;');
+  });
+
+  it('carries a link target', () => {
+    expect(xmlOf('[the docs](https://example.com)')).toContain(
+      'href="https://example.com"'
+    );
+  });
+});
+
+describe('code blocks', () => {
+  it('flattens highlight tokens back to raw source', () => {
+    const xml = xmlOf('```js\nconst x = 1;\n```');
+    expect(xml).toContain('<code');
+    expect(xml).toContain('const x = 1;');
+    // The per-token highlight children are not part of the model's view.
+    expect(xml).not.toContain('code-highlight');
+  });
+});
+
+describe('empty elements', () => {
+  it('self-closes an element with no children', () => {
+    const editor: LexicalEditor = createHeadlessEditor({
+      nodes: [...SupportedNodeTypes],
+      onError: (error) => {
+        throw error;
+      },
+    });
+    const ids = createNodeIdMappings();
+    nodeIdPlugin({ nodes: SupportedNodeTypes, mappings: ids })(editor);
+
+    editor.update(
+      () => {
+        $getRoot().clear();
+        // A deliberately blank paragraph — spacing the author made.
+        $getRoot().append($createParagraphNode());
+      },
+      { discrete: true }
+    );
+    editor.update(
+      () => {
+        $updateAllNodeIds(ids);
+      },
+      { discrete: true }
+    );
+
+    const xml = toXml(editor.getEditorState().toJSON());
+    expect(xml).toMatch(/<p[^>]*\/>/);
   });
 });
