@@ -13,14 +13,9 @@ export default [
     linterOptions: {
       reportUnusedDisableDirectives: 'off',
     },
-    settings: {
-      react: { version: 'detect' },
-    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
-      'react/prop-types': 'off',
-      'react/react-in-jsx-scope': 'off',
     },
   },
 ];

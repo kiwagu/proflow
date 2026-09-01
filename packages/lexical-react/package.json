@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@floating-ui/dom": "catalog:",
+    "@leeoniya/ufuzzy": "catalog:",
     "@lexical/clipboard": "catalog:",
     "@lexical/code": "catalog:",
     "@lexical/history": "catalog:",
