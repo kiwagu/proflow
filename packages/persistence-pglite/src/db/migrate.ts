@@ -2,7 +2,8 @@ import entityId from './migrations/001_entity_id.sql?raw';
 import documents from './migrations/002_documents.sql?raw';
 import files from './migrations/003_files.sql?raw';
 import packages from './migrations/004_packages.sql?raw';
-import graph from './migrations/005_graph.sql?raw';
+import documentSync from './migrations/005_document_sync.sql?raw';
+import graph from './migrations/006_graph.sql?raw';
 
 type Executor = {
   query: <T = unknown>(
@@ -22,7 +23,8 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 2, sql: documents },
   { version: 3, sql: files },
   { version: 4, sql: packages },
-  { version: 5, sql: graph },
+  { version: 5, sql: documentSync },
+  { version: 6, sql: graph },
 ];
 
 /**

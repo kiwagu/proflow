@@ -261,6 +261,25 @@
         "vitest": "catalog:",
       },
     },
+    "packages/doc-sync": {
+      "name": "@workspace/doc-sync",
+      "version": "0.1.0",
+      "dependencies": {
+        "@supabase/supabase-js": "catalog:",
+        "@workspace/db": "workspace:*",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "catalog:",
+        "@types/node": "catalog:",
+        "@workspace/doc-crdt": "workspace:*",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "loro-crdt": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/domain": {
       "name": "@workspace/domain",
       "version": "0.1.0",
@@ -1914,6 +1933,8 @@
     "@workspace/db": ["@workspace/db@workspace:packages/db"],
 
     "@workspace/doc-crdt": ["@workspace/doc-crdt@workspace:packages/doc-crdt"],
+
+    "@workspace/doc-sync": ["@workspace/doc-sync@workspace:packages/doc-sync"],
 
     "@workspace/domain": ["@workspace/domain@workspace:packages/domain"],
 

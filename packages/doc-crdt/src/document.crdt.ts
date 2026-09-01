@@ -1,5 +1,5 @@
 import type { EditAuthor } from '@workspace/domain';
-import { LoroDoc, type OpId } from 'loro-crdt';
+import { LoroDoc, VersionVector, type OpId } from 'loro-crdt';
 import { readNode, reconcileNode, rootIdOf } from './reconcile.js';
 import {
   defaultIdOf,
@@ -111,6 +111,25 @@ export class DocumentCrdt {
    */
   exportSnapshot(): Uint8Array {
     return this.#doc.export({ mode: 'snapshot' });
+  }
+
+  /**
+   * One consolidated blob of everything this document holds beyond `from` —
+   * the shape a push sends. `from` is an encoded version vector (what the
+   * receiving side last acknowledged), or null for "everything".
+   */
+  exportUpdatesSince(from: Uint8Array | null): Uint8Array {
+    const vv = from ? VersionVector.decode(from) : new VersionVector(null);
+    return this.#doc.export({ mode: 'update', from: vv });
+  }
+
+  /**
+   * The current version vector, encoded for storage. What a sync ledger
+   * records as acknowledged after a successful push; the next push exports
+   * from here.
+   */
+  versionBytes(): Uint8Array {
+    return this.#doc.version().encode();
   }
 
   /** Fires for every local change, carrying the bytes to append to the journal. */
