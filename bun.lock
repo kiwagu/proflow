@@ -713,6 +713,38 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workbench-editor": {
+      "name": "@workspace/workbench-editor",
+      "version": "0.1.0",
+      "dependencies": {
+        "@lexical/history": "catalog:",
+        "@lexical/link": "catalog:",
+        "@lexical/table": "catalog:",
+        "@workspace/lexical-nodes": "workspace:*",
+        "@workspace/lexical-react": "workspace:*",
+        "@workspace/ui": "workspace:*",
+        "lexical": "catalog:",
+        "lucide-react": "catalog:",
+      },
+      "devDependencies": {
+        "@testing-library/react": "catalog:",
+        "@types/node": "catalog:",
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "jsdom": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "catalog:",
+        "react-dom": "catalog:",
+      },
+    },
     "packages/workbench-files": {
       "name": "@workspace/workbench-files",
       "version": "0.1.0",
@@ -2175,6 +2207,8 @@
     "@workspace/typescript-config": ["@workspace/typescript-config@workspace:packages/typescript-config"],
 
     "@workspace/ui": ["@workspace/ui@workspace:packages/ui"],
+
+    "@workspace/workbench-editor": ["@workspace/workbench-editor@workspace:packages/workbench-editor"],
 
     "@workspace/workbench-files": ["@workspace/workbench-files@workspace:packages/workbench-files"],
 
