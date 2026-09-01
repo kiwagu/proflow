@@ -54,6 +54,7 @@
     "flat": "catalog:",
     "lexical": "catalog:",
     "nanoid": "catalog:",
+    "prismjs": "^1.30.0",
     "ts-pattern": "catalog:",
     "zod": "catalog:"
   },
