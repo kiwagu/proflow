@@ -6,7 +6,7 @@ import { registerRichText } from '@lexical/rich-text';
 import { ALL_TRANSFORMERS, type EditorType } from '@workspace/lexical-nodes';
 import { HR } from '@workspace/lexical-nodes/transformers/transformers';
 import type { EditorState, LexicalEditor, UpdateListener } from 'lexical';
-import type { Accessor, Setter } from '../reactive/signal';
+import type { Setter } from '../reactive/signal';
 import { bindStateAs } from '../utils';
 import { checklistPlugin } from './checklist/';
 import { customDeletePlugin } from './custom-delete';

@@ -184,7 +184,11 @@ export function CodeBoxAccessory({
   const [language, setLanguage] = useState('JavaScript');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
-  const isNested = useIsInBlock() && useIsNestedBlock();
+  // Both hooks run unconditionally; the origin's short-circuit would make the
+  // second one conditional, which React forbids.
+  const inBlock = useIsInBlock();
+  const nestedBlock = useIsNestedBlock();
+  const isNested = inBlock && nestedBlock;
   const glueRef = useGlueToElement(editor, isNested ? null : floatRef);
 
   useAutoRegister(ENABLE_SVG_PREVIEW ? editor : undefined, (editorInstance) =>

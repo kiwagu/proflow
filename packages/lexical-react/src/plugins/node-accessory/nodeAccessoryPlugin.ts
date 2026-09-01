@@ -18,9 +18,14 @@ export const FORCE_REFRESH_ACCESSORIES_COMMAND = createCommand<NodeKey[]>(
   'FORCE_REFRESH_ACCESSORIES_COMMAND'
 );
 
+/**
+ * An accessory component for a node. The origin passes `ref` and `key`; both
+ * are reserved prop names in React (they never reach the component), so the
+ * binding renames them to `mountRef` / `nodeKey`.
+ */
 export type NodeAccessory = FC<{
-  ref: HTMLElement;
-  key: NodeKey;
+  mountRef: HTMLElement;
+  nodeKey: NodeKey;
 }>;
 
 export type AccessoryItem = {

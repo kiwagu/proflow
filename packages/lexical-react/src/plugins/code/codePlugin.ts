@@ -29,6 +29,7 @@ import {
   SELECT_ALL_COMMAND,
 } from 'lexical';
 import type { SetStoreFunction } from '../../reactive/store';
+import { createElement } from 'react';
 import { CodeBoxAccessory } from '../../component/accessory/CodeBoxAccessory';
 import { type AccessoryStore, nodeAccessoryPlugin } from '../node-accessory';
 
@@ -177,9 +178,12 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
       klass: CustomCodeNode,
       store: props.accessories,
       setStore: props.setAccessories,
-      component: ({ ref, key }) => {
-        return CodeBoxAccessory({ floatRef: ref, editor, nodeKey: key });
-      },
+      component: ({ mountRef, nodeKey }) =>
+        createElement(CodeBoxAccessory, {
+          floatRef: mountRef,
+          editor,
+          nodeKey,
+        }),
     });
     cleanups.push(codeAccessory(editor));
   } else if (editor.hasNode(CodeNode)) {
@@ -187,8 +191,12 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
       klass: CodeNode,
       store: props.accessories,
       setStore: props.setAccessories,
-      component: ({ ref, key }) =>
-        CodeBoxAccessory({ floatRef: ref, editor, nodeKey: key }),
+      component: ({ mountRef, nodeKey }) =>
+        createElement(CodeBoxAccessory, {
+          floatRef: mountRef,
+          editor,
+          nodeKey,
+        }),
     });
     cleanups.push(codeAccessory(editor));
   }
