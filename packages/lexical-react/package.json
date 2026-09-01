@@ -1,0 +1,73 @@
+{
+  "name": "@workspace/lexical-react",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "sideEffects": ["**/*.css"],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css",
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "bunx vitest run",
+    "test": "bunx vitest run"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "catalog:",
+    "@lexical/clipboard": "catalog:",
+    "@lexical/code": "catalog:",
+    "@lexical/history": "catalog:",
+    "@lexical/html": "catalog:",
+    "@lexical/link": "catalog:",
+    "@lexical/list": "catalog:",
+    "@lexical/mark": "catalog:",
+    "@lexical/markdown": "catalog:",
+    "@lexical/plain-text": "catalog:",
+    "@lexical/rich-text": "catalog:",
+    "@lexical/selection": "catalog:",
+    "@lexical/table": "catalog:",
+    "@lexical/utils": "catalog:",
+    "@workspace/lexical-nodes": "workspace:*",
+    "emojibase-data": "catalog:",
+    "emojilib": "catalog:",
+    "fast-deep-equal": "catalog:",
+    "katex": "catalog:",
+    "lexical": "catalog:",
+    "linkify-it": "catalog:",
+    "nanoid": "catalog:",
+    "ts-pattern": "catalog:",
+    "virtua": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@testing-library/react": "catalog:",
+    "@types/katex": "catalog:",
+    "@types/linkify-it": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "catalog:",
+    "jsdom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
