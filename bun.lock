@@ -437,6 +437,7 @@
         "flat": "catalog:",
         "lexical": "catalog:",
         "nanoid": "catalog:",
+        "prismjs": "^1.30.0",
         "ts-pattern": "catalog:",
         "zod": "catalog:",
       },
@@ -638,6 +639,33 @@
         "@types/node": "catalog:",
         "@workspace/eslint-config": "workspace:*",
         "@workspace/typescript-config": "workspace:*",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "services/document-indexer": {
+      "name": "@workspace/document-indexer-service",
+      "version": "0.1.0",
+      "dependencies": {
+        "@huggingface/transformers": "catalog:",
+        "@lexical/markdown": "catalog:",
+        "@supabase/supabase-js": "catalog:",
+        "@workspace/ai-ops": "workspace:*",
+        "@workspace/db": "workspace:*",
+        "@workspace/doc-crdt": "workspace:*",
+        "@workspace/domain": "workspace:*",
+        "@workspace/embedding": "workspace:*",
+        "@workspace/lexical-nodes": "workspace:*",
+        "lexical": "catalog:",
+        "prismjs": "^1.30.0",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@types/prismjs": "^1.26.5",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "tsx": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
       },
@@ -1803,6 +1831,8 @@
 
     "@types/pg": ["@types/pg@8.20.0", "", { "dependencies": { "@types/node": "*", "pg-protocol": "*", "pg-types": "^2.2.0" } }, "sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow=="],
 
+    "@types/prismjs": ["@types/prismjs@1.26.6", "", {}, "sha512-vqlvI7qlMvcCBbVe0AKAb4f97//Hy0EBTaiW8AalRnG/xAN5zOiWWyrNqNXeq8+KAuvRewjCVY1+IPxk4RdNYw=="],
+
     "@types/react": ["@types/react@19.2.17", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw=="],
 
     "@types/react-dom": ["@types/react-dom@19.2.3", "", { "peerDependencies": { "@types/react": "^19.2.0" } }, "sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ=="],
@@ -1914,6 +1944,8 @@
     "@workspace/db": ["@workspace/db@workspace:packages/db"],
 
     "@workspace/doc-crdt": ["@workspace/doc-crdt@workspace:packages/doc-crdt"],
+
+    "@workspace/document-indexer-service": ["@workspace/document-indexer-service@workspace:services/document-indexer"],
 
     "@workspace/domain": ["@workspace/domain@workspace:packages/domain"],
 
