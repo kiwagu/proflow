@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -21,6 +22,7 @@
   },
   "exports": {
     ".": "./src/database.types.ts",
+    "./kb-schema": "./src/kb-schema.ts",
     "./contracts/users-filter": "./src/contracts/users-filter.ts"
   }
 }

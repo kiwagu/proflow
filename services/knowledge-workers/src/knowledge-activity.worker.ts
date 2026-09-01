@@ -1,16 +1,16 @@
 /**
- * JetStream consumer for knowledge-activity body edits (Mongo body -> Postgres
- * activity-log spine). The Payload `Bodies.afterChange` hook
- * PUBLISHES a body-edit event onto `knowledge.activity.v1.>`; this durable
- * consumer APPENDS the matching `kb.resource_activity` row (source=`nats-body`),
- * and the DB roll-up trigger advances `knowledge_resources.last_activity_at`.
+ * JetStream consumer for knowledge-activity body edits (authoring body edit ->
+ * Postgres activity-log spine). The producer PUBLISHES a body-edit event onto
+ * `knowledge.activity.v1.>`; this durable consumer APPENDS the matching
+ * `kb.resource_activity` row (source=`nats-body`), and the DB roll-up trigger
+ * advances `knowledge_resources.last_activity_at`.
  *
- * Local dev: `bun run dev` in `apps/author` starts Next + the workers (concurrently).
- * For this worker only: `bun run knowledge-activity:jetstream`.
+ * Local dev: `bun run dev` in `services/knowledge-workers` starts both workers
+ * (concurrently). For this worker only: `bun run start:knowledge-activity`.
  *
- * Env:
- *   - NATS_URL                          (required; same convention as the identity worker)
- *   - NEXT_PUBLIC_SUPABASE_URL          (required; the service-role append target)
+ * Env (loaded via bun --env-file=.env):
+ *   - NATS_URL                          (required)
+ *   - SUPABASE_URL                      (required; the service-role append target)
  *   - SUPABASE_SERVICE_ROLE_KEY         (required; the trusted background ingest channel)
  *   - KNOWLEDGE_ACTIVITY_NATS_STREAM    (optional; default KNOWLEDGE_ACTIVITY)
  *   - KNOWLEDGE_ACTIVITY_NATS_CONSUMER  (optional; default author-activity-v1)
@@ -18,9 +18,9 @@
  * Trust model (authorize-at-produce): the worker holds no user JWT,
  * so it appends via SERVICE-ROLE. This is a NARROW carve-out from "never
  * service-role on a user path" — the body edit was ALREADY authorized at produce
- * time (Payload admitted the body write only after the caller's RLS passed on
- * `node_id`), and the row is derived audit metadata, not user content. All READS of
- * the log stay under the user's RLS.
+ * time (the producer admitted the body write only after the caller's RLS passed
+ * on `node_id`), and the row is derived audit metadata, not user content. All
+ * READS of the log stay under the user's RLS.
  *
  * Idempotency: JetStream is at-least-once. The append carries the message's
  * `Nats-Msg-Id` as `event_id`; the partial-unique `kb_resource_activity_event_id_key`
@@ -29,13 +29,13 @@
  * and out-of-order can never regress recency. We ACK on a successful append OR a
  * known duplicate, `term()` an invalid envelope (poison), `nak()` a transient error.
  *
- * Runtime: executed under tsx (Node), not the Bun runtime — mirrors the identity
- * worker. This worker imports NO @payload-config, so the lexical/DecoratorNode Bun
- * cycle does not apply; it still runs under tsx for parity with its siblings.
+ * Runtime: bun, like the other services here (this worker never imported the
+ * authoring app's config, so the constraint that forced its former host onto
+ * tsx/Node does not apply).
  */
-import 'dotenv/config';
-
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
+import { kbSchema } from '@workspace/db/kb-schema';
 import {
   KNOWLEDGE_ACTIVITY_CONSUMER_NAME,
   KNOWLEDGE_ACTIVITY_STREAM_NAME,
@@ -49,9 +49,11 @@ import {
   jetstreamManager,
 } from '@nats-io/jetstream';
 import { connect } from '@nats-io/transport-node';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import {
+  createServiceRoleSupabaseClient,
+  isServiceRoleSupabaseConfigured,
+} from './supabase.js';
 
 const streamName =
   process.env.KNOWLEDGE_ACTIVITY_NATS_STREAM?.trim() ||
@@ -64,14 +66,10 @@ const consumerName =
 const BODY_EDIT_KIND = 'body_edit' as const;
 
 function serviceSupabaseClient(): SupabaseClient<Database> | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceRole) {
+  if (!isServiceRoleSupabaseConfigured()) {
     return null;
   }
-  return createClient<Database>(url, serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  return createServiceRoleSupabaseClient();
 }
 
 async function ensureStream(
@@ -105,13 +103,13 @@ async function ensureConsumer(
 async function main(): Promise<void> {
   const natsUrl = process.env.NATS_URL?.trim();
   if (!natsUrl) {
-    console.error('knowledge-activity.jetstream.worker: NATS_URL is not set');
+    console.error('knowledge-activity.worker: NATS_URL is not set');
     process.exit(1);
   }
   const supabase = serviceSupabaseClient();
   if (!supabase) {
     console.error(
-      'knowledge-activity.jetstream.worker: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL is missing'
+      'knowledge-activity.worker: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing'
     );
     process.exit(1);
   }
@@ -126,11 +124,11 @@ async function main(): Promise<void> {
   const messages = await consumer.consume();
 
   console.log(
-    `knowledge-activity.jetstream.worker: consuming stream=${streamName} consumer=${consumerName}`
+    `knowledge-activity.worker: consuming stream=${streamName} consumer=${consumerName}`
   );
 
   const shutdown = async () => {
-    console.log('knowledge-activity.jetstream.worker: shutting down');
+    console.log('knowledge-activity.worker: shutting down');
     await messages.close();
     await nc.drain();
     process.exit(0);
@@ -151,7 +149,7 @@ async function main(): Promise<void> {
         json = JSON.parse(text) as unknown;
       } catch {
         console.error(
-          'knowledge-activity.jetstream.worker: invalid JSON',
+          'knowledge-activity.worker: invalid JSON',
           text.slice(0, 200)
         );
         m.term();
@@ -160,7 +158,7 @@ async function main(): Promise<void> {
       const parsed = parseKnowledgeActivityBodyEvent(json);
       if (!parsed.success) {
         console.error(
-          'knowledge-activity.jetstream.worker: envelope validation failed',
+          'knowledge-activity.worker: envelope validation failed',
           parsed.error.issues
         );
         m.term();
@@ -191,7 +189,7 @@ async function main(): Promise<void> {
         );
       if (error) {
         console.error(
-          'knowledge-activity.jetstream.worker: append failed',
+          'knowledge-activity.worker: append failed',
           error.message
         );
         m.nak();
@@ -199,13 +197,13 @@ async function main(): Promise<void> {
       }
       m.ack();
     } catch (e) {
-      console.error('knowledge-activity.jetstream.worker: message error', e);
+      console.error('knowledge-activity.worker: message error', e);
       m.nak();
     }
   }
 }
 
 main().catch((e) => {
-  console.error('knowledge-activity.jetstream.worker: fatal', e);
+  console.error('knowledge-activity.worker: fatal', e);
   process.exit(1);
 });
