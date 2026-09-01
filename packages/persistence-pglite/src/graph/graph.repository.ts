@@ -1,7 +1,11 @@
 import { newId } from '@workspace/domain';
 import { err, ok, type Result } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
-import { GRAPH_NODE_COLUMNS, type GraphNodeRow, toGraphNode } from './graph.mapper.js';
+import {
+  GRAPH_NODE_COLUMNS,
+  type GraphNodeRow,
+  toGraphNode,
+} from './graph.mapper.js';
 import type { GraphNode, ResourceFloor } from './graph.types.js';
 
 /**
@@ -40,6 +44,7 @@ export const GRAPH_OPS = {
   restoreNode: 'restore_node',
   purgeNode: 'purge_node',
   setDescription: 'set_description',
+  copySubtree: 'copy_subtree',
 } as const;
 
 export type GraphOpKind = (typeof GRAPH_OPS)[keyof typeof GRAPH_OPS];
@@ -67,6 +72,27 @@ export type UpsertEdgeInput = {
   createdBy: string;
   id?: string;
   position?: number;
+};
+
+export type CopySubtreeInput = {
+  spaceId: string;
+  /** Root of the `contains` subtree to duplicate. */
+  sourceId: string;
+  /** Where the root copy lands: a folder id, or null for the top level. */
+  targetFolderId: string | null;
+  createdBy: string;
+  /**
+   * Title for the ROOT copy — the caller builds the localized "(copy)"
+   * suffix. Descendants keep their own titles.
+   */
+  rootTitle?: string;
+};
+
+export type CopySubtreeResult = {
+  /** The new root copy's id. */
+  nodeId: string;
+  /** Source id → copy id, for every node duplicated. */
+  idMap: Record<string, string>;
 };
 
 /** Structural commands over the local replica. Every method journals its op. */
@@ -130,6 +156,26 @@ export interface GraphRepository {
     resourceId: string,
     userId: string
   ): Promise<Result<void, string>>;
+
+  /**
+   * Duplicate a node and its `contains` subtree — the drive's copy gesture.
+   *
+   * The nodes and containment edges are written locally so the copy appears
+   * at once, under client-minted ids. The satellites are NOT: link and media
+   * replicate DOWN only (the byte-intrinsic blob row and the refcount are
+   * server-owned), so a locally-composed copy could not reproduce a copied
+   * link's URL or a copied file's bytes without inventing rows the server
+   * would then contradict. The journaled op therefore carries the whole
+   * source→copy id map and the server replays its own copy fan-out against
+   * it, which reproduces bodies and satellites at the ids the local rows
+   * already use — and the next pull fills them in here.
+   *
+   * Idempotent like every other op: the ids are minted before the write, so
+   * a redelivered replay upserts the same rows rather than a second copy.
+   */
+  copySubtree(
+    input: CopySubtreeInput
+  ): Promise<Result<CopySubtreeResult, string>>;
 }
 
 type Tx = {
@@ -296,7 +342,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
 
     setVisibility(nodeId, visibility) {
       return command('graph.setVisibility', async (tx) => {
-        const rows = await patchNode(tx, nodeId, 'visibility = $2', [visibility]);
+        const rows = await patchNode(tx, nodeId, 'visibility = $2', [
+          visibility,
+        ]);
         await journal(
           tx,
           spaceOf(rows),
@@ -328,13 +376,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'update knowledge_resources set last_modified_at = now() where id = $1',
           [nodeId]
         );
-        await journal(
-          tx,
-          spaceId,
-          GRAPH_OPS.setDescription,
-          { nodeId, body },
-          [nodeId]
-        );
+        await journal(tx, spaceId, GRAPH_OPS.setDescription, { nodeId, body }, [
+          nodeId,
+        ]);
       });
     },
 
@@ -449,9 +493,13 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'deleted_at = null, trashed_by = null',
           []
         );
-        await journal(tx, spaceOf(rows), GRAPH_OPS.restoreNode, { id: nodeId }, [
-          nodeId,
-        ]);
+        await journal(
+          tx,
+          spaceOf(rows),
+          GRAPH_OPS.restoreNode,
+          { id: nodeId },
+          [nodeId]
+        );
       });
     },
 
@@ -469,7 +517,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'delete from knowledge_edges where from_id = $1 or to_id = $1',
           [nodeId]
         );
-        await journal(tx, spaceId, GRAPH_OPS.purgeNode, { id: nodeId }, [nodeId]);
+        await journal(tx, spaceId, GRAPH_OPS.purgeNode, { id: nodeId }, [
+          nodeId,
+        ]);
       });
     },
 
@@ -525,6 +575,131 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           resourceId,
         ]);
       });
+    },
+
+    async copySubtree(input) {
+      // Walk the `contains` subtree in the replica first: the copy is a read
+      // of what this user can already see, so the walk is the access story
+      // (the replica holds nothing the server did not show them). Cycle-safe
+      // by the same `seen` guard the reader's traversals use.
+      const { rows: sourceRows } = await db.query<{
+        id: string;
+        kind: string;
+        title: string;
+        status: string;
+      }>(
+        `with recursive down as (
+           select $1::text as id, array[$1::text] as seen
+           union all
+           select e.to_id, down.seen || e.to_id
+             from knowledge_edges e
+             join down on e.from_id = down.id
+            where e.relation_type = 'contains'
+              and not e.to_id = any (down.seen)
+         )
+         select r.id, r.kind, r.title, r.status
+           from down
+           join knowledge_resources r on r.id = down.id
+          where r.space_id = $2 and r.deleted_at is null`,
+        [input.sourceId, input.spaceId]
+      );
+      if (!sourceRows.some((row) => row.id === input.sourceId)) {
+        return err('graph.copySubtree: source not in the local replica');
+      }
+
+      // Mint every id up front so the journal entry names the same ids the
+      // local rows carry — that is what lets the server's replay attach the
+      // copied bodies and satellites to rows the replica already shows.
+      const idMap: Record<string, string> = {};
+      for (const row of sourceRows) {
+        idMap[row.id] = newId('knowledgeResource');
+      }
+      const newRootId = idMap[input.sourceId] as string;
+
+      const { rows: innerEdges } = await db.query<{
+        from_id: string;
+        to_id: string;
+        position: number;
+      }>(
+        `select from_id, to_id, "position"
+           from knowledge_edges
+          where relation_type = 'contains'
+            and from_id = any ($1) and to_id = any ($1)`,
+        [Object.keys(idMap)]
+      );
+
+      const result = await command('graph.copySubtree', async (tx) => {
+        for (const row of sourceRows) {
+          const title =
+            row.id === input.sourceId
+              ? (input.rootTitle ?? row.title)
+              : row.title;
+          await tx.query(
+            `insert into knowledge_resources
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
+             values ($1, $2, $3, $4, $5, 'private', $6, $6)
+             on conflict (id) do nothing`,
+            [
+              idMap[row.id],
+              input.spaceId,
+              row.kind,
+              title,
+              row.status,
+              input.createdBy,
+            ]
+          );
+        }
+        // The copy is the copier's own private content: `visibility` stays at
+        // the private default above rather than inheriting the source's
+        // audience, matching what the server's copy does.
+        for (const edge of innerEdges) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', $5, $6)
+             on conflict (from_id, to_id, relation_type) do update
+               set "position" = excluded."position", updated_at = now()`,
+            [
+              newId('knowledgeEdge'),
+              input.spaceId,
+              idMap[edge.from_id],
+              idMap[edge.to_id],
+              edge.position,
+              input.createdBy,
+            ]
+          );
+        }
+        if (input.targetFolderId) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', 0, $5)
+             on conflict (from_id, to_id, relation_type) do nothing`,
+            [
+              newId('knowledgeEdge'),
+              input.spaceId,
+              input.targetFolderId,
+              newRootId,
+              input.createdBy,
+            ]
+          );
+        }
+        await journal(
+          tx,
+          input.spaceId,
+          GRAPH_OPS.copySubtree,
+          {
+            sourceId: input.sourceId,
+            targetFolderId: input.targetFolderId,
+            rootTitle: input.rootTitle ?? null,
+            idMap,
+          },
+          // Both the source and every copy: a refusal has to reconcile the
+          // half-written copy away, and the source's own later ops with it.
+          [...Object.keys(idMap), ...Object.values(idMap), input.sourceId]
+        );
+      });
+      return result.map(() => ({ nodeId: newRootId, idMap }));
     },
   };
 }

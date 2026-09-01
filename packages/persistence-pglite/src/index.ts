@@ -28,6 +28,8 @@ export {
   type PulledRow,
 } from './graph/graph.replica.js';
 export {
+  type CopySubtreeInput,
+  type CopySubtreeResult,
   type CreateNodeInput,
   createPgliteGraphRepository,
   GRAPH_OPS,

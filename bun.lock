@@ -742,6 +742,37 @@
         "react-dom": "catalog:",
       },
     },
+    "packages/workbench-graph": {
+      "name": "@workspace/workbench-graph",
+      "version": "0.1.0",
+      "dependencies": {
+        "@dnd-kit/core": "6.3.1",
+        "@workspace/domain": "workspace:*",
+        "@workspace/persistence-pglite": "workspace:*",
+        "@workspace/ui": "workspace:*",
+        "lucide-react": "catalog:",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "catalog:",
+        "@electric-sql/pglite-pgvector": "catalog:",
+        "@testing-library/react": "catalog:",
+        "@types/node": "catalog:",
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "jsdom": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "catalog:",
+        "react-dom": "catalog:",
+      },
+    },
     "seed": {
       "name": "@workspace/seed",
       "version": "0.1.0",
@@ -2146,6 +2177,8 @@
     "@workspace/ui": ["@workspace/ui@workspace:packages/ui"],
 
     "@workspace/workbench-files": ["@workspace/workbench-files@workspace:packages/workbench-files"],
+
+    "@workspace/workbench-graph": ["@workspace/workbench-graph@workspace:packages/workbench-graph"],
 
     "@zip.js/zip.js": ["@zip.js/zip.js@2.9.0", "", {}, "sha512-AblaO/5MIVKiVExlF7GD17qn5NSsQ7qdtE+uEIMU6OiwHLqPxaI5Z5gLxMDxdEBzaiVVRCFNABcIc3sZpFcUeA=="],
 

@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openTestDb, TEST_USER } from './graph.test-db.js';
 import { createPgliteGraphReader } from './graph.reader.js';
-import {
-  createPgliteGraphRepository,
-  GRAPH_OPS,
-} from './graph.repository.js';
+import { createPgliteGraphRepository, GRAPH_OPS } from './graph.repository.js';
 import { createPgliteGraphSyncLedger } from './graph.sync-ledger.js';
 
 /**
@@ -147,7 +144,7 @@ describe('graph repository', () => {
     expect(live.map((n) => n.id)).toEqual([child]);
 
     expect((await repo.restoreNode(folder)).isOk()).toBe(true);
-    expect((await reader.readNodes(spaceId, 'trashed'))).toEqual([]);
+    expect(await reader.readNodes(spaceId, 'trashed')).toEqual([]);
 
     await db.close();
   });
@@ -191,6 +188,63 @@ describe('graph repository', () => {
       'knr_000000000000000a.0000000000',
       'Nowhere'
     );
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toContain('not in the local replica');
+    await db.close();
+  });
+
+  it('copies a subtree under fresh ids and journals the whole id map', async () => {
+    const { db, repo, reader, ledger, spaceId, node } = await open();
+    const source = await node('Source');
+    const child = await node('Child', source);
+    const target = await node('Target');
+
+    const result = await repo.copySubtree({
+      spaceId,
+      sourceId: source,
+      targetFolderId: target,
+      createdBy: TEST_USER,
+      rootTitle: 'Source (copy)',
+    });
+    expect(result.isOk()).toBe(true);
+    const { nodeId, idMap } = result._unsafeUnwrap();
+
+    // Every source node has a distinct copy, and the copies are real rows.
+    expect(Object.keys(idMap).sort()).toEqual([source, child].sort());
+    expect(nodeId).toBe(idMap[source]);
+    expect((await reader.readNode(nodeId))?.title).toBe('Source (copy)');
+    expect((await reader.readNode(idMap[child] as string))?.title).toBe(
+      'Child'
+    );
+    // A copy is the copier's own private content, never the source's audience.
+    expect((await reader.readNode(nodeId))?.visibility).toBe('private');
+
+    // The subtree's shape is reproduced, and the root lands in the target.
+    const edges = await reader.readEdges(spaceId, 'contains');
+    const pairs = edges.map((edge) => `${edge.from}->${edge.to}`);
+    expect(pairs).toContain(`${idMap[source]}->${idMap[child]}`);
+    expect(pairs).toContain(`${target}->${idMap[source]}`);
+
+    // The journal carries the id map, which is what lets the server's replay
+    // attach the copied bodies and satellites to these very rows.
+    const ops = await ledger.pendingOps(spaceId);
+    const copyOp = ops.find((op) => op.op === GRAPH_OPS.copySubtree);
+    expect(copyOp?.payload.idMap).toEqual(idMap);
+    expect(copyOp?.nodeIds).toEqual(
+      expect.arrayContaining([source, child, nodeId])
+    );
+
+    await db.close();
+  });
+
+  it('refuses to copy a source the replica does not hold', async () => {
+    const { db, repo, spaceId } = await open();
+    const result = await repo.copySubtree({
+      spaceId,
+      sourceId: 'knr_000000000000000b.0000000000',
+      targetFolderId: null,
+      createdBy: TEST_USER,
+    });
     expect(result.isErr()).toBe(true);
     expect(result._unsafeUnwrapErr()).toContain('not in the local replica');
     await db.close();

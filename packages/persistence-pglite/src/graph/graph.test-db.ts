@@ -14,7 +14,9 @@ import type { AppDb } from '../db/db.js';
  * earlier migration creates the extension; the graph schema itself needs no
  * vectors.
  */
-export async function openTestDb(): Promise<AppDb & { close: () => Promise<void> }> {
+export async function openTestDb(): Promise<
+  AppDb & { close: () => Promise<void> }
+> {
   const pg = await PGlite.create({ extensions: { live, vector } });
   await migrate(pg as unknown as Parameters<typeof migrate>[0]);
   return pg as unknown as AppDb & { close: () => Promise<void> };

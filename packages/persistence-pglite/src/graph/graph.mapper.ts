@@ -139,7 +139,8 @@ export function toKbAttributes(row: KbAttributeRow): KbAttributes {
   if (row.media_original_filename !== null && row.media_storage_path !== null) {
     attributes.media = {
       // bigint arrives as a string from the wire protocol.
-      byteSize: row.media_size_bytes === null ? null : Number(row.media_size_bytes),
+      byteSize:
+        row.media_size_bytes === null ? null : Number(row.media_size_bytes),
       durationMs: row.media_duration_ms,
       mimeType: row.media_mime_type,
       storagePath: row.media_storage_path,

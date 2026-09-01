@@ -138,10 +138,7 @@ export function useUserResourceState(
 }
 
 /** The current user's starred resource ids in the space. */
-export function useStarredIds(
-  reader: GraphReader,
-  spaceId: string
-): string[] {
+export function useStarredIds(reader: GraphReader, spaceId: string): string[] {
   return useWatch(
     useCallback(
       (cb: (ids: string[]) => void) => reader.watchStarredIds(spaceId, cb),

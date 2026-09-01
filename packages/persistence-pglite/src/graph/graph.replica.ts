@@ -38,7 +38,10 @@ export interface GraphReplicaWriter {
    * the watermark the caller advances the cursor to — or null for an empty
    * batch (nothing moved, so the cursor must not move either).
    */
-  applyPullBatch(table: GraphSyncTable, rows: PulledRow[]): Promise<Date | null>;
+  applyPullBatch(
+    table: GraphSyncTable,
+    rows: PulledRow[]
+  ): Promise<Date | null>;
   /**
    * Delete rows by id — the Realtime DELETE nudge's immediate effect, ahead
    * of the next inventory sweep.
