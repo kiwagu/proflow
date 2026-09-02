@@ -3,7 +3,7 @@ import process from 'node:process';
 
 import { isDevFullRequestLoggingEnabled } from '@workspace/gateway-auth/dev-mutating-request-log';
 
-import { devRewriteRules } from './lib/gateway-config';
+import { devRewriteRules, workbenchFallbackRules } from './lib/gateway-config';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const devCorsOrigin =
@@ -25,10 +25,14 @@ const nextConfig: NextConfig = {
     }),
   }),
   async rewrites() {
-    if (!isDev) {
-      return [];
+    if (isDev) {
+      // Before the filesystem: a workbench build staged under `public/` for
+      // production must never shadow the live dev server behind the prefix.
+      return { beforeFiles: devRewriteRules() };
     }
-    return devRewriteRules();
+    // After the filesystem: the staged build's own files win, and any other
+    // path under the workbench mount is the SPA's index for it to route.
+    return { afterFiles: workbenchFallbackRules() };
   },
   async headers() {
     if (!isDev) {

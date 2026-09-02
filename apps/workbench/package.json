@@ -1,0 +1,45 @@
+{
+  "name": "workbench",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/blob-store": "workspace:*",
+    "@workspace/domain": "workspace:*",
+    "@workspace/gateway-auth": "workspace:*",
+    "@workspace/lexical-react": "workspace:*",
+    "@workspace/package-kinds": "workspace:*",
+    "@workspace/persistence-pglite": "workspace:*",
+    "@workspace/ui": "workspace:*",
+    "@workspace/workbench-editor": "workspace:*",
+    "@workspace/workbench-files": "workspace:*",
+    "@workspace/workbench-graph": "workspace:*",
+    "lexical": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-wasm": "catalog:"
+  }
+}

@@ -1,0 +1,16 @@
+@import '@workspace/ui/globals.css';
+@import '@workspace/lexical-react/styles.css';
+
+/* The ui package scans only itself; the workbench surfaces this app mounts
+   live in sibling packages, so their class names must be scanned here. */
+@source '../../../packages/workbench-editor/src';
+@source '../../../packages/workbench-files/src';
+@source '../../../packages/workbench-graph/src';
+@source '../../../packages/lexical-react/src';
+@source './';
+
+html,
+body,
+#root {
+  height: 100%;
+}
