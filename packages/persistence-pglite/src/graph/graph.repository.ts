@@ -1,7 +1,11 @@
 import { newId } from '@workspace/domain';
 import { err, ok, type Result } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
-import { GRAPH_NODE_COLUMNS, type GraphNodeRow, toGraphNode } from './graph.mapper.js';
+import {
+  GRAPH_NODE_COLUMNS,
+  type GraphNodeRow,
+  toGraphNode,
+} from './graph.mapper.js';
 import type { GraphNode, ResourceFloor } from './graph.types.js';
 
 /**
@@ -296,7 +300,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
 
     setVisibility(nodeId, visibility) {
       return command('graph.setVisibility', async (tx) => {
-        const rows = await patchNode(tx, nodeId, 'visibility = $2', [visibility]);
+        const rows = await patchNode(tx, nodeId, 'visibility = $2', [
+          visibility,
+        ]);
         await journal(
           tx,
           spaceOf(rows),
@@ -328,13 +334,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'update knowledge_resources set last_modified_at = now() where id = $1',
           [nodeId]
         );
-        await journal(
-          tx,
-          spaceId,
-          GRAPH_OPS.setDescription,
-          { nodeId, body },
-          [nodeId]
-        );
+        await journal(tx, spaceId, GRAPH_OPS.setDescription, { nodeId, body }, [
+          nodeId,
+        ]);
       });
     },
 
@@ -429,15 +431,25 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
 
     trashNode(nodeId, trashedBy) {
       return command('graph.trashNode', async (tx) => {
+        // The instant is journaled, not re-derived at replay: the trash
+        // happened when the user asked for it, possibly hours before the
+        // network came back, and it is the ordering key of the Trash lens.
+        // The server's cascade stamps this same value across the orphaned
+        // subtree, so one op carries one coherent unit.
+        const deletedAt = new Date();
         const rows = await patchNode(
           tx,
           nodeId,
-          'deleted_at = now(), trashed_by = $2',
-          [trashedBy]
+          'deleted_at = $2, trashed_by = $3',
+          [deletedAt, trashedBy]
         );
-        await journal(tx, spaceOf(rows), GRAPH_OPS.trashNode, { id: nodeId }, [
-          nodeId,
-        ]);
+        await journal(
+          tx,
+          spaceOf(rows),
+          GRAPH_OPS.trashNode,
+          { id: nodeId, deletedAt: deletedAt.toISOString() },
+          [nodeId]
+        );
       });
     },
 
@@ -449,9 +461,13 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'deleted_at = null, trashed_by = null',
           []
         );
-        await journal(tx, spaceOf(rows), GRAPH_OPS.restoreNode, { id: nodeId }, [
-          nodeId,
-        ]);
+        await journal(
+          tx,
+          spaceOf(rows),
+          GRAPH_OPS.restoreNode,
+          { id: nodeId },
+          [nodeId]
+        );
       });
     },
 
@@ -469,7 +485,9 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'delete from knowledge_edges where from_id = $1 or to_id = $1',
           [nodeId]
         );
-        await journal(tx, spaceId, GRAPH_OPS.purgeNode, { id: nodeId }, [nodeId]);
+        await journal(tx, spaceId, GRAPH_OPS.purgeNode, { id: nodeId }, [
+          nodeId,
+        ]);
       });
     },
 
@@ -507,13 +525,17 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
 
     markOpened(spaceId, resourceId, userId) {
       return command('graph.markOpened', async (tx) => {
+        // Journaled with its instant for the same reason trash is: the open
+        // happened when it happened, and `last_opened_at` is what the recency
+        // lens sorts by — replay time would reorder a day of offline reading.
+        const openedAt = new Date();
         await upsertUserState(
           tx,
           spaceId,
           resourceId,
           userId,
           'last_opened_at',
-          [new Date()]
+          [openedAt]
         );
         // Opens count as activity but NOT as an edit — `last_modified_at` is
         // deliberately untouched, the same split the server roll-up makes.
@@ -521,9 +543,13 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           'update knowledge_resources set last_activity_at = now() where id = $1',
           [resourceId]
         );
-        await journal(tx, spaceId, GRAPH_OPS.markOpened, { resourceId }, [
-          resourceId,
-        ]);
+        await journal(
+          tx,
+          spaceId,
+          GRAPH_OPS.markOpened,
+          { resourceId, openedAt: openedAt.toISOString() },
+          [resourceId]
+        );
       });
     },
   };
