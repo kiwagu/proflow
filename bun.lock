@@ -404,6 +404,24 @@
         "next": ">=15",
       },
     },
+    "packages/graph-sync": {
+      "name": "@workspace/graph-sync",
+      "version": "0.1.0",
+      "dependencies": {
+        "@supabase/supabase-js": "catalog:",
+        "@workspace/db": "workspace:*",
+      },
+      "devDependencies": {
+        "@electric-sql/pglite": "catalog:",
+        "@types/node": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/persistence-pglite": "workspace:*",
+        "@workspace/typescript-config": "workspace:^",
+        "eslint": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/i18n-catalogs": {
       "name": "@workspace/i18n-catalogs",
       "version": "0.1.0",
@@ -2165,6 +2183,8 @@
     "@workspace/eslint-config": ["@workspace/eslint-config@workspace:packages/eslint-config"],
 
     "@workspace/gateway-auth": ["@workspace/gateway-auth@workspace:packages/gateway-auth"],
+
+    "@workspace/graph-sync": ["@workspace/graph-sync@workspace:packages/graph-sync"],
 
     "@workspace/i18n-catalogs": ["@workspace/i18n-catalogs@workspace:packages/i18n-catalogs"],
 

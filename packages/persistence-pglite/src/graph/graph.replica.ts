@@ -29,6 +29,22 @@ const TABLE_NAMES = new Set<string>([
   'kb_resource_media_meta',
 ]);
 
+/**
+ * Which columns tie each table's rows to a graph node. Reconciliation after a
+ * refused op works per node, so it needs to ask every table "what do you hold
+ * for these nodes?" — an edge answers from both ends, the shared media blob
+ * record answers nothing (it is per-bytes, not per-node).
+ */
+const NODE_KEYS: Record<GraphSyncTable, readonly string[]> = {
+  knowledge_resources: ['id'],
+  knowledge_edges: ['from_id', 'to_id'],
+  resource_user_state: ['resource_id'],
+  kb_resource_description: ['node_id'],
+  kb_resource_link: ['node_id'],
+  kb_media_blob: [],
+  kb_resource_media_meta: ['node_id'],
+};
+
 /** Postgres identifier shape — the only column names allowed into the SQL. */
 const COLUMN_NAME = /^[a-z_][a-z0-9_]*$/;
 
@@ -47,6 +63,14 @@ export interface GraphReplicaWriter {
    * of the next inventory sweep.
    */
   deleteRows(table: GraphSyncTable, ids: string[]): Promise<number>;
+  /**
+   * The ids of the rows in one table tied to the given nodes. Reconciliation
+   * after a refused op re-reads the server's rows for those nodes and must
+   * then evict whatever the server did NOT return — which requires knowing
+   * what the replica currently holds for them. A table with no node key
+   * (the shared media blob record) is not node-scoped and yields nothing.
+   */
+  rowIdsForNodes(table: GraphSyncTable, nodeIds: string[]): Promise<string[]>;
 }
 
 export function createPgliteGraphReplicaWriter(db: AppDb): GraphReplicaWriter {
@@ -97,6 +121,23 @@ export function createPgliteGraphReplicaWriter(db: AppDb): GraphReplicaWriter {
         [ids]
       );
       return rows.length;
+    },
+
+    async rowIdsForNodes(table, nodeIds) {
+      assertTable(table);
+      if (nodeIds.length === 0) return [];
+      const keys = NODE_KEYS[table];
+      if (keys.length === 0) return [];
+      // One predicate per node-bearing column: an edge is tied to a node from
+      // either end, so re-reading a node's rows means both directions.
+      const predicate = keys
+        .map((key) => `"${key}" = any ($1::text[])`)
+        .join(' or ');
+      const { rows } = await db.query<{ id: string }>(
+        `select id from ${table} where ${predicate}`,
+        [nodeIds]
+      );
+      return rows.map((row) => row.id);
     },
   };
 }
