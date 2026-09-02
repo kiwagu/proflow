@@ -270,8 +270,10 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     }
     if (table === 'kb_media_blob') {
       // Byte records are space-scoped, not node-scoped: a blob is visible to
-      // anyone who can see the space it belongs to.
-      return 'true';
+      // anyone who can see the space it belongs to. The parameter is still
+      // referenced so the driver can type it — an unused placeholder is a
+      // protocol error, not an ignored one.
+      return `${userParam}::uuid is not null`;
     }
     if (table === 'knowledge_edges') {
       return `exists (
@@ -443,7 +445,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
 
   function transportFor(session: ServerSession): GraphRowTransport {
     return {
-      async pullSince(table, spaceId, since, limit) {
+      async pullSince(table, spaceId, since, limit, offset) {
         const fence = visibilityPredicate(table, '$2');
         const params: unknown[] = [spaceId, session.userId];
         let where = `t.space_id = $1 and ${fence}`;
@@ -451,12 +453,12 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
           params.push(since);
           where += ` and t.updated_at >= $${params.length}`;
         }
-        params.push(limit + 1);
+        params.push(limit + 1, offset);
         const { rows } = await db.query<RowRecord>(
           `select t.* from ${table} t
             where ${where}
-            order by t.updated_at asc
-            limit $${params.length}`,
+            order by t.updated_at asc, t.id asc
+            limit $${params.length - 1} offset $${params.length}`,
           params
         );
         const page: PullPage = {

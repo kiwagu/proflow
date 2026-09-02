@@ -78,22 +78,30 @@ export function createGraphSync(options: GraphSyncOptions) {
     table: GraphSyncTableName
   ): Promise<number> {
     let applied = 0;
+    // The cursor is read ONCE per pass and pages advance by OFFSET within
+    // it: rows sharing one instant (bulk imports, the trash cascade) are
+    // common, so a cursor-only pager could never get past a page of equal
+    // timestamps. The watermark still advances per page — a crash mid-pass
+    // resumes from the last landed page, re-reading at most the overlap.
+    const since = await replica.cursorFor(spaceId, table);
+    let offset = 0;
     // Pages until the server says there are no more: a checkout of a large
     // space is many pages, and stopping at the first would leave the cursor
     // parked mid-history with the rest arriving only by chance.
     for (;;) {
-      const since = await replica.cursorFor(spaceId, table);
-      const page = await transport.pullSince(table, spaceId, since, pageSize);
+      const page = await transport.pullSince(
+        table,
+        spaceId,
+        since,
+        pageSize,
+        offset
+      );
       if (page.rows.length === 0) return applied;
       const watermark = await replica.applyPullBatch(table, page.rows);
       applied += page.rows.length;
       if (watermark) await replica.advanceCursor(spaceId, table, watermark);
       if (!page.hasMore) return applied;
-      // A full page whose rows all share one timestamp would leave the cursor
-      // where it started and loop forever. The overlap window means progress
-      // is measured in rows, not in the cursor, so bail to the next pass and
-      // let the ordinary catch-up continue rather than spin.
-      if (!watermark) return applied;
+      offset += page.rows.length;
     }
   }
 
@@ -174,6 +182,7 @@ export function createGraphSync(options: GraphSyncOptions) {
     for (;;) {
       const ops = await replica.pendingOps(spaceId, PUSH_BATCH_SIZE);
       if (ops.length === 0) break;
+      let refusedInBatch = false;
       for (const op of ops) {
         try {
           for (const write of planWrites(op, identity)) {
@@ -202,13 +211,16 @@ export function createGraphSync(options: GraphSyncOptions) {
           await reconcileNodes(spaceId, affected);
           for (const id of affected) reconciled.add(id);
           refused += 1;
+          refusedInBatch = true;
           break;
         }
       }
-      // A partially drained batch (a refusal broke out of it) is re-read
-      // rather than continued: rejectOp may have removed later ops in the
-      // same batch, and replaying a dropped op would resurrect it.
-      if (ops.length < PUSH_BATCH_SIZE && refused === 0) break;
+      // A refusal ends the PASS, not just the batch: the reconciliation just
+      // rewrote local state under the drain, and rejectOp may have removed
+      // later ops. The survivors are replayed on the next pass against the
+      // reconciled state instead of the one they were read under.
+      if (refusedInBatch) break;
+      if (ops.length < PUSH_BATCH_SIZE) break;
     }
 
     if (refused > 0) {

@@ -87,7 +87,10 @@ export interface GraphReader {
    * All tag nodes of a space (`kind='tag'`, live), title-ordered — the
    * vocabulary the tag facet and the panel's tag tray read.
    */
-  watchSpaceTags(spaceId: string, cb: (tags: ResourceTag[]) => void): Unsubscribe;
+  watchSpaceTags(
+    spaceId: string,
+    cb: (tags: ResourceTag[]) => void
+  ): Unsubscribe;
 
   /**
    * The tags OF each node in a space: `node id → its tag nodes`, resolved over

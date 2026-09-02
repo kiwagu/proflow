@@ -83,10 +83,9 @@ describe('graph sync ledger', () => {
       serverNode(NODE_B, 'Also from server', second),
     ]);
     expect(watermark?.getTime()).toBe(second.getTime());
-    expect((await reader.readNodes(SPACE, 'live')).map((n) => n.title)).toEqual([
-      'Also from server',
-      'From server',
-    ]);
+    expect((await reader.readNodes(SPACE, 'live')).map((n) => n.title)).toEqual(
+      ['Also from server', 'From server']
+    );
 
     // A later pull of the same row overwrites it: the server is the sole
     // authority for these rows, so what arrives IS the current truth.
@@ -132,9 +131,9 @@ describe('graph sync ledger', () => {
 
     await ledger.applyInventory(SPACE, 'knowledge_resources', []);
     expect(await ledger.inventoryDue(SPACE, 'knowledge_resources')).toBe(false);
-    expect(await ledger.inventoryAt(SPACE, 'knowledge_resources')).toBeInstanceOf(
-      Date
-    );
+    expect(
+      await ledger.inventoryAt(SPACE, 'knowledge_resources')
+    ).toBeInstanceOf(Date);
 
     const later = new Date(Date.now() + INVENTORY_INTERVAL_MS + 1_000);
     expect(await ledger.inventoryDue(SPACE, 'knowledge_resources', later)).toBe(
@@ -212,10 +211,7 @@ describe('graph sync ledger', () => {
   it('refuses a table it does not replicate', async () => {
     const { db, writer } = await open();
     await expect(
-      writer.applyPullBatch(
-        'grants' as never,
-        [{ id: NODE_A }]
-      )
+      writer.applyPullBatch('grants' as never, [{ id: NODE_A }])
     ).rejects.toThrow('not a replicated table');
     await db.close();
   });

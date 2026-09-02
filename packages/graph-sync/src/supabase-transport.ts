@@ -81,15 +81,18 @@ export function createSupabaseGraphRowTransport(
   }
 
   return {
-    async pullSince(name, spaceId, since, limit) {
+    async pullSince(name, spaceId, since, limit, offset) {
       let query = table(name)
         .select('*')
         .eq('space_id', spaceId)
+        // Id as tiebreaker: equal timestamps must order deterministically or
+        // offset pages could overlap/skip between requests.
         .order(CURSOR_COLUMN, { ascending: true })
+        .order('id', { ascending: true })
         // One extra row is the cheapest honest answer to "is there more?":
         // a full page is ambiguous on its own, and a count query would be a
         // second round-trip per page.
-        .limit(limit + 1);
+        .range(offset, offset + limit);
       if (since) query = query.gte(CURSOR_COLUMN, since.toISOString());
       const { data, error } = await query;
       if (error) throw classify(error);

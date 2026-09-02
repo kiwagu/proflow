@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openTestDb, TEST_USER } from './graph.test-db.js';
 import { createPgliteGraphReader } from './graph.reader.js';
-import {
-  createPgliteGraphRepository,
-  GRAPH_OPS,
-} from './graph.repository.js';
+import { createPgliteGraphRepository, GRAPH_OPS } from './graph.repository.js';
 import { createPgliteGraphSyncLedger } from './graph.sync-ledger.js';
 
 /**
@@ -147,7 +144,7 @@ describe('graph repository', () => {
     expect(live.map((n) => n.id)).toEqual([child]);
 
     expect((await repo.restoreNode(folder)).isOk()).toBe(true);
-    expect((await reader.readNodes(spaceId, 'trashed'))).toEqual([]);
+    expect(await reader.readNodes(spaceId, 'trashed')).toEqual([]);
 
     await db.close();
   });

@@ -94,13 +94,17 @@ export interface PullPage {
 export interface GraphRowTransport {
   /**
    * Rows of one table in one space changed at or after `since` (null = the
-   * whole visible set), oldest first, at most `limit` rows.
+   * whole visible set), oldest first (id as tiebreaker), at most `limit`
+   * rows, skipping the first `offset`. The offset is how one catch-up pass
+   * pages: equal timestamps are common (bulk imports, cascades), so paging
+   * by watermark alone could never get past a page of identical instants.
    */
   pullSince(
     table: GraphSyncTableName,
     spaceId: string,
     since: Date | null,
-    limit: number
+    limit: number,
+    offset: number
   ): Promise<PullPage>;
 
   /**

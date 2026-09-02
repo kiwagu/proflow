@@ -90,8 +90,10 @@ export async function createReplica(
     reader: createPgliteGraphReader(local),
     replica,
     async rows<T>(table: string, where?: string, params?: unknown[]) {
+      // No ORDER BY: not every table has an `id` (the sync ledger keys on
+      // space+table). Callers that care about order sort in the assertion.
       const { rows } = await db.query<T>(
-        `select * from ${table}${where ? ` where ${where}` : ''} order by id`,
+        `select * from ${table}${where ? ` where ${where}` : ''}`,
         params
       );
       return rows;

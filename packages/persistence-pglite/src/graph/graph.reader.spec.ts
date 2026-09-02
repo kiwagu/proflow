@@ -93,9 +93,9 @@ describe('graph reader', () => {
     const descendants = await reader.readDescendantIds(root);
     expect(new Set(descendants)).toEqual(new Set([mid, leaf]));
 
-    expect((await reader.readEdges(spaceId, 'shortcut')).map((e) => e.to)).toEqual([
-      leaf,
-    ]);
+    expect(
+      (await reader.readEdges(spaceId, 'shortcut')).map((e) => e.to)
+    ).toEqual([leaf]);
 
     await close();
   });
@@ -105,9 +105,9 @@ describe('graph reader', () => {
     const node = await create('file', 'Report');
     const bare = await create('text', 'No satellites');
 
-    expect((await repo.setDescription(node, 'What it covers', TEST_USER)).isOk()).toBe(
-      true
-    );
+    expect(
+      (await repo.setDescription(node, 'What it covers', TEST_USER)).isOk()
+    ).toBe(true);
     const blobId = testId('kmb');
     await db.query(
       `insert into kb_media_blob
@@ -193,10 +193,14 @@ describe('graph reader', () => {
     expect((await repo.trashNode(trashed, TEST_USER)).isOk()).toBe(true);
 
     const typing = await reader.searchByTitle(spaceId, 'quar rev');
-    expect(typing.map((node) => node.title)).toEqual(['Quarterly Revenue Plan']);
+    expect(typing.map((node) => node.title)).toEqual([
+      'Quarterly Revenue Plan',
+    ]);
 
     const midWord = await reader.searchByTitle(spaceId, 'venue');
-    expect(midWord.map((node) => node.title)).toEqual(['Quarterly Revenue Plan']);
+    expect(midWord.map((node) => node.title)).toEqual([
+      'Quarterly Revenue Plan',
+    ]);
 
     expect(await reader.searchByTitle(spaceId, '   ')).toEqual([]);
     expect(
