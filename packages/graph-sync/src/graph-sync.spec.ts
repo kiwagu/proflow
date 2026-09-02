@@ -526,6 +526,33 @@ describe('graph row replication — starred and per-user state', () => {
 });
 
 describe('graph row replication — watch', () => {
+  it('feeds the live queries: a pull landing rows fires watchNodes', async () => {
+    // The replica writes into the same tables the read vocabulary's live
+    // queries observe, so hydrate and refresh reach the UI with no extra
+    // plumbing: the pull IS the notification.
+    const seen: string[][] = [];
+    const unsubscribe = alice.reader.watchNodes(SPACE, 'live', (nodes) =>
+      seen.push(nodes.map((n) => n.title))
+    );
+
+    await seedNode(NODE_A, 'Hydrated');
+    await alice.sync.pull(SPACE);
+    await waitFor(async () =>
+      seen.some((titles) => titles.includes('Hydrated'))
+    );
+
+    await seedNode(NODE_B, 'Refreshed');
+    await alice.sync.pull(SPACE);
+    await waitFor(async () =>
+      seen.some((titles) => titles.includes('Refreshed'))
+    );
+
+    unsubscribe();
+    // The live extension detaches asynchronously; give it a beat so the
+    // teardown does not race the next test's database close.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
   it('converges on the poll alone when every nudge is dropped', async () => {
     await seedNode(NODE_A, 'Before the watch');
     const stop = alice.sync.watch(SPACE);
