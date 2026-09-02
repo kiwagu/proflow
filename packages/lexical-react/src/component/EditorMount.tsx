@@ -100,7 +100,9 @@ export function EditorMount({
   const [lastKey, setLastKey] = useState(configKey);
   if (lastKey !== configKey) {
     setLastKey(configKey);
-    setState(createMountState({ type, namespace, withIds, theme, isInteractable }));
+    setState(
+      createMountState({ type, namespace, withIds, theme, isInteractable })
+    );
   }
 
   const wrapper = state.wrapper;

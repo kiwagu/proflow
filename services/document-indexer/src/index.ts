@@ -34,7 +34,9 @@ async function main(): Promise<void> {
   const supabase = createServiceRoleSupabaseClient();
   const embedder = createServerEmbedder();
   const batchSize = positiveIntFromEnv('DOCUMENT_INDEXER_BATCH_SIZE');
-  const pollIntervalMs = positiveIntFromEnv('DOCUMENT_INDEXER_POLL_INTERVAL_MS');
+  const pollIntervalMs = positiveIntFromEnv(
+    'DOCUMENT_INDEXER_POLL_INTERVAL_MS'
+  );
 
   if (process.argv.includes('--once')) {
     const result = await runIndexPass(supabase, embedder, { batchSize });

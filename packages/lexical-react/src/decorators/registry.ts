@@ -54,8 +54,7 @@ export function getReactDecorator<N extends DecoratorNodeName>(
 ): ReactDecoratorComponent<DecoratorPropsFor<N>> | undefined {
   void name;
   return getDecorator<DecoratorPropsFor<N>>(klass) as
-    | ReactDecoratorComponent<DecoratorPropsFor<N>>
-    | undefined;
+    ReactDecoratorComponent<DecoratorPropsFor<N>> | undefined;
 }
 
 /** Drop every registration. Tests use this to keep the registry isolated. */

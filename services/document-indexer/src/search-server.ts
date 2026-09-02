@@ -1,4 +1,8 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 
 import type { IEmbeddingService } from '@workspace/domain';
 
@@ -85,7 +89,9 @@ async function handle(
       });
       json(res, 200, { hits });
     } catch (e) {
-      json(res, 422, { error: e instanceof Error ? e.message : 'Search failed' });
+      json(res, 422, {
+        error: e instanceof Error ? e.message : 'Search failed',
+      });
     }
     return;
   }

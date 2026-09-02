@@ -148,7 +148,7 @@ export function FormatTools({
       role="toolbar"
       aria-label={labels.toolbar}
       className={cn(
-        'flex items-center gap-1 border-b bg-background p-1',
+        'bg-background flex items-center gap-1 border-b p-1',
         className
       )}
     >
@@ -298,7 +298,7 @@ export function FormatTools({
               type="button"
               variant="ghost"
               size="sm"
-              className="mt-2 w-full text-destructive"
+              className="text-destructive mt-2 w-full"
               onClick={() => {
                 editor.dispatchCommand(UNLINK_COMMAND, undefined);
                 setLinkOpen(false);

@@ -30,10 +30,7 @@ import {
   INTERNAL_TRANSFORMERS,
 } from '@workspace/lexical-nodes';
 import { SKIP_SCROLL_INTO_VIEW_TAG } from '@workspace/lexical-nodes';
-import {
-  $getId,
-  INITIALIZE_DOCUMENT_IDS,
-} from '@workspace/lexical-nodes';
+import { $getId, INITIALIZE_DOCUMENT_IDS } from '@workspace/lexical-nodes';
 import {
   $addUpdateTag,
   $createParagraphNode,
@@ -988,8 +985,7 @@ function $splitListNodeToRoot(
   while (currentList && currentList !== topListNode) {
     const nextSiblings = currentNode.getNextSiblings();
     const currentListParent = currentList.getParent() as
-      | ListItemNode
-      | RootNode;
+      ListItemNode | RootNode;
 
     if ($isRootOrShadowRoot(currentListParent)) {
       break;

@@ -275,12 +275,10 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
         const { line, positionOnLine } = $getSelectionInfo(target, selection);
 
         if (key === 'ArrowDown') {
-          if (
-            !(
-              line === CodeCaretPosition.Collapsed ||
-              line === CodeCaretPosition.Last
-            )
-          ) {
+          if (!(
+            line === CodeCaretPosition.Collapsed ||
+            line === CodeCaretPosition.Last
+          )) {
             return false;
           }
           queueMicrotask(() => {
@@ -300,12 +298,10 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
             });
           });
         } else {
-          if (
-            !(
-              line === CodeCaretPosition.Collapsed ||
-              line === CodeCaretPosition.First
-            )
-          ) {
+          if (!(
+            line === CodeCaretPosition.Collapsed ||
+            line === CodeCaretPosition.First
+          )) {
             return false;
           }
           queueMicrotask(() => {

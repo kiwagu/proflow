@@ -75,7 +75,7 @@ export function FilePane({
         {renderDocument(document)}
       </div>
     ) : (
-      <p className="p-6 text-muted-foreground" data-testid="pane-empty">
+      <p className="text-muted-foreground p-6" data-testid="pane-empty">
         Opening…
       </p>
     );
@@ -95,7 +95,7 @@ export function FilePane({
     );
 
   return (
-    <p className="p-6 text-muted-foreground" data-testid="pane-empty">
+    <p className="text-muted-foreground p-6" data-testid="pane-empty">
       {emptyLabel}
     </p>
   );
@@ -122,18 +122,18 @@ function FolderPane({
       </div>
       <ul className="flex flex-col gap-1">
         {contents.length === 0 ? (
-          <li className="text-sm text-muted-foreground">Empty folder.</li>
+          <li className="text-muted-foreground text-sm">Empty folder.</li>
         ) : null}
         {contents.map((child) => (
           <li key={child.id}>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
+              className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm"
               onClick={() => setOpenFileId(child.id)}
             >
               <FileIcon node={child} />
               <span className="min-w-0 flex-1 truncate">{child.name}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-muted-foreground text-xs">
                 {formatSize(child.size)}
               </span>
             </button>

@@ -118,8 +118,8 @@ export function TableInsert({
                     role="gridcell"
                     aria-label={labels.size(rows, columns)}
                     className={cn(
-                      'size-4 rounded-xs border border-border',
-                      active ? 'border-transparent bg-accent' : 'bg-background'
+                      'border-border size-4 rounded-xs border',
+                      active ? 'bg-accent border-transparent' : 'bg-background'
                     )}
                     onPointerEnter={() => setHover({ rows, columns })}
                     onFocus={() => setHover({ rows, columns })}
@@ -129,7 +129,7 @@ export function TableInsert({
               })}
             </div>
           ))}
-          <div className="pt-1 text-center text-xs text-muted-foreground">
+          <div className="text-muted-foreground pt-1 text-center text-xs">
             {hover ? labels.size(hover.rows, hover.columns) : '\u00a0'}
           </div>
         </div>

@@ -107,7 +107,7 @@ export function FileViewer({
       className={cn('flex h-full min-h-0 flex-col', className)}
       data-testid="file-viewer"
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+      <header className="border-border flex shrink-0 items-center gap-2 border-b px-4 py-2">
         <FileIcon node={node} />
         <h2
           className="min-w-0 flex-1 truncate text-sm font-medium"
@@ -115,12 +115,12 @@ export function FileViewer({
         >
           {node.name}
         </h2>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-muted-foreground text-xs">
           {node.mime} · {formatSize(node.size)}
         </span>
         {url ? (
           <a
-            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1"
             title="Download"
             aria-label="Download"
             data-testid="file-download"
@@ -131,7 +131,7 @@ export function FileViewer({
           </a>
         ) : null}
       </header>
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/40 p-4">
+      <div className="bg-muted/40 flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
         <ViewerBody
           node={node}
           url={url}
@@ -192,7 +192,7 @@ function ViewerBody({
       <iframe
         src={url}
         title={node.name}
-        className="h-full w-full rounded-md border border-border bg-white"
+        className="border-border h-full w-full rounded-md border bg-white"
       />
     );
   if (category === 'archive' && renderArchive)
@@ -200,7 +200,7 @@ function ViewerBody({
   if (category === 'text')
     return (
       <pre
-        className="h-full w-full overflow-auto rounded-md border border-border bg-background p-4 font-mono text-xs whitespace-pre-wrap"
+        className="border-border bg-background h-full w-full overflow-auto rounded-md border p-4 font-mono text-xs whitespace-pre-wrap"
         data-testid="file-viewer-text"
       >
         {text}
@@ -208,11 +208,11 @@ function ViewerBody({
     );
 
   return (
-    <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
+    <div className="text-muted-foreground flex flex-col items-center gap-3 text-center">
       <FileIcon node={node} className="size-12" />
       <p className="text-sm">No preview for this file type.</p>
       <a
-        className="text-sm text-primary underline"
+        className="text-primary text-sm underline"
         href={url}
         download={node.name}
       >

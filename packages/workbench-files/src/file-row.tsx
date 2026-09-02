@@ -90,7 +90,7 @@ export function FileRow(props: FileRowProps) {
     <div
       className={cn(
         'group/row relative',
-        props.dropTarget && 'rounded-md ring-1 ring-primary/60'
+        props.dropTarget && 'ring-primary/60 rounded-md ring-1'
       )}
       data-testid="file-row"
       data-file-id={props.node.id}
@@ -102,7 +102,7 @@ export function FileRow(props: FileRowProps) {
         tabIndex={0}
         aria-current={props.active ? 'true' : undefined}
         className={cn(
-          'flex h-7 w-full min-w-0 cursor-default items-center gap-2 rounded-md pr-7 text-sm transition-colors hover:bg-muted',
+          'hover:bg-muted flex h-7 w-full min-w-0 cursor-default items-center gap-2 rounded-md pr-7 text-sm transition-colors',
           props.active && 'bg-muted text-foreground'
         )}
         style={{ paddingLeft: `${0.5 + props.depth * 0.9}rem` }}
@@ -120,7 +120,7 @@ export function FileRow(props: FileRowProps) {
             aria-hidden
             data-testid="file-row-caret"
             className={cn(
-              'size-3 shrink-0 text-muted-foreground transition-transform duration-[120ms]',
+              'text-muted-foreground size-3 shrink-0 transition-transform duration-[120ms]',
               props.expanded && 'rotate-90'
             )}
             onClick={(e) => {
@@ -135,7 +135,7 @@ export function FileRow(props: FileRowProps) {
         {editing ? (
           <input
             ref={input}
-            className="min-w-0 flex-1 rounded-sm bg-background px-1 text-sm text-foreground ring-1 ring-primary outline-none"
+            className="bg-background text-foreground ring-primary min-w-0 flex-1 rounded-sm px-1 text-sm ring-1 outline-none"
             value={draft}
             aria-label="File name"
             data-testid="file-rename-input"
@@ -160,13 +160,13 @@ export function FileRow(props: FileRowProps) {
         {isArchive ? (
           props.unpacked ? (
             <PackageOpen
-              className="size-3.5 shrink-0 text-primary"
+              className="text-primary size-3.5 shrink-0"
               data-testid="archive-unpacked"
               aria-label="Unpacked"
             />
           ) : (
             <Package
-              className="size-3.5 shrink-0 text-muted-foreground"
+              className="text-muted-foreground size-3.5 shrink-0"
               data-testid="archive-packed"
               aria-label="Not unpacked yet"
             />
@@ -175,7 +175,7 @@ export function FileRow(props: FileRowProps) {
         {props.node.starred ? (
           <Star
             aria-label="Starred"
-            className="size-3 shrink-0 text-muted-foreground"
+            className="text-muted-foreground size-3 shrink-0"
           />
         ) : null}
       </div>
@@ -291,7 +291,7 @@ export function PendingRow({
 }) {
   return (
     <div
-      className="relative flex items-center gap-2 rounded-md py-1 pr-2 text-sm text-muted-foreground"
+      className="text-muted-foreground relative flex items-center gap-2 rounded-md py-1 pr-2 text-sm"
       style={{ paddingLeft: `${0.5 + depth * 0.9}rem` }}
       data-testid="file-pending"
     >
@@ -301,9 +301,9 @@ export function PendingRow({
       <span className="w-9 text-right text-xs tabular-nums">
         {Math.round(progress * 100)}%
       </span>
-      <div className="absolute right-0 bottom-0 left-0 h-px bg-border">
+      <div className="bg-border absolute right-0 bottom-0 left-0 h-px">
         <div
-          className="h-full bg-primary"
+          className="bg-primary h-full"
           style={{ width: `${progress * 100}%` }}
         />
       </div>

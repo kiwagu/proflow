@@ -67,7 +67,7 @@ const LanguageIcons: Record<SupportedLanguage, IconComponent> = {
 function StaticLabel({ language }: { language: SupportedLanguage }) {
   const Icon = LanguageIcons[language];
   return (
-    <div className="text-xs font-sans font-medium flex items-center gap-1 p-2 text-muted-foreground/50">
+    <div className="text-muted-foreground/50 flex items-center gap-1 p-2 font-sans text-xs font-medium">
       <Icon className="size-4" />
       <span className="select-none">{LanguageDefinitions[language].label}</span>
     </div>
@@ -152,12 +152,12 @@ function PreviewToggle({
     <label className="inline-flex items-center">
       <input
         type="checkbox"
-        className="sr-only peer"
+        className="peer sr-only"
         checked={checked}
         onChange={(e) => onChange(e.currentTarget.checked)}
       />
-      <span className="inline-flex h-4 w-8 shrink-0 items-center rounded-full border-2 border-transparent bg-border transition-colors hover:ring hover:ring-border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-checked:bg-primary">
-        <span className="block size-3 rounded-full bg-background transition-transform peer-checked:translate-x-4" />
+      <span className="bg-border hover:ring-border peer-focus-visible:ring-ring peer-checked:bg-primary inline-flex h-4 w-8 shrink-0 items-center rounded-full border-2 border-transparent transition-colors peer-focus-visible:ring-2 hover:ring">
+        <span className="bg-background block size-3 rounded-full transition-transform peer-checked:translate-x-4" />
       </span>
     </label>
   );
@@ -252,19 +252,19 @@ export function CodeBoxAccessory({
 
   return (
     <div
-      className="fixed pointer-events-none md-code-box-header"
+      className="md-code-box-header pointer-events-none fixed"
       ref={glueRef as React.RefObject<HTMLDivElement>}
     >
-      <div className="w-full flex justify-between content-center items-start p-1 pointer-events-auto text-muted-foreground/50">
+      <div className="text-muted-foreground/50 pointer-events-auto flex w-full content-center items-start justify-between p-1">
         <CodeLanguageSelector
           language={language}
           setLanguage={setLanguageOnNode}
           editor={editor}
         />
-        <div className="flex items-center h-full">
+        <div className="flex h-full items-center">
           {showPreviewToggle && (
-            <div className="flex items-center gap-2 mr-2">
-              <div className="text-xs text-muted-foreground/50">Preview</div>
+            <div className="mr-2 flex items-center gap-2">
+              <div className="text-muted-foreground/50 text-xs">Preview</div>
               <PreviewToggle
                 checked={isPreviewMode}
                 onChange={(enabled) => {
@@ -344,14 +344,14 @@ function SvgPreview({
   }, [svgContent]);
 
   return (
-    <div className="absolute top-12 inset-x-0 bottom-0 z-10 p-2">
+    <div className="absolute inset-x-0 top-12 bottom-0 z-10 p-2">
       {!trimmed && (
-        <div className="flex items-center justify-center h-full text-muted-foreground/50 text-sm">
+        <div className="text-muted-foreground/50 flex h-full items-center justify-center text-sm">
           No SVG content
         </div>
       )}
       {trimmed && !isSvg && (
-        <div className="flex items-center justify-center h-full text-destructive text-sm">
+        <div className="text-destructive flex h-full items-center justify-center text-sm">
           Invalid SVG content
         </div>
       )}
@@ -359,7 +359,7 @@ function SvgPreview({
         <div className="size-full overflow-hidden p-2">
           <div
             ref={containerRef}
-            className="size-full flex items-center justify-center min-h-0"
+            className="flex size-full min-h-0 items-center justify-center"
             // The content is sanitized above; this mirrors the origin's
             // inline-SVG render path, which has no React-safe equivalent.
             dangerouslySetInnerHTML={{ __html: sanitizeSvg(svgContent) }}
@@ -396,15 +396,15 @@ export function StaticCodeBoxAccessory({
     <>
       <div
         className={cn(
-          'md-code-box-header w-full flex absolute top-0 left-0 justify-between content-center items-center p-1 pointer-events-auto select-none',
+          'md-code-box-header pointer-events-auto absolute top-0 left-0 flex w-full content-center items-center justify-between p-1 select-none',
           'text-muted-foreground/50'
         )}
       >
         <StaticLabel language={language} />
-        <div className="flex gap-2 items-center">
+        <div className="flex items-center gap-2">
           {showPreviewToggle && (
             <div className="flex items-center gap-2">
-              <div className="text-xs text-muted-foreground/50">Preview</div>
+              <div className="text-muted-foreground/50 text-xs">Preview</div>
               <PreviewToggle
                 checked={isPreviewMode}
                 onChange={setIsPreviewMode}

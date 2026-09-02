@@ -135,7 +135,7 @@ export function CommandPalette({
                     className="gap-3"
                   >
                     <Icon
-                      className="size-4 shrink-0 text-muted-foreground"
+                      className="text-muted-foreground size-4 shrink-0"
                       aria-hidden
                     />
                     <span className="flex min-w-0 flex-col gap-0.5">

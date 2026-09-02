@@ -1,7 +1,11 @@
 import type { IEmbeddingService } from '@workspace/domain';
 import { passageWindows } from '@workspace/embedding';
 
-import { foldDocument, titleFromMarkdown, treeToMarkdown } from './document-text.js';
+import {
+  foldDocument,
+  titleFromMarkdown,
+  treeToMarkdown,
+} from './document-text.js';
 
 /**
  * The derive pass: canonical bytes in, one document's index rows out.

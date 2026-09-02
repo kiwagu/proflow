@@ -119,11 +119,17 @@ export function SearchHighlight({
   useAutoRegister(editor, (editorInstance) =>
     mergeRegister(
       registerInternalLayoutShiftListener(editorInstance, update),
-      registerEditorWidthObserver(editorInstance, update, '[data-block-content]'),
-      editorInstance.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
-        if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
-        update();
-      })
+      registerEditorWidthObserver(
+        editorInstance,
+        update,
+        '[data-block-content]'
+      ),
+      editorInstance.registerUpdateListener(
+        ({ dirtyElements, dirtyLeaves }) => {
+          if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
+          update();
+        }
+      )
     )
   );
 
@@ -153,8 +159,7 @@ export function FloatingSearchHighlight({
   className?: (...classes: (string | false | undefined)[]) => string;
 }) {
   const state = useStore(FindAndReplaceStore);
-  const join =
-    className ?? ((...classes) => classes.filter(Boolean).join(' '));
+  const join = className ?? ((...classes) => classes.filter(Boolean).join(' '));
 
   return createPortal(
     <>
@@ -165,7 +170,7 @@ export function FloatingSearchHighlight({
           key={index}
           style={item.style}
           className={join(
-            'z-10 m-0 text-transparent h-4.5 absolute top-0 left-0 opacity-50 pointer-events-none',
+            'pointer-events-none absolute top-0 left-0 z-10 m-0 h-4.5 text-transparent opacity-50',
             item.idx === state.currentMatch + 1 ? 'bg-accent' : 'bg-accent/50'
           )}
         />

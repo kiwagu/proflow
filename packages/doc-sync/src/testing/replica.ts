@@ -64,7 +64,9 @@ export interface Replica {
   edit(text: string): Promise<void>;
   push(): ReturnType<ReturnType<typeof createDocumentSync>['push']>;
   pull(): ReturnType<ReturnType<typeof createDocumentSync>['pull']>;
-  watch(hooks?: Parameters<ReturnType<typeof createDocumentSync>['watch']>[2]): () => void;
+  watch(
+    hooks?: Parameters<ReturnType<typeof createDocumentSync>['watch']>[2]
+  ): () => void;
   proposeCompaction(coversSeq: number): Promise<boolean>;
   snapshotLocally(): Promise<void>;
   /** Throws the in-memory document away and rebuilds it from local storage. */

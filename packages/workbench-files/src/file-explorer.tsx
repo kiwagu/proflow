@@ -327,7 +327,7 @@ export function FileExplorer({
         />
         {importing.length > 0 ? (
           <span
-            className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+            className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums"
             data-testid="importing"
           >
             {importing.length} importing
@@ -344,7 +344,7 @@ export function FileExplorer({
             {items.length > 0 || importing.length > 0 ? (
               renderRows(items, 0)
             ) : (
-              <p className="px-2 py-1 text-xs text-muted-foreground">
+              <p className="text-muted-foreground px-2 py-1 text-xs">
                 Drop files here, or use the buttons above.
               </p>
             )}
@@ -378,10 +378,10 @@ export function FileExplorer({
       </ScrollArea>
       {dragging ? (
         <div
-          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/40 bg-background/80"
+          className="border-primary/40 bg-background/80 pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed"
           data-testid="file-drop-overlay"
         >
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-3 text-sm text-foreground shadow-lg">
+          <div className="border-border bg-background text-foreground flex items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg">
             <Upload className="size-4 shrink-0" />
             Drop to import
           </div>

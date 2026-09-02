@@ -40,7 +40,10 @@ function documentBytes(paragraphs: string[]): Uint8Array {
 
 describe('deriveDocument', () => {
   it('derives chunks and a title from canonical bytes', async () => {
-    const snapshot = documentBytes(['Meeting notes', 'We agreed to ship on Friday.']);
+    const snapshot = documentBytes([
+      'Meeting notes',
+      'We agreed to ship on Friday.',
+    ]);
 
     const derived = await deriveDocument({ snapshot }, createHashEmbedder());
 
@@ -67,7 +70,9 @@ describe('deriveDocument', () => {
             {
               type: 'paragraph',
               $: { id: 'p0' },
-              children: [{ type: 'text', $: { id: 't0' }, text: 'first', format: 0 }],
+              children: [
+                { type: 'text', $: { id: 't0' }, text: 'first', format: 0 },
+              ],
             },
           ],
         },
@@ -87,13 +92,20 @@ describe('deriveDocument', () => {
             {
               type: 'paragraph',
               $: { id: 'p0' },
-              children: [{ type: 'text', $: { id: 't0' }, text: 'first', format: 0 }],
+              children: [
+                { type: 'text', $: { id: 't0' }, text: 'first', format: 0 },
+              ],
             },
             {
               type: 'paragraph',
               $: { id: 'p1' },
               children: [
-                { type: 'text', $: { id: 't1' }, text: 'appended later', format: 0 },
+                {
+                  type: 'text',
+                  $: { id: 't1' },
+                  text: 'appended later',
+                  format: 0,
+                },
               ],
             },
           ],
@@ -104,8 +116,14 @@ describe('deriveDocument', () => {
     unsubscribe();
     expect(updates.length).toBeGreaterThan(0);
 
-    const withoutTail = await deriveDocument({ snapshot }, createHashEmbedder());
-    const withTail = await deriveDocument({ snapshot, updates }, createHashEmbedder());
+    const withoutTail = await deriveDocument(
+      { snapshot },
+      createHashEmbedder()
+    );
+    const withTail = await deriveDocument(
+      { snapshot, updates },
+      createHashEmbedder()
+    );
 
     expect(withoutTail.chunks[0]?.text).not.toContain('appended later');
     expect(withTail.chunks[0]?.text).toContain('appended later');
@@ -127,7 +145,10 @@ describe('deriveDocument', () => {
   });
 
   it('yields an empty, valid result for a document that was never written', async () => {
-    const derived = await deriveDocument({ snapshot: null }, createHashEmbedder());
+    const derived = await deriveDocument(
+      { snapshot: null },
+      createHashEmbedder()
+    );
 
     expect(derived).toEqual({ title: '', chunks: [] });
   });
@@ -135,11 +156,15 @@ describe('deriveDocument', () => {
 
 describe('titleFromMarkdown', () => {
   it('prefers the first heading', () => {
-    expect(titleFromMarkdown('\n\n## Quarterly plan\n\nbody')).toBe('Quarterly plan');
+    expect(titleFromMarkdown('\n\n## Quarterly plan\n\nbody')).toBe(
+      'Quarterly plan'
+    );
   });
 
   it('falls back to the first non-empty line', () => {
-    expect(titleFromMarkdown('\n\njust a paragraph\nmore')).toBe('just a paragraph');
+    expect(titleFromMarkdown('\n\njust a paragraph\nmore')).toBe(
+      'just a paragraph'
+    );
   });
 
   it('is empty for an empty document', () => {

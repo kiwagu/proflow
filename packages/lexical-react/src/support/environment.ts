@@ -46,8 +46,7 @@ export function isTouchDevice(): boolean {
 const MOBILE_WIDTH_BREAKPOINT = 640;
 
 let mobileWidth =
-  typeof window !== 'undefined' &&
-  window.innerWidth < MOBILE_WIDTH_BREAKPOINT;
+  typeof window !== 'undefined' && window.innerWidth < MOBILE_WIDTH_BREAKPOINT;
 
 if (typeof window !== 'undefined') {
   window.addEventListener('resize', () => {
