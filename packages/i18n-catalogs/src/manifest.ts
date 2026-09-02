@@ -1,7 +1,12 @@
 import type { PlatformLocale } from '@workspace/settings-runtime';
 import { PLATFORM_LOCALES } from '@workspace/settings-runtime';
 
-export type I18nDomain = 'platform' | 'author' | 'graph' | 'notifications';
+export type I18nDomain =
+  | 'platform'
+  | 'author'
+  | 'graph'
+  | 'workbench'
+  | 'notifications';
 
 export type I18nLocale = PlatformLocale;
 
@@ -21,6 +26,11 @@ export const CATALOG_MANIFEST = {
     domains: ['graph'] as const,
     supportedLocales: SUPPORTED_LOCALES,
   },
+  workbench: {
+    // Local-first workbench surfaces: editor shell, file explorer, palette.
+    domains: ['workbench'] as const,
+    supportedLocales: SUPPORTED_LOCALES,
+  },
   notifications: {
     domains: ['messages'] as const,
     supportedLocales: SUPPORTED_LOCALES,
@@ -33,6 +43,8 @@ export type AuthorCatalogDomain =
   (typeof CATALOG_MANIFEST.author.domains)[number];
 export type GraphCatalogDomain =
   (typeof CATALOG_MANIFEST.graph.domains)[number];
+export type WorkbenchCatalogDomain =
+  (typeof CATALOG_MANIFEST.workbench.domains)[number];
 export type NotificationsCatalogDomain =
   (typeof CATALOG_MANIFEST.notifications.domains)[number];
 
