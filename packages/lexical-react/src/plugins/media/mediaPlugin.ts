@@ -17,11 +17,7 @@ import {
 } from 'lexical';
 import { $insertNodesAndSplitList } from '../../utils';
 import type { PluginFunction } from '../pluginManager';
-import {
-  getAttachmentStore,
-  setLocalPreviewFor,
-  setUploadProgressFor,
-} from './attachmentStore';
+import { getAttachmentStore, setUploadProgressFor } from './attachmentStore';
 
 /** Where dropped files land relative to an existing block. */
 export type InsertionPoint = { key: NodeKey; position: 'before' | 'after' };
@@ -63,9 +59,8 @@ function $insertAt(node: LexicalNode, at?: InsertionPoint) {
 /**
  * A node goes in at once and its bytes follow. The node starts with an empty
  * hash — the document references bytes by content hash and there is none
- * until the store has them — and is painted from a local object URL in the
- * meantime; once stored, the hash lands on the node and the preview is
- * released.
+ * until the store has them — and gets its hash once the bytes are stored.
+ * Progress is published per node key so a decorator can paint the wait.
  */
 async function attach(
   editor: LexicalEditor,
@@ -82,7 +77,6 @@ async function attach(
         : 'file';
     const size =
       kind === 'image' ? await imageSize(file) : { width: 0, height: 0 };
-    const preview = kind === 'file' ? '' : URL.createObjectURL(file);
     const mime = file.type || 'application/octet-stream';
 
     let key = '';
@@ -107,7 +101,6 @@ async function attach(
     // Further files follow the one just inserted.
     at = undefined;
 
-    if (preview) setLocalPreviewFor(key, preview);
     setUploadProgressFor(key, 0);
     try {
       const info = await store.importFile(file, (done, total) =>
@@ -131,10 +124,6 @@ async function attach(
       store.reportError?.(`Could not attach ${file.name}: ${String(e)}`);
     } finally {
       setUploadProgressFor(key, undefined);
-      if (preview) {
-        setLocalPreviewFor(key, undefined);
-        URL.revokeObjectURL(preview);
-      }
     }
   }
 }

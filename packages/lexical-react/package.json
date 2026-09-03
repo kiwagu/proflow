@@ -53,6 +53,7 @@
     "lexical": "catalog:",
     "linkify-it": "catalog:",
     "nanoid": "catalog:",
+    "prismjs": "catalog:",
     "ts-pattern": "catalog:",
     "unicode-emoji-json": "catalog:",
     "virtua": "catalog:"
@@ -75,6 +76,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "catalog:",
+    "vite": "catalog:",
     "vitest": "catalog:"
   }
 }

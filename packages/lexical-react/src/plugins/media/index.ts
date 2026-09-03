@@ -2,9 +2,7 @@ export {
   type AttachmentStore,
   cachedUrlResolver,
   getAttachmentStore,
-  localPreview,
   setAttachmentStore,
-  setLocalPreviewFor,
   setUploadProgressFor,
   uploadProgress,
 } from './attachmentStore';

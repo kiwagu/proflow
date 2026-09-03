@@ -2,7 +2,7 @@
  * @file A plugin in that binds Lexical selection updates to a Solid store.
  */
 
-import { $isAutoLinkNode, $isLinkNode } from '@lexical/link';
+import { $isLinkNode } from '@lexical/link';
 import type { ListNode } from '@lexical/list';
 // import { mergeRegister } from '@lexical/utils';
 import type { HeadingNode } from '@lexical/rich-text';
@@ -187,17 +187,11 @@ function $hasLinks(selection: RangeSelection) {
   if (selection.isCollapsed()) {
     const parent = selection.anchor.getNode().getParent();
     if (!parent) return false;
-    return $isLinkNode(parent) || $isAutoLinkNode(parent);
+    return $isLinkNode(parent);
   }
   return selection
     .getNodes()
-    .some(
-      (node) =>
-        $isLinkNode(node) ||
-        $isAutoLinkNode(node) ||
-        $isLinkNode(node.getParent()) ||
-        $isAutoLinkNode(node.getParent())
-    );
+    .some((node) => $isLinkNode(node) || $isLinkNode(node.getParent()));
 }
 
 export function selectionDataPlugin(lexicalWrapper?: LexicalWrapper) {

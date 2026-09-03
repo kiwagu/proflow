@@ -41,6 +41,7 @@ import { deleteCodeNode } from '../../plugins/code/deleteCodeNode';
 import { useAutoRegister } from '../../plugins/shared/utils';
 import { useIsInBlock, useIsNestedBlock } from '../../support/block';
 import { ENABLE_SVG_PREVIEW } from '../../support/featureFlags';
+import { EXTRA_PICKER_LANGUAGES } from '../../plugins/code/prismLanguages';
 import {
   type CodeBoxAccessoryLabels,
   defaultCodeBoxAccessoryLabels,
@@ -49,13 +50,31 @@ import {
 type IconComponent = FC<{ className?: string }>;
 
 /**
- * The picker offers the official code package's language registry — the
- * keys are what the highlighter understands, the values are display names.
- * Nothing here is hand-maintained: a language the highlighter gains shows up
- * in the picker with the fallback icon.
+ * The picker offers the official code package's language registry, plus the
+ * languages the product has always offered that the highlighter does not carry
+ * itself — those come from the module that also registers their grammars, so
+ * offering one and highlighting it cannot drift apart. A language the
+ * highlighter gains shows up here with the fallback icon and no edit to this
+ * file.
  */
-const PICKER_LANGUAGES: ReadonlyArray<[key: string, label: string]> =
-  Object.entries(CODE_LANGUAGE_FRIENDLY_NAME_MAP);
+const PICKER_LANGUAGES: ReadonlyArray<[key: string, label: string]> = [
+  ...Object.entries(CODE_LANGUAGE_FRIENDLY_NAME_MAP),
+  ...EXTRA_PICKER_LANGUAGES,
+];
+
+const EXTRA_LANGUAGE_NAMES = new Map(EXTRA_PICKER_LANGUAGES);
+
+/**
+ * The display name for a language. `getLanguageFriendlyName` only knows the
+ * highlighter's own registry and echoes the raw key for anything else, which
+ * would label a language the picker offered as "JSON" with a lowercase `json`
+ * everywhere outside the menu row.
+ */
+function languageFriendlyName(language: string): string {
+  return (
+    EXTRA_LANGUAGE_NAMES.get(language) ?? getLanguageFriendlyName(language)
+  );
+}
 
 const FallbackIcon: IconComponent = FileTextIcon;
 
@@ -101,7 +120,7 @@ function StaticLabel({ language }: { language: string }) {
   return (
     <div className="text-muted-foreground/50 flex items-center gap-1 p-2 font-sans text-xs font-medium">
       <LanguageIcon language={language} className="size-4" />
-      <span className="select-none">{getLanguageFriendlyName(language)}</span>
+      <span className="select-none">{languageFriendlyName(language)}</span>
     </div>
   );
 }
@@ -131,7 +150,7 @@ function CodeLanguageSelector({
           tabIndex={-1}
         >
           <LanguageIcon language={current} className="size-4" />
-          <span>{getLanguageFriendlyName(current)}</span>
+          <span>{languageFriendlyName(current)}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>

@@ -369,10 +369,11 @@ function $isEmpty() {
       if (!$isParagraphNode(firstChild)) {
         return false;
       }
-      // A pasted mention counts as content even before its title resolves.
-      $traverseNodes(child, (n) => {
-        if ($isResourceMentionNode(n)) return false;
-      });
+      // A pasted mention counts as content even before its title resolves,
+      // so it would otherwise slip past the text check below.
+      for (const { node } of $dfsIterator(child)) {
+        if ($isResourceMentionNode(node)) return false;
+      }
     }
 
     if (child.getTextContent() !== '') return false;
@@ -560,15 +561,6 @@ function _$isCaretAtContainingElementTop(
   if (!caretRect) return false;
 
   return isRectFlushWith(caretRect, domElem.getBoundingClientRect(), 'top', 5);
-}
-
-export function $traverseNodes(
-  start: LexicalNode,
-  callback: (node: LexicalNode) => void
-) {
-  for (const { node } of $dfsIterator(start)) {
-    callback(node);
-  }
 }
 
 export function nodeByKey(editor: LexicalEditor | EditorState, key: NodeKey) {
