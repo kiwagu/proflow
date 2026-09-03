@@ -1,3 +1,13 @@
+// The package is consumed as SOURCE (exports point at src/*.ts), so a
+// consumer's tsc compiles this file inside the CONSUMER's program, where the
+// sibling raw.d.ts ambient declaration is not part of the program. The
+// triple-slash reference pins it to this file so the `*.md?raw` module shape
+// travels with every consumer. The lint rule's "use import instead" advice
+// cannot apply: raw.d.ts is a global script declaring a wildcard module,
+// which an `import` would turn into a module and silently drop the
+// declaration.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="../../raw.d.ts" />
 import type { LexicalSession } from '@workspace/ai-ops/ai-toolkit';
 import { generateText, hasToolCall, type LanguageModel, stepCountIs } from 'ai';
 import API_COMPLETE from '../prompts/API_COMPLETE.md?raw';

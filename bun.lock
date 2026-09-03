@@ -764,6 +764,36 @@
         "typescript": "catalog:",
       },
     },
+    "packages/workbench-agent": {
+      "name": "@workspace/workbench-agent",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workspace/ai-agent": "workspace:*",
+        "@workspace/ai-local": "workspace:*",
+        "@workspace/domain": "workspace:*",
+        "@workspace/embedding": "workspace:*",
+        "@workspace/persistence-pglite": "workspace:*",
+        "lexical": "catalog:",
+        "neverthrow": "catalog:",
+      },
+      "devDependencies": {
+        "@testing-library/react": "catalog:",
+        "@types/node": "catalog:",
+        "@types/react": "catalog:",
+        "@workspace/eslint-config": "workspace:^",
+        "@workspace/typescript-config": "workspace:^",
+        "ai": "catalog:",
+        "eslint": "catalog:",
+        "jsdom": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "catalog:",
+      },
+    },
     "packages/workbench-editor": {
       "name": "@workspace/workbench-editor",
       "version": "0.1.0",
@@ -2270,6 +2300,8 @@
     "@workspace/typescript-config": ["@workspace/typescript-config@workspace:packages/typescript-config"],
 
     "@workspace/ui": ["@workspace/ui@workspace:packages/ui"],
+
+    "@workspace/workbench-agent": ["@workspace/workbench-agent@workspace:packages/workbench-agent"],
 
     "@workspace/workbench-editor": ["@workspace/workbench-editor@workspace:packages/workbench-editor"],
 
