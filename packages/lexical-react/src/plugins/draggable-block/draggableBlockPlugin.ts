@@ -137,16 +137,16 @@ function getBlockElement(
   useEdgeAsDefault = false
 ): HTMLElement | null {
   const topLevelNodeKeys = getTopLevelNodeKeys(editor);
-  if (topLevelNodeKeys.length === 0) return null;
+  const firstKey = topLevelNodeKeys[0];
+  const lastKey = topLevelNodeKeys[topLevelNodeKeys.length - 1];
+  if (firstKey === undefined || lastKey === undefined) return null;
 
   let blockElem: HTMLElement | null = null;
 
   editor.read(() => {
     if (useEdgeAsDefault) {
-      const firstElem = editor.getElementByKey(topLevelNodeKeys[0]);
-      const lastElem = editor.getElementByKey(
-        topLevelNodeKeys[topLevelNodeKeys.length - 1]
-      );
+      const firstElem = editor.getElementByKey(firstKey);
+      const lastElem = editor.getElementByKey(lastKey);
       if (firstElem && event.clientY < firstElem.getBoundingClientRect().top) {
         blockElem = firstElem;
         return;
@@ -487,7 +487,7 @@ function registerDraggableBlock(
         const lastInGroup = targetGroup[targetGroup.length - 1];
         const splitIndex = insertBefore
           ? targetNode.getIndexWithinParent()
-          : lastInGroup.getIndexWithinParent() + 1;
+          : (lastInGroup ?? targetNode).getIndexWithinParent() + 1;
 
         const beforeItems = children.slice(0, splitIndex);
         const afterItems = children.slice(splitIndex);

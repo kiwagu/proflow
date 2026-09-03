@@ -75,10 +75,11 @@ function registerNodeAccessoryPlugin<T extends LexicalNode>(
       (payload) => {
         const current = props.store.get();
         for (const key of payload) {
-          if (key in current) {
+          const entry = current[key];
+          if (entry !== undefined) {
             // Re-seat the entry so the renderer remounts it: the accessory
             // may have been detached from a DOM node Lexical replaced.
-            const temp = { ...current[key] };
+            const temp = { ...entry };
             props.setStore(key, undefined!);
             props.setStore(key, temp);
           }

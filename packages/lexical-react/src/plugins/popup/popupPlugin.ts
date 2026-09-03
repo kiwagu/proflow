@@ -62,6 +62,7 @@ function $tableSelectionToRect(selection: TableSelection) {
 
   const firstCell = cellElements[0];
   const lastCell = cellElements[cellElements.length - 1];
+  if (firstCell === undefined || lastCell === undefined) return null;
   const firstRect = firstCell.getBoundingClientRect();
   const lastRect = lastCell.getBoundingClientRect();
 

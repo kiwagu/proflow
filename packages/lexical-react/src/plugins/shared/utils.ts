@@ -69,7 +69,9 @@ export function registerEditorWidthObserver(
       const callbacks = new Set<WidthChangeCallback>([onWidthChange]);
 
       const observer = new ResizeObserver((entries) => {
-        const w = entries[0].contentBoxSize[0].inlineSize;
+        const boxSize = entries[0]?.contentBoxSize[0];
+        if (boxSize === undefined) return;
+        const w = boxSize.inlineSize;
         callbacks.forEach((callback) => callback(w));
       });
 

@@ -53,6 +53,9 @@ function $getNodeKeysByLine(node: CodeNode): Array<Set<NodeKey>> {
   const children = node.getChildren();
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
+    if (child === undefined) {
+      continue;
+    }
     if ($isLineBreakNode(child)) {
       lines.push(currentLine);
       currentLine = new Set<NodeKey>();
@@ -88,6 +91,12 @@ function $getSelectionInfo(
 
   const firstLine = lines[0];
   const lastLine = lines[lines.length - 1];
+  if (firstLine === undefined || lastLine === undefined) {
+    return {
+      line: CodeCaretPosition.Collapsed,
+      positionOnLine: CodeCaretPosition.Collapsed,
+    };
+  }
   const focusKey = selection.focus.key;
   const focusOffset = selection.focus.offset;
 
@@ -188,7 +197,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
 
   const runCleanups = () => {
     for (let i = 0; i < cleanups.length; i++) {
-      cleanups[i]();
+      cleanups[i]?.();
     }
     cleanups.length = 0;
   };

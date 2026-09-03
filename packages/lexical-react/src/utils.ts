@@ -470,7 +470,8 @@ export function $getCaretRect(): DOMRect | null {
   const domRange = window.getSelection()?.getRangeAt(0);
   if (domRange) {
     const rects = domRange.getClientRects();
-    if (rects.length) return rects[rects.length - 1];
+    const lastRect = rects[rects.length - 1];
+    if (lastRect) return lastRect;
     if (
       domRange.commonAncestorContainer &&
       domRange.commonAncestorContainer instanceof HTMLElement

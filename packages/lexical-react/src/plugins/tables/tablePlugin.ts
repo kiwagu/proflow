@@ -77,6 +77,7 @@ function _registerTablePlugin(editor: LexicalEditor, props: TablePluginProps) {
 
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
+          if (child === undefined) continue;
           if (!allowedNodesInTableCellNode.includes(child.__type)) {
             child.remove();
           }

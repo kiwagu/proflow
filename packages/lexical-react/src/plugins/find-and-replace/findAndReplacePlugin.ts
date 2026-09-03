@@ -157,6 +157,9 @@ function traverseNodeGetText(root: ElementNode | LexicalNode): string {
   const childrenLength = children.length;
   for (let i = 0; i < childrenLength; i++) {
     const child = children[i];
+    if (child === undefined) {
+      continue;
+    }
     if ($isElementNode(child)) {
       textContent += traverseNodeGetText(child);
       if (i !== childrenLength - 1 && !child.isInline()) {
@@ -189,7 +192,7 @@ function highlightMultipleNode(
     const children = targetNode.getChildren();
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      if (shouldIgnoreNodeType(child.__type)) {
+      if (child === undefined || shouldIgnoreNodeType(child.__type)) {
         continue;
       }
       if ($isElementNode(child)) {
@@ -246,9 +249,10 @@ function getNoneBreakNodes(
       const match = /\r|\n/.exec(childTxt);
       if (!match) {
         const containedIndexes: number[] = [];
-        if (endPartial.length > 0) {
+        const endPartialHead = endPartial[0];
+        if (endPartialHead !== undefined) {
           const beginMatched = searchString.substring(
-            endPartial[0].length + consummedSearchLength,
+            endPartialHead.length + consummedSearchLength,
             searchString.length
           );
           if (
@@ -257,10 +261,10 @@ function getNoneBreakNodes(
           ) {
             if (beginMatched.length === childTxt.length) {
               endPartial.push(beginMatched);
-              consummedSearchLength += endPartial[0].length;
+              consummedSearchLength += endPartialHead.length;
             } else if (beginMatched.length > childTxt.length) {
               endPartial.push(childTxt);
-              consummedSearchLength += endPartial[0].length;
+              consummedSearchLength += endPartialHead.length;
             } else {
               if (beginMatched.length > 0) {
                 beginPartial.push(beginMatched);
@@ -274,9 +278,11 @@ function getNoneBreakNodes(
         } else {
           consummedSearchLength = 0;
         }
+        let matchStart = indexes[paramsObj.currentMatchIndex];
         while (
+          matchStart !== undefined &&
           isBetween(
-            indexes[paramsObj.currentMatchIndex],
+            matchStart,
             paramsObj.previousLength,
             paramsObj.previousLength + childTxt.length - 1
           )
@@ -284,7 +290,7 @@ function getNoneBreakNodes(
           consummedSearchLength = 0;
           if (
             isBetween(
-              indexes[paramsObj.currentMatchIndex] + searchString.length - 1,
+              matchStart + searchString.length - 1,
               paramsObj.previousLength,
               paramsObj.previousLength + childTxt.length - 1
             )
@@ -292,12 +298,13 @@ function getNoneBreakNodes(
             containedIndexes.push(paramsObj.currentMatchIndex);
           } else {
             const matchedPart = childTxt.substring(
-              indexes[paramsObj.currentMatchIndex] - paramsObj.previousLength,
+              matchStart - paramsObj.previousLength,
               childTxt.length
             );
             endPartial.push(matchedPart);
           }
           paramsObj.currentMatchIndex += 1;
+          matchStart = indexes[paramsObj.currentMatchIndex];
         }
         if (
           containedIndexes.length > 0 ||
@@ -361,9 +368,13 @@ function updatedNodeOffset(
   const relativeEnd = node.startIndex + node.length - 1;
 
   if (mainIndex === null) {
-    const relativeSearchStringStart = stringLocations[0].searchStart;
+    const firstLocation = stringLocations[0];
+    if (firstLocation === undefined) {
+      return;
+    }
+    const relativeSearchStringStart = firstLocation.searchStart;
     const relativeSearchStringEnd =
-      relativeSearchStringStart + stringLocations[0].searchLength - 1;
+      relativeSearchStringStart + firstLocation.searchLength - 1;
     if (isBetween(relativeSearchStringStart, relativeStart, relativeEnd)) {
       const realStart = relativeSearchStringStart - relativeStart;
       let realEnd: number;
@@ -374,36 +385,26 @@ function updatedNodeOffset(
           searchStart: newLocation,
           searchLength: remainSearchLength,
         });
-        realEnd =
-          realStart + stringLocations[0].searchLength - remainSearchLength;
+        realEnd = realStart + firstLocation.searchLength - remainSearchLength;
       } else {
-        realEnd = realStart + stringLocations[0].searchLength;
+        realEnd = realStart + firstLocation.searchLength;
       }
       additionLocations.splice(0, 1);
       nodeOffsets.push({ start: realStart, end: realEnd, isReplace: false });
     }
   } else {
+    let current = stringLocations[mainIndex.currentIndex];
     while (
-      mainIndex.currentIndex < stringLocations.length &&
-      isBetween(
-        stringLocations[mainIndex.currentIndex].searchStart,
-        relativeStart,
-        relativeEnd
-      )
+      current !== undefined &&
+      isBetween(current.searchStart, relativeStart, relativeEnd)
     ) {
-      const relativeSearchStringStart =
-        stringLocations[mainIndex.currentIndex].searchStart;
+      const relativeSearchStringStart = current.searchStart;
       const realStart = relativeSearchStringStart - relativeStart;
       const relativeSearchStringEnd =
-        relativeSearchStringStart +
-        stringLocations[mainIndex.currentIndex].searchLength -
-        1;
+        relativeSearchStringStart + current.searchLength - 1;
       if (!isBetween(relativeSearchStringEnd, relativeStart, relativeEnd)) {
         const remainSearchLength = relativeSearchStringEnd - relativeEnd;
-        const realEnd =
-          realStart +
-          stringLocations[mainIndex.currentIndex].searchLength -
-          remainSearchLength;
+        const realEnd = realStart + current.searchLength - remainSearchLength;
         nodeOffsets.push({ start: realStart, end: realEnd, isReplace: true });
         const newLocation = relativeEnd + 1;
         additionLocations.push({
@@ -413,10 +414,15 @@ function updatedNodeOffset(
         mainIndex.currentIndex += 1;
         return;
       } else {
-        const realEnd = realStart + stringLocations[0].searchLength;
+        const firstLocation = stringLocations[0];
+        if (firstLocation === undefined) {
+          return;
+        }
+        const realEnd = realStart + firstLocation.searchLength;
         nodeOffsets.push({ start: realStart, end: realEnd, isReplace: true });
       }
       mainIndex.currentIndex += 1;
+      current = stringLocations[mainIndex.currentIndex];
     }
   }
 }
@@ -462,6 +468,7 @@ function areListOffsetsEqual(left: NodekeyOffset[], right: NodekeyOffset[]) {
   for (let i = 0; i < left.length; i += 1) {
     const leftItem = left[i];
     const rightItem = right[i];
+    if (leftItem === undefined || rightItem === undefined) return false;
     if (leftItem.key !== rightItem.key) return false;
     if (leftItem.pairKey !== rightItem.pairKey) return false;
     if (leftItem.offset.start !== rightItem.offset.start) return false;

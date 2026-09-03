@@ -119,7 +119,7 @@ function cleanURL(input: string) {
 
   const [basePath, ...queryParts] = url.split(/([#?])/);
 
-  const encodedBase = basePath
+  const encodedBase = (basePath ?? '')
     .split('/')
     .map((segment) => (segment.includes(':') ? segment : encodeURI(segment)))
     .join('/');
@@ -199,6 +199,7 @@ export function findNextAutoLinkMatch(
   const match = linkifier.match(text);
   if (!match) return null;
   const firstMatch = match[0];
+  if (firstMatch === undefined) return null;
   if (firstMatch.schema === '') {
     firstMatch.url = cleanURL(firstMatch.raw);
   }
@@ -256,15 +257,23 @@ function $matchAndCreateAutoLink(
 
   const matchOffset = matchedLink.index;
   const matchLength = matchedLink.raw.length;
-  let matchedNode;
+  let matchedNode: TextNode | undefined;
 
   if (matchOffset === 0) {
-    [matchedNode, currentNode] = currentNode.splitText(matchLength);
+    const [matched, rest] = currentNode.splitText(matchLength);
+    matchedNode = matched;
+    if (rest !== undefined) currentNode = rest;
   } else {
-    [, matchedNode, currentNode] = currentNode.splitText(
+    const [, matched, rest] = currentNode.splitText(
       matchOffset,
       matchOffset + matchLength
     );
+    matchedNode = matched;
+    if (rest !== undefined) currentNode = rest;
+  }
+
+  if (matchedNode === undefined) {
+    return;
   }
 
   const linkNode = $createLinkNode(matchedLink.url);

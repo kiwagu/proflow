@@ -105,26 +105,25 @@ export function calculateInsertPoint(
 
     const root = $getRoot();
     const children = root.getChildren();
-    if (children.length === 0) {
+    const firstChild = children[0];
+    const lastChild = children[children.length - 1];
+    if (firstChild === undefined || lastChild === undefined) {
       return { key: null, position: null, domRect: null };
     }
 
-    const firstRect = elementKeyToDomRect(editor, children[0].getKey());
+    const firstRect = elementKeyToDomRect(editor, firstChild.getKey());
     if (firstRect && event.clientY < firstRect.top) {
       return {
-        key: children[0].getKey(),
+        key: firstChild.getKey(),
         position: 'before',
         domRect: firstRect,
       };
     }
 
-    const lastRect = elementKeyToDomRect(
-      editor,
-      children[children.length - 1].getKey()
-    );
+    const lastRect = elementKeyToDomRect(editor, lastChild.getKey());
     if (lastRect && event.clientY > lastRect.bottom) {
       return {
-        key: children[children.length - 1].getKey(),
+        key: lastChild.getKey(),
         position: 'after',
         domRect: lastRect,
       };

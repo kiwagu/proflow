@@ -89,8 +89,9 @@ function $subListToCells(sub: ListNode, cells: ListGridCell[]): void {
       continue;
     }
     cellIndent ??= node.getIndent();
-    if (node.getIndent() > cellIndent && cells.length > 0) {
-      cells[cells.length - 1].deepItems.push(node);
+    const lastCell = cells[cells.length - 1];
+    if (node.getIndent() > cellIndent && lastCell !== undefined) {
+      lastCell.deepItems.push(node);
       continue;
     }
     cells.push($newCell(node));
@@ -101,6 +102,7 @@ function $subListToCells(sub: ListNode, cells: ListGridCell[]): void {
 function $groupToCells(group: ListItemNode[]): ListGridCell[] {
   const [header, ...rest] = group;
   const cells: ListGridCell[] = [];
+  if (header === undefined) return cells;
   for (const child of header.getChildren()) {
     if ($isListNode(child)) $subListToCells(child, cells);
   }
@@ -113,8 +115,9 @@ function $groupToCells(group: ListItemNode[]): ListGridCell[] {
       continue;
     }
     cellIndent ??= item.getIndent();
-    if (item.getIndent() > cellIndent && cells.length > 0) {
-      cells[cells.length - 1].deepItems.push(item);
+    const lastCell = cells[cells.length - 1];
+    if (item.getIndent() > cellIndent && lastCell !== undefined) {
+      lastCell.deepItems.push(item);
     } else {
       cells.push($newCell(item));
     }
