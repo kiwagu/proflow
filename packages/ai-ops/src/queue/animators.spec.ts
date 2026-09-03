@@ -244,7 +244,7 @@ describe('insertNode animator', () => {
       {
         kind: 'insertNode',
         ref: 'ref-2',
-        spec: { block: 'image', srcType: 'url', url: 'http://i' },
+        spec: { block: 'image', hash: 'h-image-1', mime: 'image/png' },
         at: { after: 'b1' },
       },
       {
@@ -260,7 +260,7 @@ describe('insertNode animator', () => {
         y: {
           kind: 'insertNode',
           ref: 'ref-2',
-          spec: { block: 'image', srcType: 'url', url: 'http://i' },
+          spec: { block: 'image', hash: 'h-image-1', mime: 'image/png' },
           at: { after: 'b1' },
         },
       },
@@ -294,7 +294,10 @@ describe('insertInline animator', () => {
         ref: 'r1',
         node: 'b1',
         at: 3,
-        spec: { inline: 'date', date: '2026-01-01' },
+        spec: {
+          inline: 'mention',
+          mention: { resourceId: 'r-42', kind: 'note', label: 'Field notes' },
+        },
       },
       { randomSource: mockRandomSource({ integer: 145 }) }
     );
@@ -308,7 +311,10 @@ describe('insertInline animator', () => {
           ref: 'r1',
           node: 'b1',
           at: 3,
-          spec: { inline: 'date', date: '2026-01-01' },
+          spec: {
+            inline: 'mention',
+            mention: { resourceId: 'r-42', kind: 'note', label: 'Field notes' },
+          },
         },
       },
     ]);

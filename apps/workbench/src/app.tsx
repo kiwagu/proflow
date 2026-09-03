@@ -1,6 +1,7 @@
 import type { DocumentMeta } from '@workspace/domain';
 import { Button } from '@workspace/ui/components/button';
 import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chrome';
+import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import {
   buildFileExplorerLabels,
@@ -64,13 +65,18 @@ export function App() {
   );
 
   return (
-    <GraphServicesProvider services={graphServices}>
-      <FileServicesProvider services={fileServices}>
-        <FileSelectionProvider>
-          <Workbench />
-        </FileSelectionProvider>
-      </FileServicesProvider>
-    </GraphServicesProvider>
+    // One provider per app root — Radix's canonical shape, and what `Hint`
+    // requires. Every hint in the workbench shares its open/skip delay, so a
+    // sweep across neighbouring controls opens instantly.
+    <TooltipProvider>
+      <GraphServicesProvider services={graphServices}>
+        <FileServicesProvider services={fileServices}>
+          <FileSelectionProvider>
+            <Workbench />
+          </FileSelectionProvider>
+        </FileServicesProvider>
+      </GraphServicesProvider>
+    </TooltipProvider>
   );
 }
 

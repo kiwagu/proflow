@@ -531,31 +531,19 @@ export function animate(op: DocumentOp, ctx: AnimatorCtx): DocumentOpStep[] {
         ...focus(o.table, ctx),
         edit({ kind: 'removeColumn', table: o.table, col: o.col }),
       ])
-      // media / date — focus the node, apply the property change
+      // media — focus the node, apply the property change. Media source is a
+      // content hash, so swapping the source is one op for both image and video.
       .with({ kind: 'setImageAlt' }, (o) => [
         ...focus(o.node, ctx),
         edit({ kind: 'setImageAlt', node: o.node, alt: o.alt }),
       ])
-      .with({ kind: 'setImageUrl' }, (o) => [
+      .with({ kind: 'setMediaHash' }, (o) => [
         ...focus(o.node, ctx),
-        edit({ kind: 'setImageUrl', node: o.node, url: o.url }),
-      ])
-      .with({ kind: 'setVideoUrl' }, (o) => [
-        ...focus(o.node, ctx),
-        edit({ kind: 'setVideoUrl', node: o.node, url: o.url }),
+        edit({ kind: 'setMediaHash', node: o.node, hash: o.hash }),
       ])
       .with({ kind: 'setVideoControls' }, (o) => [
         ...focus(o.node, ctx),
         edit({ kind: 'setVideoControls', node: o.node, controls: o.controls }),
-      ])
-      .with({ kind: 'setDate' }, (o) => [
-        ...focus(o.node, ctx),
-        edit({
-          kind: 'setDate',
-          node: o.node,
-          date: o.date,
-          displayFormat: o.displayFormat,
-        }),
       ])
       // animation primitives — pass through as-is (animators call these directly,
       // but they should never be dispatched through animate() in normal use)
