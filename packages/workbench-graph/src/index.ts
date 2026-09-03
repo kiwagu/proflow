@@ -3,6 +3,10 @@ export {
   type CommandPaletteLabels,
 } from './command-palette.js';
 export {
+  buildCommandPaletteLabels,
+  defaultCommandPaletteLabels,
+} from './command-palette-labels.js';
+export {
   allFolders,
   ancestorsOf,
   buildContainment,

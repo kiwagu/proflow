@@ -3,15 +3,22 @@ import type {
   EditAuthor,
   SerializedTree,
 } from '@workspace/domain';
+import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
+import {
+  createWorkbenchTranslator,
+  loadWorkbenchMessages,
+} from '@workspace/i18n-catalogs/workbench';
 import type { LexicalWrapper } from '@workspace/lexical-react';
 import { editorStateAsMarkdown } from '@workspace/lexical-react/utils';
 import {
+  buildFormatToolsLabels,
+  buildTableInsertLabels,
   DocumentView,
   FormatTools,
   TableInsert,
 } from '@workspace/workbench-editor';
 import type { SerializedEditorState } from 'lexical';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useDocuments,
   useDocumentVersions,
@@ -23,6 +30,27 @@ import { Spinner } from '../shell/boot-shell';
 const SAVE_DEBOUNCE_MS = 400;
 /** A pause this long after the last save marks an "idle" version. */
 const VERSION_DEBOUNCE_MS = 30_000;
+
+/**
+ * Loads the workbench catalog once for the app's locale and hands back a
+ * translator — the seam every editor chrome surface (toolbar, table
+ * picker) reads its labels through. `null` while the catalog is loading.
+ */
+function useWorkbenchTranslator(): WorkbenchTranslator | null {
+  const [t, setT] = useState<WorkbenchTranslator | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    // The app has no locale switcher yet; English is the only wired
+    // locale until one is added — the catalog itself already has ES.
+    void loadWorkbenchMessages('en').then((messages) => {
+      if (!cancelled) setT(() => createWorkbenchTranslator(messages));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return t;
+}
 
 /**
  * A document in the editor: loads it once, mounts the editing shell over
@@ -40,6 +68,15 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   const documents = useDocuments();
   const versions = useDocumentVersions();
   const { identity } = useServices();
+  const t = useWorkbenchTranslator();
+  const formatToolsLabels = useMemo(
+    () => (t ? buildFormatToolsLabels(t) : undefined),
+    [t]
+  );
+  const tableInsertLabels = useMemo(
+    () => (t ? buildTableInsertLabels(t) : undefined),
+    [t]
+  );
   const [initial, setInitial] = useState<
     { markdown: string } | { error: string } | null
   >(null);
@@ -183,8 +220,8 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
         {/* Children mount after the editable in the DOM; the toolbar belongs
             above it, and the shell's column flex lets order say so. */}
         <div className="order-first flex items-center gap-2 border-b px-2 py-1">
-          <FormatTools className="flex-1">
-            <TableInsert />
+          <FormatTools className="flex-1" labels={formatToolsLabels}>
+            <TableInsert labels={tableInsertLabels} />
           </FormatTools>
           <span
             className="text-muted-foreground shrink-0 text-xs"

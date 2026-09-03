@@ -26,6 +26,11 @@ export {
   type FileServices,
 } from './file-services.js';
 export {
+  buildFileExplorerLabels,
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
+export {
   ancestorsOf,
   buildTree,
   categoryOf,

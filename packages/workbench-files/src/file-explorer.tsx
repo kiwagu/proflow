@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollapsibleSection } from './collapsible-section.js';
 import { FileRow, PendingRow } from './file-row.js';
 import { useFiles, usePackages, useReportError } from './file-services.js';
+import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
 import {
   useFileNodes,
   useFileSelection,
@@ -47,9 +48,11 @@ export interface DocumentActions {
 export function FileExplorer({
   documents,
   recentDocumentLimit = 20,
+  labels = defaultFileExplorerLabels,
 }: {
   documents?: DocumentActions;
   recentDocumentLimit?: number;
+  labels?: FileExplorerLabels;
 }) {
   const files = useFiles();
   const packages = usePackages();
@@ -76,13 +79,13 @@ export function FileExplorer({
   const unpack = async (node: FileNode) => {
     if (!node.blobHash || !packages) return;
     const result = await packages.importArchive(node.blobHash);
-    if (result.isErr()) reportError(`Could not unpack: ${result.error}`);
+    if (result.isErr()) reportError(labels.errors.unpack(result.error));
   };
   const discardUnpacked = async (node: FileNode) => {
     if (!node.blobHash || !packages) return;
     const result = await packages.discardUnpacked(node.blobHash);
     if (result.isErr())
-      reportError(`Could not delete the unpacked files: ${result.error}`);
+      reportError(labels.errors.discardUnpacked(result.error));
   };
 
   // Files in flight show as rows where they will land, with their
@@ -165,11 +168,11 @@ export function FileExplorer({
 
   const createFolder = async () => {
     const parentId = targetFolder();
-    const created = await files.createFolder({ parentId, name: 'New folder' });
+    const created = await files.createFolder({ parentId, name: labels.newFolderName });
     if (created.isOk()) {
       setOpenFileId(created.value.id);
       if (parentId) reveal(parentId, nodes);
-    } else reportError(`Could not create the folder: ${created.error}`);
+    } else reportError(labels.errors.createFolder(created.error));
   };
 
   const importFiles = useCallback(
@@ -195,15 +198,15 @@ export function FileExplorer({
               ),
           });
           if (result.isOk()) setOpenFileId(result.value.id);
-          else reportError(`Could not import ${file.name}: ${result.error}`);
+          else reportError(labels.errors.import(file.name, result.error));
         } catch (e) {
-          reportError(`Could not import ${file.name}: ${String(e)}`);
+          reportError(labels.errors.import(file.name, String(e)));
         } finally {
           setPending((prev) => prev.filter((p) => p.id !== id));
         }
       }
     },
-    [files, nodes, reveal, setOpenFileId, reportError]
+    [files, nodes, reveal, setOpenFileId, reportError, labels]
   );
 
   const picker = useRef<HTMLInputElement>(null);
@@ -265,6 +268,7 @@ export function FileExplorer({
               void files.move(node.id, parentId);
               if (parentId) reveal(parentId, nodes);
             }}
+            labels={labels}
           />
           {node.kind === 'folder' && expanded.has(node.id)
             ? renderRows(item.children, depth + 1)
@@ -284,8 +288,8 @@ export function FileExplorer({
           <Button
             variant="ghost"
             size="icon-sm"
-            title="New document"
-            aria-label="New document"
+            title={labels.newDocument}
+            aria-label={labels.newDocument}
             data-testid="new-document"
             onClick={() => void createDocument()}
           >
@@ -295,8 +299,8 @@ export function FileExplorer({
         <Button
           variant="ghost"
           size="icon-sm"
-          title="New folder"
-          aria-label="New folder"
+          title={labels.newFolder}
+          aria-label={labels.newFolder}
           data-testid="new-folder"
           onClick={() => void createFolder()}
         >
@@ -305,8 +309,8 @@ export function FileExplorer({
         <Button
           variant="ghost"
           size="icon-sm"
-          title="Upload files"
-          aria-label="Upload files"
+          title={labels.uploadFiles}
+          aria-label={labels.uploadFiles}
           data-testid="upload-files"
           onClick={() => picker.current?.click()}
         >
@@ -317,7 +321,7 @@ export function FileExplorer({
           type="file"
           multiple
           className="hidden"
-          aria-label="Upload files"
+          aria-label={labels.uploadFiles}
           data-testid="file-input"
           onChange={(e) => {
             const list = Array.from(e.target.files ?? []);
@@ -330,14 +334,14 @@ export function FileExplorer({
             className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums"
             data-testid="importing"
           >
-            {importing.length} importing
+            {labels.importing(importing.length)}
           </span>
         ) : null}
       </div>
       <ScrollArea className="min-h-0 flex-1 px-2 pb-2">
         <div className="flex flex-col gap-3">
           <CollapsibleSection
-            label="Files"
+            label={labels.sectionFiles}
             persistKey="files"
             testId="files-section"
           >
@@ -345,12 +349,12 @@ export function FileExplorer({
               renderRows(items, 0)
             ) : (
               <p className="text-muted-foreground px-2 py-1 text-xs">
-                Drop files here, or use the buttons above.
+                {labels.empty}
               </p>
             )}
           </CollapsibleSection>
           <CollapsibleSection
-            label="Documents"
+            label={labels.sectionDocuments}
             persistKey="documents"
             testId="documents-section"
           >
@@ -371,6 +375,7 @@ export function FileExplorer({
                 }}
                 onStar={(starred) => void files.setStarred(node.id, starred)}
                 onApproach={() => prefetch(node.documentId)}
+                labels={labels}
               />
             ))}
           </CollapsibleSection>
@@ -383,7 +388,7 @@ export function FileExplorer({
         >
           <div className="border-border bg-background text-foreground flex items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg">
             <Upload className="size-4 shrink-0" />
-            Drop to import
+            {labels.dropToImport}
           </div>
         </div>
       ) : null}

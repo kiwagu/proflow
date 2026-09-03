@@ -43,6 +43,7 @@
     "@lexical/selection": "catalog:",
     "@lexical/table": "catalog:",
     "@lexical/utils": "catalog:",
+    "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/ui": "workspace:*",
     "emojibase-data": "catalog:",

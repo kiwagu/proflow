@@ -16,6 +16,7 @@
     "@workspace/blob-store": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
+    "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
     "@workspace/package-kinds": "workspace:*",
     "@workspace/persistence-pglite": "workspace:*",

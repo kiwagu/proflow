@@ -23,6 +23,7 @@
     "@lexical/history": "catalog:",
     "@lexical/link": "catalog:",
     "@lexical/table": "catalog:",
+    "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
     "@workspace/ui": "workspace:*",

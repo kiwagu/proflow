@@ -1,18 +1,28 @@
 import type { DocumentMeta } from '@workspace/domain';
+import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
+import {
+  createWorkbenchTranslator,
+  loadWorkbenchMessages,
+} from '@workspace/i18n-catalogs/workbench';
 import { Button } from '@workspace/ui/components/button';
 import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chrome';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import {
+  buildFileExplorerLabels,
+  defaultFileExplorerLabels,
   FileExplorer,
   FilePane,
   FileSelectionProvider,
   FileServicesProvider,
   useFileSelection,
   type DocumentActions,
+  type FileExplorerLabels,
   type FileServices,
 } from '@workspace/workbench-files';
 import {
+  buildCommandPaletteLabels,
   CommandPalette,
+  defaultCommandPaletteLabels,
   GraphServicesProvider,
   useCommandPalette,
   type CommandPaletteHandlers,
@@ -20,20 +30,31 @@ import {
   type GraphServices,
 } from '@workspace/workbench-graph';
 import { Search } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useServices } from './composition/app-services';
 import { DocumentPane } from './features/document-pane';
 import { SIDEBAR_WIDTH } from './shell/layout';
 
-const PALETTE_LABELS: CommandPaletteLabels = {
-  title: 'Search',
-  description: 'Jump to a folder or document by title.',
-  placeholder: 'Type to search…',
-  idle: 'Type at least two characters.',
-  searching: 'Searching…',
-  noResults: (term) => `Nothing matched “${term}”.`,
-  kindLabel: (kind) => kind,
-};
+/**
+ * Loads the workbench catalog once for the app's locale and hands back a
+ * translator — the seam every workbench chrome surface (explorer, palette)
+ * reads its labels through. `null` while the catalog is loading.
+ */
+function useWorkbenchTranslator(): WorkbenchTranslator | null {
+  const [t, setT] = useState<WorkbenchTranslator | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    // The app has no locale switcher yet; English is the only wired
+    // locale until one is added — the catalog itself already has ES.
+    void loadWorkbenchMessages('en').then((messages) => {
+      if (!cancelled) setT(() => createWorkbenchTranslator(messages));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return t;
+}
 
 /**
  * The workbench: the explorer on the left, the selected node in the pane,
@@ -82,6 +103,15 @@ function Workbench() {
   const services = useServices();
   const { setOpenFileId } = useFileSelection();
   const palette = useCommandPalette();
+  const t = useWorkbenchTranslator();
+  const fileLabels: FileExplorerLabels = useMemo(
+    () => (t ? buildFileExplorerLabels(t) : defaultFileExplorerLabels),
+    [t]
+  );
+  const paletteLabels: CommandPaletteLabels = useMemo(
+    () => (t ? buildCommandPaletteLabels(t) : defaultCommandPaletteLabels),
+    [t]
+  );
 
   // A document is created through the document port and opened by the
   // file node the port lists it under — the explorer resolves the node.
@@ -136,11 +166,12 @@ function Workbench() {
           width: SIDEBAR_WIDTH,
           'aria-label': 'Files',
           className: 'p-0',
-          children: <FileExplorer documents={documents} />,
+          children: <FileExplorer documents={documents} labels={fileLabels} />,
         }}
         main={
           <FilePane
             className="h-full"
+            labels={fileLabels}
             renderDocument={(document: DocumentMeta) => (
               <DocumentPane document={document} />
             )}
@@ -149,7 +180,7 @@ function Workbench() {
         className="min-h-0 flex-1"
       />
       <CommandPalette
-        labels={PALETTE_LABELS}
+        labels={paletteLabels}
         handlers={paletteHandlers}
         state={palette}
       />

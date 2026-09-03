@@ -3,6 +3,8 @@ export { FormatTools, type FormatToolsProps } from './format-tools.js';
 export { TableInsert, type TableInsertProps } from './table-insert.js';
 export {
   BLOCK_OPTIONS,
+  buildFormatToolsLabels,
+  buildTableInsertLabels,
   defaultFormatToolsLabels,
   defaultTableInsertLabels,
   type BlockOption,

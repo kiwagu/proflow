@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { FileIcon } from './file-icon.js';
 import { useBlobs } from './file-services.js';
 import { categoryOf, formatSize } from './file-tree.js';
+import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
 
 /** How much of a text file is read for the preview. */
 const TEXT_PREVIEW_BYTES = 512 * 1024;
@@ -93,10 +94,12 @@ export function FileViewer({
   node,
   renderArchive,
   className,
+  labels = defaultFileExplorerLabels,
 }: {
   node: FileNode;
   renderArchive?: (node: FileNode) => ReactNode;
   className?: string;
+  labels?: FileExplorerLabels;
 }) {
   const { blob, url, loading } = useBlobUrl(node.blobHash);
   const category = categoryOf(node.mime);
@@ -121,8 +124,8 @@ export function FileViewer({
         {url ? (
           <a
             className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1"
-            title="Download"
-            aria-label="Download"
+            title={labels.viewer.download}
+            aria-label={labels.viewer.download}
             data-testid="file-download"
             href={url}
             download={node.name}
@@ -138,6 +141,7 @@ export function FileViewer({
           text={text}
           loading={loading}
           renderArchive={renderArchive}
+          labels={labels}
         />
       </div>
     </div>
@@ -150,17 +154,19 @@ function ViewerBody({
   text,
   loading,
   renderArchive,
+  labels,
 }: {
   node: FileNode;
   url: string | null;
   text: string | null;
   loading: boolean;
   renderArchive?: (node: FileNode) => ReactNode;
+  labels: FileExplorerLabels;
 }) {
   if (!url)
     return (
       <p className="text-muted-foreground" data-testid="file-viewer-status">
-        {loading ? 'Loading…' : 'These bytes are not on this device.'}
+        {loading ? labels.viewer.loading : labels.viewer.notOnDevice}
       </p>
     );
 
@@ -210,13 +216,13 @@ function ViewerBody({
   return (
     <div className="text-muted-foreground flex flex-col items-center gap-3 text-center">
       <FileIcon node={node} className="size-12" />
-      <p className="text-sm">No preview for this file type.</p>
+      <p className="text-sm">{labels.viewer.noPreview}</p>
       <a
         className="text-primary text-sm underline"
         href={url}
         download={node.name}
       >
-        Download {node.name}
+        {labels.viewer.downloadNamed(node.name)}
       </a>
     </div>
   );

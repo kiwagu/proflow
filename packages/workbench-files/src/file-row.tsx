@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { FileIcon } from './file-icon.js';
+import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
 import { categoryOf } from './file-tree.js';
 
 export interface MoveTarget {
@@ -59,6 +60,7 @@ export interface FileRowProps {
   moveTargets?: MoveTarget[];
   onMove?: (parentId: string | null) => void;
   dropTarget?: boolean;
+  labels?: FileExplorerLabels;
 }
 
 /**
@@ -66,6 +68,7 @@ export interface FileRowProps {
  * appears on hover. Renaming happens in place.
  */
 export function FileRow(props: FileRowProps) {
+  const labels = props.labels ?? defaultFileExplorerLabels;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const input = useRef<HTMLInputElement>(null);
@@ -137,7 +140,7 @@ export function FileRow(props: FileRowProps) {
             ref={input}
             className="bg-background text-foreground ring-primary min-w-0 flex-1 rounded-sm px-1 text-sm ring-1 outline-none"
             value={draft}
-            aria-label="File name"
+            aria-label={labels.row.fileName}
             data-testid="file-rename-input"
             onChange={(e) => setDraft(e.target.value)}
             onBlur={commit}
@@ -150,7 +153,7 @@ export function FileRow(props: FileRowProps) {
           />
         ) : (
           <span className="min-w-0 flex-1 truncate text-left">
-            {props.node.name || 'Untitled'}
+            {props.node.name || labels.row.untitled}
           </span>
         )}
         {/* An archive and the package it becomes are two states of one
@@ -162,19 +165,19 @@ export function FileRow(props: FileRowProps) {
             <PackageOpen
               className="text-primary size-3.5 shrink-0"
               data-testid="archive-unpacked"
-              aria-label="Unpacked"
+              aria-label={labels.row.rowUnpacked}
             />
           ) : (
             <Package
               className="text-muted-foreground size-3.5 shrink-0"
               data-testid="archive-packed"
-              aria-label="Not unpacked yet"
+              aria-label={labels.row.rowPacked}
             />
           )
         ) : null}
         {props.node.starred ? (
           <Star
-            aria-label="Starred"
+            aria-label={labels.row.starred}
             className="text-muted-foreground size-3 shrink-0"
           />
         ) : null}
@@ -186,7 +189,7 @@ export function FileRow(props: FileRowProps) {
               variant="ghost"
               size="icon-sm"
               data-testid="file-menu"
-              aria-label="File actions"
+              aria-label={labels.row.fileActions}
             >
               <MoreHorizontal className="size-4" />
             </Button>
@@ -195,7 +198,7 @@ export function FileRow(props: FileRowProps) {
             <DropdownMenuGroup>
               <DropdownMenuItem className="gap-2" onSelect={startRename}>
                 <Pencil className="size-4" />
-                <span className="text-xs">Rename</span>
+                <span className="text-xs">{labels.row.rename}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="gap-2"
@@ -204,7 +207,7 @@ export function FileRow(props: FileRowProps) {
               >
                 <Star className="size-4" />
                 <span className="text-xs">
-                  {props.node.starred ? 'Unstar' : 'Star'}
+                  {props.node.starred ? labels.row.unstar : labels.row.star}
                 </span>
               </DropdownMenuItem>
               {isArchive && props.onUnpack ? (
@@ -216,7 +219,7 @@ export function FileRow(props: FileRowProps) {
                 >
                   <PackageOpen className="size-4" />
                   <span className="text-xs">
-                    {props.unpacked ? 'Unpacked' : 'Unpack'}
+                    {props.unpacked ? labels.row.actionUnpacked : labels.row.unpack}
                   </span>
                 </DropdownMenuItem>
               ) : null}
@@ -227,7 +230,7 @@ export function FileRow(props: FileRowProps) {
                   onSelect={() => props.onDiscardUnpacked?.()}
                 >
                   <Package className="size-4" />
-                  <span className="text-xs">Delete unpacked files</span>
+                  <span className="text-xs">{labels.row.discardUnpacked}</span>
                 </DropdownMenuItem>
               ) : null}
               {props.moveTargets && props.onMove ? (
@@ -237,7 +240,7 @@ export function FileRow(props: FileRowProps) {
                     data-testid="file-move"
                   >
                     <Folder className="size-4" />
-                    <span className="flex-1 truncate text-xs">Move to</span>
+                    <span className="flex-1 truncate text-xs">{labels.row.moveTo}</span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuGroup>
@@ -269,7 +272,7 @@ export function FileRow(props: FileRowProps) {
                 onSelect={() => props.onDelete()}
               >
                 <Trash2 className="size-4" />
-                <span className="text-xs">Delete</span>
+                <span className="text-xs">{labels.row.delete}</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
