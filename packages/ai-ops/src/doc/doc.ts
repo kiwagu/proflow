@@ -924,7 +924,7 @@ export function buildNode(spec: NodeSpec): LexicalNode {
     .with({ block: 'divider' }, () => $createHorizontalRuleNode())
     .with({ block: 'image' }, (session) =>
       $createImageNode({
-        hash: session.hash,
+        hash: requireHash(session.hash, 'image'),
         mime: session.mime ?? '',
         alt: session.alt ?? '',
         width: session.width ?? 0,
@@ -933,7 +933,7 @@ export function buildNode(spec: NodeSpec): LexicalNode {
     )
     .with({ block: 'video' }, (session) =>
       $createVideoNode({
-        hash: session.hash,
+        hash: requireHash(session.hash, 'video'),
         mime: session.mime ?? '',
         controls: session.controls ?? true,
         width: session.width ?? 0,
@@ -957,6 +957,15 @@ export function buildNode(spec: NodeSpec): LexicalNode {
       })
     )
     .exhaustive();
+}
+
+/** Media is content-addressed: a spec without a hash would build a node that
+ *  renders nothing and reports no error, so refuse it at the boundary. */
+function requireHash(hash: string | undefined, block: string): string {
+  if (typeof hash !== 'string' || hash.length === 0) {
+    throw new EditError(`${block} requires a content hash`);
+  }
+  return hash;
 }
 
 function withText(block: ElementNode, text?: string): ElementNode {

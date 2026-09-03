@@ -21,31 +21,31 @@ editor.link('b1', 'fox', 'https://x');
 Before:
 
 ```xml
-<doc>
+<root>
   <p id="b1">
-    <t id="t1">the quick brown fox</t>
+    <text id="t1">the quick brown fox</text>
   </p>
-</doc>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
+<root>
   <p id="b1">
-    <mark id="b2" direction="null" format="" indent="0" version="1" ids="[]">
-      <t id="t1">the</t>
+    <mark id="b2">
+      <text id="t1">the</text>
     </mark>
-    <t id="t2"> </t>
-    <t id="t3" bold="true">quick</t>
-    <t id="t4"> </t>
-    <t id="t5" italic="true">brown</t>
-    <t id="t6"> </t>
+    <text id="t2"> </text>
+    <text id="t3" bold="true">quick</text>
+    <text id="t4"> </text>
+    <text id="t5" italic="true">brown</text>
+    <text id="t6"> </text>
     <a id="b3" href="https://x">
-      <t id="t7">fox</t>
+      <text id="t7">fox</text>
     </a>
   </p>
-</doc>
+</root>
 ```
 
 ## Inline Formatting By Text Node
@@ -61,21 +61,21 @@ editor.underlineNode('t1');
 Before:
 
 ```xml
-<doc>
+<root>
   <p id="b1">
-    <t id="t1">Hello world</t>
+    <text id="t1">Hello world</text>
   </p>
-</doc>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
+<root>
   <p id="b1">
-    <t id="t1" bold="true" underline="true">Hello world</t>
+    <text id="t1" bold="true" underline="true">Hello world</text>
   </p>
-</doc>
+</root>
 ```
 
 ## Text Content
@@ -96,23 +96,23 @@ editor.setEquation('eq1', 'y^2');
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">first</t></p>
-  <p id="b2"><t id="t2">second</t></p>
-  <p id="b3"><t id="t3">third</t></p>
-  <equation id="eq1" version="1" equation="x^2" inline="false"/>
-</doc>
+<root>
+  <p id="b1"><text id="t1">first</text></p>
+  <p id="b2"><text id="t2">second</text></p>
+  <p id="b3"><text id="t3">third</text></p>
+  <equation id="eq1" equation="x^2" />
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">replaced</t></p>
-  <p id="b2"><t id="t2">second!!!</t></p>
-  <p id="b3"><t id="t3">&gt; THIRD</t></p>
-  <equation id="eq1" version="1" equation="y^2" inline="false"/>
-</doc>
+<root>
+  <p id="b1"><text id="t1">replaced</text></p>
+  <p id="b2"><text id="t2">second!!!</text></p>
+  <p id="b3"><text id="t3">&gt; THIRD</text></p>
+  <equation id="eq1" equation="y^2" />
+</root>
 ```
 
 ## Block Type Conversion
@@ -130,23 +130,23 @@ editor.setLanguage('b3', 'python');
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Title</t></p>
-  <p id="b2"><t id="t2">A quote</t></p>
-  <p id="b3"><t id="t3">code here</t></p>
-  <h3 id="b4"><t id="t4">Back to paragraph</t></h3>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Title</text></p>
+  <p id="b2"><text id="t2">A quote</text></p>
+  <p id="b3"><text id="t3">code here</text></p>
+  <h3 id="b4"><text id="t4">Back to paragraph</text></h3>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <h2 id="b1~v1"><t id="t1">Title</t></h2>
-  <blockquote id="b2~v1"><t id="t2">A quote</t></blockquote>
-  <custom-code id="b3~v1" direction="null" format="" indent="0" version="1" language="python"><t id="t3">code here</t></custom-code>
-  <p id="b4~v1"><t id="t4">Back to paragraph</t></p>
-</doc>
+<root>
+  <h2 id="b1~v1"><text id="t1">Title</text></h2>
+  <blockquote id="b2~v1"><text id="t2">A quote</text></blockquote>
+  <code id="b3~v1" language="python">code here</code>
+  <p id="b4~v1"><text id="t4">Back to paragraph</text></p>
+</root>
 ```
 
 Converting a block's type gives it a fresh id: the old id with a `~vN` suffix (`b1` → `b1~v1`, again → `b1~v2`). It's the SAME block — the suffix just marks the retype, and the stem tells you which block it was. Both the suffixed id and the original resolve later in the same code, but going forward use the id shown in the latest XML.
@@ -179,46 +179,48 @@ editor.appendListItem('ol3', 'second step');
 Before:
 
 ```xml
-<doc>
-  <ul id="list1"><li id="li1"><t id="t1">first item</t></li><li id="li2" value="2"><t id="t2">old item</t></li></ul>
-</doc>
+<root>
+  <ul id="list1"><li id="li1"><text id="t1">first item</text></li><li id="li2"><text id="t2">old item</text></li></ul>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
+<root>
   <ul id="list1">
-    <li id="li1"><t id="t1">first item</t></li>
-    <li id="b1" value="2"><t id="t3">second item</t></li>
-    <li id="b2" value="3">
-      <ol id="b3"><li id="b4"><t id="t4">nested</t></li></ol>
+    <li id="li1"><text id="t1">first item</text></li>
+    <li id="b1"><text id="t3">second item</text></li>
+    <li id="b2">
+      <ol id="b3"><li id="b4"><text id="t4">nested</text></li></ol>
     </li>
   </ul>
-</doc>
+</root>
 ```
 
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">task b</t></p>
-  <p id="b2"><t id="t2">task a</t></p>
-  <ul id="list1"><li id="li1"><t id="t3">z</t></li><li id="li2" value="2"><t id="t4">a</t></li></ul>
-</doc>
+<root>
+  <p id="b1"><text id="t1">task b</text></p>
+  <p id="b2"><text id="t2">task a</text></p>
+  <ul id="list1"><li id="li1"><text id="t3">z</text></li><li id="li2"><text id="t4">a</text></li></ul>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <ul id="b3" listType="check">
-    <li id="b4" checked="true"><t id="t1">task b</t></li>
-    <li id="b5" value="2" checked="false"><t id="t2">task a</t></li>
+<root>
+  <ul id="b3">
+    <li id="b4"><text id="t1">task b</text></li>
+    <li id="b5"><text id="t2">task a</text></li>
   </ul>
-  <ul id="list1"><li id="li2"><t id="t4">a</t></li><li id="li1" value="2"><t id="t3">z</t></li></ul>
-</doc>
+  <ul id="list1"><li id="li2"><text id="t4">a</text></li><li id="li1"><text id="t3">z</text></li></ul>
+</root>
 ```
+
+The XML view does not show a list's kind or an item's checked state — a check list renders as `<ul>` like any other. Do not infer either from the XML; act on the instruction you were given.
 
 ## Structure
 
@@ -242,23 +244,23 @@ editor.remove('b4');
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Intro</t></p>
-  <p id="b2"><t id="t2">Body</t></p>
-  <p id="b4"><t id="t3">Remove me</t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Intro</text></p>
+  <p id="b2"><text id="t2">Body</text></p>
+  <p id="b4"><text id="t3">Remove me</text></p>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <h1 id="b3"><t id="t4">Title</t></h1>
-  <p id="b1"><t id="t1">Intro</t></p>
-  <p id="b5"><t id="t5">Conclusion!</t></p>
-  <p id="b2"><t id="t2">Body</t></p>
-  <p id="b6"><t id="t6">Footer</t></p>
-</doc>
+<root>
+  <h1 id="b3"><text id="t4">Title</text></h1>
+  <p id="b1"><text id="t1">Intro</text></p>
+  <p id="b5"><text id="t5">Conclusion!</text></p>
+  <p id="b2"><text id="t2">Body</text></p>
+  <p id="b6"><text id="t6">Footer</text></p>
+</root>
 ```
 
 ## Tables
@@ -276,34 +278,35 @@ editor.setCell(t, 1, 1, 'yes');
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Tasks</t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Tasks</text></p>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Tasks</t></p>
+<root>
+  <p id="b1"><text id="t1">Tasks</text></p>
   <table id="b2">
-    <tr id="b3"><td id="b4" headerState="1"><p id="b5"><t id="t2">Item</t></p></td><td id="b6" headerState="1"><p id="b7"><t id="t3">Done</t></p></td></tr>
-    <tr id="b8"><td id="b9"><p id="b10"/></td><td id="b11"><p id="b12"><t id="t4">yes</t></p></td></tr>
+    <tablerow id="b3"><tablecell id="b4" header="true"><p id="b5"><text id="t2">Item</text></p></tablecell><tablecell id="b6" header="true"><p id="b7"><text id="t3">Done</text></p></tablecell></tablerow>
+    <tablerow id="b8"><tablecell id="b9"><p id="b10" /></tablecell><tablecell id="b11"><p id="b12"><text id="t4">yes</text></p></tablecell></tablerow>
   </table>
-</doc>
+</root>
 ```
 
 ## Media, Math, And Inline Objects
 
+Media is addressed by **content hash**, never by URL — the document references bytes already stored in the workspace. Use the hash supplied in the task; never invent one.
+
 - `insertDivider(afterId)`
-- `insertImage(afterId, { srcType, url, alt?, width?, height? })`
-- `insertVideo(afterId, { srcType, url, controls?, width?, height? })`
+- `insertImage(afterId, { hash, mime?, alt?, width?, height? })`
+- `insertVideo(afterId, { hash, mime?, controls?, width?, height? })`
 - `insertEquation(afterId, tex)` · `insertInlineEquation(blockId, at, tex)`
 - `insertLineBreak(blockId, at)` — inserts a **soft line break** (Shift+Enter) within a block. Use only when multiple lines must live in a single semantic block (poetry, addresses, signature blocks). For ordinary multi-line content, insert separate paragraph nodes instead.
-- `insertDate(blockId, at, isoDate, displayFormat?)`
-- `insertTextAfterInline(inlineRef, text)` — inserts a plain text node immediately after an inline object. Use this (not `appendText`) when you need text to follow an inline equation, date, line break, or other inline node.
+- `insertTextAfterInline(inlineRef, text)` — inserts a plain text node immediately after an inline object. Use this (not `appendText`) when you need text to follow an inline equation, line break, mention, or other inline node.
 
-The `at` in `insertInlineEquation`/`insertLineBreak`/`insertDate` is a **character offset into the block's plain text** — inline objects don't count toward it. Compute it (`text.length`, `text.indexOf('word')`) rather than guessing. When you do use `insertLineBreak` for soft-break content, set the first line then add each break at the running text length and `insertTextAfterInline` the next line:
+The `at` in `insertInlineEquation`/`insertLineBreak`/`insertMention` is a **character offset into the block's plain text** — inline objects don't count toward it. Compute it (`text.length`, `text.indexOf('word')`) rather than guessing. When you do use `insertLineBreak` for soft-break content, set the first line then add each break at the running text length and `insertTextAfterInline` the next line:
 
 ```ts
 editor.setText('b1', 'Lily pad hoppers');
@@ -319,112 +322,122 @@ editor.insertTextAfterInline(br2, 'Splash, then silence');
 ```ts
 editor.insertDivider('b1');
 editor.insertImage('b1', {
-  srcType: 'url',
-  url: 'https://x/cat.png',
+  hash: 'b1946ac9',
+  mime: 'image/png',
   alt: 'cat',
+  width: 640,
+  height: 480,
 });
 editor.insertVideo('b1', {
-  srcType: 'url',
-  url: 'https://x/movie.mp4',
+  hash: 'c3ab8ff1',
+  mime: 'video/mp4',
   controls: true,
 });
 editor.insertEquation('b1', 'E=mc^2');
 const eq = editor.insertInlineEquation('b2', 0, 'x^2');
 editor.insertTextAfterInline(eq, ' is x squared');
 editor.insertLineBreak('b2', 3);
-editor.insertDate('b2', 4, '2026-06-23', 'MMM d, yyyy');
 ```
 
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Above</t></p>
-  <p id="b2"><t id="t2">Below</t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Above</text></p>
+  <p id="b2"><text id="t2">Below</text></p>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Above</t></p>
-  <equation id="b3" version="1" equation="E=mc^2" inline="false"/>
-  <video id="b4" version="1" srcType="url" _id="" url="https://x/movie.mp4" width="0" height="0" scale="1" constrainedWidth="null" constrainedHeight="null" controls="true"/>
-  <image id="b5" version="1" srcType="url" _id="" url="https://x/cat.png" width="0" height="0" scale="1" constrainedWidth="null" constrainedHeight="null" alt="cat"/>
-  <hr id="b6"/>
-  <p id="b2"><equation id="b7" version="1" equation="x^2" inline="true"/><t id="t2">Bel</t><br id="b8"/><date id="b9" date="2026-06-23" displayFormat="MMM d, yyyy"/><t id="t3">ow</t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Above</text></p>
+  <equation id="b3" equation="E=mc^2" />
+  <video id="b4" hash="c3ab8ff1" />
+  <image id="b5" hash="b1946ac9" alt="cat" />
+  <horizontalrule id="b6" />
+  <p id="b2">
+    <equation id="b7" equation="x^2" inline="true" />
+    <text id="t3"> is</text>
+    <br id="b8" />
+    <text id="t4"> x squared</text>
+    <text id="t2">Below</text>
+  </p>
+</root>
 ```
 
-## Update Existing Media And Dates
+## Update Existing Media
 
-- `setImageAlt(id, alt)` · `setImageUrl(id, url)`
-- `setVideoUrl(id, url)` · `setVideoControls(id, controls)`
-- `setDate(id, isoDate, displayFormat?)`
+- `setImageAlt(id, alt)`
+- `setMediaHash(id, hash)` — repoints an image or a video at different bytes
+- `setVideoControls(id, controls)`
 
 ```ts
 editor.setImageAlt('img1', 'dog');
-editor.setImageUrl('img1', 'https://x/dog.png');
-editor.setVideoUrl('vid1', 'https://x/new.mp4');
+editor.setMediaHash('img1', 'ccc');
+editor.setMediaHash('vid1', 'ddd');
 editor.setVideoControls('vid1', false);
-editor.setDate('date1', '2026-07-01', 'yyyy-MM-dd');
 ```
 
 Before:
 
 ```xml
-<doc>
-  <image id="img1" version="1" srcType="url" _id="" url="https://x/cat.png" alt="cat"/>
-  <video id="vid1" version="1" srcType="url" _id="" url="https://x/old.mp4" controls="true"/>
-  <p id="b1"><date id="date1" date="2026-06-23" displayFormat="MMM d"/></p>
-</doc>
+<root>
+  <image id="img1" hash="aaa" alt="cat" />
+  <video id="vid1" hash="bbb" />
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <image id="img1" version="1" srcType="url" _id="" url="https://x/dog.png" alt="dog"/>
-  <video id="vid1" version="1" srcType="url" _id="" url="https://x/new.mp4" controls="false"/>
-  <p id="b1"><date id="date1" date="2026-07-01" displayFormat="yyyy-MM-dd"/></p>
-</doc>
+<root>
+  <image id="img1" hash="ccc" alt="dog" />
+  <video id="vid1" hash="ddd" />
+</root>
 ```
 
 ## Mentions
 
-Use the ids and details supplied in the task -- do not invent them.
+A mention is a reference to one knowledge-base resource. There is a single method and a single spec; `kind` is an open vocabulary (`'document'`, `'folder'`, `'file'`, `'user'`, ...). Use the ids, kinds and labels supplied in the task -- do not invent them.
 
-- `insertMention(blockId, at, mention)`
-- `mentionUser(blockId, at, { userId, email })`
-- `mentionContact(blockId, at, { contactId, name, emailOrDomain, isCompany })`
-- `mentionGroup(blockId, at, { groupAlias })`
-- `mentionDocument(blockId, at, { documentId, documentName, blockName })`
+- `insertMention(blockId, at, { resourceId, kind, label, display?, params? })`
+  - `label` is the text the reader sees.
+  - `display` is `'inline'` (default) or `'card'` for a block-like rendering.
+  - `params` is an optional `Record<string, string>` of extra referent detail.
 
 ```ts
-editor.mentionUser('b1', 6, { userId: 'u1', email: 'a@example.com' });
-editor.mentionContact('b1', 7, {
-  contactId: 'c1',
-  name: 'Acme',
-  emailOrDomain: 'acme.com',
-  isCompany: true,
+editor.insertMention('b1', 6, {
+  resourceId: 'd1',
+  kind: 'document',
+  label: 'Roadmap',
+});
+editor.insertMention('b1', 6, {
+  resourceId: 'u1',
+  kind: 'user',
+  label: 'Ada Lovelace',
 });
 ```
 
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Email </t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Email </text></p>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Email </t><mention id="m1" kind="user" userId="u1" email="a@example.com"/><mention id="m2" kind="contact" contactId="c1" name="Acme" emailOrDomain="acme.com" isCompany="true"/></p>
-</doc>
+<root>
+  <p id="b1">
+    <text id="t1">Email </text>
+    <resource-mention id="m1" resource="d1" kind="document" label="Roadmap" display="inline" />
+    <resource-mention id="m2" resource="u1" kind="user" label="Ada Lovelace" display="inline" />
+  </p>
+</root>
 ```
 
 ## Node Specs
@@ -436,11 +449,12 @@ After:
 - `{ block: 'list', list: 'bullet'|'number'|'check', items: string[] }`
 - `{ block: 'table', rows }`
 - `{ block: 'divider' }`
-- `{ block: 'document-card', documentId, documentName, blockName, blockParams? }` where `blockParams` is `Record<string, string>`. Use the ids supplied in the task -- do not invent them.
-- `{ block: 'html-render', html }`
-- `{ block: 'image', srcType, url, alt?, width?, height? }`
-- `{ block: 'video', srcType, url, controls?, width?, height? }`
+- `{ block: 'image', hash, mime?, alt?, width?, height? }`
+- `{ block: 'video', hash, mime?, controls?, width?, height? }`
 - `{ block: 'equation', tex, inline? }`
+- `{ inline: 'linebreak' }`
+- `{ inline: 'equation', tex }`
+- `{ inline: 'mention', mention: { resourceId, kind, label, display?, params? } }`
 
 ```ts
 editor.appendBlock({ block: 'heading', level: 2, text: 'Section' });
@@ -455,18 +469,18 @@ editor.appendBlock({ block: 'code', language: 'ts', text: 'const x = 1' });
 Before:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Doc</t></p>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Doc</text></p>
+</root>
 ```
 
 After:
 
 ```xml
-<doc>
-  <p id="b1"><t id="t1">Doc</t></p>
-  <h2 id="b2"><t id="t2">Section</t></h2>
-  <ul id="b3" listType="check"><li id="b4"><t id="t3">todo a</t></li><li id="b5" value="2"><t id="t4">todo b</t></li></ul>
-  <custom-code id="b6" direction="null" format="" indent="0" version="1" language="ts"><t id="t5">const x = 1</t></custom-code>
-</doc>
+<root>
+  <p id="b1"><text id="t1">Doc</text></p>
+  <h2 id="b2"><text id="t2">Section</text></h2>
+  <ul id="b3"><li id="b4"><text id="t3">todo a</text></li><li id="b5"><text id="t4">todo b</text></li></ul>
+  <code id="b6" language="ts">const x = 1</code>
+</root>
 ```
