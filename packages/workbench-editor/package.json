@@ -22,7 +22,10 @@
   "dependencies": {
     "@lexical/history": "catalog:",
     "@lexical/link": "catalog:",
+    "@lexical/mark": "catalog:",
+    "@lexical/rich-text": "catalog:",
     "@lexical/table": "catalog:",
+    "@lexical/utils": "catalog:",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
@@ -35,6 +38,7 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@lexical/headless": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",

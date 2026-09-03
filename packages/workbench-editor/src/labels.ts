@@ -87,6 +87,46 @@ export const defaultTableInsertLabels: TableInsertLabels = {
   size: (rows, columns) => `${rows} × ${columns} table`,
 };
 
+/** Labels for the document outline panel. */
+export type OutlineLabels = {
+  /** Accessible name for the outline navigation region. */
+  nav: string;
+};
+
+export const defaultOutlineLabels: OutlineLabels = {
+  nav: 'Document outline',
+};
+
+/** Labels for the find & replace panel. */
+export type FindReplaceLabels = {
+  toggle: string;
+  findPlaceholder: string;
+  replacePlaceholder: string;
+  previousMatch: string;
+  nextMatch: string;
+  close: string;
+  replaceOne: string;
+  replaceAll: string;
+  caseSensitive: string;
+  noMatches: string;
+  /** "{current} of {total}"; receives the 1-based current match and the total. */
+  matchStatus: (current: number, total: number) => string;
+};
+
+export const defaultFindReplaceLabels: FindReplaceLabels = {
+  toggle: 'Find and replace',
+  findPlaceholder: 'Find…',
+  replacePlaceholder: 'Replace with…',
+  previousMatch: 'Previous match',
+  nextMatch: 'Next match',
+  close: 'Close',
+  replaceOne: 'Replace',
+  replaceAll: 'Replace all',
+  caseSensitive: 'Match case',
+  noMatches: 'No matches',
+  matchStatus: (current, total) => `${current} of ${total}`,
+};
+
 /**
  * Builds the format toolbar's labels from the workbench catalog: literal
  * `workbench.editor.*` keys, looked up through the app's loaded translator.
@@ -133,5 +173,36 @@ export function buildTableInsertLabels(
     insertTable: t('workbench.editor.table.insert'),
     size: (rows, columns) =>
       t('workbench.editor.table.size', { rows, columns }),
+  };
+}
+
+/**
+ * Builds the outline panel's labels from the workbench catalog.
+ */
+export function buildOutlineLabels(t: WorkbenchTranslator): OutlineLabels {
+  return {
+    nav: t('workbench.editor.outline.nav'),
+  };
+}
+
+/**
+ * Builds the find & replace panel's labels from the workbench catalog.
+ */
+export function buildFindReplaceLabels(
+  t: WorkbenchTranslator
+): FindReplaceLabels {
+  return {
+    toggle: t('workbench.editor.findReplace.toggle'),
+    findPlaceholder: t('workbench.editor.findReplace.findPlaceholder'),
+    replacePlaceholder: t('workbench.editor.findReplace.replacePlaceholder'),
+    previousMatch: t('workbench.editor.findReplace.previousMatch'),
+    nextMatch: t('workbench.editor.findReplace.nextMatch'),
+    close: t('workbench.editor.findReplace.close'),
+    replaceOne: t('workbench.editor.findReplace.replaceOne'),
+    replaceAll: t('workbench.editor.findReplace.replaceAll'),
+    caseSensitive: t('workbench.editor.findReplace.caseSensitive'),
+    noMatches: t('workbench.editor.findReplace.noMatches'),
+    matchStatus: (current, total) =>
+      t('workbench.editor.findReplace.matchStatus', { current, total }),
   };
 }
