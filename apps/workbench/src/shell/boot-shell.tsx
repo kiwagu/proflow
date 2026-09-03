@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { pendingBootSteps } from '../composition/root';
+import { useWorkbenchTranslator } from '../i18n';
 import { SIDEBAR_WIDTH } from './layout';
 
 /**
@@ -58,6 +59,7 @@ export function Spinner({ className }: { className?: string }) {
 export function BootShell() {
   const [explain, setExplain] = useState(false);
   const [steps, setSteps] = useState<string[]>([]);
+  const t = useWorkbenchTranslator();
 
   useEffect(() => {
     const slow = setTimeout(() => {
@@ -81,7 +83,9 @@ export function BootShell() {
           >
             P
           </span>
-          <span className="text-base font-bold tracking-tight">ProFlow</span>
+          <span className="text-base font-bold tracking-tight">
+            {t ? t('workbench.app.brand') : 'ProFlow'}
+          </span>
         </div>
       </header>
       <main className="flex min-h-0 flex-1">
@@ -94,19 +98,29 @@ export function BootShell() {
         <section className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3">
           <Spinner className="text-muted-foreground animate-spin" />
           <p className="text-muted-foreground text-sm" role="status">
-            {explain ? 'Still starting…' : 'Starting the workbench…'}
+            {explain
+              ? t
+                ? t('workbench.app.boot.stillStarting')
+                : 'Still starting…'
+              : t
+                ? t('workbench.app.boot.starting')
+                : 'Starting the workbench…'}
           </p>
           {explain ? (
             <>
               {steps.length > 0 ? (
                 <p className="text-muted-foreground text-xs">
-                  Waiting for {steps.join(' and ')}.
+                  {t
+                    ? t('workbench.app.boot.waitingFor', {
+                        steps: steps.join(' and '),
+                      })
+                    : `Waiting for ${steps.join(' and ')}.`}
                 </p>
               ) : null}
               <p className="text-muted-foreground/70 max-w-md text-center text-xs">
-                A device with a lot stored takes longer to open. If another tab
-                has the workbench open, closing it can help — the tabs share one
-                database.
+                {t
+                  ? t('workbench.app.boot.slowHint')
+                  : 'A device with a lot stored takes longer to open. If another tab has the workbench open, closing it can help — the tabs share one database.'}
               </p>
             </>
           ) : null}

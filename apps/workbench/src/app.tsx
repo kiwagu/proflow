@@ -1,9 +1,4 @@
 import type { DocumentMeta } from '@workspace/domain';
-import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
-import {
-  createWorkbenchTranslator,
-  loadWorkbenchMessages,
-} from '@workspace/i18n-catalogs/workbench';
 import { Button } from '@workspace/ui/components/button';
 import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chrome';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
@@ -30,31 +25,11 @@ import {
   type GraphServices,
 } from '@workspace/workbench-graph';
 import { Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import { DocumentPane } from './features/document-pane';
+import { useWorkbenchTranslator } from './i18n';
 import { SIDEBAR_WIDTH } from './shell/layout';
-
-/**
- * Loads the workbench catalog once for the app's locale and hands back a
- * translator — the seam every workbench chrome surface (explorer, palette)
- * reads its labels through. `null` while the catalog is loading.
- */
-function useWorkbenchTranslator(): WorkbenchTranslator | null {
-  const [t, setT] = useState<WorkbenchTranslator | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    // The app has no locale switcher yet; English is the only wired
-    // locale until one is added — the catalog itself already has ES.
-    void loadWorkbenchMessages('en').then((messages) => {
-      if (!cancelled) setT(() => createWorkbenchTranslator(messages));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return t;
-}
 
 /**
  * The workbench: the explorer on the left, the selected node in the pane,
@@ -141,11 +116,13 @@ function Workbench() {
   return (
     <div className="bg-background text-foreground flex h-full flex-col">
       <WorkbenchChrome
-        brand="ProFlow"
-        tabLabel="Drive"
+        brand={t ? t('workbench.app.brand') : 'ProFlow'}
+        tabLabel={t ? t('workbench.app.tabLabel') : 'Drive'}
         note={{
-          label: 'Local-first',
-          text: 'Documents and files are stored on this device and open without a network.',
+          label: t ? t('workbench.app.localFirstLabel') : 'Local-first',
+          text: t
+            ? t('workbench.app.localFirstText')
+            : 'Documents and files are stored on this device and open without a network.',
         }}
         actions={
           <Button
@@ -155,7 +132,7 @@ function Workbench() {
             data-testid="command-palette-trigger"
           >
             <Search aria-hidden />
-            Search
+            {t ? t('workbench.app.search') : 'Search'}
             <kbd className="text-muted-foreground ml-1 text-[10px]">⌘K</kbd>
           </Button>
         }
@@ -164,7 +141,7 @@ function Workbench() {
         panel={{
           kind: 'fixed',
           width: SIDEBAR_WIDTH,
-          'aria-label': 'Files',
+          'aria-label': t ? t('workbench.app.filesAriaLabel') : 'Files',
           className: 'p-0',
           children: <FileExplorer documents={documents} labels={fileLabels} />,
         }}

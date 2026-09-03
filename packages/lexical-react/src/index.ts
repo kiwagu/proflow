@@ -3,6 +3,7 @@
  */
 export * from './component/EditorMount';
 export * from './component/accessory/CodeBoxAccessory';
+export * from './component/accessory/codeBoxAccessoryLabels';
 export * from './component/accessory/NodeAccessoryRenderer';
 export * from './context/LexicalWrapperContext';
 export * from './decorators/registry';

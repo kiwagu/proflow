@@ -1,6 +1,7 @@
 import { Button } from '@workspace/ui/components/button';
 import { useState } from 'react';
 import { deleteEverythingAndStartOver } from '../composition/start-over';
+import { useWorkbenchTranslator } from '../i18n';
 
 /**
  * The screen a start-up that failed ends on. No service exists here — the
@@ -16,6 +17,7 @@ import { deleteEverythingAndStartOver } from '../composition/start-over';
 export function BootFailure({ error }: { error: unknown }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const t = useWorkbenchTranslator();
 
   const startOver = async () => {
     setDeleting(true);
@@ -24,16 +26,18 @@ export function BootFailure({ error }: { error: unknown }) {
 
   return (
     <div className="bg-background text-foreground flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 className="text-lg font-semibold">The workbench could not start</h1>
+      <h1 className="text-lg font-semibold">
+        {t ? t('workbench.app.failure.title') : 'The workbench could not start'}
+      </h1>
       <p className="text-muted-foreground max-w-md text-sm">{String(error)}</p>
       <p className="text-muted-foreground/70 max-w-md text-xs">
-        Your documents and files are stored on this device and are not affected.
-        Close any other tab with the workbench open — they share one database —
-        and reload.
+        {t
+          ? t('workbench.app.failure.hint')
+          : 'Your documents and files are stored on this device and are not affected. Close any other tab with the workbench open — they share one database — and reload.'}
       </p>
       <div className="flex gap-2">
         <Button size="sm" onClick={() => window.location.reload()}>
-          Reload
+          {t ? t('workbench.app.failure.reload') : 'Reload'}
         </Button>
         {!confirming ? (
           <Button
@@ -42,7 +46,9 @@ export function BootFailure({ error }: { error: unknown }) {
             data-testid="boot-start-over"
             onClick={() => setConfirming(true)}
           >
-            Delete local data and start over
+            {t
+              ? t('workbench.app.failure.startOver')
+              : 'Delete local data and start over'}
           </Button>
         ) : null}
       </div>
@@ -52,12 +58,14 @@ export function BootFailure({ error }: { error: unknown }) {
           data-testid="boot-start-over-confirm"
         >
           <p className="mb-2 text-sm">
-            This deletes every document, file and setting stored on this device,
-            and cannot be undone. The app starts again as if newly installed.
+            {t
+              ? t('workbench.app.failure.confirmText')
+              : 'This deletes every document, file and setting stored on this device, and cannot be undone. The app starts again as if newly installed.'}
           </p>
           <p className="text-muted-foreground/70 mb-3 text-xs">
-            Other tabs of this app should be closed, or their copy of the
-            database may outlive this.
+            {t
+              ? t('workbench.app.failure.confirmHint')
+              : 'Other tabs of this app should be closed, or their copy of the database may outlive this.'}
           </p>
           <div className="flex justify-end gap-2">
             <Button
@@ -67,7 +75,7 @@ export function BootFailure({ error }: { error: unknown }) {
               disabled={deleting}
               onClick={() => setConfirming(false)}
             >
-              Keep my data
+              {t ? t('workbench.app.failure.keepData') : 'Keep my data'}
             </Button>
             <Button
               size="sm"
@@ -76,7 +84,13 @@ export function BootFailure({ error }: { error: unknown }) {
               disabled={deleting}
               onClick={() => void startOver()}
             >
-              {deleting ? 'Deleting…' : 'Delete everything'}
+              {deleting
+                ? t
+                  ? t('workbench.app.failure.deleting')
+                  : 'Deleting…'
+                : t
+                  ? t('workbench.app.failure.deleteEverything')
+                  : 'Delete everything'}
             </Button>
           </div>
         </div>

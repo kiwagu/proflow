@@ -3,11 +3,6 @@ import type {
   EditAuthor,
   SerializedTree,
 } from '@workspace/domain';
-import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
-import {
-  createWorkbenchTranslator,
-  loadWorkbenchMessages,
-} from '@workspace/i18n-catalogs/workbench';
 import type { LexicalWrapper } from '@workspace/lexical-react';
 import { editorStateAsMarkdown } from '@workspace/lexical-react/utils';
 import {
@@ -24,33 +19,13 @@ import {
   useDocumentVersions,
   useServices,
 } from '../composition/app-services';
+import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 
 /** Keystrokes settle for this long before the document is written. */
 const SAVE_DEBOUNCE_MS = 400;
 /** A pause this long after the last save marks an "idle" version. */
 const VERSION_DEBOUNCE_MS = 30_000;
-
-/**
- * Loads the workbench catalog once for the app's locale and hands back a
- * translator — the seam every editor chrome surface (toolbar, table
- * picker) reads its labels through. `null` while the catalog is loading.
- */
-function useWorkbenchTranslator(): WorkbenchTranslator | null {
-  const [t, setT] = useState<WorkbenchTranslator | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    // The app has no locale switcher yet; English is the only wired
-    // locale until one is added — the catalog itself already has ES.
-    void loadWorkbenchMessages('en').then((messages) => {
-      if (!cancelled) setT(() => createWorkbenchTranslator(messages));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return t;
-}
 
 /**
  * A document in the editor: loads it once, mounts the editing shell over
@@ -197,13 +172,16 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   if (!initial)
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
-        <Spinner className="animate-spin" /> Opening…
+        <Spinner className="animate-spin" />{' '}
+        {t ? t('workbench.app.opening') : 'Opening…'}
       </div>
     );
   if ('error' in initial)
     return (
       <p className="text-destructive p-6 text-sm">
-        Could not open the document: {initial.error}
+        {t
+          ? t('workbench.app.openError', { reason: initial.error })
+          : `Could not open the document: ${initial.error}`}
       </p>
     );
 
@@ -227,7 +205,15 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
             className="text-muted-foreground shrink-0 text-xs"
             data-testid="save-state"
           >
-            {saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : ''}
+            {saved === 'saving'
+              ? t
+                ? t('workbench.app.saving')
+                : 'Saving…'
+              : saved === 'saved'
+                ? t
+                  ? t('workbench.app.saved')
+                  : 'Saved'
+                : ''}
           </span>
         </div>
       </DocumentView>

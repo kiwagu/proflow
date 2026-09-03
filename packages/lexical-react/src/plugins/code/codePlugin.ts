@@ -28,6 +28,7 @@ import {
 import type { SetStoreFunction } from '../../reactive/store';
 import { createElement } from 'react';
 import { CodeBoxAccessory } from '../../component/accessory/CodeBoxAccessory';
+import type { CodeBoxAccessoryLabels } from '../../component/accessory/codeBoxAccessoryLabels';
 import { type AccessoryStore, nodeAccessoryPlugin } from '../node-accessory';
 
 enum CodeCaretPosition {
@@ -153,6 +154,7 @@ function $getSelectionInfo(
 type CodePluginProps = {
   accessories: AccessoryStore;
   setAccessories: SetStoreFunction<AccessoryStore>;
+  labels?: CodeBoxAccessoryLabels;
 };
 
 type CodePreviewInfo = {
@@ -178,6 +180,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
           floatRef: mountRef,
           editor,
           nodeKey,
+          labels: props.labels,
         }),
     });
     cleanups.push(codeAccessory(editor));

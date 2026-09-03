@@ -41,6 +41,10 @@ import { deleteCodeNode } from '../../plugins/code/deleteCodeNode';
 import { useAutoRegister } from '../../plugins/shared/utils';
 import { useIsInBlock, useIsNestedBlock } from '../../support/block';
 import { ENABLE_SVG_PREVIEW } from '../../support/featureFlags';
+import {
+  type CodeBoxAccessoryLabels,
+  defaultCodeBoxAccessoryLabels,
+} from './codeBoxAccessoryLabels';
 
 type IconComponent = FC<{ className?: string }>;
 
@@ -189,10 +193,12 @@ export function CodeBoxAccessory({
   floatRef,
   editor,
   nodeKey,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   floatRef: HTMLElement;
   editor: LexicalEditor;
   nodeKey: NodeKey;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const [language, setLanguage] = useState('JavaScript');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -269,7 +275,9 @@ export function CodeBoxAccessory({
         <div className="flex h-full items-center">
           {showPreviewToggle && (
             <div className="mr-2 flex items-center gap-2">
-              <div className="text-muted-foreground/50 text-xs">Preview</div>
+              <div className="text-muted-foreground/50 text-xs">
+                {labels.preview}
+              </div>
               <PreviewToggle
                 checked={isPreviewMode}
                 onChange={setIsPreviewMode}
@@ -281,7 +289,7 @@ export function CodeBoxAccessory({
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground/50 hover:text-destructive h-full"
-              title="Delete Code"
+              title={labels.deleteCode}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -295,7 +303,7 @@ export function CodeBoxAccessory({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground/50 h-full"
-            title="Copy Code"
+            title={labels.copyCode}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -307,7 +315,7 @@ export function CodeBoxAccessory({
         </div>
       </div>
       {isPreviewMode && showPreviewToggle && (
-        <SvgPreview svgContent={readCode()} overlay />
+        <SvgPreview svgContent={readCode()} overlay labels={labels} />
       )}
     </div>
   );
@@ -324,9 +332,11 @@ function sanitizeSvg(content: string): string {
 function SvgPreview({
   svgContent,
   overlay: _overlay,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   svgContent: string;
   overlay?: boolean;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const trimmed = svgContent.trim();
@@ -349,12 +359,12 @@ function SvgPreview({
     <div className="absolute inset-x-0 top-12 bottom-0 z-10 p-2">
       {!trimmed && (
         <div className="text-muted-foreground/50 flex h-full items-center justify-center text-sm">
-          No SVG content
+          {labels.svgEmpty}
         </div>
       )}
       {trimmed && !isSvg && (
         <div className="text-destructive flex h-full items-center justify-center text-sm">
-          Invalid SVG content
+          {labels.svgInvalid}
         </div>
       )}
       {trimmed && isSvg && (
@@ -377,12 +387,14 @@ export function StaticCodeBoxAccessory({
   code,
   isPreviewMode: isPreviewModeProp,
   setIsPreviewMode: setIsPreviewModeProp,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   language: string;
   code: string;
   theme?: EditorThemeClasses;
   isPreviewMode?: boolean;
   setIsPreviewMode?: (enabled: boolean) => void;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const [localPreviewMode, setLocalPreviewMode] = useState(false);
 
@@ -405,7 +417,9 @@ export function StaticCodeBoxAccessory({
         <div className="flex items-center gap-2">
           {showPreviewToggle && (
             <div className="flex items-center gap-2">
-              <div className="text-muted-foreground/50 text-xs">Preview</div>
+              <div className="text-muted-foreground/50 text-xs">
+                {labels.preview}
+              </div>
               <PreviewToggle
                 checked={isPreviewMode}
                 onChange={setIsPreviewMode}
@@ -416,7 +430,7 @@ export function StaticCodeBoxAccessory({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground/50 h-full"
-            title="Copy Code"
+            title={labels.copyCode}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();

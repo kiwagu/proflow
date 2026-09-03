@@ -1,5 +1,6 @@
 import type { DocumentMeta } from '@workspace/domain';
 import { Component, lazy, Suspense, type ReactNode } from 'react';
+import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 
 /**
@@ -24,9 +25,11 @@ export function DocumentPane({ document }: { document: DocumentMeta }) {
 }
 
 function Opening() {
+  const t = useWorkbenchTranslator();
   return (
     <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
-      <Spinner className="animate-spin" /> Opening…
+      <Spinner className="animate-spin" />{' '}
+      {t ? t('workbench.app.opening') : 'Opening…'}
     </div>
   );
 }
@@ -50,7 +53,7 @@ class EditorBoundary extends Component<
       return (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
           <p className="text-destructive text-sm">
-            The editor could not open this document.
+            <EditorFailedMessage />
           </p>
           <p className="text-muted-foreground max-w-md text-xs">
             {String(this.state.error)}
@@ -59,4 +62,19 @@ class EditorBoundary extends Component<
       );
     return this.props.children;
   }
+}
+
+/**
+ * A class component cannot call hooks, so the translated failure message
+ * is its own function component rendered inside the fallback markup.
+ */
+function EditorFailedMessage() {
+  const t = useWorkbenchTranslator();
+  return (
+    <>
+      {t
+        ? t('workbench.app.editorFailed')
+        : 'The editor could not open this document.'}
+    </>
+  );
 }
