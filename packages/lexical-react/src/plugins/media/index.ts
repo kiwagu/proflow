@@ -2,12 +2,13 @@ export {
   type AttachmentStore,
   cachedUrlResolver,
   getAttachmentStore,
+  localPreview,
   setAttachmentStore,
+  setLocalPreviewFor,
   setUploadProgressFor,
   uploadProgress,
 } from './attachmentStore';
 export {
-  blobUrl,
   INSERT_ATTACHMENT_FILES_COMMAND,
   type InsertionPoint,
   mediaPlugin,

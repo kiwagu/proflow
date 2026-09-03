@@ -2,13 +2,13 @@
  * @file The accessory rendered for code nodes — a copy button and a syntax
  * highlighting language selector.
  */
-import { $isCodeNode, CodeNode } from '@lexical/code';
 import {
-  $isCustomCodeNode,
-  LanguageDefinitions,
-  normalizedLanguage,
-  type SupportedLanguage,
-} from '@workspace/lexical-nodes';
+  $isCodeNode,
+  CODE_LANGUAGE_FRIENDLY_NAME_MAP,
+  CodeNode,
+  getLanguageFriendlyName,
+  normalizeCodeLanguage,
+} from '@lexical/code';
 import { Button } from '@workspace/ui/components/button';
 import {
   DropdownMenu,
@@ -44,12 +44,22 @@ import { ENABLE_SVG_PREVIEW } from '../../support/featureFlags';
 
 type IconComponent = FC<{ className?: string }>;
 
-const LanguageIcons: Record<SupportedLanguage, IconComponent> = {
-  plaintext: FileTextIcon,
-  javascript: FileCodeIcon,
+/**
+ * The picker offers the official code package's language registry — the
+ * keys are what the highlighter understands, the values are display names.
+ * Nothing here is hand-maintained: a language the highlighter gains shows up
+ * in the picker with the fallback icon.
+ */
+const PICKER_LANGUAGES: ReadonlyArray<[key: string, label: string]> =
+  Object.entries(CODE_LANGUAGE_FRIENDLY_NAME_MAP);
+
+const FallbackIcon: IconComponent = FileTextIcon;
+
+const LanguageIcons: Record<string, IconComponent> = {
+  plain: FileTextIcon,
+  js: FileCodeIcon,
   typescript: FileTypeIcon,
-  json: BracesIcon,
-  python: FileCode2Icon,
+  py: FileCode2Icon,
   rust: FileCode2Icon,
   java: FileCodeIcon,
   swift: FileCodeIcon,
@@ -60,25 +70,36 @@ const LanguageIcons: Record<SupportedLanguage, IconComponent> = {
   markdown: FileTextIcon,
   powershell: FileCodeIcon,
   sql: FileJson2Icon,
+  xml: FileCodeIcon,
+  json: BracesIcon,
   bash: FileCodeIcon,
   svg: FileCodeIcon,
 };
 
-function StaticLabel({ language }: { language: SupportedLanguage }) {
-  const Icon = LanguageIcons[language];
-  return (
-    <div className="text-muted-foreground/50 flex items-center gap-1 p-2 font-sans text-xs font-medium">
-      <Icon className="size-4" />
-      <span className="select-none">{LanguageDefinitions[language].label}</span>
-    </div>
-  );
+/** The highlighter's canonical key for a language, `plain` when unset. */
+function canonicalLanguage(language: string | null | undefined): string {
+  return normalizeCodeLanguage((language ?? 'plain').toLowerCase());
 }
 
-function validLanguage(language: string | null): SupportedLanguage {
-  if (language && language.toLowerCase() in LanguageDefinitions) {
-    return language.toLowerCase() as SupportedLanguage;
-  }
-  return 'plaintext';
+/** The icon for a language, resolved as a component so lookups stay stable. */
+function LanguageIcon({
+  language,
+  className,
+}: {
+  language: string;
+  className?: string;
+}) {
+  const Icon = LanguageIcons[language] ?? FallbackIcon;
+  return <Icon className={className} />;
+}
+
+function StaticLabel({ language }: { language: string }) {
+  return (
+    <div className="text-muted-foreground/50 flex items-center gap-1 p-2 font-sans text-xs font-medium">
+      <LanguageIcon language={language} className="size-4" />
+      <span className="select-none">{getLanguageFriendlyName(language)}</span>
+    </div>
+  );
 }
 
 function CodeLanguageSelector({
@@ -92,8 +113,7 @@ function CodeLanguageSelector({
 }) {
   const [open, setOpen] = useState(false);
   const editable = Boolean(editor && editor.isEditable());
-  const current = validLanguage(language);
-  const CurrentIcon = LanguageIcons[current];
+  const current = canonicalLanguage(language);
 
   if (!editable) return <StaticLabel language={current} />;
 
@@ -106,30 +126,23 @@ function CodeLanguageSelector({
           className="text-muted-foreground/50 p-1.5"
           tabIndex={-1}
         >
-          <CurrentIcon className="size-4" />
-          <span>{LanguageDefinitions[current].label}</span>
+          <LanguageIcon language={current} className="size-4" />
+          <span>{getLanguageFriendlyName(current)}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuGroup>
-          {Object.entries(LanguageDefinitions)
-            .filter(([, info]) => info.show)
-            .map(([key, info]) => {
-              const Icon =
-                LanguageIcons[key as SupportedLanguage] ??
-                LanguageIcons.plaintext;
-              return (
-                <DropdownMenuItem
-                  key={key}
-                  onSelect={() => {
-                    setLanguage(key);
-                  }}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="flex-1 truncate">{info.label}</span>
-                </DropdownMenuItem>
-              );
-            })}
+          {PICKER_LANGUAGES.map(([key, label]) => (
+            <DropdownMenuItem
+              key={key}
+              onSelect={() => {
+                setLanguage(key);
+              }}
+            >
+              <LanguageIcon language={key} className="size-4 shrink-0" />
+              <span className="flex-1 truncate">{label}</span>
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -191,7 +204,11 @@ export function CodeBoxAccessory({
   const isNested = inBlock && nestedBlock;
   const glueRef = useGlueToElement(editor, isNested ? null : floatRef);
 
-  useAutoRegister(ENABLE_SVG_PREVIEW ? editor : undefined, (editorInstance) =>
+  // The language selector tracks the node whatever set it (the picker, a
+  // markdown fence, an agent edit), so the listener is always on; the
+  // preview toggle below is component state — the stock code node persists
+  // no preview flag, and the toggle is a viewing aid, not document content.
+  useAutoRegister(editor, (editorInstance) =>
     editorInstance.registerMutationListener(
       CodeNode,
       (mutations) => {
@@ -202,9 +219,6 @@ export function CodeBoxAccessory({
               const node = $getNodeByKey(nodeKey);
               if (!$isCodeNode(node)) return;
               setLanguage(node.getLanguage() ?? 'plain');
-              if ($isCustomCodeNode(node)) {
-                setIsPreviewMode(node.getPreviewEnabled());
-              }
             })
           );
         }
@@ -226,22 +240,13 @@ export function CodeBoxAccessory({
   const setLanguageOnNode = (next: string) => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey);
-      if (!$isCustomCodeNode(node)) return;
+      if (!$isCodeNode(node)) return;
       node.setLanguage(next);
-      setIsPreviewMode(node.getPreviewEnabled());
-    });
-  };
-
-  const setPreviewModeOnNode = (enabled: boolean) => {
-    editor.update(() => {
-      const node = $getNodeByKey(nodeKey);
-      if (!$isCustomCodeNode(node)) return;
-      node.setPreviewEnabled(enabled);
     });
   };
 
   const showPreviewToggle =
-    ENABLE_SVG_PREVIEW && language.toLowerCase() === 'svg';
+    ENABLE_SVG_PREVIEW && canonicalLanguage(language) === 'svg';
 
   useEffect(() => {
     if (isNested) return;
@@ -267,10 +272,7 @@ export function CodeBoxAccessory({
               <div className="text-muted-foreground/50 text-xs">Preview</div>
               <PreviewToggle
                 checked={isPreviewMode}
-                onChange={(enabled) => {
-                  setIsPreviewMode(enabled);
-                  setPreviewModeOnNode(enabled);
-                }}
+                onChange={setIsPreviewMode}
               />
             </div>
           )}
@@ -388,9 +390,8 @@ export function StaticCodeBoxAccessory({
   const isPreviewMode = isPreviewModeProp ?? localPreviewMode;
   const setIsPreviewMode = setIsPreviewModeProp ?? setLocalPreviewMode;
 
-  const language = normalizedLanguage(languageProp);
-  const showPreviewToggle =
-    ENABLE_SVG_PREVIEW && language.toLowerCase() === 'svg';
+  const language = canonicalLanguage(languageProp);
+  const showPreviewToggle = ENABLE_SVG_PREVIEW && language === 'svg';
 
   return (
     <>

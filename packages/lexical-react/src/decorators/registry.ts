@@ -9,11 +9,54 @@
  */
 import {
   clearDecorators,
+  type EquationDecoratorProps,
+  EquationNode,
+  type FileDecoratorProps,
+  FileNode,
   getDecorator,
+  type HorizontalRuleDecoratorProps,
+  HorizontalRuleNode,
+  type ImageDecoratorProps,
+  ImageNode,
   type NodeDecoratorMap,
+  type ResourceMentionDecoratorProps,
+  ResourceMentionNode,
   setDecorator,
+  type UnknownEmbedDecoratorProps,
+  UnknownEmbedNode,
+  type VideoDecoratorProps,
+  VideoNode,
 } from '@workspace/lexical-nodes';
 import type { FC } from 'react';
+
+/**
+ * The decorator contracts of the vocabulary, keyed by node name.
+ *
+ * The node package leaves this interface open so that whoever renders can
+ * declare the pairing; this binding is where React does. Each entry ties a
+ * node class to the props its `decorate()` hands out, which is what lets
+ * {@link setReactDecorator} check a component against the right node.
+ */
+declare module '@workspace/lexical-nodes' {
+  interface NodeDecoratorMap {
+    HorizontalRuleNode: {
+      klass: typeof HorizontalRuleNode;
+      props: HorizontalRuleDecoratorProps;
+    };
+    EquationNode: { klass: typeof EquationNode; props: EquationDecoratorProps };
+    FileNode: { klass: typeof FileNode; props: FileDecoratorProps };
+    ImageNode: { klass: typeof ImageNode; props: ImageDecoratorProps };
+    VideoNode: { klass: typeof VideoNode; props: VideoDecoratorProps };
+    ResourceMentionNode: {
+      klass: typeof ResourceMentionNode;
+      props: ResourceMentionDecoratorProps;
+    };
+    UnknownEmbedNode: {
+      klass: typeof UnknownEmbedNode;
+      props: UnknownEmbedDecoratorProps;
+    };
+  }
+}
 
 /** A decorator component in the React binding: strictly a function component. */
 export type ReactDecoratorComponent<P extends object> = FC<P>;

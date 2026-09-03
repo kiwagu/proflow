@@ -43,6 +43,18 @@ export function setUploadProgressFor(key: string, value: number | undefined) {
   setUploadProgress(key, value as number);
 }
 
+/**
+ * Object URLs of bytes still on their way to the store, per node key. The
+ * document never holds a URL — a media node references bytes by hash — so
+ * this is the only place a just-dropped file can be painted from before its
+ * hash exists. Entries are revoked and removed once the bytes are stored.
+ */
+const [localPreview, setLocalPreview] = createStore<Record<string, string>>({});
+export { localPreview };
+export function setLocalPreviewFor(key: string, url: string | undefined) {
+  setLocalPreview(key, url as string);
+}
+
 export function setAttachmentStore(next: AttachmentStore | undefined): void {
   store = next;
 }

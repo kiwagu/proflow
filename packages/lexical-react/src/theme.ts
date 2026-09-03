@@ -85,7 +85,6 @@ export const theme: EditorThemeClasses = {
     'table-container': 'my-4 max-w-full',
   },
   codeHighlight,
-  'inline-search': 'md-inline-search bg-hover text-ink-muted rounded-sm p-0.5',
 
   table: 'md-table',
   tableAddColumns: 'md-table-add-columns',

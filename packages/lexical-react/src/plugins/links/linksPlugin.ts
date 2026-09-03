@@ -14,7 +14,6 @@ import {
   $wrapNodeInElement,
   mergeRegister,
 } from '@lexical/utils';
-import { $createUnlinkedTextNode } from '@workspace/lexical-nodes';
 import type { LexicalEditor } from 'lexical';
 import {
   $createParagraphNode,
@@ -295,7 +294,12 @@ function $unlinkSelection(): boolean {
       let newNode;
       const text = node.getTextContent();
       if (strictLinkifier.test(text)) {
-        newNode = $createUnlinkedTextNode(text);
+        // URL-shaped text would be re-linked by the auto-link transform the
+        // moment it becomes plain text. The official link package models
+        // exactly this case: an auto-link node flagged as unlinked renders as
+        // a span and is skipped by the matcher, so the text stays plain.
+        newNode = $createAutoLinkNode(text, { isUnlinked: true });
+        newNode.append($createTextNode(text));
       } else {
         newNode = $createTextNode(text);
       }

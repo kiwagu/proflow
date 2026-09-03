@@ -1,4 +1,5 @@
 import {
+  $createCodeNode,
   $isCodeHighlightNode,
   $isCodeNode,
   CodeNode,
@@ -6,12 +7,8 @@ import {
 } from '@lexical/code';
 import { $findMatchingParent, mergeRegister } from '@lexical/utils';
 import {
-  $createCustomCodeNode,
-  $isCustomCodeNode,
-  CustomCodeNode,
-} from '@workspace/lexical-nodes';
-import {
   $createParagraphNode,
+  $createTextNode,
   $getSelection,
   $insertNodes,
   $isLineBreakNode,
@@ -40,18 +37,16 @@ enum CodeCaretPosition {
   Collapsed = 'collapsed',
 }
 
-function $isCode(node: any): node is CodeNode | CustomCodeNode {
-  return $isCodeNode(node) || $isCustomCodeNode(node);
+function $isCode(node: LexicalNode | null | undefined): node is CodeNode {
+  return $isCodeNode(node);
 }
 
-function $getCodeAncestor(node: LexicalNode): CodeNode | CustomCodeNode | null {
+function $getCodeAncestor(node: LexicalNode): CodeNode | null {
   const target = $findMatchingParent(node, $isCode);
   return $isCode(target) ? target : null;
 }
 
-function $getNodeKeysByLine(
-  node: CodeNode | CustomCodeNode
-): Array<Set<NodeKey>> {
+function $getNodeKeysByLine(node: CodeNode): Array<Set<NodeKey>> {
   const lines: Array<Set<NodeKey>> = [];
   let currentLine = new Set<NodeKey>();
   const children = node.getChildren();
@@ -69,7 +64,7 @@ function $getNodeKeysByLine(
 }
 
 function $getSelectionInfo(
-  node: CodeNode | CustomCodeNode,
+  node: CodeNode,
   selection: RangeSelection
 ): {
   line: CodeCaretPosition | null;
@@ -173,20 +168,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
 
   cleanups.push(registerCodeHighlighting(editor));
 
-  if (editor.hasNode(CustomCodeNode)) {
-    const codeAccessory = nodeAccessoryPlugin({
-      klass: CustomCodeNode,
-      store: props.accessories,
-      setStore: props.setAccessories,
-      component: ({ mountRef, nodeKey }) =>
-        createElement(CodeBoxAccessory, {
-          floatRef: mountRef,
-          editor,
-          nodeKey,
-        }),
-    });
-    cleanups.push(codeAccessory(editor));
-  } else if (editor.hasNode(CodeNode)) {
+  if (editor.hasNode(CodeNode)) {
     const codeAccessory = nodeAccessoryPlugin({
       klass: CodeNode,
       store: props.accessories,
@@ -215,10 +197,9 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
       INSERT_CODE_PREVIEW_COMMAND,
       (payload) => {
         editor.update(() => {
-          const node = $createCustomCodeNode(payload.language);
-          node.setCode(payload.language, payload.code);
+          const node = $createCodeNode(payload.language);
+          node.append($createTextNode(payload.code));
           $insertNodes([node]);
-          return true;
         });
         return true;
       },

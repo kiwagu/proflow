@@ -4,7 +4,6 @@ import { CODE } from '@lexical/markdown';
 import { registerPlainText } from '@lexical/plain-text';
 import { registerRichText } from '@lexical/rich-text';
 import { ALL_TRANSFORMERS, type EditorType } from '@workspace/lexical-nodes';
-import { HR } from '@workspace/lexical-nodes/transformers/transformers';
 import type { EditorState, LexicalEditor, UpdateListener } from 'lexical';
 import type { Setter } from '../reactive/signal';
 import { bindStateAs } from '../utils';
@@ -57,7 +56,11 @@ export function createPluginManager(editor: LexicalEditor, _type: EditorType) {
       cleanupFunctions.push(
         markdownShortcutsPlugin({
           transformers: ALL_TRANSFORMERS,
-          triggerOnEnterTransformers: [HR, CODE],
+          // Fenced code is the one block that needs Enter to commit: its
+          // opening line is ambiguous until the fence closes. (The node
+          // vocabulary ships no horizontal-rule transformer, so `---` is not
+          // a shortcut today.)
+          triggerOnEnterTransformers: [CODE],
         })(editor)
       );
       return pluginManager;

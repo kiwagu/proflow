@@ -17,7 +17,11 @@ import {
 } from 'lexical';
 import { $insertNodesAndSplitList } from '../../utils';
 import type { PluginFunction } from '../pluginManager';
-import { getAttachmentStore, setUploadProgressFor } from './attachmentStore';
+import {
+  getAttachmentStore,
+  setLocalPreviewFor,
+  setUploadProgressFor,
+} from './attachmentStore';
 
 /** Where dropped files land relative to an existing block. */
 export type InsertionPoint = { key: NodeKey; position: 'before' | 'after' };
@@ -32,9 +36,6 @@ export const INSERT_ATTACHMENT_FILES_COMMAND = createCommand<{
 export const TRY_INSERT_ATTACHMENT_UPLOAD_COMMAND = createCommand<
   'image' | 'video' | 'all'
 >('TRY_INSERT_ATTACHMENT_UPLOAD_COMMAND');
-
-/** The reference a media node carries for blob-backed bytes. */
-export const blobUrl = (hash: string) => `docblob://${hash}`;
 
 async function imageSize(
   file: File
@@ -59,7 +60,13 @@ function $insertAt(node: LexicalNode, at?: InsertionPoint) {
   else anchor.insertAfter(node);
 }
 
-/** A node goes in at once, with a local preview; its bytes follow. */
+/**
+ * A node goes in at once and its bytes follow. The node starts with an empty
+ * hash — the document references bytes by content hash and there is none
+ * until the store has them — and is painted from a local object URL in the
+ * meantime; once stored, the hash lands on the node and the preview is
+ * released.
+ */
 async function attach(
   editor: LexicalEditor,
   files: File[],
@@ -76,30 +83,20 @@ async function attach(
     const size =
       kind === 'image' ? await imageSize(file) : { width: 0, height: 0 };
     const preview = kind === 'file' ? '' : URL.createObjectURL(file);
-    const localId = `local-${crypto.randomUUID()}`;
+    const mime = file.type || 'application/octet-stream';
 
     let key = '';
     editor.update(
       () => {
         const node =
           kind === 'image'
-            ? $createImageNode({
-                srcType: 'local',
-                id: localId,
-                url: preview,
-                alt: file.name,
-                ...size,
-              })
+            ? $createImageNode({ hash: '', mime, alt: file.name, ...size })
             : kind === 'video'
-              ? $createVideoNode({
-                  srcType: 'local',
-                  id: localId,
-                  url: preview,
-                })
+              ? $createVideoNode({ hash: '', mime, controls: true, ...size })
               : $createFileNode({
                   hash: '',
                   fileName: file.name,
-                  mimeType: file.type || 'application/octet-stream',
+                  mimeType: mime,
                   size: file.size,
                 });
         $insertAt(node, at);
@@ -110,6 +107,7 @@ async function attach(
     // Further files follow the one just inserted.
     at = undefined;
 
+    if (preview) setLocalPreviewFor(key, preview);
     setUploadProgressFor(key, 0);
     try {
       const info = await store.importFile(file, (done, total) =>
@@ -119,9 +117,7 @@ async function attach(
         const node = $getNodeByKey(key);
         if (!node) return;
         if ($isImageNode(node) || $isVideoNode(node)) {
-          node.setSrcType('blob', false);
-          node.setId(info.hash, false);
-          node.setUrl(blobUrl(info.hash));
+          node.setHash(info.hash);
         } else if ($isFileNode(node)) {
           node.replace($createFileNode(info));
         }
@@ -135,7 +131,10 @@ async function attach(
       store.reportError?.(`Could not attach ${file.name}: ${String(e)}`);
     } finally {
       setUploadProgressFor(key, undefined);
-      if (preview) URL.revokeObjectURL(preview);
+      if (preview) {
+        setLocalPreviewFor(key, undefined);
+        URL.revokeObjectURL(preview);
+      }
     }
   }
 }

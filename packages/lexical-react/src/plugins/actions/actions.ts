@@ -2,8 +2,8 @@ import { LinkNode } from '@lexical/link';
 import { ListNode } from '@lexical/list';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { INSERT_TABLE_COMMAND, TableNode } from '@lexical/table';
+import { CodeNode } from '@lexical/code';
 import {
-  CustomCodeNode,
   EquationNode,
   FileNode,
   HorizontalRuleNode,
@@ -104,7 +104,7 @@ export const ACTIONS: Action[] = [
     action: (editor: LexicalEditor) => {
       editor.dispatchCommand(NODE_TRANSFORM, 'code');
     },
-    dependencies: [CustomCodeNode],
+    dependencies: [CodeNode],
   },
   {
     id: 'list-bullet',

@@ -1,5 +1,5 @@
-import { mergeRegister } from '@lexical/utils';
-import { $isSelectionInsideCode } from '@workspace/lexical-nodes';
+import { $isCodeHighlightNode, $isCodeNode } from '@lexical/code';
+import { $findMatchingParent, mergeRegister } from '@lexical/utils';
 import {
   $getRoot,
   $getSelection,
@@ -11,9 +11,17 @@ import {
   KEY_ARROW_UP_COMMAND,
   KEY_TAB_COMMAND,
   type LexicalEditor,
+  type RangeSelection,
 } from 'lexical';
 import type { Accessor } from '../../reactive/signal';
 import { $getCaretRect, isRectFlushWith } from '../../utils';
+
+/** Whether the caret sits inside a code block, where arrows stay local. */
+function $isSelectionInsideCode(selection: RangeSelection): boolean {
+  const node = selection.anchor.getNode();
+  if ($isCodeNode(node) || $isCodeHighlightNode(node)) return true;
+  return $findMatchingParent(node, $isCodeNode) !== null;
+}
 
 type KeyboardFocusPluginProps = {
   onFocusLeaveStart?: (e: KeyboardEvent) => void;

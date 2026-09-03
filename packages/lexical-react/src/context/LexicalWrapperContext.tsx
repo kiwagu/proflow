@@ -4,7 +4,6 @@
 import {
   type EditorType,
   type NodeIdMappings,
-  NodeReplacements,
   nodeIdPlugin,
   RegisteredNodesByType,
   SupportedNodeTypes,
@@ -81,7 +80,7 @@ let _id = 0;
  * Create a Lexical wrapper with extra utilities for adding plugins and tracking
  * cleanup functions.
  * @param type The type of editor to create. The current options are 'markdown',
- *     'plain-text', 'chat', and 'markdown-sync' which are each configured to include
+ *     'plain-text', 'chat', and 'title' which are each configured to include
  *     and exclude node lists tailored to those use cases.
  * @param namespace A namespace hint for the editor - useful for debugging.
  * @param isInteractable A function that returns true if when the editor should be interactable.
@@ -106,19 +105,14 @@ export function createLexicalWrapper({
 }: LexicalWrapperProps): LexicalWrapper {
   _id++;
 
+  // The editor-type registry is the whole node set: the vocabulary uses the
+  // stock code node, so there is nothing to swap in at construction.
   const nodes = RegisteredNodesByType[type];
-  const replacements = NodeReplacements.filter((replacement) => {
-    if (!nodes.includes(replacement.replace)) return false;
-    if (replacement.withKlass && !nodes.includes(replacement.withKlass))
-      return false;
-
-    return true;
-  });
 
   const editor = createEditor({
     theme: theme ?? baseTheme,
     namespace: namespace + '_' + _id,
-    nodes: [...nodes, ...replacements],
+    nodes: [...nodes],
     onError: console.error,
   });
 
@@ -135,7 +129,6 @@ export function createLexicalWrapper({
     plugins.use(
       nodeIdPlugin({
         nodes: SupportedNodeTypes,
-        idLength: 8,
         mappings: mapping,
       })
     );

@@ -103,10 +103,8 @@ function FormatToggle({
 function blockValueOf(selection: SelectionData): BlockOption | '' {
   if (selection.elementsInRange.size !== 1) return '';
   const [only] = selection.elementsInRange;
-  // The legacy code alias maps onto the canonical entry.
-  const name = only === 'custom-code' ? 'code' : only;
-  return (BLOCK_OPTIONS as readonly string[]).includes(name as string)
-    ? (name as BlockOption)
+  return (BLOCK_OPTIONS as readonly string[]).includes(only as string)
+    ? (only as BlockOption)
     : '';
 }
 

@@ -1,5 +1,4 @@
 import { $isCodeNode } from '@lexical/code';
-import { $isCustomCodeNode } from '@workspace/lexical-nodes';
 import type { LexicalEditor, NodeKey } from 'lexical';
 import { removeNodeAndRestoreSelection } from '../shared/removeNodeAndRestoreSelection';
 
@@ -9,9 +8,5 @@ import { removeNodeAndRestoreSelection } from '../shared/removeNodeAndRestoreSel
  * shape that the rest of the markdown editor expects.
  */
 export function deleteCodeNode(editor: LexicalEditor, nodeKey: NodeKey) {
-  removeNodeAndRestoreSelection(
-    editor,
-    nodeKey,
-    (node) => $isCodeNode(node) || $isCustomCodeNode(node)
-  );
+  removeNodeAndRestoreSelection(editor, nodeKey, $isCodeNode);
 }

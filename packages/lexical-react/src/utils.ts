@@ -21,16 +21,13 @@ import {
   mergeRegister,
 } from '@lexical/utils';
 import {
-  $isDocumentMentionNode,
-  $isMentionNode,
-  $isWatermarkNode,
+  $getId,
+  $isResourceMentionNode,
   ALL_TRANSFORMERS,
   EXTERNAL_TRANSFORMERS,
-  INITIALIZE_LOCAL_STATUS,
+  INITIALIZE_DOCUMENT_IDS,
   INTERNAL_TRANSFORMERS,
 } from '@workspace/lexical-nodes';
-import { SKIP_SCROLL_INTO_VIEW_TAG } from '@workspace/lexical-nodes';
-import { $getId, INITIALIZE_DOCUMENT_IDS } from '@workspace/lexical-nodes';
 import {
   $addUpdateTag,
   $createParagraphNode,
@@ -68,6 +65,7 @@ import {
   type SerializedLexicalNode,
   type SerializedParagraphNode,
   SKIP_DOM_SELECTION_TAG,
+  SKIP_SCROLL_INTO_VIEW_TAG,
   type TextNode,
 } from 'lexical';
 import type { Setter } from './reactive/signal';
@@ -159,8 +157,7 @@ function _stateHasOnlyEmptyParagraphs(state: SerializedEditorState): boolean {
  */
 export function initializeEditorWithState(
   editor: LexicalEditor,
-  state?: SerializedEditorState,
-  peerId?: () => string | undefined
+  state?: SerializedEditorState
 ) {
   if (!state || state.root.children?.length === 0) return;
   try {
@@ -168,9 +165,6 @@ export function initializeEditorWithState(
     editor.setEditorState(parsed);
     editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
     editor.dispatchCommand(INITIALIZE_DOCUMENT_IDS, undefined);
-    if (peerId) {
-      editor.dispatchCommand(INITIALIZE_LOCAL_STATUS, peerId);
-    }
   } catch (e) {
     console.error(e);
   }
@@ -184,8 +178,7 @@ export function initializeEditorWithState(
  */
 export function initializeEditorWithVersionedState(
   editor: LexicalEditor,
-  state?: SerializedEditorState,
-  peerId?: () => string | undefined
+  state?: SerializedEditorState
 ): MarkdownEditorErrors | null {
   if (!state || state.root.children.length === 0) return null;
   try {
@@ -194,9 +187,6 @@ export function initializeEditorWithVersionedState(
     editor.setEditorState(parsed);
     editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
     editor.dispatchCommand(INITIALIZE_DOCUMENT_IDS, undefined);
-    if (peerId) {
-      editor.dispatchCommand(INITIALIZE_LOCAL_STATUS, peerId);
-    }
     return null;
   } catch (e) {
     console.error(e);
@@ -207,10 +197,7 @@ export function initializeEditorWithVersionedState(
 /**
  * Call this to initialize and Editor and make sure these is not an empty root.
  */
-export function initializeEditorEmpty(
-  editor: LexicalEditor,
-  peerId?: () => string | undefined
-) {
+export function initializeEditorEmpty(editor: LexicalEditor) {
   editor.update(() => {
     $addUpdateTag(SKIP_DOM_SELECTION_TAG);
     const root = $getRoot();
@@ -220,9 +207,6 @@ export function initializeEditorEmpty(
   });
   editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
   editor.dispatchCommand(INITIALIZE_DOCUMENT_IDS, undefined);
-  if (peerId) {
-    editor.dispatchCommand(INITIALIZE_LOCAL_STATUS, peerId);
-  }
 }
 
 /**
@@ -382,13 +366,12 @@ function $isEmpty() {
 
     if (selfChildren.length > 0) {
       const firstChild = selfChildren[0];
-      if ($isWatermarkNode(firstChild)) continue;
       if (!$isParagraphNode(firstChild)) {
         return false;
       }
-      // Early return on pasted mentions before preview can fetch their names.
+      // A pasted mention counts as content even before its title resolves.
       $traverseNodes(child, (n) => {
-        if ($isMentionNode(n)) return false;
+        if ($isResourceMentionNode(n)) return false;
       });
     }
 
@@ -841,32 +824,13 @@ function transformSerializedEditorState(
 }
 
 /**
- * Transform a serialized editor state into one that is safe to the LORO sync plugin.
- * NOTE: this is no longer true for loro. but is being used for legacy DSS save.
+ * The serialized form to persist. The vocabulary no longer carries ephemeral
+ * nodes (completions, trigger nodes) that had to be stripped before a save,
+ * so the serialized state is already the save state; the hook stays so a
+ * future ephemeral node has one place to be filtered.
  */
 function cleanState(state: SerializedEditorState): SerializedEditorState {
-  return transformSerializedEditorState(state, [
-    // custom code nodes must have no children.
-    (node) => {
-      if (node.type === 'custom-code') {
-        if ('children' in node) {
-          node.children = [];
-        }
-      }
-
-      return node;
-    },
-    // completion nodes shall not be saved.
-    (node) => {
-      if (node.type === 'completion') return null;
-      return node;
-    },
-    // inline-search nodes shall not be saved.
-    (node) => {
-      if (node.type === 'inline-search') return null;
-      return node;
-    },
-  ]);
+  return transformSerializedEditorState(state, []);
 }
 
 /**
@@ -879,13 +843,7 @@ export function loroSyncState(state: EditorState): SerializedEditorState {
   } else {
     serializedState = state.toJSON();
   }
-  return transformSerializedEditorState(serializedState, [
-    // completion nodes should not be saved.
-    (node) => {
-      if (node.type === 'completion') return null;
-      return node;
-    },
-  ]);
+  return cleanState(serializedState);
 }
 
 function serializedSateWithSearchText(
@@ -1260,8 +1218,10 @@ function _$isSingleDocumentMention(): boolean {
 
   const onlyChild = paragraphChildren[0];
 
-  // That child must be a DocumentMentionNode
-  return $isDocumentMentionNode(onlyChild);
+  // That child must be a document mention
+  return (
+    $isResourceMentionNode(onlyChild) && onlyChild.getKind() === 'document'
+  );
 }
 
 /**
