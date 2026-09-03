@@ -38,6 +38,7 @@ import {
   ImageNode,
 } from '@workspace/lexical-nodes/nodes/ImageNode';
 import { $createResourceMentionNode } from '@workspace/lexical-nodes/nodes/ResourceMentionNode';
+import { MediaNode } from '@workspace/lexical-nodes/nodes/MediaNode';
 import {
   $createVideoNode,
   VideoNode,
@@ -187,13 +188,9 @@ export class Doc implements DocReader, DocWriter {
       .with({ kind: 'removeRow' }, (e) => this.removeRow(e.table, e.row))
       .with({ kind: 'removeColumn' }, (e) => this.removeColumn(e.table, e.col))
       .with({ kind: 'setImageAlt' }, (e) => this.setImageAlt(e.node, e.alt))
-      .with({ kind: 'setImageUrl' }, (e) => this.setImageUrl(e.node, e.url))
-      .with({ kind: 'setVideoUrl' }, (e) => this.setVideoUrl(e.node, e.url))
+      .with({ kind: 'setMediaHash' }, (e) => this.setMediaHash(e.node, e.hash))
       .with({ kind: 'setVideoControls' }, (e) =>
         this.setVideoControls(e.node, e.controls)
-      )
-      .with({ kind: 'setDate' }, (e) =>
-        this.setDate(e.node, e.date, e.displayFormat)
       )
       .exhaustive();
   }
@@ -739,21 +736,12 @@ export class Doc implements DocReader, DocWriter {
     });
   }
 
-  private setImageUrl(node: NodeRef, url: string): void {
+  private setMediaHash(node: NodeRef, hash: string): void {
     this.tx(() => {
       const n = locate.$byId(this.session, node);
-      if (!(n instanceof ImageNode))
-        throw new EditError(`{${node}} is not an image`);
-      n.setUrl(url);
-    });
-  }
-
-  private setVideoUrl(node: NodeRef, url: string): void {
-    this.tx(() => {
-      const n = locate.$byId(this.session, node);
-      if (!(n instanceof VideoNode))
-        throw new EditError(`{${node}} is not a video`);
-      n.setUrl(url);
+      if (!(n instanceof MediaNode))
+        throw new EditError(`{${node}} is not a media node`);
+      n.setHash(hash);
     });
   }
 
@@ -763,16 +751,6 @@ export class Doc implements DocReader, DocWriter {
       if (!(n instanceof VideoNode))
         throw new EditError(`{${node}} is not a video`);
       n.setControls(controls);
-    });
-  }
-
-  private setDate(node: NodeRef, date: string, displayFormat?: string): void {
-    this.tx(() => {
-      const n = locate.$byId(this.session, node);
-      if (!$isDateMentionNode(n))
-        throw new EditError(`{${node}} is not a date mention`);
-      n.setDate(date);
-      n.setDisplayFormat(displayFormat ?? date);
     });
   }
 
@@ -944,33 +922,22 @@ export function buildNode(spec: NodeSpec): LexicalNode {
     })
     .with({ block: 'table' }, (session) => tables.$table(session.rows))
     .with({ block: 'divider' }, () => $createHorizontalRuleNode())
-    .with({ block: 'document-card' }, (s) =>
-      $createDocumentCardNode({
-        documentId: s.documentId,
-        documentName: s.documentName,
-        blockName: s.blockName,
-        blockParams: s.blockParams,
-      })
-    )
-    .with({ block: 'html-render' }, (s) =>
-      $createHtmlRenderNode({ html: s.html })
-    )
     .with({ block: 'image' }, (session) =>
       $createImageNode({
-        srcType: session.srcType,
-        url: session.url,
-        alt: session.alt,
-        width: session.width,
-        height: session.height,
+        hash: session.hash,
+        mime: session.mime ?? '',
+        alt: session.alt ?? '',
+        width: session.width ?? 0,
+        height: session.height ?? 0,
       })
     )
     .with({ block: 'video' }, (session) =>
       $createVideoNode({
-        srcType: session.srcType,
-        url: session.url,
-        controls: session.controls,
-        width: session.width,
-        height: session.height,
+        hash: session.hash,
+        mime: session.mime ?? '',
+        controls: session.controls ?? true,
+        width: session.width ?? 0,
+        height: session.height ?? 0,
       })
     )
     .with({ block: 'equation' }, (session) =>
@@ -980,31 +947,15 @@ export function buildNode(spec: NodeSpec): LexicalNode {
     .with({ inline: 'equation' }, (session) =>
       $createEquationNode(session.tex, true)
     )
-    .with({ inline: 'date' }, (session) =>
-      $createDateMentionNode({
-        date: session.date,
-        displayFormat: session.displayFormat ?? session.date,
+    .with({ inline: 'mention' }, (session) =>
+      $createResourceMentionNode({
+        resourceId: session.mention.resourceId,
+        kind: session.mention.kind,
+        label: session.mention.label,
+        display: session.mention.display ?? 'inline',
+        params: session.mention.params,
       })
     )
-    .with({ inline: 'mention' }, (session) => {
-      const m = session.mention;
-      if (m.kind === 'user')
-        return $createUserMentionNode({ userId: m.userId, email: m.email });
-      if (m.kind === 'contact')
-        return $createContactMentionNode({
-          contactId: m.contactId,
-          name: m.name,
-          emailOrDomain: m.emailOrDomain,
-          isCompany: m.isCompany,
-        });
-      if (m.kind === 'group')
-        return $createGroupMentionNode({ groupAlias: m.groupAlias });
-      return $createDocumentMentionNode({
-        documentId: m.documentId,
-        documentName: m.documentName,
-        blockName: m.blockName,
-      });
-    })
     .exhaustive();
 }
 

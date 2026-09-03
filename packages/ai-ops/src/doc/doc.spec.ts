@@ -1,3 +1,4 @@
+import { $isListItemNode } from '@lexical/list';
 import { $isTableCellNode, $isTableRowNode } from '@lexical/table';
 import { $getId } from '@workspace/lexical-nodes/plugins/nodeIdPlugin';
 import {
@@ -157,9 +158,16 @@ describe('Doc — structure & refs', () => {
       at: { after: ids[0]! },
     });
     doc.apply({ kind: 'appendListItem', ref: 'a', node: 'L', text: 'task' });
-    // the appended item is a real checkbox item: toggling it renders checked.
+    // the appended item is a real checkbox item: toggling it flips its state.
     doc.apply({ kind: 'setChecked', node: 'a', checked: true });
-    expect(serializeWithXml(session)).toMatch(/checked="true"/);
+    const checked = read(session, () => {
+      const item = $getRoot()
+        .getAllTextNodes()
+        .map((t) => t.getParent())
+        .find($isListItemNode);
+      return item?.getChecked();
+    });
+    expect(checked).toBe(true);
   });
 
   it('insertListItemAfter/Before add same-kind siblings into an existing list', () => {
@@ -246,7 +254,9 @@ describe('Doc — structure & refs', () => {
       },
       at: { after: ids[0]! },
     });
-    const rowId = serializeWithXml(session).match(/<tr id="([^"]+)"/)?.[1];
+    const rowId = serializeWithXml(session).match(
+      /<tablerow id="([^"]+)"/
+    )?.[1];
     expect(rowId).toBeTruthy();
     expect(() =>
       doc.apply({ kind: 'setCell', table: rowId!, row: 0, col: 0, text: 'X' })
@@ -378,10 +388,13 @@ describe('Doc.insertInline — offset placement', () => {
       ref: 'r',
       node: ids[0]!,
       at: 0,
-      spec: { inline: 'date', date: '2026-01-01' },
+      spec: {
+        inline: 'mention',
+        mention: { resourceId: 'r1', kind: 'document', label: 'Design notes' },
+      },
     });
     const out = serializeWithXml(session);
-    expect(out.indexOf('2026-01-01')).toBeLessThan(out.indexOf('hello'));
+    expect(out.indexOf('Design notes')).toBeLessThan(out.indexOf('hello'));
   });
 
   it('a middle offset splits the run', () => {
@@ -405,10 +418,13 @@ describe('Doc.insertInline — offset placement', () => {
       ref: 'r',
       node: ids[0]!,
       at: 5,
-      spec: { inline: 'date', date: '2026-01-01' },
+      spec: {
+        inline: 'mention',
+        mention: { resourceId: 'r1', kind: 'document', label: 'Design notes' },
+      },
     });
     const out = serializeWithXml(session);
-    expect(out.indexOf('hello')).toBeLessThan(out.indexOf('2026-01-01'));
+    expect(out.indexOf('hello')).toBeLessThan(out.indexOf('Design notes'));
   });
 });
 
