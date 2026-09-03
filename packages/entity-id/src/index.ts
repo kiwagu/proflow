@@ -470,6 +470,15 @@ export type KbResourceLinkId = EntityIdOf<'kbResourceLink'>;
 export type KbMediaBlobId = EntityIdOf<'kbMediaBlob'>;
 export type KbResourceMediaMetaId = EntityIdOf<'kbResourceMediaMeta'>;
 export type BodyId = EntityIdOf<'body'>;
+export type DocumentId = EntityIdOf<'document'>;
+export type DocumentVersionId = EntityIdOf<'documentVersion'>;
+export type DocumentChunkId = EntityIdOf<'documentChunk'>;
+export type FileNodeId = EntityIdOf<'fileNode'>;
+export type ChatId = EntityIdOf<'chat'>;
+export type ChatMessageId = EntityIdOf<'chatMessage'>;
+export type ChatMessagePartId = EntityIdOf<'chatMessagePart'>;
+export type ChatStreamId = EntityIdOf<'chatStream'>;
+export type WriterId = EntityIdOf<'writer'>;
 
 /**
  * The create/guard/assert/schema toolkit for one registered entity kind. All

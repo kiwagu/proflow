@@ -4,7 +4,7 @@ import {
   type MediaDownloadResponse,
 } from '@workspace/knowledge-contracts';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 import {
   MediaAuthorizeError,
   type MediaAuthorizeDeps,

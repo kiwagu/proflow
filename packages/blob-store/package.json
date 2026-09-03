@@ -1,0 +1,35 @@
+{
+  "name": "@workspace/blob-store",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "scripts": {
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "bunx vitest run",
+    "test": "bunx vitest run"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@workspace/domain": "workspace:*",
+    "@zip.js/zip.js": "catalog:",
+    "hash-wasm": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

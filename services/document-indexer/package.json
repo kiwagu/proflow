@@ -1,0 +1,41 @@
+{
+  "name": "@workspace/document-indexer-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "once": "tsx --env-file-if-exists=.env src/index.ts --once",
+    "build": "tsc",
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "format": "bunx prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test:vitest": "bunx vitest run",
+    "test": "bunx vitest run"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "catalog:",
+    "@lexical/markdown": "catalog:",
+    "@supabase/supabase-js": "catalog:",
+    "@workspace/ai-ops": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "@workspace/doc-crdt": "workspace:*",
+    "@workspace/domain": "workspace:*",
+    "@workspace/embedding": "workspace:*",
+    "@workspace/lexical-nodes": "workspace:*",
+    "lexical": "catalog:",
+    "prismjs": "^1.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/prismjs": "^1.26.5",
+    "@workspace/eslint-config": "workspace:^",
+    "@workspace/typescript-config": "workspace:^",
+    "eslint": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -21,6 +21,7 @@ const CATALOG_FILES: Record<string, string> = {
   platform: 'space-settings',
   author: 'admin',
   graph: 'graph',
+  workbench: 'workbench',
   notifications: 'messages',
 };
 

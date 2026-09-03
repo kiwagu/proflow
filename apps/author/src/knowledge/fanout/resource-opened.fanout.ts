@@ -1,7 +1,7 @@
 import type { Database } from '@workspace/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { kbSchema } from '@/lib/supabase/kb-schema';
+import { kbSchema } from '@workspace/db/kb-schema';
 
 /**
  * Per-user "open" write module — UI-agnostic.

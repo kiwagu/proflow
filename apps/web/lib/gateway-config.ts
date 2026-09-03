@@ -38,11 +38,17 @@ export const GATEWAY_UPSTREAMS = [
     name: 'platform',
     prefix: platformPrefix satisfies GatewayRoutePrefix,
     port: Number(process.env.PLATFORM_DEV_PORT ?? 3001),
+    // A Next app with a basePath answers its bare mount itself.
+    entry: platformPrefix,
   },
   {
     name: 'author',
     prefix: authorPrefix satisfies GatewayRoutePrefix,
     port: Number(process.env.AUTHOR_DEV_PORT ?? 3002),
+    // The workbench SPA (apps/workbench) lives under `<mount>/`: its dev
+    // server answers nothing at the bare mount, so the gateway sends the
+    // bare-mount visit to the slash form where its index is.
+    entry: `${authorPrefix}/`,
   },
 ] as const;
 
@@ -56,12 +62,39 @@ export function devRewriteRules(): Array<{
   source: string;
   destination: string;
 }> {
-  return GATEWAY_UPSTREAMS.flatMap(({ prefix, port }) => {
+  return GATEWAY_UPSTREAMS.flatMap(({ prefix, port, entry }) => {
     const base = `http://${GATEWAY_HOST}:${port}`;
     return [
-      { source: prefix, destination: `${base}${prefix}` },
+      { source: prefix, destination: `${base}${entry}` },
       { source: `${prefix}/`, destination: `${base}${prefix}/` },
       { source: `${prefix}/:path*`, destination: `${base}${prefix}/:path*` },
     ];
   });
+}
+
+/**
+ * Where the workbench's production build is staged inside this app's
+ * `public/` directory, so Next serves it as static files under the author
+ * mount. The directory name IS the mount: `public/author/index.html` answers
+ * `/author/index.html`. Filled by `stage:workbench` before `next build`;
+ * never committed.
+ */
+export const WORKBENCH_PUBLIC_DIR = authorPrefix.replace(/^\//, '');
+
+/**
+ * Production routing for the workbench SPA: any path under the mount that is
+ * not one of its files is a client-side route, answered with the SPA's
+ * index for the app to resolve. Built assets are excluded so a missing one
+ * is a 404, not a page — a hashed chunk that 404s after a deploy must fail
+ * loudly rather than "load" as HTML.
+ */
+export function workbenchFallbackRules(): Array<{
+  source: string;
+  destination: string;
+}> {
+  const index = `${authorPrefix}/index.html`;
+  return [
+    { source: authorPrefix, destination: index },
+    { source: `${authorPrefix}/:path((?!assets/).*)`, destination: index },
+  ];
 }

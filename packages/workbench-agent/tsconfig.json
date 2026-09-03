@@ -1,0 +1,11 @@
+{
+  "extends": "@workspace/typescript-config/vendored.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": ["react", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

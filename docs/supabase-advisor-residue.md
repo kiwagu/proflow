@@ -125,3 +125,38 @@ UNCHANGED from the previously documented baseline:
 
 Net: this change adds **zero** new advisor entries and no new lint kind; both
 `kb.media_blob` and `kb.resource_media_meta` have RLS enabled from birth.
+
+## 2026-09-01 — server sync layer (documents, search index, blobs): no new residue
+
+The sync-layer migrations (`20260831210000_crdt_document_sync.sql`,
+`20260901050000_server_document_search.sql`,
+`20260901074356_workbench_blob_sync.sql`) plus the hardening pass
+(`20260901120000_server_sync_surface_hardening.sql`) were reviewed together
+against the live advisor. `get_advisors({ type: "security" })` returns **19
+lints, ALL `0029`** — the documented Bucket A / Bucket B′ set, with exactly one
+addition from this whole epic:
+
+- `rpc_compact_document(text, bytea, bigint)` — **Bucket A**. It is
+  `SECURITY DEFINER` for the standard reason: the destructive writes it performs
+  (document row update + covered-log delete) intentionally have **no RLS path**
+  for `authenticated`, so the fence around direct PostgREST access stays closed,
+  and the function re-checks the caller's space permission in its own body before
+  touching anything. Authenticated-executable is the point; `anon` is revoked.
+
+Everything else in the epic deliberately avoided adding residue:
+
+- `rpc_search_server_documents` is **SECURITY INVOKER** — every table it reads
+  carries the space-scoped read policy, so RLS fences the rows and the function
+  only shapes the query. No lint.
+- `rpc_list_documents_to_index` / `rpc_replace_server_document_chunks` are
+  INVOKER and revoked from `public`/`anon`/`authenticated`, granted to
+  `service_role` only. Not reachable by signed-in users, so not flagged.
+- All six new tables have RLS enabled from birth (no `0002`), and the storage
+  policies reuse the existing space-permission predicate rather than adding new
+  `SECURITY DEFINER` surface.
+
+Performance advisor: no lint of any kind on the new tables. The only entries
+naming them are `unused_index` on indexes that exist for access paths the dev
+stand has never exercised (the stand holds no documents) — expected, not a
+finding, and not a reason to drop an index the query plans need.
+
