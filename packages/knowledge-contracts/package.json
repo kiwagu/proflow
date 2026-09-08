@@ -49,6 +49,10 @@
     "./resource-workflow": {
       "types": "./dist/resource-workflow.schema.d.ts",
       "import": "./dist/resource-workflow.schema.js"
+    },
+    "./knowledge-resource-move": {
+      "types": "./dist/knowledge-resource-move.schema.d.ts",
+      "import": "./dist/knowledge-resource-move.schema.js"
     }
   }
 }

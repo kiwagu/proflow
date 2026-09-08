@@ -159,3 +159,9 @@ export {
   setResourceLinkRequestSchema,
   type SetResourceLinkRequest,
 } from './resource-link.schema.js';
+
+export {
+  moveKnowledgeResourceInputSchema,
+  parseMoveKnowledgeResourceInput,
+  type MoveKnowledgeResourceInput,
+} from './knowledge-resource-move.schema.js';
