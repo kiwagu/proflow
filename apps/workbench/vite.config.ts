@@ -54,6 +54,11 @@ function normalizeBase(raw: string): string {
 // node shebang). Never switch to `bunx --bun vite`: Bun's ws/http gaps break
 // HMR and can kill the dev server silently.
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_PLATFORM_BASE_PATH': JSON.stringify(
+      process.env.NEXT_PUBLIC_GATEWAY_PLATFORM_PATH ?? '/platform'
+    ),
+  },
   base: BASE_PATH,
   plugins: [
     bareQueryFlags(),

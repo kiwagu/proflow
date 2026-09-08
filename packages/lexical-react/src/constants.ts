@@ -35,30 +35,21 @@ const MarkdownEditorErrorDescriptions: Record<
     'This doc has been updated on an incompatible version of staging. If you are seeing this message, please open the document on staging to edit.',
 };
 
-/**
- * The literal `workbench.editor.load.*` catalog keys for each error, so a
- * caller with a loaded `WorkbenchTranslator` gets the localized string
- * instead of the hardcoded English default.
- */
-const MarkdownEditorErrorCatalogKeys: Record<
-  MarkdownEditorErrors,
-  () => string
-> = {
-  [MarkdownEditorErrors.EMPTY_SOURCE]: () => 'workbench.editor.load.emptySource',
-  [MarkdownEditorErrors.JSON_PARSE_ERROR]: () =>
-    'workbench.editor.load.invalidJson',
-  [MarkdownEditorErrors.VERSION_MISMATCH_ERROR]: () =>
-    isNativeMobilePlatform()
-      ? 'workbench.editor.load.newerVersionApp'
-      : 'workbench.editor.load.newerVersionWeb',
-  [MarkdownEditorErrors.STAGING_VERSION_MISMATCH_ERROR]: () =>
-    'workbench.editor.load.incompatibleVersion',
-};
-
 export const getErrorDescription = (
   errorType: MarkdownEditorErrors,
   t?: WorkbenchTranslator
 ): string => {
-  if (t) return t(MarkdownEditorErrorCatalogKeys[errorType]());
-  return MarkdownEditorErrorDescriptions[errorType]();
+  if (!t) return MarkdownEditorErrorDescriptions[errorType]();
+  switch (errorType) {
+    case MarkdownEditorErrors.EMPTY_SOURCE:
+      return t('workbench.editor.load.emptySource');
+    case MarkdownEditorErrors.JSON_PARSE_ERROR:
+      return t('workbench.editor.load.invalidJson');
+    case MarkdownEditorErrors.VERSION_MISMATCH_ERROR:
+      return isNativeMobilePlatform()
+        ? t('workbench.editor.load.newerVersionApp')
+        : t('workbench.editor.load.newerVersionWeb');
+    case MarkdownEditorErrors.STAGING_VERSION_MISMATCH_ERROR:
+      return t('workbench.editor.load.incompatibleVersion');
+  }
 };

@@ -117,6 +117,7 @@ export function DocumentView({
     <div className={cn('flex min-h-0 flex-1 flex-col', className)}>
       <EditorMount
         type="markdown"
+        withIds
         namespace={namespace}
         isInteractable={() => !readOnlyRef.current}
         theme={theme}

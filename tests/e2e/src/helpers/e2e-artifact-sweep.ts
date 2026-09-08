@@ -15,9 +15,7 @@
  */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
-import { MongoClient } from 'mongodb';
 
-import { mongoDatabaseNameFromUri } from './payload-mongo-user.js';
 import { resolveServiceRoleKey, resolveSupabaseUrl } from './test-user.js';
 
 const E2E_EMAIL_SUFFIX = '@example.test';
@@ -115,68 +113,6 @@ export async function sweepE2EArtifacts(): Promise<SweepResult> {
   return result;
 }
 
-// ── MongoDB sweep (Payload Author mirror) ─────────────────────────────────────
-
-export type MongoSweepResult = {
-  orgsDeleted: number;
-  spacesDeleted: number;
-  usersDeleted: number;
-  errors: string[];
-};
-
-/**
- * Remove e2e artifacts from Payload's MongoDB collections.
- * Author mirrors Supabase orgs/spaces/users via JetStream — leftover docs
- * accumulate when tests create orgs/spaces that get synced before teardown.
- *
- * Only runs when `mongoUrl` is provided (E2E_AUTHOR_MONGO_URL).
- */
-export async function sweepE2EMongoArtifacts(
-  mongoUrl: string
-): Promise<MongoSweepResult> {
-  const result: MongoSweepResult = {
-    orgsDeleted: 0,
-    spacesDeleted: 0,
-    usersDeleted: 0,
-    errors: [],
-  };
-
-  const client = await MongoClient.connect(mongoUrl);
-  try {
-    const db = client.db(mongoDatabaseNameFromUri(mongoUrl));
-
-    // Organizations: name starts with "E2E" or slug starts with e2e/iso patterns
-    const orgResult = await db.collection('organizations').deleteMany({
-      $or: [
-        { name: { $regex: /^E2E /i } },
-        { slug: { $regex: /^(e2e-|iso-|a-iso|b-iso)/ } },
-      ],
-    });
-    result.orgsDeleted = orgResult.deletedCount;
-
-    // Spaces: slug starts with spc-/e2e/iso patterns
-    const spaceResult = await db.collection('spaces').deleteMany({
-      $or: [
-        { name: { $regex: /^(E2E |Space [ab]$)/i } },
-        { slug: { $regex: /^(spc-|e2e-|iso-)/ } },
-      ],
-    });
-    result.spacesDeleted = spaceResult.deletedCount;
-
-    // Users: email ends with @example.test
-    const userResult = await db.collection('users').deleteMany({
-      email: { $regex: /@example\.test$/ },
-    });
-    result.usersDeleted = userResult.deletedCount;
-  } catch (err) {
-    result.errors.push(err instanceof Error ? err.message : String(err));
-  } finally {
-    await client.close();
-  }
-
-  return result;
-}
-
 // ── Standalone entry point ────────────────────────────────────────────────────
 
 if (
@@ -192,22 +128,6 @@ if (
     console.log(`  users deleted:    ${r.usersDeleted}`);
     if (r.errors.length > 0) {
       console.error('  errors:', r.errors);
-    }
-
-    const mongoUrl = process.env.E2E_AUTHOR_MONGO_URL;
-    if (mongoUrl) {
-      const m = await sweepE2EMongoArtifacts(mongoUrl);
-      console.log('MongoDB (Payload) sweep:');
-      console.log(`  orgs deleted:   ${m.orgsDeleted}`);
-      console.log(`  spaces deleted: ${m.spacesDeleted}`);
-      console.log(`  users deleted:  ${m.usersDeleted}`);
-      if (m.errors.length > 0) {
-        console.error('  errors:', m.errors);
-      }
-    } else {
-      console.log(
-        'MongoDB sweep: skipped (set E2E_AUTHOR_MONGO_URL to enable)'
-      );
     }
 
     const allErrors = [...r.errors];

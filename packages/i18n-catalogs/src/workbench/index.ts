@@ -1,5 +1,7 @@
 import type { I18nLocale } from '../manifest.js';
 import { assertValidLocale, CATALOG_MANIFEST } from '../manifest.js';
+import english from '../catalogs/workbench/workbench.en.json' with { type: 'json' };
+import spanish from '../catalogs/workbench/workbench.es.json' with { type: 'json' };
 
 /**
  * Loader for the local-first WORKBENCH surfaces: the document editor shell
@@ -30,18 +32,10 @@ async function importWorkbenchCatalog(
   // Static switch required for bundler module resolution.
   switch (locale) {
     case 'es':
-      return (
-        await import('../catalogs/workbench/workbench.es.json', {
-          with: { type: 'json' },
-        })
-      ).default as Record<string, string>;
+      return spanish;
     case 'en':
     default:
-      return (
-        await import('../catalogs/workbench/workbench.en.json', {
-          with: { type: 'json' },
-        })
-      ).default as Record<string, string>;
+      return english;
   }
 }
 

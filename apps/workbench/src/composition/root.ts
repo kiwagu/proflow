@@ -19,7 +19,7 @@ import {
   type OpenStage,
   openLocalDatabase,
 } from '@workspace/persistence-pglite';
-import { LOCAL_IDENTITY } from './identity';
+import { storageNamespace, type WorkbenchSession } from './session';
 import type { AppServices } from './services';
 
 /**
@@ -61,8 +61,11 @@ const DB_STAGE_NAMES: Record<OpenStage, string> = {
 };
 
 export async function createAppServices(
-  reportError: (message: string) => void
+  reportError: (message: string) => void,
+  session: WorkbenchSession
 ): Promise<AppServices> {
+  const namespace = storageNamespace(session);
+  if (!session.spaceId) throw new Error('No active space');
   // The database and the blob store open side by side: bytes live in the
   // file system, their identity and place in the tree live in the database.
   const [db, blobs] = await Promise.all([
@@ -73,10 +76,10 @@ export async function createAppServices(
         pending.delete('the local database');
         for (const name of Object.values(DB_STAGE_NAMES)) pending.delete(name);
         pending.add(DB_STAGE_NAMES[stage]);
-      }),
+      }, namespace),
       Object.values(DB_STAGE_NAMES)
     ),
-    step('file storage', openBlobStore()),
+    step('file storage', openBlobStore(namespace)),
   ]);
 
   // Documents are CRDTs; this store owns the open ones and their persistence.
@@ -131,7 +134,7 @@ export async function createAppServices(
     settings: createPgliteSettingsStore(db),
     graph: createPgliteGraphReader(db),
     graphCommands: createPgliteGraphRepository(db),
-    identity: LOCAL_IDENTITY,
+    identity: { userId: session.userId, spaceId: session.spaceId },
     reportError,
   };
 }

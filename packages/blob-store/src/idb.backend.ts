@@ -9,9 +9,12 @@ const STORE = 'blobs';
  * but every read returns the whole value, so it is the fallback, not the
  * default.
  */
-export function createIdbBackend(): Promise<BlobBackend> {
+export function createIdbBackend(namespace?: string): Promise<BlobBackend> {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB_NAME, 1);
+    const open = indexedDB.open(
+      namespace ? `${DB_NAME}-${namespace}` : DB_NAME,
+      1
+    );
     open.onupgradeneeded = () => open.result.createObjectStore(STORE);
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {

@@ -1,7 +1,8 @@
 import type { LexicalWrapper } from '@workspace/lexical-react';
 import { $isTableNode, INSERT_TABLE_COMMAND, TableNode } from '@lexical/table';
 import { render, cleanup, act } from '@testing-library/react';
-import { $getRoot } from 'lexical';
+import { $createParagraphNode, $createTextNode, $getRoot } from 'lexical';
+import { $getId } from '@workspace/lexical-nodes';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DocumentView } from './document-view.js';
 
@@ -26,6 +27,33 @@ function lastWrapper(): {
 }
 
 describe('DocumentView', () => {
+  it('assigns durable ids to loaded and newly edited nodes for CRDT persistence', async () => {
+    const capture = lastWrapper();
+    render(
+      <DocumentView
+        initialMarkdown="Existing text"
+        onWrapper={capture.onWrapper}
+      />
+    );
+    const editor = capture.ref().editor;
+    await act(async () => {
+      editor.update(
+        () => {
+          $getRoot().append(
+            $createParagraphNode().append($createTextNode('New text'))
+          );
+        },
+        { discrete: true }
+      );
+    });
+    editor.read(() => {
+      const paragraphs = $getRoot().getChildren();
+      expect(paragraphs).toHaveLength(2);
+      for (const paragraph of paragraphs) {
+        expect($getId(paragraph)).toBeTruthy();
+      }
+    });
+  });
   it('mounts an editable markdown surface and exposes the wrapper', () => {
     const capture = lastWrapper();
     const { container } = render(

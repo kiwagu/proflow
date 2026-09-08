@@ -1,5 +1,6 @@
 import { openBlobStore } from '@workspace/blob-store';
 import { deleteLocalDatabaseStorage } from '@workspace/persistence-pglite';
+import { readSession, storageNamespace } from './session';
 
 /**
  * Ends everything stored on this device without any service being open —
@@ -14,11 +15,14 @@ import { deleteLocalDatabaseStorage } from '@workspace/persistence-pglite';
  * its own.
  */
 export async function deleteEverythingAndStartOver(): Promise<void> {
+  const session = await readSession();
+  if (!session?.spaceId) return;
+  const namespace = storageNamespace(session);
   await withTimeout(
-    openBlobStore().then((store) => store.clear()),
+    openBlobStore(namespace).then((store) => store.clear()),
     10_000
   ).catch(() => {});
-  await deleteLocalDatabaseStorage().catch(() => {});
+  await deleteLocalDatabaseStorage(namespace).catch(() => {});
   window.location.reload();
 }
 

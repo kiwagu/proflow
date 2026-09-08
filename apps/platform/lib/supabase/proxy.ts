@@ -43,6 +43,8 @@ export async function updateSession(request: NextRequest) {
   }
 
   const path = pathWithinAppBasePath(request.nextUrl.pathname, PLATFORM_BASE);
+  // This endpoint returns its own JSON 401 and refreshes cookies in its route handler.
+  if (path === '/api/workbench/session') return supabaseResponse;
   if (isNextOrPublicAssetPathWithinApp(path)) {
     ensureLocaleCookieFromAcceptLanguage(request, supabaseResponse);
     return supabaseResponse;

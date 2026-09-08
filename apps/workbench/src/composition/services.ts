@@ -34,7 +34,7 @@ export interface AppServices {
   settings: ISettingsStore;
   graph: GraphReader;
   graphCommands: GraphRepository;
-  /** The identity the graph rows are written under until a session exists. */
+  /** Server-verified session and checked-out space. */
   identity: { userId: string; spaceId: string };
   /** Where a failure the user caused is reported. */
   reportError: (message: string) => void;

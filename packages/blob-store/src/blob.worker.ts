@@ -14,7 +14,15 @@ import { createBlobStoreOver } from './store.js';
  * here and the page talks to it over messages. Bytes cross as Blob/File
  * references — structured cloning a File does not copy its contents.
  */
-const backend = (await createOpfsBackend()) ?? (await createIdbBackend());
+const namespace = await new Promise<string | undefined>((resolve) => {
+  self.onmessage = (
+    event: MessageEvent<{ type: string; namespace?: string }>
+  ) => {
+    if (event.data.type === 'init') resolve(event.data.namespace);
+  };
+});
+const backend =
+  (await createOpfsBackend(namespace)) ?? (await createIdbBackend(namespace));
 const store = createBlobStoreOver(backend);
 
 /**
