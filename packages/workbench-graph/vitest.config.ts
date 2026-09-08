@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Real PGlite instances must fit within the worker's memory budget.
+    maxWorkers: 1,
+    fileParallelism: false,
+    maxConcurrency: 1,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.spec.ts', 'src/**/*.spec.tsx'],

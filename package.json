@@ -24,7 +24,7 @@
     "test:e2e": "turbo test:e2e --filter=@workspace/e2e",
     "seed": "bun run --cwd seed start --",
     "seed:list": "bun run --cwd seed start -- --list",
-    "test:vitest": "CI=1 turbo run test:vitest",
+    "test:vitest": "CI=1 turbo run test:vitest --concurrency=1",
     "test:full:ni": "bun run test:vitest && bun run test:e2e:full:ni",
     "check": "bun run db:types && bun run format && bun run lint && bun run typecheck",
     "notifications:bundle": "bun run --cwd packages/notifications build:deno",

@@ -4,24 +4,10 @@ import type { GraphNode } from '@workspace/persistence-pglite';
 import {
   Command,
   CommandDialog,
-  CommandEmpty,
-  CommandGroup,
   CommandInput,
-  CommandItem,
   CommandList,
-  CommandShortcut,
 } from '@workspace/ui/components/command';
-import { EmptyState } from '@workspace/ui/components/empty-state';
-import { HighlightedText } from '@workspace/ui/components/highlight-text';
-import {
-  FileText,
-  Folder,
-  Link,
-  Paperclip,
-  PlayCircle,
-  Tag,
-  type LucideIcon,
-} from 'lucide-react';
+import { ResultList } from './result-list.js';
 import {
   commitPaletteSelection,
   useCommandPalette,
@@ -29,26 +15,15 @@ import {
 } from './use-command-palette.js';
 
 /**
- * The command palette over the LOCAL title index.
+ * The command palette over the LOCAL title index — one configuration of the
+ * shared `ResultList` (the search lens is the other): no snippet, because a
+ * title index has nothing to excerpt.
  *
  * `shouldFilter={false}` because the rows arrive already ranked by the local
  * query (rank, then title) — cmdk must not re-rank or re-filter them. The
  * input is controlled by the hook's term, so cmdk's own internal value never
  * drives a query.
  */
-
-const KIND_ICON: Record<string, LucideIcon> = {
-  folder: Folder,
-  text: FileText,
-  file: Paperclip,
-  video: PlayCircle,
-  link: Link,
-  tag: Tag,
-};
-
-function iconForKind(kind: string): LucideIcon {
-  return KIND_ICON[kind] ?? FileText;
-}
 
 export type CommandPaletteLabels = {
   title: string;
@@ -62,6 +37,12 @@ export type CommandPaletteLabels = {
   /** The kind shown at the right edge of a row. */
   kindLabel: (kind: string) => string;
 };
+
+const rowOf = (node: GraphNode) => ({
+  id: node.id,
+  kind: node.kind,
+  title: node.title,
+});
 
 export function CommandPalette({
   labels,
@@ -105,52 +86,18 @@ export function CommandPalette({
           className="max-h-[min(60vh,420px)]"
           data-testid="command-palette-results"
         >
-          {tooShort ? (
-            <EmptyState className="py-8">{labels.idle}</EmptyState>
-          ) : loading && items.length === 0 ? (
-            <EmptyState className="py-8">{labels.searching}</EmptyState>
-          ) : null}
-
-          {/* Driven off the resolved query rather than cmdk's filtered count:
-              the input is decoupled from cmdk's filter, so its heuristic is
-              not the authority here. */}
-          {state.showEmpty ? (
-            <CommandEmpty data-testid="command-palette-empty">
-              {labels.noResults(trimmed)}
-            </CommandEmpty>
-          ) : null}
-
-          {items.length > 0 ? (
-            <CommandGroup>
-              {items.map((node) => {
-                const Icon = iconForKind(node.kind);
-                return (
-                  <CommandItem
-                    key={node.id}
-                    // cmdk keys an item by its value; the node id keeps rows
-                    // distinct and maps selection 1:1.
-                    value={node.id}
-                    onSelect={() => commit(node)}
-                    data-testid="command-palette-result"
-                    className="gap-3"
-                  >
-                    <Icon
-                      className="text-muted-foreground size-4 shrink-0"
-                      aria-hidden
-                    />
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-sm font-medium">
-                        <HighlightedText text={node.title} term={trimmed} />
-                      </span>
-                    </span>
-                    <CommandShortcut className="shrink-0 tracking-normal">
-                      {labels.kindLabel(node.kind)}
-                    </CommandShortcut>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          ) : null}
+          <ResultList
+            items={items}
+            rowOf={rowOf}
+            kindLabel={labels.kindLabel}
+            term={trimmed}
+            labels={labels}
+            tooShort={tooShort}
+            loading={loading}
+            showEmpty={state.showEmpty}
+            onPick={commit}
+            testId="command-palette"
+          />
         </CommandList>
       </Command>
     </CommandDialog>

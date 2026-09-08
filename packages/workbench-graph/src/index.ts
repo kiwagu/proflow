@@ -61,3 +61,22 @@ export {
   type MoveTarget,
 } from './use-drive-mutations.js';
 export { useStarredLens, useTrashLens } from './use-lenses.js';
+export {
+  iconForKind,
+  ResultList,
+  type ResultListLabels,
+  type ResultListProps,
+  type ResultListRow,
+} from './result-list.js';
+export { SearchLens, type SearchLensLabels } from './search-lens.js';
+export {
+  localSearchProvider,
+  type SearchHit,
+  type SearchProvider,
+  type SearchReach,
+} from './search-provider.js';
+export {
+  MIN_SEARCH_TERM_LENGTH,
+  useSearchLens,
+  type SearchLensState,
+} from './use-search-lens.js';

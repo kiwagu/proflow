@@ -5,6 +5,7 @@ import type {
   GraphRepository,
 } from '@workspace/persistence-pglite';
 import { createContext, useContext, type ReactNode } from 'react';
+import type { SearchProvider } from './search-provider.js';
 
 /**
  * The ports the graph workbench surface reads and writes through.
@@ -24,6 +25,14 @@ export interface GraphServices {
   spaceId: string;
   /** The signed-in user, for the rows that are per-user (star, progress). */
   userId: string;
+  /**
+   * Content search over what the device holds — the local hybrid engine
+   * (vector + full text, rank-fused). Optional: a host without an embedder
+   * (a test harness, a surface that never indexes) simply has no search
+   * lens, and the surface must not crash for it. See `search-provider.ts`
+   * for how a server engine would plug in here later.
+   */
+  search?: SearchProvider;
   /**
    * Where a failure the user caused is reported. The surface never throws at
    * them and never swallows: a host without a toaster still gets told.
@@ -59,6 +68,8 @@ export const useGraphReader = () => useGraphServices().graph;
 export const useGraphCommands = () => useGraphServices().commands;
 export const useSpaceId = () => useGraphServices().spaceId;
 export const useCurrentUserId = () => useGraphServices().userId;
+/** The content search engine, or null when the host wired none. */
+export const useSearchProvider = () => useGraphServices().search ?? null;
 
 /** Reports a failure to the host, if it asked to hear about them. */
 export function useReportGraphError(): (message: string) => void {
