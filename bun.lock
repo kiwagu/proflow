@@ -668,7 +668,9 @@
         "@workspace/doc-crdt": "workspace:*",
         "@workspace/domain": "workspace:*",
         "@workspace/embedding": "workspace:*",
+        "@workspace/knowledge-contracts": "workspace:*",
         "neverthrow": "catalog:",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@types/node": "catalog:",

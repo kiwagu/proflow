@@ -249,4 +249,111 @@ describe('graph repository', () => {
     expect(result._unsafeUnwrapErr()).toContain('not in the local replica');
     await db.close();
   });
+
+  describe('moveNode', () => {
+    const containsParents = async (
+      db: Awaited<ReturnType<typeof open>>['db'],
+      nodeId: string
+    ) => {
+      const { rows } = await db.query<{ from_id: string }>(
+        `select from_id from knowledge_edges
+          where to_id = $1 and relation_type = 'contains'`,
+        [nodeId]
+      );
+      return rows.map((row) => row.from_id);
+    };
+
+    it('re-parents in one transaction and journals exactly one move_node', async () => {
+      const { db, repo, ledger, spaceId, node } = await open();
+      const source = await node('Source');
+      const target = await node('Target');
+      const doc = await node('Doc', source);
+      const before = await ledger.pendingCount(spaceId);
+
+      const result = await repo.moveNode(
+        { spaceId, nodeId: doc, targetParentId: target, position: 2 },
+        TEST_USER
+      );
+      expect(result.isOk()).toBe(true);
+
+      expect(await containsParents(db, doc)).toEqual([target]);
+      const ops = await ledger.pendingOps(spaceId);
+      const moves = ops.filter((op) => op.op === GRAPH_OPS.moveNode);
+      expect(moves).toHaveLength(1);
+      expect(await ledger.pendingCount(spaceId)).toBe(before + 1);
+      // The journal carries the contract shape and nothing else: the pusher
+      // replays it as-is against the server RPC.
+      expect(moves[0]?.payload).toEqual({
+        spaceId,
+        nodeId: doc,
+        targetParentId: target,
+        position: 2,
+      });
+      expect(new Set(moves[0]?.nodeIds)).toEqual(new Set([doc, target]));
+
+      await db.close();
+    });
+
+    it('moves to top level by leaving no containment edge behind', async () => {
+      const { db, repo, ledger, spaceId, node } = await open();
+      const source = await node('Source');
+      const doc = await node('Doc', source);
+      const before = await ledger.pendingCount(spaceId);
+
+      const result = await repo.moveNode(
+        { spaceId, nodeId: doc, targetParentId: null, position: 0 },
+        TEST_USER
+      );
+      expect(result.isOk()).toBe(true);
+      expect(await containsParents(db, doc)).toEqual([]);
+      expect(await ledger.pendingCount(spaceId)).toBe(before + 1);
+      const last = (await ledger.pendingOps(spaceId)).at(-1);
+      expect(last?.op).toBe(GRAPH_OPS.moveNode);
+      expect(last?.nodeIds).toEqual([doc]);
+
+      await db.close();
+    });
+
+    it('rejects input the contract refuses before touching the replica', async () => {
+      const { db, repo, ledger, spaceId, node } = await open();
+      const source = await node('Source');
+      const doc = await node('Doc', source);
+      const before = await ledger.pendingCount(spaceId);
+
+      const result = await repo.moveNode(
+        { spaceId, nodeId: doc, targetParentId: doc, position: 0 },
+        TEST_USER
+      );
+      expect(result.isErr()).toBe(true);
+      expect(await containsParents(db, doc)).toEqual([source]);
+      expect(await ledger.pendingCount(spaceId)).toBe(before);
+
+      await db.close();
+    });
+
+    it('rolls the detach back when the journal append fails', async () => {
+      const { db, repo, ledger, spaceId, node } = await open();
+      const source = await node('Source');
+      const target = await node('Target');
+      const doc = await node('Doc', source);
+      const before = await ledger.pendingCount(spaceId);
+
+      // Make the journal refuse this op kind: the edge writes then succeed
+      // and the append raises, which is the failure the transaction exists
+      // to contain — a replica row that changed with no intent to push.
+      await db.query(
+        `alter table graph_op_journal
+           add constraint no_move_node check (op <> 'move_node')`
+      );
+      const result = await repo.moveNode(
+        { spaceId, nodeId: doc, targetParentId: target, position: 0 },
+        TEST_USER
+      );
+      expect(result.isErr()).toBe(true);
+      expect(await containsParents(db, doc)).toEqual([source]);
+      expect(await ledger.pendingCount(spaceId)).toBe(before);
+
+      await db.close();
+    });
+  });
 });
