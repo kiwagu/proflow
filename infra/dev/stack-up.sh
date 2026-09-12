@@ -9,7 +9,7 @@ force_recreate=0
 
 print_help() {
   cat <<'EOF'
-Start or update full local dev stack (Mongo + Maildev + Nginx + Supabase).
+Start or update full local dev stack (Maildev + Nginx + Supabase).
 
 Default mode:
 - upserts services with docker compose up -d
@@ -126,7 +126,7 @@ if [ "${from_scratch}" = "1" ]; then
 fi
 
 ensure_proflow_edge_tls
-echo "===> Upserting Mongo + Maildev + Nginx stack..."
+echo "===> Upserting Maildev + Nginx stack..."
 run_compose "${script_dir}" up "${up_args[@]}"
 
 echo "===> Upserting Supabase stack..."
@@ -134,7 +134,7 @@ run_compose "${supabase_dir}" -f docker-compose.yml -f ./dev/docker-compose.dev.
 sync_mcp_read_only_user_password
 
 echo ""
-echo "Done. Stack is up (Mongo + Maildev + Nginx + Supabase)."
+echo "Done. Stack is up (Maildev + Nginx + Supabase)."
 echo "Check status:"
 echo "  cd ${script_dir} && docker compose ps"
 echo "  cd ${supabase_dir} && docker compose ps"

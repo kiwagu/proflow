@@ -39,7 +39,7 @@ function bareQueryFlags(): Plugin {
 const BASE_PATH = normalizeBase(process.env.WORKBENCH_BASE_PATH ?? '/author');
 
 /**
- * The port the gateway's author upstream points at (`AUTHOR_DEV_PORT` on
+ * The port the gateway's workbench upstream points at (`WORKBENCH_DEV_PORT` on
  * the gateway side); the two must agree for `/author/*` to reach this app.
  */
 const DEV_PORT = Number(process.env.WORKBENCH_DEV_PORT ?? 3002);

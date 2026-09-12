@@ -1,6 +1,6 @@
 # Local dev stack (ProFlow)
 
-Orchestration lives under this directory: root `docker-compose.yml` (Mongo, Maildev, nginx) and `supabase/` (self-hosted Supabase).
+Orchestration lives under this directory: root `docker-compose.yml` (Maildev, nginx) and `supabase/` (self-hosted Supabase).
 
 ## Force-clean stack reset (`FORCE_CLEAN=1`)
 
@@ -22,9 +22,9 @@ Use when you want an empty Postgres volume and clean containers (same idea as a 
    make db-push
    ```
 
-   `db-push` runs the Supabase CLI against your self-hosted DB, then **`make db-sync-identity-secret`**, which sets `identity_sync.outbound_config.internal_secret` to **`DEV_IDENTITY_INTERNAL_INGEST_SECRET`** in the root `Makefile` (same value as `IDENTITY_INTERNAL_INGEST_SECRET` in `infra/dev/supabase/docker-compose.yml` → `functions`). Without that step, triggers do not call `identity_lifecycle_fanout` and mirrors (e.g. Author Payload) will not receive lifecycle events.
+   `db-push` runs the Supabase CLI against your self-hosted DB, then **`make db-sync-identity-secret`**, which sets `identity_sync.outbound_config.internal_secret` to **`DEV_IDENTITY_INTERNAL_INGEST_SECRET`** in the root `Makefile` (same value as `IDENTITY_INTERNAL_INGEST_SECRET` in `infra/dev/supabase/docker-compose.yml` → `functions`). Without that step, triggers do not call `identity_lifecycle_fanout` and downstream mirrors will not receive lifecycle events.
 
-   **User lifecycle (create / update / delete):** Postgres triggers → Edge `identity_lifecycle_fanout` (Zod via `@workspace/domain-events`) → **NATS JetStream** only. **`nats`** runs in **root `infra/dev/docker-compose.yml`** (same **`proflow`** project as Supabase); Edge **`functions`** use `NATS_URL` → `nats://nats:4222` and mount **`packages/domain-events/dist`**. Put **`NATS_URL=nats://127.0.0.1:4222`** in **`apps/author/.env`**. **`bun run dev`** in **`apps/author`** (or monorepo **`bun run dev`** when Author is included) starts **Next** on **3002** and the **JetStream consumer** together. Use **`bun run dev:next`** or **`bun run identity:jetstream`** only if you need to split processes. **Public signup** also fires GoTrue `after-user-created`. Apply migrations (`make db-push`) for identity triggers + `user.updated` (`20260329120000_*`).
+   **User lifecycle (create / update / delete):** Postgres triggers → Edge `identity_lifecycle_fanout` (Zod via `@workspace/domain-events`) → **NATS JetStream** only. **`nats`** runs in **root `infra/dev/docker-compose.yml`** (same **`proflow`** project as Supabase); Edge **`functions`** use `NATS_URL` → `nats://nats:4222` and mount **`packages/domain-events/dist`**. A mirror consumer, when one exists, reads the stream at **`NATS_URL=nats://127.0.0.1:4222`** (host port). **Public signup** also fires GoTrue `after-user-created`. Apply migrations (`make db-push`) for identity triggers + `user.updated` (`20260329120000_*`).
    - If you use only `SELF_HOSTED_DB_URL` (remote URL), `db-push` skips auto sync and prints a hint; run `make db-sync-identity-secret` yourself when the DB runs in local `supabase-db`.
 
 3. **Optional:** restart PostgREST if you changed schema and REST still 404s: `docker compose -p proflow restart rest` in `infra/dev/supabase`.
@@ -38,15 +38,11 @@ Current reset-mode contract:
 - **Avatar uploads:** stored under `media/avatars/<user_id>/<filename>`.
 - **Read policy:** public bucket URL via `/storage/v1/object/public/media/...`.
 - **Write/delete policy:** limited by Storage RLS so authenticated users can manage only their own avatar folder.
-- **Author media flow:** Payload `media` collection stores uploads in the same bucket under `media/spaces/<space_id>/author/...` via `@payloadcms/storage-s3`.
-- **Current validation baseline:** Author media accepts `image/*`, `text/*`, `audio/*`, and `video/*`, capped at 5 MB via Payload upload config. The collection derives `mediaKind` and `deliveryMode` metadata (`inline` for image/text, `stream` for audio/video). Avatar flow remains image-only at the UI layer.
-- **Space alignment:** Author media object keys now derive from the active tenant/space id. Scope-level sub-prefixes for richer materials remain future work.
 - **Archives:** ZIP/tar/gzip uploads are explicitly rejected for now. Archive ingest and auto-unpack remain a separate future slice.
 
 Local dev and hosted environments use the same app-facing env shape:
 
 - `apps/platform/.env` uses `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for browser uploads.
-- `apps/author/.env` may set `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_REGION`; otherwise Payload defaults `S3_ENDPOINT` to `${NEXT_PUBLIC_SUPABASE_URL}/storage/v1/s3`.
 - `tests/e2e/.env` uses `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for seeded-user setup and smoke assertions.
 - No extra storage-specific app env vars are required for the avatar MVP.
 

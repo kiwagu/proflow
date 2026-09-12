@@ -6,10 +6,10 @@
  * Usage (from repo root):
  *   bun run dev -- --exclude platform
  *   bun run dev:apps -- --exclude platform
- *   bun run dev -- --exclude platform,author
- *   bun run dev -- -x web -x author
+ *   bun run dev -- --exclude platform,workbench
+ *   bun run dev -- -x web -x workbench
  *
- * Excluded names must match workspace `package.json` `name` (e.g. web, platform, author,
+ * Excluded names must match workspace `package.json` `name` (e.g. web, platform, workbench,
  * @workspace/notifications-service).
  * Run excluded apps separately: cd apps/<name> && bun dev (uses that app's port).
  */
