@@ -23,8 +23,7 @@ alwaysApply: true
 
 ## Descend To
 
-- Critical-pattern reference: `security-critical.mdc` (Payload/auth/access/transactions).
-- Access posture: the `create-rls-policies.mdc` / `access-control*.md` rules (RLS is the
+- Access posture: the `create-rls-policies.mdc` rules (RLS is the
   sole authority; fail-closed, private-by-default).
 
 ## The mandate
@@ -43,7 +42,7 @@ refactoring-modularizer). It is easy to forget by hand — this rule makes it no
 
 2. **Sub-agents do an inline security self-check + FLAG.** A feature/implementer sub-agent
    cannot run the skill, so before it reports done it self-reviews what it landed against
-   `security-critical.mdc` (and the access/RLS rules) and explicitly FLAGS any
+   the access/RLS rules and explicitly FLAGS any
    security-sensitive surface it touched (a new endpoint, an RLS policy, a SECURITY DEFINER
    function, raw SQL, an input parser, a secret/env read, a dependency bump) in its report,
    so the coordinator runs `/security-review` on the full diff before committing.

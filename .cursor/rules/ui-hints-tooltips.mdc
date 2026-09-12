@@ -27,8 +27,8 @@ alwaysApply: false
 - Use the shared `Hint` wrapper for ALL supplementary hover/focus hints over controls:
   `import { Hint } from '@workspace/ui/components/hint'` → `<Hint label={...}>{control}</Hint>`.
 - Do NOT use native `title=` for interactive UI hints, and do NOT hand-roll `Tooltip`/`TooltipTrigger`/`TooltipContent` per call site — wrap with `<Hint>` so the app has ONE styled, keyboard-reachable, portal-rendered surface. Upgrade any existing `title=` hint to `<Hint>` when you touch that markup.
-- `Hint` requires a `TooltipProvider` ancestor — exactly ONE per app/surface root (the canonical Radix shape: the provider "wraps your app"; e.g. `apps/platform/app/layout.tsx`, `apps/author/src/app/graph/layout.tsx`). One shared provider gives consistent open delay + skip-delay grouping (neighbouring hints open instantly in a sweep). Do NOT give individual hints their own provider — that throws the grouping away.
-- In unit/integration tests, render hint-bearing components through the shared test-utils `render` (RTL's recommended custom-render wrapper, which injects the same provider) — e.g. `apps/author/tests/test-utils.tsx`. Don't render such components straight from `@testing-library/react` (no provider → "must be used within `TooltipProvider`"), and don't sprinkle a provider per test.
+- `Hint` requires a `TooltipProvider` ancestor — exactly ONE per app/surface root (the canonical Radix shape: the provider "wraps your app"; e.g. `apps/platform/app/layout.tsx`, `apps/workbench/src/app.tsx`). One shared provider gives consistent open delay + skip-delay grouping (neighbouring hints open instantly in a sweep). Do NOT give individual hints their own provider — that throws the grouping away.
+- In unit/integration tests, render hint-bearing components through the shared test-utils `render` (RTL's recommended custom-render wrapper, which injects the same provider). Don't render such components straight from `@testing-library/react` (no provider → "must be used within `TooltipProvider`"), and don't sprinkle a provider per test.
 
 ## Accessibility — `aria-label` stays the source
 

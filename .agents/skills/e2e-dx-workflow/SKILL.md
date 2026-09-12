@@ -23,10 +23,10 @@ user-invocable: false
 ## Descend To
 
 - Repository E2E policy: `/.cursor/rules/e2e-required-for-critical-flows.mdc`
-- Shell auth workflows: `/.agents/skills/nextjs-shell-supabase-auth/SKILL.md`, `/.agents/skills/payload-supabase-gateway-auth/SKILL.md`
+- Shell auth workflows: `/.agents/skills/nextjs-shell-supabase-auth/SKILL.md`
 - Continue within this file for commands, prerequisites, selectors, and new-spec guidance.
 
-Use this skill when implementing or modifying authentication/session/profile behavior, gateway-mounted shells (`/platform`, `/author`), and related UI contracts.
+Use this skill when implementing or modifying authentication/session/profile behavior, gateway-mounted shells (`/platform`), and related UI contracts.
 
 ## Workspace and commands
 
@@ -77,16 +77,11 @@ Keep this model deterministic and isolated. Avoid shared mutable user state acro
 
 - UI flow (`platform-space-invite.e2e.spec.ts`) does **not** require a separate platform email worker. **`apps/platform`** publishes the invite job to JetStream; **`services/notifications`** consumes and sends SMTP via **`@workspace/notifications`**. For full stack locally, run root **`bun run dev`** (Turbo includes `services/notifications`) and set **`NATS_URL`** on **platform** and **notifications-service** (same broker), plus `SMTP_*` and **the same** `GATEWAY_ENTRY_ORIGIN` / `NEXT_PUBLIC_GATEWAY_PLATFORM_PATH` as the gateway + platform (see `.cursor/rules/monorepo-env-minimalism.mdc`).
 
-## Multi-app coverage (`/platform` and `/author`)
+## Multi-app coverage
 
 Smoke tests assume the **gateway origin** in `PLAYWRIGHT_BASE_URL` (e.g. `https://app.local`):
 
 - **Platform**: login form, profile, logout — see `auth-*.e2e.spec.ts`.
-- **Author**: guests hitting `/author` or `/author/admin` are redirected to platform sign-in; after platform login, `/author` should resolve to Payload admin (`/author/admin`) via the bridge when Payload + DB are up.
-
-Author admin smoke may need more time (bridge + Payload); specs use extended timeouts where needed.
-
-**Identity sync (`@full`):** `identity-author-sync.e2e.spec.ts` — Supabase `auth.admin` create/delete vs Payload Mongo `users` row (needs `E2E_AUTHOR_MONGO_URL`, `internal_secret` from `make db-push`, NATS, `NATS_URL` in `apps/author`, and **`bun run dev`** there so Next + JetStream worker run). Not part of `@smoke`; use `test:e2e:full`.
 
 ## New gateway-mounted apps
 
@@ -96,7 +91,7 @@ When adding another Next shell behind the gateway:
    - guest → expected auth boundary (usually platform sign-in with `next=` return path)
    - one happy-path authenticated entry if a stable post-login URL exists
 2. Reuse platform `data-testid` selectors when login is rendered by `apps/platform`.
-3. Document any extra services (e.g. Mongo for Payload) in `tests/e2e/README.md` prerequisites.
+3. Document any extra services in `tests/e2e/README.md` prerequisites.
 
 ## Stable selector contract
 
@@ -110,7 +105,6 @@ Critical selectors include:
 
 - auth: login form, email/password, submit, logout
 - profile: form, fields, submit, success/error
-- author: URL assertions on `/author` and `/author/admin` (admin UI may use Payload defaults; prefer URL-level smoke unless stable test IDs are added)
 
 ## Recommended authoring pattern
 

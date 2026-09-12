@@ -1,6 +1,6 @@
 ---
 description: "Use when: implementing or changing a user-facing knowledge capability, or writing/changing e2e that needs seed data — keep the @workspace/seed dictionary the single source and the e2e drawing from it."
-globs: ["seed/**", "tests/e2e/**", "apps/author/src/app/graph/**", "apps/author/src/knowledge/**", "supabase/migrations/**"]
+globs: ["seed/**", "tests/e2e/**", "apps/workbench/src/**", "supabase/migrations/**"]
 alwaysApply: true
 ---
 

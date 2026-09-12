@@ -51,22 +51,6 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 @.cursor/rules/ui-hints-tooltips.mdc
 @.cursor/rules/lens-feature-component-reuse.mdc
 
-## Payload CMS (Author app)
-
-@.cursor/rules/security-critical.mdc
-@.cursor/rules/payload-overview.md
-@.cursor/rules/collections.md
-@.cursor/rules/access-control.md
-@.cursor/rules/access-control-advanced.md
-@.cursor/rules/fields.md
-@.cursor/rules/field-type-guards.md
-@.cursor/rules/hooks.md
-@.cursor/rules/queries.md
-@.cursor/rules/endpoints.md
-@.cursor/rules/adapters.md
-@.cursor/rules/components.md
-@.cursor/rules/plugin-development.md
-
 ## Testing
 
 @.cursor/rules/e2e-required-for-critical-flows.mdc
@@ -75,6 +59,5 @@ All rules live in `.cursor/rules/` (single source of truth for Cursor and Claude
 
 @.agents/skills/e2e-dx-workflow/SKILL.md
 @.agents/skills/nextjs-shell-supabase-auth/SKILL.md
-@.agents/skills/payload-supabase-gateway-auth/SKILL.md
 @.agents/skills/platform-centralized-user-management/SKILL.md
 @.agents/skills/shadcn/SKILL.md
