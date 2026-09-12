@@ -3,8 +3,12 @@ import type {
   EditAuthor,
   SerializedTree,
 } from '@workspace/domain';
-import type { LexicalWrapper } from '@workspace/lexical-react';
+import {
+  isWrapperWithIds,
+  type LexicalWrapper,
+} from '@workspace/lexical-react';
 import { editorStateAsMarkdown } from '@workspace/lexical-react/utils';
+import { useEditorBridge } from '@workspace/workbench-agent';
 import {
   buildFormatToolsLabels,
   buildTableInsertLabels,
@@ -21,6 +25,7 @@ import {
 } from '../composition/app-services';
 import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
+import { createAgentSeam } from './document-editor.agent-state';
 
 /** Keystrokes settle for this long before the document is written. */
 const SAVE_DEBOUNCE_MS = 400;
@@ -139,9 +144,28 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
    * so a tab that merely OPENED a document never writes to it.
    */
   const edited = useRef(false);
+  /**
+   * The live editor, for the agent, and the bridge answering from it.
+   *
+   * The slot is created and read entirely outside React — the agent asks
+   * from a worker message, with no component around — so it is deliberately
+   * not a ref, matching how the editor mount holds its own live values. The
+   * bridge reads it per call rather than capturing: the agent asks about a
+   * document, and by the time it asks this surface may hold another one or
+   * none at all.
+   */
+  const [agent] = useState(createAgentSeam);
+  useEditorBridge(agent.bridge);
   const onWrapper = useCallback(
     (wrapper: LexicalWrapper) => {
       edited.current = false;
+      if (isWrapperWithIds(wrapper)) {
+        agent.setLive({
+          documentId: document.id,
+          editor: wrapper.editor,
+          mapping: wrapper.mapping,
+        });
+      }
       const unregister = wrapper.editor.registerUpdateListener(
         ({ editorState, dirtyElements, dirtyLeaves, tags }) => {
           if (tags.has('history-merge') && !edited.current) return;
@@ -162,11 +186,12 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       // The wrapper's own cleanup runs on unmount; chain ours onto it.
       const cleanup = wrapper.cleanup;
       wrapper.cleanup = () => {
+        agent.setLive(null);
         unregister();
         cleanup();
       };
     },
-    [persist]
+    [persist, document.id, agent]
   );
 
   if (!initial)

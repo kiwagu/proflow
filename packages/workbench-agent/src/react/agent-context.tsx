@@ -63,14 +63,32 @@ export function useAgent(): AgentContextValue {
 }
 
 /**
+ * The agent, when the page has one.
+ *
+ * A surface that exists to talk to the agent (a chat panel) asserts the
+ * provider with `useAgent`. A surface that merely offers itself to the
+ * agent — the editor, which is the document whether or not an agent is
+ * running — must not fail to mount on a page with no agent, and asks
+ * through this instead.
+ */
+export function useMaybeAgent(): AgentContextValue | null {
+  return useContext(Ctx);
+}
+
+/**
  * Registers an editor with the agent for as long as the caller is mounted.
  *
  * The bridge is re-read per call through effect events rather than captured,
  * so an editor whose document changes does not have to re-register — and a
  * registration is not torn down and rebuilt on every render.
+ *
+ * With no agent on the page this does nothing: there is no client to answer
+ * and nothing to register with, so the editor mounts unregistered rather
+ * than refusing to mount.
  */
 export function useEditorBridge(bridge: EditorDocumentBridge): void {
-  const { registerEditorBridge } = useAgent();
+  const agent = useMaybeAgent();
+  const registerEditorBridge = agent?.registerEditorBridge;
 
   const documentId = useEffectEvent(() => bridge.documentId());
   const readState = useEffectEvent((id: string) => bridge.readState(id));
@@ -80,7 +98,7 @@ export function useEditorBridge(bridge: EditorDocumentBridge): void {
   );
 
   useEffect(
-    () => registerEditorBridge({ documentId, readState, applyEdit }),
+    () => registerEditorBridge?.({ documentId, readState, applyEdit }),
     [registerEditorBridge]
   );
 }
