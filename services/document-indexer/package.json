@@ -4,9 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "start": "tsx --env-file-if-exists=.env src/index.ts",
-    "once": "tsx --env-file-if-exists=.env src/index.ts --once",
+    "dev": "NODE_OPTIONS=--use-system-ca tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "NODE_OPTIONS=--use-system-ca tsx --env-file-if-exists=.env src/index.ts",
+    "once": "NODE_OPTIONS=--use-system-ca tsx --env-file-if-exists=.env src/index.ts --once",
     "build": "tsc",
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
