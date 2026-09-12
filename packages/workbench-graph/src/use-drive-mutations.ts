@@ -46,9 +46,8 @@ export function useDriveMutations(containment: Containment) {
   );
 
   /**
-   * Re-parent a node: drop its current `contains` edge, then add one from the
-   * target (unless the target is the top level). Two ops, in that order, so a
-   * partial replay can never leave the node in two folders at once.
+   * Re-parent a node: moves containment to target (or top level if null) in one
+   * atomic transaction with a single `move_node` journal operation.
    */
   const moveNode = useCallback(
     async (nodeId: string, target: MoveTarget): Promise<boolean> => {
@@ -60,25 +59,11 @@ export function useDriveMutations(containment: Containment) {
         reportError('A folder cannot be moved into its own subtree.');
         return false;
       }
-      if (currentParent) {
-        const detached = await run(
-          commands.removeEdge(spaceId, currentParent, nodeId, 'contains')
-        );
-        if (!detached) {
-          return false;
-        }
-      }
-      if (!target) {
-        return true;
-      }
       return run(
-        commands.upsertEdge({
-          spaceId,
-          from: target,
-          to: nodeId,
-          relationType: 'contains',
-          createdBy: userId,
-        })
+        commands.moveNode(
+          { spaceId, nodeId, targetParentId: target, position: 0 },
+          userId
+        )
       );
     },
     [commands, containment, reportError, run, spaceId, userId]

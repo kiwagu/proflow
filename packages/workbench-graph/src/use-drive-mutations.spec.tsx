@@ -2,7 +2,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GraphServicesProvider } from './graph-services.js';
-import { closeTestGraph, openTestGraph, type TestGraph } from './testing.js';
+import {
+  openTestGraph,
+  TEST_SPACE,
+  type TestGraph,
+  closeTestGraph,
+} from './testing.js';
 import { useDriveData } from './use-drive-data.js';
 import { useDriveMutations } from './use-drive-mutations.js';
 
@@ -62,6 +67,15 @@ describe('moving a node on the drive', () => {
       )
     );
     expect(graph.errors).toEqual([]);
+
+    const ops = await graph.db.query<{ op: string }>(
+      `select op from graph_op_journal where space_id = $1 order by id`,
+      [TEST_SPACE]
+    );
+    const opNames = ops.rows.map((o) => o.op);
+    expect(opNames.slice(-1)).toEqual(['move_node']);
+    expect(opNames).not.toContain('remove_edge');
+    expect(opNames).not.toContain('upsert_edge');
   });
 
   it('moves a node to the top level by dropping its containment edge', async () => {
@@ -83,6 +97,16 @@ describe('moving a node on the drive', () => {
     await waitFor(() =>
       expect(view.result.current.data.containment.parentOf.has(doc)).toBe(false)
     );
+
+    const ops = await graph.db.query<{ op: string }>(
+      `select op from graph_op_journal where space_id = $1 order by id`,
+      [TEST_SPACE]
+    );
+    const opNames = ops.rows.map((o) => o.op);
+    expect(opNames.slice(-1)).toEqual(['move_node']);
+    expect(opNames).not.toContain('remove_edge');
+    expect(opNames).not.toContain('upsert_edge');
+    expect(view.result.current.data.containment.parentOf.has(doc)).toBe(false);
   });
 
   it('refuses to move a folder into its own subtree, and says so', async () => {
@@ -97,6 +121,11 @@ describe('moving a node on the drive', () => {
       )
     );
 
+    const opsBefore = await graph.db.query<{ op: string }>(
+      `select op from graph_op_journal where space_id = $1 order by id`,
+      [TEST_SPACE]
+    );
+
     let accepted = true;
     await act(async () => {
       accepted = await view.result.current.mutations.moveNode(root, child);
@@ -108,6 +137,39 @@ describe('moving a node on the drive', () => {
     expect(graph.errors).toHaveLength(1);
     expect(view.result.current.data.containment.parentOf.get(child)).toBe(root);
     expect(view.result.current.data.containment.parentOf.has(root)).toBe(false);
+
+    const opsAfter = await graph.db.query<{ op: string }>(
+      `select op from graph_op_journal where space_id = $1 order by id`,
+      [TEST_SPACE]
+    );
+    expect(opsAfter.rows).toEqual(opsBefore.rows);
+  });
+
+  it('reports repository error to host without partial detach when move fails', async () => {
+    graph = await openTestGraph();
+    const source = await graph.node('Source');
+    const target = await graph.node('Target');
+    const doc = await graph.node('Doc', { kind: 'text', parentId: source });
+
+    const view = mountDrive(graph);
+    await waitFor(() =>
+      expect(view.result.current.data.containment.parentOf.get(doc)).toBe(
+        source
+      )
+    );
+
+    await graph.db.query(
+      `alter table graph_op_journal add constraint no_move check (op <> 'move_node')`
+    );
+
+    let accepted = true;
+    await act(async () => {
+      accepted = await view.result.current.mutations.moveNode(doc, target);
+    });
+
+    expect(accepted).toBe(false);
+    expect(graph.errors).toHaveLength(1);
+    expect(view.result.current.data.containment.parentOf.get(doc)).toBe(source);
   });
 
   it('treats a drop where the node already is as a success that changes nothing', async () => {
@@ -130,6 +192,41 @@ describe('moving a node on the drive', () => {
     expect(accepted).toBe(true);
     expect(graph.errors).toEqual([]);
     expect(view.result.current.data.containment.parentOf.get(doc)).toBe(folder);
+  });
+
+  it('renames a node as one local transaction and one rename_node journal op', async () => {
+    graph = await openTestGraph();
+    const doc = await graph.node('Old Title', { kind: 'text' });
+
+    const view = mountDrive(graph);
+    await waitFor(() =>
+      expect(view.result.current.data.containment.byId.get(doc)?.title).toBe(
+        'Old Title'
+      )
+    );
+
+    let accepted = false;
+    await act(async () => {
+      accepted = await view.result.current.mutations.renameNode(
+        doc,
+        'New Title'
+      );
+    });
+
+    expect(accepted).toBe(true);
+    await waitFor(() =>
+      expect(view.result.current.data.containment.byId.get(doc)?.title).toBe(
+        'New Title'
+      )
+    );
+
+    const ops = await graph.db.query<{ op: string }>(
+      `select op from graph_op_journal where space_id = $1 order by id`,
+      [TEST_SPACE]
+    );
+    const opNames = ops.rows.map((o) => o.op);
+    expect(opNames.slice(-1)).toEqual(['rename_node']);
+    expect(graph.errors).toEqual([]);
   });
 });
 
