@@ -1572,10 +1572,6 @@ export type Database = {
         Returns: boolean
       }
       rpc_end_break_glass: { Args: { p_session_id: string }; Returns: Json }
-      rpc_enqueue_body_bridge_job: {
-        Args: { p_idempotency_key: string; p_node_id: string; p_payload: Json }
-        Returns: Json
-      }
       rpc_enqueue_outbox_job: {
         Args: {
           p_aggregate_id: string

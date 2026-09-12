@@ -102,11 +102,10 @@ revoke execute on function public.outbox_jobs_delete_transport() from authentica
 revoke execute on function public.outbox_jobs_enqueue_transport() from authenticated;
 revoke execute on function public.profiles_prevent_super_admin_escalation() from authenticated;
 
--- service-role-only outbox / body-bridge transport (originally granted to
--- service_role; the app workers call these with the service role, never as an
--- authenticated rest caller)
+-- service-role-only outbox transport (originally granted to service_role; the
+-- app workers call these with the service role, never as an authenticated rest
+-- caller)
 revoke execute on function public.ensure_outbox_queue(text) from authenticated;
-revoke execute on function public.rpc_enqueue_body_bridge_job(text, jsonb, text) from authenticated;
 revoke execute on function public.rpc_enqueue_outbox_job(
   text, text, text, text, text, text, text, text, jsonb, text, integer, timestamptz
 ) from authenticated;
