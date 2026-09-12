@@ -309,6 +309,10 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         'graph write unavailable: the stand-in is offline'
       );
     }
+    if (write.kind === 'rpc') {
+      await rpc(session, write);
+      return;
+    }
     const descriptor = describeTable(write.table);
     if (descriptor.direction === 'down') {
       throw new GraphWriteError(
@@ -364,6 +368,71 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     } catch (error) {
       throw asWriteError(error);
     }
+  }
+
+  /**
+   * The deployed `move_knowledge_resource`, trigger for trigger: both ends
+   * must be visible to the caller (else 42501), the old containment is
+   * dropped and the new one inserted in ONE transaction, and the cycle guard
+   * on the insert is the same one a plain edge write meets. Re-running it
+   * re-asserts the same end state — that is what makes the rpc replayable.
+   */
+  async function rpc(
+    session: ServerSession,
+    write: Extract<ServerWrite, { kind: 'rpc' }>
+  ): Promise<void> {
+    if (write.fn !== 'move_knowledge_resource') {
+      throw new GraphWriteError(
+        'refused',
+        `graph write refused: unknown rpc ${write.fn}`
+      );
+    }
+    const args = write.args;
+    const spaceId = String(args['p_space_id']);
+    const nodeId = String(args['p_node_id']);
+    const target = args['p_target_parent_id'];
+    const targetId = target === null ? null : String(target);
+    const position = Number(args['p_position'] ?? 0);
+    const fence = visibilityPredicate('knowledge_resources', '$3');
+    const ids = targetId === null ? [nodeId] : [nodeId, targetId];
+    const { rows: visible } = await db.query<{ id: string }>(
+      `select t.id from knowledge_resources t
+        where t.space_id = $1 and t.id = any ($2::text[]) and ${fence}`,
+      [spaceId, ids, session.userId]
+    );
+    if (visible.length !== ids.length) {
+      throw new GraphWriteError(
+        'refused',
+        'graph write refused: move target or node not visible'
+      );
+    }
+    try {
+      await db.transaction(async (tx) => {
+        await tx.query(
+          `delete from knowledge_edges
+            where to_id = $1 and relation_type = 'contains'`,
+          [nodeId]
+        );
+        if (targetId !== null) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, position, created_by)
+             values ($1, $2, $3, $4, 'contains', $5, $6)`,
+            [
+              mintId('knowledge_edges'),
+              spaceId,
+              targetId,
+              nodeId,
+              position,
+              session.userId,
+            ]
+          );
+        }
+      });
+    } catch (error) {
+      throw asWriteError(error);
+    }
+    nudge(spaceId);
   }
 
   async function upsert(
@@ -522,6 +591,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
 }
 
 function spaceOfWrite(write: ServerWrite): string {
+  if (write.kind === 'rpc') return String(write.args['p_space_id'] ?? '');
   const source = write.kind === 'upsert' ? write.row : write.match;
   return String(source['space_id'] ?? '');
 }

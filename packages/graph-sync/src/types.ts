@@ -31,6 +31,9 @@ export type RowRecord = Record<string, unknown> & { id: string };
  *     restore, reorder);
  *   * `delete` — remove matched rows (purge, unlink). A second delivery
  *     matches nothing and is a no-op.
+ *   * `rpc`    — one server function carrying a multi-row command the server
+ *     must apply atomically (the canonical move). Idempotent by the
+ *     function's own contract: replaying it re-asserts the same end state.
  */
 export type ServerWrite =
   | {
@@ -52,6 +55,11 @@ export type ServerWrite =
       kind: 'delete';
       table: GraphSyncTableName;
       match: Record<string, unknown>;
+    }
+  | {
+      kind: 'rpc';
+      fn: string;
+      args: Record<string, unknown>;
     };
 
 /**

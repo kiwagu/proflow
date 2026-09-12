@@ -40,7 +40,9 @@
     "@workspace/doc-crdt": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/embedding": "workspace:*",
-    "neverthrow": "catalog:"
+    "@workspace/knowledge-contracts": "workspace:*",
+    "neverthrow": "catalog:",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "react": "catalog:"

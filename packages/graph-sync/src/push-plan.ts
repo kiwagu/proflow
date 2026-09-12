@@ -1,3 +1,4 @@
+import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import type { JournaledOp, ServerWrite } from './types.js';
 
 /**
@@ -148,6 +149,25 @@ export function planWrites(
           },
         },
       ];
+
+    case 'move_node': {
+      // The journal carries the contract's own shape, so the contract reads
+      // it — a hand-picked field would be a second, silent schema. The space
+      // comes from the payload for the same reason: it IS the input.
+      const move = moveKnowledgeResourceInputSchema.parse(payload);
+      return [
+        {
+          kind: 'rpc',
+          fn: 'move_knowledge_resource',
+          args: {
+            p_space_id: move.spaceId,
+            p_node_id: move.nodeId,
+            p_target_parent_id: move.targetParentId,
+            p_position: move.position,
+          },
+        },
+      ];
+    }
 
     case 'set_starred':
       return [

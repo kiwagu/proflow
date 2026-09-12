@@ -1,5 +1,7 @@
 import { newId } from '@workspace/domain';
+import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import { err, ok, type Result } from 'neverthrow';
+import type { z } from 'zod';
 import type { AppDb } from '../db/db.js';
 import {
   GRAPH_NODE_COLUMNS,
@@ -40,6 +42,7 @@ export const GRAPH_OPS = {
   upsertEdge: 'upsert_edge',
   removeEdge: 'remove_edge',
   reorderEdge: 'reorder_edge',
+  moveNode: 'move_node',
   trashNode: 'trash_node',
   restoreNode: 'restore_node',
   purgeNode: 'purge_node',
@@ -48,6 +51,15 @@ export const GRAPH_OPS = {
 } as const;
 
 export type GraphOpKind = (typeof GRAPH_OPS)[keyof typeof GRAPH_OPS];
+
+/**
+ * What a caller hands `moveNode`: the contract's INPUT shape (plain ids, as
+ * replica rows and UI state carry them). The repository is the boundary where
+ * the schema runs, so the branded output type never has to be minted by hand
+ * upstream — a caller that could brand an id itself would be asserting what
+ * only validation may.
+ */
+export type MoveNodeInput = z.input<typeof moveKnowledgeResourceInputSchema>;
 
 export type CreateNodeInput = {
   spaceId: string;
@@ -127,6 +139,19 @@ export interface GraphRepository {
     to: string,
     relationType: string,
     position: number
+  ): Promise<Result<void, string>>;
+  /**
+   * Canonical re-parent as ONE command: detach from every current container
+   * and, for a non-null target, attach under it — in one transaction with one
+   * `move_node` journal entry, so the server replays it as one atomic RPC
+   * rather than a delete and an upsert that can be refused half-way.
+   * `targetParentId: null` moves to the top level. The payload is the shared
+   * contract shape, parsed on the way in; the replica holds no cycle guard for
+   * it — the server is the fence, the UI the courtesy.
+   */
+  moveNode(
+    input: MoveNodeInput,
+    createdBy: string
   ): Promise<Result<void, string>>;
   /**
    * Trash a node. Only the node's own columns are written locally: the
@@ -450,6 +475,53 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           GRAPH_OPS.removeEdge,
           { from, to, relationType },
           [from, to]
+        );
+      });
+    },
+
+    moveNode(input, createdBy) {
+      const parsed = moveKnowledgeResourceInputSchema.safeParse(input);
+      if (!parsed.success) {
+        return Promise.resolve(
+          err(`graph.moveNode rejected: ${parsed.error.message}`)
+        );
+      }
+      const { spaceId, nodeId, targetParentId, position } = parsed.data;
+      // The contract is the schema, so the journal carries what it produced —
+      // the four fields, no local extras that a replay could not reproduce.
+      const payload: Record<string, unknown> = {
+        spaceId,
+        nodeId,
+        targetParentId,
+        position,
+      };
+      return command('graph.moveNode', async (tx) => {
+        await tx.query(
+          `delete from knowledge_edges
+            where to_id = $1 and relation_type = 'contains'`,
+          [nodeId]
+        );
+        if (targetParentId !== null) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', $5, $6)`,
+            [
+              newId('knowledgeEdge'),
+              spaceId,
+              targetParentId,
+              nodeId,
+              position,
+              createdBy,
+            ]
+          );
+        }
+        await journal(
+          tx,
+          spaceId,
+          GRAPH_OPS.moveNode,
+          payload,
+          targetParentId === null ? [nodeId] : [nodeId, targetParentId]
         );
       });
     },
