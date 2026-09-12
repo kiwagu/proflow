@@ -131,6 +131,14 @@ export function createSupabaseGraphRowTransport(
     },
 
     async write(write) {
+      if (write.kind === 'rpc') {
+        const { error } = await (client as unknown as SupabaseClient).rpc(
+          write.fn,
+          write.args
+        );
+        if (error) throw classify(error);
+        return;
+      }
       const builder = table(write.table);
       if (write.kind === 'upsert') {
         const { error } = await builder.upsert(write.row, {
@@ -141,11 +149,21 @@ export function createSupabaseGraphRowTransport(
         return;
       }
       if (write.kind === 'patch') {
-        const { error } = await matchAll(
+        // `select('id')` turns a silent zero-row UPDATE into a verdict: a row
+        // this session cannot see (or that is gone) is a refusal, the same
+        // way the deployed RLS reads it — not a success that drains the
+        // journal while the server holds something else.
+        const { data, error } = await matchAll(
           builder.update(write.values),
           write.match
-        );
+        ).select('id');
         if (error) throw classify(error);
+        if (!data || data.length === 0) {
+          throw new GraphWriteError(
+            'refused',
+            'graph write refused: patch matched no visible row'
+          );
+        }
         return;
       }
       const { error } = await matchAll(builder.delete(), write.match);
