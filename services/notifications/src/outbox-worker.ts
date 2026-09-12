@@ -169,10 +169,9 @@ async function claimJobs(): Promise<OutboxJob[]> {
     p_consumer: OUTBOX_CONSUMER,
     p_limit: Math.max(OUTBOX_BATCH_SIZE, 1),
     // Narrow the claim to the notifications domains. The universal outbox also
-    // carries `operation` rows (e.g. the slice-08 body-bridge), which this worker
-    // has no handler for — claiming them would falsely terminal-DLQ a row owned by
-    // another consumer. Restricting the claim keeps the two workers off each
-    // other's rows. (slice-08 §8.1 #3.)
+    // carries `operation` rows, which this worker has no handler for — claiming
+    // them would falsely terminal-DLQ a row owned by another consumer.
+    // Restricting the claim keeps the two workers off each other's rows.
     p_channels: ['email', 'sms', 'push'],
   });
 
