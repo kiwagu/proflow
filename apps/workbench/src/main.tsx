@@ -1,6 +1,11 @@
 import './index.css';
 import { createRoot, type Root } from 'react-dom/client';
 import type { ReactNode } from 'react';
+import {
+  AgentProvider,
+  startAgentWorker,
+  type AgentWorkerClient,
+} from '@workspace/workbench-agent';
 import { App } from './app';
 import { AppServicesProvider } from './composition/app-services';
 import { createAppServices, pendingBootSteps } from './composition/root';
@@ -9,6 +14,7 @@ import { BootShell } from './shell/boot-shell';
 import {
   readSession,
   signIn,
+  storageNamespace,
   platformPath,
   type WorkbenchSession,
 } from './composition/session';
@@ -110,6 +116,27 @@ async function openWorkbench(session: WorkbenchSession) {
     window.location.reload();
     return;
   }
+  /**
+   * One worker for the life of the page, started here rather than in a
+   * component so that no remount can give the page a second one — and a
+   * change of user or space reloads the page (above), which starts a fresh
+   * worker on the new session's database by itself.
+   *
+   * Having no agent is a working state, not a failure: an environment
+   * without workers still has to be a full editor, so a start-up that
+   * throws is reported and the page goes on without one.
+   */
+  let agentClient: AgentWorkerClient | undefined;
+  try {
+    agentClient = startAgentWorker({ namespace: storageNamespace(session) });
+  } catch (error) {
+    console.error('the agent worker did not start', error);
+  }
+  const app = (
+    <AppServicesProvider services={services}>
+      <App />
+    </AppServicesProvider>
+  );
   const view = (
     <div className="flex h-full flex-col" data-testid="workbench-ready">
       <nav
@@ -128,9 +155,11 @@ async function openWorkbench(session: WorkbenchSession) {
         </a>
       </nav>
       <div className="min-h-0 flex-1">
-        <AppServicesProvider services={services}>
-          <App />
-        </AppServicesProvider>
+        {agentClient ? (
+          <AgentProvider client={agentClient}>{app}</AgentProvider>
+        ) : (
+          app
+        )}
       </div>
     </div>
   );

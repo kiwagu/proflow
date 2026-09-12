@@ -26,11 +26,15 @@ import { createAgentWorkerDeps } from './composition';
  *
  * `?embedder=hash` on the worker URL swaps the model-backed embedder for the
  * deterministic hash one, so a test exercises the search tools without a
- * network or a model download.
+ * network or a model download. `?namespace=` names the database to open:
+ * one page, one database — without it the worker would open the default
+ * one beside the page's own, and every tool would read an empty store.
  */
-const embedderChoice = new URL(self.location.href).searchParams.get('embedder');
+const workerUrl = new URL(self.location.href);
+const embedderChoice = workerUrl.searchParams.get('embedder');
+const namespace = workerUrl.searchParams.get('namespace');
 
-const db = await openLocalDatabase();
+const db = await openLocalDatabase(undefined, namespace ?? undefined);
 const documentCrdt = createDocumentCrdtStore(db);
 const documents = createPgliteDocumentRepository(db, documentCrdt);
 const documentList = createPgliteDocumentListReader(db);
