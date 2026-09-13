@@ -95,9 +95,8 @@ export class HorizontalRuleNode extends DecoratorNode<
   }
 
   decorate(): DecoratorComponent<HorizontalRuleDecoratorProps> | undefined {
-    const decorator = getDecorator<HorizontalRuleDecoratorProps>(
-      HorizontalRuleNode
-    );
+    const decorator =
+      getDecorator<HorizontalRuleDecoratorProps>(HorizontalRuleNode);
     if (!decorator) return undefined;
     const props = { nodeKey: this.__key };
     return () => decorator(props);

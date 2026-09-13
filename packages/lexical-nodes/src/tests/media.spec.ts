@@ -13,10 +13,7 @@ import { SupportedNodeTypes } from '../node-list';
 import { $createImageNode, $isImageNode } from '../nodes/ImageNode';
 import { fitDimensions } from '../nodes/MediaNode';
 import { $createVideoNode } from '../nodes/VideoNode';
-import {
-  EXTERNAL_TRANSFORMERS,
-  INTERNAL_TRANSFORMERS,
-} from '../transformers';
+import { EXTERNAL_TRANSFORMERS, INTERNAL_TRANSFORMERS } from '../transformers';
 
 const HASH = 'a'.repeat(64);
 
@@ -31,9 +28,9 @@ function editor(): LexicalEditor {
 
 describe('the dimension rule', () => {
   it('preserves aspect ratio when width binds', () => {
-    expect(fitDimensions({ width: 800, height: 400 }, { maxWidth: 400 })).toEqual(
-      { width: 400, height: 200 }
-    );
+    expect(
+      fitDimensions({ width: 800, height: 400 }, { maxWidth: 400 })
+    ).toEqual({ width: 400, height: 200 });
   });
 
   it('takes the tighter of two constraints', () => {
@@ -59,7 +56,10 @@ describe('the dimension rule', () => {
   });
 
   it('rounds to integers', () => {
-    const fitted = fitDimensions({ width: 333, height: 111 }, { maxWidth: 100 });
+    const fitted = fitDimensions(
+      { width: 333, height: 111 },
+      { maxWidth: 100 }
+    );
     expect(Number.isInteger(fitted.width)).toBe(true);
     expect(Number.isInteger(fitted.height)).toBe(true);
   });

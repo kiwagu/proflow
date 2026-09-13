@@ -22,9 +22,7 @@ import type { ElementNode } from 'lexical';
  * heading that begins with a number, not asking for the heading to become a
  * list item. Converting there destroys the heading and is always a surprise.
  */
-function guardHeading(
-  transformer: ElementTransformer
-): ElementTransformer {
+function guardHeading(transformer: ElementTransformer): ElementTransformer {
   return {
     ...transformer,
     replace: (parentNode, children, match, isImport) => {

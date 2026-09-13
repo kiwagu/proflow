@@ -50,9 +50,8 @@ export class VideoNode extends MediaNode<VideoDecoratorProps> {
   }
 
   static importJSON(serializedNode: SerializedVideoNode): VideoNode {
-    const node = $createVideoNode(serializedNode).updateFromJSON(
-      serializedNode
-    );
+    const node =
+      $createVideoNode(serializedNode).updateFromJSON(serializedNode);
     $applyIdFromSerialized(node, serializedNode);
     return node;
   }

@@ -97,7 +97,9 @@ export function FindAndReplace({
     replaceMatch(editor, match.id, replacement);
     const remaining = matches.filter((_, i) => i !== currentIndex);
     setMatches(remaining);
-    setCurrentIndex(remaining.length > 0 ? currentIndex % remaining.length : -1);
+    setCurrentIndex(
+      remaining.length > 0 ? currentIndex % remaining.length : -1
+    );
   };
 
   const replaceAll = () => {
@@ -133,7 +135,10 @@ export function FindAndReplace({
         className
       )}
     >
-      <SearchIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+      <SearchIcon
+        aria-hidden
+        className="text-muted-foreground size-4 shrink-0"
+      />
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
           <Input

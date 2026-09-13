@@ -19,15 +19,29 @@ bun run typecheck
 # always exit 0, so warnings silently accumulated). `lint:strict` runs eslint with
 # `--max-warnings 0` per package — touch a file, it must be warning-clean.
 bun run lint:strict
-bun run format
 
-# Re-stage paths that were already part of this commit so formatter output is included.
+# Format ONLY the files this commit stages, then re-stage them so the formatter
+# output is part of the commit. Running the tree-wide formatter here rewrote files
+# the commit never touched: the re-stage below adds back only paths that were
+# already staged, so every unrelated rewrite was left dirty in the working tree and
+# had to be reverted by hand. `--ignore-unknown` skips anything Prettier has no
+# parser for (lockfiles, SQL, images); `.prettierignore` still applies.
+# typecheck and lint:strict above stay tree-wide on purpose.
 _gitdir=$(git rev-parse --git-dir)
 _staged_paths="$_gitdir/pre-commit-staged-paths-$$"
 trap "rm -f \"$_staged_paths\"" EXIT HUP INT TERM
 git diff --cached --name-only --diff-filter=ACM > "$_staged_paths"
+
+# Collect into the positional parameters: POSIX sh has no arrays, and this keeps
+# paths containing spaces intact through a single prettier / git add invocation.
+set --
 while IFS= read -r path; do
   [ -z "$path" ] && continue
-  git add -- "$path"
+  set -- "$@" "$path"
 done < "$_staged_paths"
+
+if [ "$#" -gt 0 ]; then
+  bunx --no-install prettier --write --ignore-unknown -- "$@"
+  git add -- "$@"
+fi
 unset _gitdir path

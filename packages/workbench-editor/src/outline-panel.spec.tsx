@@ -1,5 +1,11 @@
 import type { LexicalWrapper } from '@workspace/lexical-react';
-import { render, cleanup, fireEvent, screen, act } from '@testing-library/react';
+import {
+  render,
+  cleanup,
+  fireEvent,
+  screen,
+  act,
+} from '@testing-library/react';
 import { $createHeadingNode } from '@lexical/rich-text';
 import { $createTextNode, $getRoot } from 'lexical';
 import { afterEach, describe, expect, it } from 'vitest';

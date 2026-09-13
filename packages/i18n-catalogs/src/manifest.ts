@@ -2,11 +2,7 @@ import type { PlatformLocale } from '@workspace/settings-runtime';
 import { PLATFORM_LOCALES } from '@workspace/settings-runtime';
 
 export type I18nDomain =
-  | 'platform'
-  | 'author'
-  | 'graph'
-  | 'workbench'
-  | 'notifications';
+  'platform' | 'author' | 'graph' | 'workbench' | 'notifications';
 
 export type I18nLocale = PlatformLocale;
 

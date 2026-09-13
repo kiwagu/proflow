@@ -45,8 +45,7 @@ export type SerializedMediaNode = Spread<
   SerializedDecoratorBlockNode
 >;
 
-export type MediaDecoratorProps = MediaInfo &
-  MediaDisplay & { key: NodeKey };
+export type MediaDecoratorProps = MediaInfo & MediaDisplay & { key: NodeKey };
 
 export type Dimensions = { width: number; height: number };
 

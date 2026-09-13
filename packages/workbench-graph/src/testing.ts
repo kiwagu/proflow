@@ -83,21 +83,17 @@ export async function openTestGraph(
     return result.value.id;
   };
 
-  const document = async (
-    title: string,
-    markdown: string
-  ): Promise<string> => {
+  const document = async (title: string, markdown: string): Promise<string> => {
     if (!engine) {
       throw new Error('openTestGraph({ withSearch: true }) is required');
     }
     const id = newId('document');
     // The engine reads exactly these two tables; seeding them directly keeps
     // the case about the search, not about the CRDT save path.
-    await db.query('insert into document (id, title, preview) values ($1, $2, $3)', [
-      id,
-      title,
-      markdown.slice(0, 120),
-    ]);
+    await db.query(
+      'insert into document (id, title, preview) values ($1, $2, $3)',
+      [id, title, markdown.slice(0, 120)]
+    );
     await db.query(
       `insert into document_content (document_id, lexical_json, markdown)
        values ($1, '{}'::jsonb, $2)`,

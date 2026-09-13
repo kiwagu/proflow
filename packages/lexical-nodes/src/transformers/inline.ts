@@ -92,9 +92,7 @@ export function conversionOnly<T extends Transformer>(
   return { ...transformer, conversionOnly: true };
 }
 
-export function isConversionOnlyTransformer(
-  transformer: Transformer
-): boolean {
+export function isConversionOnlyTransformer(transformer: Transformer): boolean {
   return (transformer as ConversionOnlyTransformer).conversionOnly === true;
 }
 

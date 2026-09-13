@@ -7,7 +7,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { FileIcon } from './file-icon.js';
 import { useBlobs } from './file-services.js';
 import { categoryOf, formatSize } from './file-tree.js';
-import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
+import {
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
 
 /** How much of a text file is read for the preview. */
 const TEXT_PREVIEW_BYTES = 512 * 1024;

@@ -21,10 +21,7 @@ import {
 
 export type ImageInfo = MediaInfo & MediaDisplay & { alt: string };
 
-export type SerializedImageNode = Spread<
-  { alt: string },
-  SerializedMediaNode
->;
+export type SerializedImageNode = Spread<{ alt: string }, SerializedMediaNode>;
 
 export type ImageDecoratorProps = MediaDecoratorProps & { alt: string };
 
@@ -50,9 +47,8 @@ export class ImageNode extends MediaNode<ImageDecoratorProps> {
   }
 
   static importJSON(serializedNode: SerializedImageNode): ImageNode {
-    const node = $createImageNode(serializedNode).updateFromJSON(
-      serializedNode
-    );
+    const node =
+      $createImageNode(serializedNode).updateFromJSON(serializedNode);
     $applyIdFromSerialized(node, serializedNode);
     return node;
   }

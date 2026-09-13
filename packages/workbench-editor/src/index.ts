@@ -1,5 +1,8 @@
 export { DocumentView, type DocumentViewProps } from './document-view.js';
-export { FindAndReplace, type FindAndReplaceProps } from './find-and-replace.js';
+export {
+  FindAndReplace,
+  type FindAndReplaceProps,
+} from './find-and-replace.js';
 export { FormatTools, type FormatToolsProps } from './format-tools.js';
 export { Outline, type OutlineProps } from './outline-panel.js';
 export { TableInsert, type TableInsertProps } from './table-insert.js';

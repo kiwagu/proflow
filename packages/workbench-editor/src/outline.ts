@@ -84,9 +84,7 @@ export function useOutlineHeadings(
 
   useEffect(() => {
     const refresh = () => {
-      const next = editor
-        ? editor.getEditorState().read(readHeadings)
-        : [];
+      const next = editor ? editor.getEditorState().read(readHeadings) : [];
       setHeadings((current) => (headingsEqual(current, next) ? current : next));
     };
 
