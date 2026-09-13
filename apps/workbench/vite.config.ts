@@ -2,6 +2,7 @@ import tailwind from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import wasm from 'vite-plugin-wasm';
+import { offlineShell } from './offline-shell.plugin';
 
 /**
  * Restores bare query flags on dev requests that came through the gateway.
@@ -67,6 +68,17 @@ export default defineConfig({
     // The CRDT ships as WebAssembly and imports it as an ES module, which
     // Vite does not resolve on its own.
     wasm(),
+    // Build only: emits the service worker and the web app manifest at
+    // the mount, after the file list they describe exists.
+    offlineShell({
+      base: BASE_PATH,
+      name: 'ProFlow Workbench',
+      shortName: 'Workbench',
+      description:
+        'Local-first documents, files and knowledge — everything stays on your device.',
+      themeColor: '#ffffff',
+      backgroundColor: '#ffffff',
+    }),
   ],
   // The gateway (apps/web) proxies the mount prefix here in development and
   // forwards the browser's Host; Vite refuses any Host it was not told about,

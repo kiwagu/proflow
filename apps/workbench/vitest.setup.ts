@@ -19,6 +19,19 @@ if (!('ResizeObserver' in globalThis)) {
     ResizeObserverStub;
 }
 
+// Node ships its own `localStorage` global, which is disabled unless the
+// process was started with a backing file — and being a global, it shadows
+// the working one jsdom builds for the window. Point the name back at
+// jsdom's own store so code reads the same storage a browser would.
+const jsdomStorage = (window as unknown as { _localStorage?: Storage })
+  ._localStorage;
+if (jsdomStorage && !window.localStorage) {
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    get: () => jsdomStorage,
+  });
+}
+
 if (typeof Element !== 'undefined') {
   const proto = Element.prototype as Element & {
     hasPointerCapture?: (id: number) => boolean;

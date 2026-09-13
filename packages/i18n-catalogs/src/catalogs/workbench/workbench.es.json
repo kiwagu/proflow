@@ -116,5 +116,7 @@
   "workbench.app.failure.confirmHint": "Otras pestañas de esta aplicación deben cerrarse, o su copia de la base de datos podría sobrevivir a esta.",
   "workbench.app.failure.keepData": "Conservar mis datos",
   "workbench.app.failure.deleteEverything": "Eliminar todo",
-  "workbench.app.failure.deleting": "Eliminando…"
+  "workbench.app.failure.deleting": "Eliminando…",
+  "workbench.app.update.available": "Hay una nueva versión lista.",
+  "workbench.app.update.reload": "Recargar"
 }
