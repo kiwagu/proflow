@@ -1,7 +1,6 @@
 /**
  * Environment resolution for the seed engine — the SAME Supabase wiring the e2e
- * harness uses (E2E_* override → NEXT_PUBLIC_* → required), plus the author app
- * base URL the `/author/graph/*` endpoints are driven over. Kept dependency-free
+ * harness uses (E2E_* override → NEXT_PUBLIC_* → required). Kept dependency-free
  * so both the CLI and `@workspace/e2e` can import it.
  */
 
@@ -35,17 +34,5 @@ export function resolveAnonKey(): string {
     process.env.SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
     requiredEnv('SUPABASE_ANON_KEY')
-  );
-}
-
-/**
- * Base URL of the author app whose `/author/graph/*` endpoints the seed drives.
- * `SEED_BASE_URL` → `PLAYWRIGHT_BASE_URL` (shared with e2e) → the dev default.
- */
-export function resolveBaseUrl(): string {
-  return (
-    process.env.SEED_BASE_URL ??
-    process.env.PLAYWRIGHT_BASE_URL ??
-    'https://proflow.local'
   );
 }

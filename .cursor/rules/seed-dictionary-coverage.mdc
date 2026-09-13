@@ -30,8 +30,8 @@ alwaysApply: true
 `@workspace/seed` (the `seed/` workspace) is the ONE home of reference content. It serves
 four masters at once: e2e consistency, demo population, no-more-hand-built-trees, and
 self-documentation. The `seed-curator` agent owns it. All content is created at RUNTIME
-through the live `/author/graph/*` endpoints under RLS — NEVER via migrations (that
-poisons the author identity-sync worker).
+through the product's own create-vocabulary, stamped with the acting participant's
+identity — NEVER via migrations (that poisons the identity-sync worker).
 
 `bun run seed --manifest=<file>` dumps the seeded `{scenario: {ref: id}}` map as JSON —
 the machine-readable dictionary (gitignored runtime artifact) for grounding/verification
@@ -49,7 +49,7 @@ to know what already exists. The `seed-curator` agent both generates and consume
 
 2. **e2e draws seed data from the catalog.** An e2e spec that needs a tree, actors, or a
    projection takes them from `@workspace/seed` — `materializeFixture(scenario, tenant)` +
-   `seedClientFor(actor)` (the shared `/author/graph/*` create-vocabulary), and asserts
+   `seedClientFor(actor)` (the shared create-vocabulary), and asserts
    against the scenario's named `ref`s. Relevant fixtures live in `seed/src/catalog/*`, NOT
    inline in the spec.
 

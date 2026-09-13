@@ -1,11 +1,11 @@
 import type { ResourceStatus } from '@workspace/knowledge-contracts';
 
-import type { Floor } from '../engine/http.js';
+import type { Floor } from '../engine/rows.js';
 
 /**
  * The DICTIONARY model — a declarative description of reference content addressed
- * by stable `ref` strings. The materializer walks it through the `/author/graph/*`
- * endpoints and returns `ref → nodeId`, so the demo database and the e2e specs
+ * by stable `ref` strings. The materializer walks it through the create-vocabulary
+ * and returns `ref → nodeId`, so the demo database and the e2e specs
  * name the very same nodes. New features extend this vocabulary, never the
  * imperative seed code.
  */
@@ -73,12 +73,10 @@ type NodeBase = {
    * node lands in their "Recent" lens. The actor must be able to SEE it. */
   openedBy?: ActorRef[];
   /** Workflow-LIFECYCLE status — `draft` → `active` → `archived` (B1). A CONTENT-only
-   * dimension (invalid on `folder`). The create endpoints do NOT expose it, and the
-   * create-time default differs by kind (a text doc is born `active` via the text-resource
-   * fan-out; a bodyless node defaults `draft`), so when declared the materializer writes
-   * the state through the product's OWN new route (`PATCH /author/graph/status`) as the
-   * node's OWNER — exactly as the panel's transition control does, NEVER a direct column
-   * write. Omit to leave the kind's create default.
+   * dimension (invalid on `folder`). A node is born `draft`, so when declared the
+   * materializer writes the state through the product's OWN status write as the
+   * node's OWNER — exactly as the panel's transition control does. Omit to leave the
+   * create default.
    *
    * This is the RESOURCE lifecycle (a coarse three-state, migration
    * 20260615190243) — distinct from the board demo's `status`/`workflowKey` pair
@@ -112,13 +110,12 @@ export type TextNode = NodeBase & {
 
 /**
  * A small, deterministic byte payload uploaded through the REAL media transport:
- * the materializer creates the bodyless node, authorizes a signed
- * upload URL (`/author/graph/media?op=upload-url`), PUTs these bytes to the private
- * `kb-media` bucket via `uploadToSignedUrl`, then confirms the `kb.resource_media_meta`
- * satellite (`attribute:'media'`). NEVER a service-role insert / direct SQL — the
- * bytes are born the product's way so the `storage.objects` + satellite RLS is the
- * fence exactly as in production. Keep the payload tiny (a few KB) — it is reference
- * content, not a real asset.
+ * the materializer creates the bodyless node, reserves the byte record
+ * (`uploadMediaUrl`), uploads these bytes to the private `kb-media` bucket at the
+ * server-decided path under the owner's own session, then points the node at the blob
+ * (`setMedia`). The bytes are born the product's way, so the `storage.objects` +
+ * satellite RLS is the fence exactly as in production. Keep the payload tiny (a few KB)
+ * — it is reference content, not a real asset.
  */
 export type MediaPayload = {
   /** The literal file bytes. By default (`encoding` omitted / `'utf8'`) this is a
@@ -164,9 +161,9 @@ export type ContainEdge = {
 export type ShortcutEdge = { folder: NodeRef; target: NodeRef };
 
 /**
- * A typed relation edge authored directly via the owner's RLS client — for
- * relations the `/author/graph/edges` endpoint does not expose (e.g.
- * `prerequisite`), exactly as the e2e seeders author them.
+ * A typed relation edge authored directly in the materializer — for relations the
+ * create-vocabulary does not name (e.g. `prerequisite`), exactly as the e2e seeders
+ * author them.
  */
 export type RelationEdge = {
   from: NodeRef;

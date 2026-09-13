@@ -12,9 +12,9 @@ worked examples. It exists to serve four jobs at once:
 4. **Self-documentation** — each scenario's `summary` and real Lexical bodies make
    the seed the platform's learning material. Content is English-only.
 
-Everything is created the way the product creates it: by driving the live
-`/author/graph/*` endpoints as an authenticated user under RLS (migrations never
-seed domain content — that poisons the author identity-sync worker).
+Everything is created the way the product's own data layer creates it: as rows
+written to the live schema under the acting participant's identity (migrations
+never seed domain content — that poisons the identity-sync worker).
 
 ## Run it
 
@@ -27,15 +27,15 @@ bun run seed --manifest=seed.json   # also dump the seeded ref→id map to JSON
 bun run seed:list                   # presets + scenario summaries (no DB writes)
 ```
 
-The catalog is validated offline before any endpoint call (and in CI via
+The catalog is validated offline before any write (and in CI via
 `bun run test:vitest` → `src/catalog/validate.ts`): duplicate/empty `ref`s,
 cross-references that point at nothing (owner / scope / tag / actor / node), bad
 presets, malformed Lexical bodies. The `--manifest` JSON is the machine-readable
 dictionary — every demo node named by its stable `ref`, keyed by scenario — for
 LLM ↔ human feedback and demo verification.
 
-Needs the stack running (the author app + Postgres + Payload/Mongo), exactly like
-the `@full` e2e suite. Supabase keys are read from `seed/.env` then `tests/e2e/.env`
+Needs the stack running (Postgres + Storage), exactly like the `@full` e2e suite.
+Supabase keys are read from `seed/.env` then `tests/e2e/.env`
 (see `.env.example`); the shell wins over both.
 
 ### Tenant modes
@@ -74,7 +74,7 @@ appears at the ROOT — graceful-absence, no synthetic ancestor). It is view-onl
 tree just reuses `buildContainment` over the shared subset (no resolver change, Invariant #1),
 so the SAME three nodes the flat digest lists are re-arranged structurally. The e2e
 draws the tree via `seedAdvancedSharedFixture`; the COMMERCIAL entitlement rows are
-control-plane config (a service-role `runtime_settings` upsert via `setAdvancedSharedEntitlement`),
+operator configuration (a service-role `runtime_settings` upsert via `setAdvancedSharedEntitlement`),
 out of scope for a content scenario.
 The `shared` preset ALSO carries the `containment-inheritance` fixture: the
 worked example for owner-scoped, LIVE containment access inheritance — sharing a folder
@@ -125,8 +125,8 @@ through the reused projection-resolve transport. The other-space negative
 scenario is single-space.
 The `search` corpus ALSO carries a SIX-LEVEL-DEEP folder chain — `kb/deep/level-1`…
 `kb/deep/level-5` (`Level One`…`Level Five`) ⊃ `kb/deep/leaf` (`Abyssal Treasure`, the
-distinctive term `abyssal` in its DESCRIPTION) — for the Pro-gated ADVANCED search lens
-(`/author/graph?scope=search&q=…&view=advanced`): Flat view lists the matched leaf, while
+distinctive term `abyssal` in its DESCRIPTION) — for the ADVANCED search lens:
+Flat view lists the matched leaf, while
 Advanced view places it in its FULLY-EXPANDED ancestor-folder tree, recursively, to ANY
 depth (search = a filtered KB). A query for `abyssal` matches only the leaf; the advanced
 view must render every ancestor folder on the path root → leaf, expanded, with the snippet
@@ -137,15 +137,14 @@ surfaces `deepLeafId`/`deepLeafTitle`/`deepLeafTerm` + the `deepChainFolderTitle
 whole path renders.
 `media` is the KB media substrate (slice-13; slice-14 resumable/TUS switch): the
 `knowledge-base` scenario ALSO opts into it, making `file`/`video` nodes REAL by uploading a
-small byte payload through the product's OWN transport — the materializer authorizes the
-upload (`/author/graph/media?op=upload-url`), which returns the SERVER-decided `storagePath`
-only (the single-PUT signed-url/token leg was removed with the resumable switch), uploads the
-bytes to that path in the private `kb-media` bucket under the owner's session (the product
-client uses resumable TUS; the seed runs in Node with tiny fixtures, so it uses the storage-js
-STANDARD `upload` — same `storage.objects` INSERT RLS fence, no `tus-js-client` dep), then
-confirms the `kb.resource_media_meta` (`kmm`) satellite (`attribute:'media'`), so both a bucket
-object AND a satellite row exist, fenced by the SAME `storage.objects` / satellite RLS as
-production (never a service-role / direct-SQL seed). A
+small byte payload through the product's OWN transport — the materializer reserves the byte
+record (`uploadMediaUrl`), which returns the server-decided `storagePath` and the blob id,
+uploads the bytes to that path in the private `kb-media` bucket under the owner's session (the
+product client uses resumable TUS; the seed runs in Node with tiny fixtures, so it uses the
+storage-js STANDARD `upload` — same `storage.objects` INSERT RLS fence, no `tus-js-client`
+dep), then points the node at the blob through the `kb.resource_media_meta` (`kmm`) satellite
+(`setMedia`), so both a bucket object AND a satellite row exist, fenced by the SAME
+`storage.objects` / satellite RLS as production. A
 node opts in by declaring a `media: { bytes, mimeType, filename }` payload on a `file`/`video`
 node (the mime must pass `isAllowedMediaMime`; the validator enforces it offline). The corpus
 carries: a real `file` (`kb/file-owned`) + a real `video` (`kb/video-owned`) owned by the
@@ -167,14 +166,14 @@ overwrite another user's file bytes); and a REAL confirmed file (`kb/file-purge-
 reserved for the trash → purge lifecycle — purging it best-effort reaps its `kb-media` object
 (the touch-item). Bytes egress ONLY via short-lived signed URLs; RLS is
 the sole fence. The media matrix e2e (`knowledge-media-substrate.e2e.spec.ts`) draws
-this corpus via `seedMediaSubstrateFixture` and drives the REAL `/author/graph/media`
-upload/download transport against REAL Storage.
+this corpus via `seedMediaSubstrateFixture` and drives the REAL upload/download transport
+against REAL Storage.
 `status` is the resource WORKFLOW lifecycle (B1): the `status-lifecycle` scenario — one
-folder of three content docs, one per state (`draft`/`active`/`archived`). A text doc is born
-`active` (the text-resource fan-out default), so each declared state is written through the
-product's OWN new route (`PATCH /author/graph/status`, gated by `space.knowledge.update`) at
-seed time — the materializer's `lifecycleStatus` → `seedClientFor(owner).setStatus`, never a
-direct column write. It backs BOTH B1 surfaces: the ResourcePanel transition control (a
+folder of three content docs, one per state (`draft`/`active`/`archived`). A bodyless node is
+born `draft`, so each declared state is written through the product's OWN status write (gated
+by `space.knowledge.update`) at seed time — the materializer's `lifecycleStatus` →
+`seedClientFor(owner).setStatus`, never an incidental column write. It backs BOTH B1
+surfaces: the ResourcePanel transition control (a
 SegmentedControl — click a segment to move the state) and the Drive status facet
 (`StatusFacetChips`, `graph.lens.filterStatus` — a single-select content prune, shown when the
 resolved canvas carries ≥2 distinct content statuses). The scenario ALSO rides the `drive`
@@ -187,13 +186,13 @@ proves the transition (owner moves draft→active, persists across reload), the 
 ## The dictionary
 
 Catalog scenarios (`src/catalog/*.ts`) are **declarative data** addressed by stable
-`ref` strings. `materializeScenario` walks a scenario through the endpoints and
+`ref` strings. `materializeScenario` walks a scenario through the create-vocabulary and
 returns `ref → id`, so the demo and the e2e specs name the very same nodes.
 
 ```
 src/
-  engine/      tenant bootstrap (ephemeral + demo), actors, SSR cookies,
-               the /author/graph/* HTTP wrappers (the create-vocabulary)
+  engine/      tenant bootstrap (ephemeral + demo), actors, and the row-writing
+               create-vocabulary (`rows.ts`)
   catalog/     the dictionary: drive, access, knowledge-base, board, shared,
                share-mechanism, advanced-shared, hierarchy, per-user-share,
                directory-picker, containment-inheritance, trash + the projection
@@ -213,7 +212,8 @@ The per-person-sharing access-matrix spec
 revoke→re-grant arc, and the authority/cross-space negatives all run through the one
 `grantUser` / `revokeUser` vocabulary, never inline create/delete helpers. The same
 spec also drives the co-member directory through the shared `visibility`
-wrapper (`GET /author/graph/visibility?q=`): the picker/grant rows resolve the seeded
+wrapper (the share-audience projection, read as the acting user): the picker/grant rows
+resolve the seeded
 co-member `display_name`s, search narrows, and a non-member sees an empty directory.
 A second describe-block in the same spec draws the `directory-picker` scenario's
 ten-member space via `seedDirectoryPickerFixture` and exercises the PAGINATED picker:
@@ -237,8 +237,9 @@ demo DB and the test exercise one owner-scoped inheritance predicate identically
 The lexical-search matrix spec (`knowledge-search.e2e.spec.ts`, slice-12)
 draws its corpus from the shared `knowledge-base` scenario via `seedSearchCorpusFixture`,
 and runs the search itself through the SAME create-vocabulary — `seedClientFor(actor).search`
-POSTs `/author/graph/search`, the REAL route, RLS-fenced as the acting user — so a hit's
-presence/absence is the live runtime truth. It asserts the match classes (Cyrillic /
+ran the query RLS-fenced as the acting user, so a hit's presence/absence was the live runtime
+truth. Search is a server-side operation that no row write expresses, so the row vocabulary
+does not carry it; this spec waits on that capability. It asserts the match classes (Cyrillic /
 accented / case-insensitive prefix, plus the Phase-2 fuzzy typo and title>description
 ranking) and the security proof: another user's PRIVATE node is
 ABSENT for a non-grantee, an ancestor-shared child is PRESENT for the grantee (inherited
@@ -247,7 +248,7 @@ single-space) stays out of an in-space search — every absence proven by RLS, n
 
 The SAME `seedSearchCorpusFixture` corpus also backs the Phase-3 cross-client proof:
 a SECOND consumer of the search capability — the command palette — drives
-the SAME `/author/graph/search` path under the SAME RLS transport, so its results are
+the SAME search capability under the SAME RLS fence, so its results are
 IDENTICAL to the Drive lens for the same term. The command-palette render spec
 (`knowledge-command-palette-search.e2e.spec.ts`) opens the palette in the browser (the
 top-bar `command-palette-trigger`, then types into `command-palette-input`) over the SAME
@@ -288,11 +289,11 @@ visible list is deterministic) plus TWO loose docs soft-deleted at seed time (th
 multi-select via the per-card checkboxes drives the floating bulk bar (a checkbox toggles
 selection and must NOT open the Details drawer; SHIFT selects a contiguous range), bulk Trash /
 Star / Restore fan out over the existing per-id routes with an honest done-summary, Empty Trash
-opens a MANDATORY confirm (cancel keeps, confirm batch-purges all → empty), and the batch route
-(`DELETE /author/graph/trash {resourceIds[]}`) returns the honest partial split — a mix of an
-own-trashed id (→ `purged`) and a second actor's node the caller cannot destroy (→ `skipped`,
-reason `denied`), status 200, driven through the shared vocabulary's `purgeMany` wrapper. No new
-endpoint — every verb is a client fan-out over routes that already shipped.
+opens a MANDATORY confirm (cancel keeps, confirm batch-purges all → empty), and the batch purge
+returns the honest partial split — a mix of an own-trashed id (→ `purged`) and a second actor's
+node the caller cannot destroy (→ `skipped`, reason `denied`) — through the shared vocabulary's
+`purgeMany` wrapper. Batch purge is a server-side operation the row vocabulary does not carry;
+this spec waits on that capability.
 
 The SAME `drive-size-filter` fixture ALSO backs the SEARCH-lens variant of that chip
 (`knowledge-search-size-filter.e2e.spec.ts`): the "Only files" chip now lives
@@ -300,7 +301,7 @@ on EVERY lens shelf via the shared `LensToolbar`, and on Search it FUNCTIONALLY 
 result set (a flat leaf list) with the SAME `isUploadedArtifact` predicate. The fixture carries
 two loose leaves sharing ONE distinctive title token (`Falcon`) — a REAL uploaded file
 (`size/search-file`, an artifact) and a plain text node (`size/search-doc`, a non-artifact) — so
-a single browser search for `Falcon` (POST `/author/graph/search`, RLS-fenced as the owner)
+a single browser search for `Falcon` (RLS-fenced as the owner)
 returns BOTH; toggling the chip ON keeps the file and drops the note (the chip filters, not just
 renders). The search leaves are loose at the root + NOT starred, so the Drive folder-sum + Starred
 proofs above are untouched. One fixture, two consumers (the Drive lenses + the Search lens), one
@@ -310,8 +311,8 @@ The KB media matrix spec (`knowledge-media-substrate.e2e.spec.ts`, slice-13, the
 MERGE GATE) draws its corpus from the SAME `knowledge-base` scenario via
 `seedMediaSubstrateFixture`, and drives the REAL upload/download transport against REAL
 Storage through the shared create-vocabulary — `seedClientFor(actor).uploadMediaUrl` /
-`.setMedia` / `.downloadMediaUrl` (the live `/author/graph/media` + `attribute:'media'`
-routes), each RLS-fenced as the acting user. It proves the FUNCTIONAL path (upload → the exact
+`.setMedia` / `.downloadMediaUrl`, each fenced by the acting user's own storage session. It
+proves the FUNCTIONAL path (upload → the exact
 bytes round-trip on download → the ResourcePanel Media section) for `file` AND `video`, and the
 SECURITY gate (the bytes inherit the FULL access model because `storage.objects` RLS delegates
 to `auth_user_can_access_resource`): a non-grantee cannot mint a download URL nor fetch the

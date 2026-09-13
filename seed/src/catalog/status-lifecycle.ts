@@ -8,7 +8,7 @@ import type { SeedScenario } from './types.js';
  *
  *  1. the ResourcePanel transition control (`StatusSection`) — a shadcn SegmentedControl
  *     of the three states, the active one = the node's current `status`; clicking a
- *     non-active segment PATCHes `/author/graph/status` (RLS-fenced to
+ *     non-active segment writes the new `status` (RLS-fenced to
  *     `space.knowledge.update`) and re-resolves. Rendered for CONTENT kinds only (a
  *     folder/tag has no lifecycle);
  *  2. the Drive status facet (`StatusFacetChips`, `graph.lens.filterStatus`) — a single-
@@ -34,7 +34,7 @@ export const STATUS_LIFECYCLE_SCENARIO: SeedScenario = {
   id: 'status-lifecycle',
   title: 'Resource status lifecycle',
   summary:
-    'A folder of three content docs, one per workflow-lifecycle state (draft/active/archived) — the worked example for the ResourcePanel status transition control and the Drive status facet (B1). Each declared state is written through the product’s own `PATCH /author/graph/status` route at seed time, so the demo and the e2e name the same nodes at the same states.',
+    'A folder of three content docs, one per workflow-lifecycle state (draft/active/archived) — the worked example for the ResourcePanel status transition control and the Drive status facet (B1). Each declared state is written through the product’s own status write at seed time, so the demo and the e2e name the same nodes at the same states.',
   presets: ['drive', 'status'],
   tree: [
     {

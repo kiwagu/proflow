@@ -17,8 +17,8 @@ import type { SeedScenario } from './types.js';
  *
  * Authority to grant/revoke is owner-sovereign OR a space access-manager
  * (`space.knowledge.access`); the grantee must be an active member of the doc's
- * space (a same-space DB guard). This scenario CREATES that grant through the live
- * Share transport (`POST /author/graph/visibility` with `grantType: 'user'`), so
+ * space (a same-space DB guard). This scenario CREATES that grant through the share
+ * vocabulary (`grantUser`), so
  * the demo DB and the access-matrix e2e draw from one create-vocabulary. Resolving
  * it AS each actor (grantee sees / outsider blind / revoke narrows / re-grant
  * restores / cross-space rejected / non-owner cannot grant) is what the access-matrix

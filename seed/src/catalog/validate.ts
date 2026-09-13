@@ -83,8 +83,8 @@ export function validateScenario(s: SeedScenario): string[] {
     for (const t of n.tags ?? []) {
       if (!t) fail(`node "${n.ref}" has an empty tag title`);
     }
-    // Workflow-LIFECYCLE status (B1) — a CONTENT-only dimension set via the product's
-    // `PATCH /author/graph/status` route. Must be a valid three-state value, never on a
+    // Workflow-LIFECYCLE status (B1) — a CONTENT-only dimension set through the
+    // product's own status write. Must be a valid three-state value, never on a
     // `folder` (a pure container, no lifecycle — the seed model has no `tag` NODE kind;
     // tags are titles), and never combined with the board demo's `status`/`workflowKey`
     // axis (a different, mutually-exclusive status machine).

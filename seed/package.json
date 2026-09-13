@@ -15,9 +15,13 @@
     "test:vitest": "bunx vitest run"
   },
   "dependencies": {
-    "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
+    "@workspace/doc-crdt": "workspace:*",
+    "@workspace/doc-sync": "workspace:*",
+    "@workspace/domain": "workspace:*",
+    "@workspace/entity-id": "workspace:*",
     "@workspace/knowledge-contracts": "workspace:*",
+    "@workspace/std": "workspace:*",
     "cross-env": "catalog:",
     "dotenv": "catalog:",
     "tsx": "catalog:"
