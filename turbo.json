@@ -27,23 +27,27 @@
     },
     "test:e2e": {
       "cache": false,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "workbench#build"]
     },
     "test:e2e:smoke": {
       "cache": false,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "workbench#build"]
     },
     "test:e2e:smoke:ni": {
       "cache": false,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "workbench#build"]
     },
     "test:e2e:full": {
       "cache": false,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "workbench#build"]
     },
     "test:e2e:full:ni": {
       "cache": false,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "workbench#build"]
+    },
+    "test:e2e:headed": {
+      "cache": false,
+      "dependsOn": ["^build", "workbench#build"]
     },
     "dev": {
       "cache": false,
