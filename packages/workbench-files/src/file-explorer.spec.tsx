@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { FileExplorer } from './file-explorer.js';
@@ -8,9 +9,11 @@ import { fakeServices, testNode } from './testing.js';
 
 function mount(services: FileServices, ui = <FileExplorer />) {
   return render(
-    <FileServicesProvider services={services}>
-      <FileSelectionProvider>{ui}</FileSelectionProvider>
-    </FileServicesProvider>
+    <TooltipProvider>
+      <FileServicesProvider services={services}>
+        <FileSelectionProvider>{ui}</FileSelectionProvider>
+      </FileServicesProvider>
+    </TooltipProvider>
   );
 }
 
@@ -227,5 +230,64 @@ describe('the explorer over a live tree', () => {
       const row = screen.getAllByTestId('file-row')[0];
       expect(row?.querySelector('[aria-current="true"]')).toBeTruthy();
     });
+  });
+
+  it('creates a document from the keyboard, through the same action as the button', async () => {
+    const tree = fakeServices([]);
+    const create = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(tree.services, <FileExplorer documents={{ create }} />);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'j',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+
+    expect(create).toHaveBeenCalledWith({ title: 'Untitled', parentId: null });
+  });
+
+  it('leaves the keystroke alone when there is no document surface to create into', async () => {
+    const tree = fakeServices([]);
+    mount(tree.services);
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'j',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      window.dispatchEvent(event);
+    });
+
+    // Nothing claimed it, so the browser keeps its own behaviour.
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not create a document while the user is typing', async () => {
+    const tree = fakeServices([testNode({ id: 'a', name: 'a.txt' })]);
+    const create = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(tree.services, <FileExplorer documents={{ create }} />);
+
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    await act(async () => {
+      field.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'j',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    field.remove();
+
+    expect(create).not.toHaveBeenCalled();
   });
 });

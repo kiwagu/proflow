@@ -681,6 +681,7 @@
       },
       "devDependencies": {
         "@tailwindcss/postcss": "catalog:",
+        "@testing-library/react": "catalog:",
         "@turbo/gen": "^2.9.18",
         "@types/node": "catalog:",
         "@types/react": "catalog:",
@@ -688,8 +689,10 @@
         "@workspace/eslint-config": "workspace:*",
         "@workspace/typescript-config": "workspace:*",
         "eslint": "catalog:",
+        "jsdom": "catalog:",
         "tailwindcss": "catalog:",
         "typescript": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/workbench-agent": {

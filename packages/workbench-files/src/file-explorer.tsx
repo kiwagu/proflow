@@ -2,13 +2,18 @@
 
 import { type FileNode, newId } from '@workspace/domain';
 import { Button } from '@workspace/ui/components/button';
+import { Hint } from '@workspace/ui/components/hint';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
+import { useHotkey } from '@workspace/ui/hooks/use-hotkey';
 import { FilePlus, FolderPlus, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollapsibleSection } from './collapsible-section.js';
 import { FileRow, PendingRow } from './file-row.js';
 import { useFiles, usePackages, useReportError } from './file-services.js';
-import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
+import {
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
 import {
   useFileNodes,
   useFileSelection,
@@ -166,9 +171,30 @@ export function FileExplorer({
     awaiting.current = created.id;
   };
 
+  /**
+   * The keyboard route to the same action as the toolbar button — one
+   * `createDocument`, two ways to reach it.
+   *
+   * ⌘J / Ctrl+J rather than the ⌘N this obviously wants: Chromium RESERVES the
+   * new-window, new-tab and new-incognito-window accelerators, so ⌘N, ⌘T and
+   * ⌘⇧N never reach a page at all and binding one would produce a shortcut
+   * that silently does nothing. ⌘J is delivered to the page and is what the
+   * user gets.
+   *
+   * Registered only when there is a document surface to create into, so a host
+   * that only stores files leaves the keystroke to the browser instead of
+   * swallowing it for an affordance it does not have.
+   */
+  useHotkey({ key: 'j', mod: true }, () => void createDocument(), {
+    enabled: Boolean(documents),
+  });
+
   const createFolder = async () => {
     const parentId = targetFolder();
-    const created = await files.createFolder({ parentId, name: labels.newFolderName });
+    const created = await files.createFolder({
+      parentId,
+      name: labels.newFolderName,
+    });
     if (created.isOk()) {
       setOpenFileId(created.value.id);
       if (parentId) reveal(parentId, nodes);
@@ -285,16 +311,17 @@ export function FileExplorer({
     >
       <div className="flex items-center gap-0.5 px-2 pt-2 pb-1">
         {documents ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title={labels.newDocument}
-            aria-label={labels.newDocument}
-            data-testid="new-document"
-            onClick={() => void createDocument()}
-          >
-            <FilePlus className="size-4" />
-          </Button>
+          <Hint label={labels.newDocument} keys={labels.newDocumentKeys}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={labels.newDocument}
+              data-testid="new-document"
+              onClick={() => void createDocument()}
+            >
+              <FilePlus className="size-4" />
+            </Button>
+          </Hint>
         ) : null}
         <Button
           variant="ghost"

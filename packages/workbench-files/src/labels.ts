@@ -10,6 +10,8 @@ import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
  */
 export type FileExplorerLabels = {
   newDocument: string;
+  /** The keystroke shown on the new-document hint, e.g. `⌘J`. */
+  newDocumentKeys: string;
   newFolder: string;
   uploadFiles: string;
   importing: (count: number) => string;
@@ -56,6 +58,7 @@ export type FileExplorerLabels = {
 
 export const defaultFileExplorerLabels: FileExplorerLabels = {
   newDocument: 'New document',
+  newDocumentKeys: '⌘J',
   newFolder: 'New folder',
   uploadFiles: 'Upload files',
   importing: (count) => `${count} importing`,
@@ -94,7 +97,8 @@ export const defaultFileExplorerLabels: FileExplorerLabels = {
   },
   errors: {
     unpack: (reason) => `Could not unpack: ${reason}`,
-    discardUnpacked: (reason) => `Could not delete the unpacked files: ${reason}`,
+    discardUnpacked: (reason) =>
+      `Could not delete the unpacked files: ${reason}`,
     createFolder: (reason) => `Could not create the folder: ${reason}`,
     import: (name, reason) => `Could not import ${name}: ${reason}`,
   },
@@ -109,6 +113,7 @@ export function buildFileExplorerLabels(
 ): FileExplorerLabels {
   return {
     newDocument: t('workbench.files.newDocument'),
+    newDocumentKeys: t('workbench.files.newDocumentKeys'),
     newFolder: t('workbench.files.newFolder'),
     uploadFiles: t('workbench.files.uploadFiles'),
     importing: (count) => t('workbench.files.importing', { count }),

@@ -1,5 +1,6 @@
 import type { DocumentMeta } from '@workspace/domain';
 import { Button } from '@workspace/ui/components/button';
+import { Hint } from '@workspace/ui/components/hint';
 import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chrome';
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
@@ -131,16 +132,20 @@ function Workbench() {
             : 'Documents and files are stored on this device and open without a network.',
         }}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => palette.setOpen(true)}
-            data-testid="command-palette-trigger"
+          <Hint
+            label={t ? t('workbench.app.search') : 'Search'}
+            keys={t ? t('workbench.app.searchKeys') : '⌘K'}
           >
-            <Search aria-hidden />
-            {t ? t('workbench.app.search') : 'Search'}
-            <kbd className="text-muted-foreground ml-1 text-[10px]">⌘K</kbd>
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => palette.setOpen(true)}
+              data-testid="command-palette-trigger"
+            >
+              <Search aria-hidden />
+              {t ? t('workbench.app.search') : 'Search'}
+            </Button>
+          </Hint>
         }
       />
       <WorkbenchShell
