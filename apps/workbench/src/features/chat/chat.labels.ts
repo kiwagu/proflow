@@ -19,6 +19,15 @@ export interface ChatPanelLabels {
   stop: string;
   /** Header of the collapsed reasoning block. */
   thinking: string;
+  /** Status of a tool call, shown on its card. */
+  toolRunning: string;
+  toolDone: string;
+  toolFailed: string;
+  /** Headers of the collapsed call payloads. */
+  toolInput: string;
+  toolOutput: string;
+  /** What a truncated payload withheld, by character count. */
+  toolMore: (count: number) => string;
   /** Shown instead of a transcript before the first message. */
   empty: string;
   /** Author labels on a turn. */
@@ -35,6 +44,12 @@ export const defaultChatPanelLabels: ChatPanelLabels = {
   send: 'Send',
   stop: 'Stop',
   thinking: 'Thinking…',
+  toolRunning: 'Running…',
+  toolDone: 'Done',
+  toolFailed: 'Failed',
+  toolInput: 'Arguments',
+  toolOutput: 'Result',
+  toolMore: (count) => `… ${count} more characters`,
   empty: 'No messages yet. Ask about your documents to start.',
   you: 'You',
   assistant: 'Assistant',
@@ -49,6 +64,12 @@ export function buildChatPanelLabels(t: WorkbenchTranslator): ChatPanelLabels {
     send: t('workbench.chat.send'),
     stop: t('workbench.chat.stop'),
     thinking: t('workbench.chat.thinking'),
+    toolRunning: t('workbench.chat.tool.running'),
+    toolDone: t('workbench.chat.tool.done'),
+    toolFailed: t('workbench.chat.tool.failed'),
+    toolInput: t('workbench.chat.tool.input'),
+    toolOutput: t('workbench.chat.tool.output'),
+    toolMore: (count) => t('workbench.chat.tool.more', { count }),
     empty: t('workbench.chat.empty'),
     you: t('workbench.chat.you'),
     assistant: t('workbench.chat.assistant'),

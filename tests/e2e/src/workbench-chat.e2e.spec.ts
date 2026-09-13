@@ -14,6 +14,11 @@ import {
  * reached the worker, the stream came back and was rendered. Asserting on
  * the question instead would prove nothing, since the transcript shows the
  * user's own message too.
+ *
+ * The second exchange asks for something the scripted model answers with a
+ * tool call, which is the only way to prove the call and its result reach
+ * the transcript as one settled card — a unit can pair parts handed to it,
+ * but not that the worker emits both.
  */
 test.describe('Workbench chat panel', () => {
   test.describe.configure({ timeout: 300_000 });
@@ -58,6 +63,22 @@ test.describe('Workbench chat panel', () => {
         timeout: 60_000,
       });
       await expect(page.getByTestId('chat-stop')).toHaveCount(0);
+
+      // A question the scripted model answers with a specific tool, so the
+      // transcript has to show that call AND the result it settled on. The
+      // card is found by tool name rather than by position — the first
+      // exchange already produced a search card — and asserted through its
+      // state rather than its wording: the state is what the grouping
+      // computes, the wording is catalog copy.
+      await composer.fill('list my files');
+      await composer.press('Enter');
+      const toolCard = page
+        .getByTestId('chat-tool')
+        .filter({ hasText: 'ListFiles' });
+      await expect(toolCard).toBeVisible({ timeout: 180_000 });
+      await expect(toolCard).toHaveAttribute('data-state', 'done', {
+        timeout: 180_000,
+      });
 
       // Closing takes the region away entirely rather than hiding it. The
       // toggle is clicked rather than pressed here: the shortcut registry

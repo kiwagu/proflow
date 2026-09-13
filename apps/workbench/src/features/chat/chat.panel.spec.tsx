@@ -8,37 +8,16 @@
  * reader back to the bottom while a reply is still arriving.
  */
 import type { AssistantPart } from '@workspace/workbench-agent';
-import type { UseChatSession } from '@workspace/workbench-agent';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from './chat.panel';
-
-function stubSession(over: Partial<UseChatSession> = {}): UseChatSession {
-  return {
-    chatId: 'cht-1',
-    messages: [],
-    streaming: null,
-    generating: false,
-    error: null,
-    ready: true,
-    openError: null,
-    send: () => Promise.resolve(),
-    stop: () => {},
-    ...over,
-  };
-}
+import { stubSession } from './chat.testing';
 
 const THINKING: AssistantPart = {
   type: 'thinking',
   thinking: 'Weighing the request',
 };
 const TEXT: AssistantPart = { type: 'text', text: 'The answer is 42.' };
-const TOOL_CALL: AssistantPart = {
-  type: 'tool-call',
-  id: 'call-1',
-  name: 'ListFiles',
-  input: {},
-};
 
 function composer(): HTMLTextAreaElement {
   return screen.getByTestId('chat-input') as HTMLTextAreaElement;
@@ -88,10 +67,14 @@ describe('the chat panel', () => {
     expect(screen.queryByText('Weighing the request')).toBeNull();
   });
 
-  it('survives a part kind it does not render yet', () => {
-    // Tool calls are the next slice. Until then an unknown part must be
-    // ignored, not thrown on: the model decides what it sends, and a chat
-    // that crashes on a tool call is a chat with no tools.
+  it('survives a part kind it does not render', () => {
+    // The model decides what it sends, and the part vocabulary grows. A
+    // surface that throws on a kind it has not learned yet is a surface
+    // that goes down the first time the domain adds one.
+    const unknown = {
+      type: 'citation',
+      source: 'a.md',
+    } as unknown as AssistantPart;
     render(
       <ChatPanel
         session={stubSession({
@@ -100,7 +83,7 @@ describe('the chat panel', () => {
               id: 'msg-1',
               role: 'assistant',
               text: '',
-              parts: [TOOL_CALL, TEXT],
+              parts: [unknown, TEXT],
               status: 'complete',
             },
           ],
@@ -109,7 +92,6 @@ describe('the chat panel', () => {
     );
 
     expect(screen.getByText('The answer is 42.')).toBeDefined();
-    expect(screen.queryByText(/ListFiles/)).toBeNull();
   });
 
   it('sends on Enter and breaks the line on Shift+Enter', () => {
@@ -122,6 +104,67 @@ describe('the chat panel', () => {
 
     fireEvent.keyDown(composer(), { key: 'Enter' });
     expect(send).toHaveBeenCalledWith('hello');
+  });
+
+  it('ignores Enter while a reply is still generating', () => {
+    // Stop replaces Send during a turn, but the composer keeps the focus and
+    // Enter keeps firing. Without the guard a reader who types ahead starts
+    // a second turn on top of the one in flight.
+    const send = vi.fn(() => Promise.resolve());
+    render(<ChatPanel session={stubSession({ send, generating: true })} />);
+
+    fireEvent.change(composer(), { target: { value: 'and another thing' } });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('follows the reply again once the reader sends', () => {
+    // Scrolling up stops the view following. Sending is the reader saying
+    // they are done reading back — the answer to their new question is what
+    // they are waiting for, so the view must return to the bottom.
+    const { rerender } = render(
+      <ChatPanel
+        session={stubSession({
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'assistant',
+              text: '',
+              parts: [TEXT],
+              status: 'complete',
+            },
+          ],
+        })}
+      />
+    );
+    const viewport = measuredViewport({
+      scrollHeight: 1000,
+      clientHeight: 100,
+      scrollTop: 0,
+    });
+    fireEvent.scroll(viewport);
+
+    fireEvent.change(composer(), { target: { value: 'what about this' } });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+
+    rerender(
+      <ChatPanel
+        session={stubSession({
+          generating: true,
+          messages: [
+            {
+              id: 'msg-1',
+              role: 'assistant',
+              text: '',
+              parts: [TEXT],
+              status: 'complete',
+            },
+          ],
+          streaming: { messageId: 'msg-2', parts: [TEXT] },
+        })}
+      />
+    );
+    expect(viewport.scrollTop).toBe(1000);
   });
 
   it('shows Stop while generating and Send once it settles', () => {

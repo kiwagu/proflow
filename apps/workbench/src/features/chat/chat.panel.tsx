@@ -11,9 +11,12 @@
  *    not rewritten per chunk, and reading the live turn out of the
  *    transcript would throw that away and show the reply twice at the moment
  *    it settles.
- *  - an unknown part kind renders nothing. Tool calls are the next slice;
- *    until then the model may still emit them, and a surface that throws on
- *    a part it has not learned yet is a surface with no tools.
+ *  - an unknown part kind renders nothing. The model decides what it
+ *    sends and the part vocabulary grows; a surface that throws on a kind
+ *    it has not learned yet is a surface that goes down on the next one.
+ *  - a tool call and its result are ONE card, paired by the call's id at
+ *    render time. They arrive as separate parts because that is what makes
+ *    an interrupted turn recoverable, but to a reader they are one event.
  *  - the view follows the reply only while the reader is already at the
  *    bottom. Scrolling up is how a user reads what has already arrived, and
  *    yanking them back down is the defect that makes a long answer
@@ -41,6 +44,7 @@ import type {
 import { ChevronRight, Send, Square } from 'lucide-react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { type ChatPanelLabels, defaultChatPanelLabels } from './chat.labels';
+import { groupToolCalls, ToolCallView } from './tool-call.view';
 
 /** How close to the bottom still counts as "following the reply", in px. */
 const AT_BOTTOM_SLACK = 32;
@@ -200,6 +204,15 @@ function Turn({
   labels: ChatPanelLabels;
 }) {
   const mine = message.role === 'user';
+  // A tool call and its answer are separate parts, often far apart in the
+  // list; the reader sees one card. Grouping is derived here rather than
+  // held in state so the live turn and a reloaded transcript go through the
+  // same code — the card is drawn where the CALL appeared, and the parts
+  // that fold into it render nothing of their own.
+  const groups = groupToolCalls(message.parts);
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const drawn = new Set<string>();
+
   return (
     <div
       data-testid="chat-turn"
@@ -215,22 +228,35 @@ function Turn({
         </p>
       ) : (
         <div className="flex max-w-full flex-col gap-2">
-          {message.parts.map((part, index) => (
-            <Part
+          {message.parts.map((part, index) => {
+            const key = `${message.id}:${index}`;
+            if ('id' in part && byId.has(part.id)) {
+              // Whichever part of the call arrives first owns the card's
+              // place in the transcript; the rest have already been folded
+              // into it.
+              if (drawn.has(part.id)) return null;
+              drawn.add(part.id);
+              return (
+                <ToolCallView
+                  key={key}
+                  group={byId.get(part.id)!}
+                  labels={labels}
+                />
+              );
+            }
+            return (
               // Parts have no identity of their own; within one message their
               // order is the identity, and it only ever grows at the end.
-              key={`${message.id}:${index}`}
-              part={part}
-              labels={labels}
-            />
-          ))}
+              <Part key={key} part={part} labels={labels} />
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** A single assistant part. Kinds this slice does not render yield nothing. */
+/** A single assistant part. Kinds this surface does not render yield nothing. */
 function Part({
   part,
   labels,
@@ -258,9 +284,9 @@ function Part({
         </Collapsible>
       );
     default:
-      // Tool calls, results and errors belong to the next slice. Rendering
-      // nothing is deliberate; throwing here would take the panel down on a
-      // part the model is free to send at any time.
+      // The part vocabulary grows with the domain. Rendering nothing is
+      // deliberate; throwing here would take the panel down on a kind the
+      // model is free to send before this surface has learned it.
       return null;
   }
 }
