@@ -68,6 +68,25 @@ describe('the last confirmed identity', () => {
     window.localStorage.setItem('workbench.session', 'not json');
     expect(recallSession()).toBeNull();
   });
+
+  /**
+   * The account cookies are the serialized session itself — access and
+   * refresh tokens included — and the browser lets scripts read them. What
+   * is kept here pins the record to an account; it must never be a second
+   * copy of what pins it, which would outlive the cookies it was taken
+   * from and sit in a store no cookie attribute protects.
+   */
+  it('keeps no part of the account cookies it was pinned to', () => {
+    const token =
+      'base64-eyJhY2Nlc3NfdG9rZW4iOiJzZWNyZXQtYWNjZXNzIiwicmVmcmVzaF90b2tlbiI6InNlY3JldC1yZWZyZXNoIn0';
+    setCookies(`sb-proj-auth-token=${token}; other=x`);
+    rememberSession(SESSION);
+    const stored = window.localStorage.getItem('workbench.session') ?? '';
+    expect(stored).not.toContain(token);
+    expect(stored).not.toContain(token.slice(0, 24));
+    // Still usable for what it exists for.
+    expect(recallSession()).toEqual(SESSION);
+  });
 });
 
 describe('reading the session', () => {
