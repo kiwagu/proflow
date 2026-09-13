@@ -9,13 +9,12 @@
  */
 import type { DocumentMeta } from '@workspace/domain';
 import type { AgentWorkerClient, OpenDocumentHooks } from '@workspace/ai-agent';
-import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { AgentProvider } from '@workspace/workbench-agent';
-import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { AppServicesProvider } from '../composition/app-services';
 import type { AppServices } from '../composition/services';
+import { render, screen } from '../test-utils';
 import { DocumentEditor } from './document-editor';
 
 const DOCUMENT: DocumentMeta = {
@@ -66,11 +65,7 @@ function recordingClient(): {
 
 function mount(view: ReactNode) {
   return render(
-    <TooltipProvider>
-      <AppServicesProvider services={stubServices()}>
-        {view}
-      </AppServicesProvider>
-    </TooltipProvider>
+    <AppServicesProvider services={stubServices()}>{view}</AppServicesProvider>
   );
 }
 
@@ -119,11 +114,9 @@ describe('the editor pane under the app composition', () => {
     // Re-rendering the tree must not stack a second registration — the
     // client is the page's one worker, handed in rather than created here.
     rerender(
-      <TooltipProvider>
-        <AppServicesProvider services={stubServices()}>
-          {view}
-        </AppServicesProvider>
-      </TooltipProvider>
+      <AppServicesProvider services={stubServices()}>
+        {view}
+      </AppServicesProvider>
     );
     await openedEditor();
     expect(registrations()).toBe(1);

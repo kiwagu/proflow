@@ -8,8 +8,8 @@
  * a large result must not be pasted into the transcript whole.
  */
 import type { AssistantPart } from '@workspace/workbench-agent';
-import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '../../test-utils';
 import { ChatPanel } from './chat.panel';
 import { stubSession } from './chat.testing';
 

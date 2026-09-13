@@ -8,8 +8,8 @@
  * reader back to the bottom while a reply is still arriving.
  */
 import type { AssistantPart } from '@workspace/workbench-agent';
-import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '../../test-utils';
 import { ChatPanel } from './chat.panel';
 import { stubSession } from './chat.testing';
 

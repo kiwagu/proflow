@@ -20,9 +20,9 @@ import {
   type LexicalWrapperWithMapping,
 } from '@workspace/lexical-react';
 import { DocumentView } from '@workspace/workbench-editor';
-import { act, render } from '@testing-library/react';
 import { $getRoot, type SerializedEditorState, UNDO_COMMAND } from 'lexical';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { act, render } from '../test-utils';
 import {
   createAgentSeam,
   createEditorDocumentBridge,
