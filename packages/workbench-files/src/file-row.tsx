@@ -26,7 +26,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { FileIcon } from './file-icon.js';
-import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
+import {
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
 import { categoryOf } from './file-tree.js';
 
 export interface MoveTarget {
@@ -219,7 +222,9 @@ export function FileRow(props: FileRowProps) {
                 >
                   <PackageOpen className="size-4" />
                   <span className="text-xs">
-                    {props.unpacked ? labels.row.actionUnpacked : labels.row.unpack}
+                    {props.unpacked
+                      ? labels.row.actionUnpacked
+                      : labels.row.unpack}
                   </span>
                 </DropdownMenuItem>
               ) : null}
@@ -240,7 +245,9 @@ export function FileRow(props: FileRowProps) {
                     data-testid="file-move"
                   >
                     <Folder className="size-4" />
-                    <span className="flex-1 truncate text-xs">{labels.row.moveTo}</span>
+                    <span className="flex-1 truncate text-xs">
+                      {labels.row.moveTo}
+                    </span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuGroup>

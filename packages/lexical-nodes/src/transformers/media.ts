@@ -43,8 +43,7 @@ export const I_IMAGE: ElementTransformer = {
           ...(data.constrainedHeight === undefined
             ? {}
             : {
-                constrainedHeight:
-                  Number(data.constrainedHeight) || undefined,
+                constrainedHeight: Number(data.constrainedHeight) || undefined,
               }),
           ...(data.scale === undefined
             ? {}

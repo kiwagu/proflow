@@ -14,10 +14,7 @@ import {
   $createResourceMentionNode,
   $isResourceMentionNode,
 } from '../nodes/ResourceMentionNode';
-import {
-  EXTERNAL_TRANSFORMERS,
-  INTERNAL_TRANSFORMERS,
-} from '../transformers';
+import { EXTERNAL_TRANSFORMERS, INTERNAL_TRANSFORMERS } from '../transformers';
 
 function editor(): LexicalEditor {
   return createHeadlessEditor({
@@ -192,9 +189,9 @@ describe('markdown forms', () => {
   });
 
   it('imports the portable link form back into a mention', () => {
-    expect(mentionsIn('[The Spec](resource://r1)', EXTERNAL_TRANSFORMERS)).toEqual(
-      [{ id: 'r1', kind: 'document', label: 'The Spec' }]
-    );
+    expect(
+      mentionsIn('[The Spec](resource://r1)', EXTERNAL_TRANSFORMERS)
+    ).toEqual([{ id: 'r1', kind: 'document', label: 'The Spec' }]);
   });
 
   it('falls back to the unknown embed on malformed internal JSON', () => {

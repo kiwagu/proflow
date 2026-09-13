@@ -29,10 +29,7 @@ export type FileInfo = {
   size: number;
 };
 
-export type SerializedFileNode = Spread<
-  FileInfo,
-  SerializedDecoratorBlockNode
->;
+export type SerializedFileNode = Spread<FileInfo, SerializedDecoratorBlockNode>;
 export type FileDecoratorProps = FileInfo & { key: NodeKey };
 
 export class FileNode extends DecoratorBlockNode<

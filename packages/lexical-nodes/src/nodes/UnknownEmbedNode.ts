@@ -152,9 +152,8 @@ export class UnknownEmbedNode extends DecoratorNode<
   }
 
   decorate(): DecoratorComponent<UnknownEmbedDecoratorProps> | undefined {
-    const decorator = getDecorator<UnknownEmbedDecoratorProps>(
-      UnknownEmbedNode
-    );
+    const decorator =
+      getDecorator<UnknownEmbedDecoratorProps>(UnknownEmbedNode);
     if (!decorator) return undefined;
     const props = { ...this.getInfo(), key: this.__key };
     return () => decorator(props);

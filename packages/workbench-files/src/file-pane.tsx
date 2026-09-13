@@ -7,7 +7,10 @@ import { FileIcon } from './file-icon.js';
 import { useFileNodes, useFileSelection } from './file-selection.js';
 import { formatSize } from './file-tree.js';
 import { FileViewer } from './file-viewer.js';
-import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
+import {
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
 
 /**
  * The main pane renders the selected file node: the editor for a native
@@ -133,7 +136,9 @@ function FolderPane({
       </div>
       <ul className="flex flex-col gap-1">
         {contents.length === 0 ? (
-          <li className="text-muted-foreground text-sm">{labels.pane.emptyFolder}</li>
+          <li className="text-muted-foreground text-sm">
+            {labels.pane.emptyFolder}
+          </li>
         ) : null}
         {contents.map((child) => (
           <li key={child.id}>

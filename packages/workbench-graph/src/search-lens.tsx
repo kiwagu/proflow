@@ -79,10 +79,7 @@ export function SearchLens({
         disabled={lens.unavailable}
         data-testid="search-lens-input"
       />
-      <CommandList
-        className="max-h-none"
-        data-testid="search-lens-results"
-      >
+      <CommandList className="max-h-none" data-testid="search-lens-results">
         {lens.unavailable ? (
           <EmptyState className="py-8" data-testid="search-lens-unavailable">
             {labels.unavailable}

@@ -50,7 +50,10 @@ export function findAllOccurrences(
 
 function $clearHighlights(): void {
   for (const { node } of $dfs()) {
-    if ($isMarkNode(node) && node.getIDs().some((id) => id.startsWith(MATCH_ID_PREFIX))) {
+    if (
+      $isMarkNode(node) &&
+      node.getIDs().some((id) => id.startsWith(MATCH_ID_PREFIX))
+    ) {
       unwrapPreservingText(node);
     }
   }
