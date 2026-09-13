@@ -1,6 +1,8 @@
 import './index.css';
 import { createRoot, type Root } from 'react-dom/client';
 import type { ReactNode } from 'react';
+import { createWorkerEmbedder } from '@workspace/embedding';
+import { createPgliteSemanticSearch } from '@workspace/persistence-pglite';
 import {
   AgentProvider,
   startAgentWorker,
@@ -14,12 +16,28 @@ import { BootShell } from './shell/boot-shell';
 import {
   readSession,
   signIn,
-  storageNamespace,
   platformPath,
   type WorkbenchSession,
 } from './composition/session';
 
 const container = requireRoot();
+
+/**
+ * The first value a live query yields, as a promise.
+ *
+ * The agent's list tools want one answer, not a subscription; the readers
+ * only offer a watch, so the watch is opened, read once and closed. The
+ * unsubscribe is deferred because a reader may call back synchronously,
+ * before it has a subscription to cancel.
+ */
+function firstOf<T>(watch: (onValue: (value: T) => void) => () => void) {
+  return new Promise<T>((resolve) => {
+    const unsubscribe = watch((value) => {
+      resolve(value);
+      queueMicrotask(unsubscribe);
+    });
+  });
+}
 
 function requireRoot(): HTMLElement {
   const el = document.getElementById('root');
@@ -120,7 +138,13 @@ async function openWorkbench(session: WorkbenchSession) {
    * One worker for the life of the page, started here rather than in a
    * component so that no remount can give the page a second one — and a
    * change of user or space reloads the page (above), which starts a fresh
-   * worker on the new session's database by itself.
+   * worker against the new session by itself.
+   *
+   * The worker opens no database of its own: the local one is exclusive, so
+   * the agent's tools reach it through these ports, served from the single
+   * client this page owns. `search` is built here for the same reason — it is
+   * the only consumer, and a second embedder-backed index in the worker would
+   * have needed a second database to live in.
    *
    * Having no agent is a working state, not a failure: an environment
    * without workers still has to be a full editor, so a start-up that
@@ -128,7 +152,12 @@ async function openWorkbench(session: WorkbenchSession) {
    */
   let agentClient: AgentWorkerClient | undefined;
   try {
-    agentClient = startAgentWorker({ namespace: storageNamespace(session) });
+    agentClient = startAgentWorker({
+      documents: services.documents,
+      search: createPgliteSemanticSearch(services.db, createWorkerEmbedder()),
+      listDocuments: () => firstOf(services.documentList.watchRecent),
+      listFiles: () => firstOf(services.fileTree.watchAll),
+    });
   } catch (error) {
     console.error('the agent worker did not start', error);
   }

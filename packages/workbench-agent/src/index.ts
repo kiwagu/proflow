@@ -37,11 +37,7 @@ export {
   useMaybeAgent,
 } from './react/agent-context';
 export { useChatSession, type UseChatSession } from './react/use-chat-session';
-export {
-  type AgentWorkerClient,
-  type AgentWorkerOptions,
-  startAgentWorker,
-} from './worker/start';
+export { type AgentWorkerClient, startAgentWorker } from './worker/start';
 export {
   type AgentWorkerPorts,
   createAgentWorkerDeps,
