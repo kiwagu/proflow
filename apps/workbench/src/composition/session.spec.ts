@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CONFIRMATION_GOOD_FOR_MS,
   forgetSession,
   readSession,
   recallSession,
@@ -86,6 +87,53 @@ describe('the last confirmed identity', () => {
     expect(stored).not.toContain(token.slice(0, 24));
     // Still usable for what it exists for.
     expect(recallSession()).toEqual(SESSION);
+  });
+});
+
+/**
+ * The confirmation the record carries has a life. Signing out on another
+ * device cannot reach this one, so without an end the local copy would
+ * stay openable on a device the account has already left.
+ */
+describe('the age of a confirmation', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is refused once the server has not confirmed it for too long', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T09:00:00Z'));
+    rememberSession(SESSION);
+    vi.setSystemTime(Date.now() + CONFIRMATION_GOOD_FOR_MS + 1);
+    expect(recallSession()).toBeNull();
+  });
+
+  it('is accepted right up to the limit', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T09:00:00Z'));
+    rememberSession(SESSION);
+    vi.setSystemTime(Date.now() + CONFIRMATION_GOOD_FOR_MS);
+    expect(recallSession()).toEqual(SESSION);
+  });
+
+  it('slides forward on every confirmation, not from the first one', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T09:00:00Z'));
+    rememberSession(SESSION);
+    // Most of the window spent, then the server answers again.
+    vi.setSystemTime(Date.now() + CONFIRMATION_GOOD_FOR_MS - 1000);
+    rememberSession(SESSION);
+    // Past the ORIGINAL deadline, well inside the refreshed one.
+    vi.setSystemTime(Date.now() + 2000);
+    expect(recallSession()).toEqual(SESSION);
+  });
+
+  it('is refused when the record does not say when it was confirmed', () => {
+    window.localStorage.setItem(
+      'workbench.session',
+      JSON.stringify({ cookies: 'whatever', session: SESSION })
+    );
+    expect(recallSession()).toBeNull();
   });
 });
 

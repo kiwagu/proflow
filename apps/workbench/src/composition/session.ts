@@ -110,6 +110,20 @@ function digest(value: string): string {
 const REMEMBERED = 'workbench.session';
 
 /**
+ * How long a confirmation is good for offline, measured from the last time
+ * the server answered — not from when the user signed in, so an account in
+ * daily use is never cut off mid-outage.
+ *
+ * Offline needs no hard wall, but a door that never closes is a different
+ * thing: signing out on another device cannot reach this one, so without a
+ * limit the local copy would stay openable forever on a device the account
+ * has already left. A day is long enough to cover an outage, a flight or a
+ * weekend offline, and short enough that the window has an end. It is
+ * policy, not taste — hence a constant here rather than a setting.
+ */
+export const CONFIRMATION_GOOD_FOR_MS = 24 * 60 * 60 * 1000;
+
+/**
  * The last identity the server confirmed, kept so a reload with no network
  * can open the local documents belonging to it.
  *
@@ -123,13 +137,21 @@ const REMEMBERED = 'workbench.session';
  * identity is a digest of the account cookies, not the cookies, and the
  * local database it opens is already on this device under that account's
  * namespace. The moment the server is reachable it has the last word,
- * including signing the user out.
+ * including signing the user out — and until then the record is only good
+ * for as long as the confirmation it holds.
+ *
+ * Every successful check calls this again, so the window slides with use
+ * rather than counting down from the first sign-in.
  */
 export function rememberSession(session: WorkbenchSession): void {
   try {
     window.localStorage.setItem(
       REMEMBERED,
-      JSON.stringify({ session, cookies: authCookieFingerprint() })
+      JSON.stringify({
+        session,
+        cookies: authCookieFingerprint(),
+        confirmedAt: Date.now(),
+      })
     );
   } catch {
     // A browser refusing storage is not a reason to fail a boot that
@@ -147,9 +169,10 @@ export function forgetSession(): void {
 
 /**
  * The remembered identity, but only for the account whose cookies are
- * still present. A different (or absent) account has to be verified by the
- * server, which is exactly what cannot be done offline — so it is turned
- * away rather than guessed at.
+ * still present, and only while its confirmation is still fresh. A
+ * different (or absent) account has to be verified by the server, which is
+ * exactly what cannot be done offline — so it is turned away rather than
+ * guessed at, and so is one the server has not confirmed in a day.
  */
 export function recallSession(): WorkbenchSession | null {
   let raw: string | null;
@@ -170,6 +193,10 @@ export function recallSession(): WorkbenchSession | null {
     typeof value !== 'object' ||
     !('cookies' in value) ||
     value.cookies !== authCookieFingerprint() ||
+    !('confirmedAt' in value) ||
+    typeof value.confirmedAt !== 'number' ||
+    !Number.isFinite(value.confirmedAt) ||
+    Date.now() - value.confirmedAt > CONFIRMATION_GOOD_FOR_MS ||
     !('session' in value)
   ) {
     return null;
