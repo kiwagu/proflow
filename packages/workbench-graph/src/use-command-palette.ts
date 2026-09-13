@@ -23,6 +23,14 @@ import { useGraphReader, useSpaceId } from './graph-services.js';
 /** Below this many characters a term matches too much to be useful. */
 const MIN_TERM_LENGTH = 2;
 
+/**
+ * The keystroke that opens the palette, exported so the surface that ADVERTISES
+ * it renders from the same description the binding is registered with — a hint
+ * and its shortcut cannot then drift apart. Render it with `hotkeyLabel`, which
+ * is where the platform question is answered.
+ */
+export const COMMAND_PALETTE_HOTKEY = { key: 'k', mod: true } as const;
+
 export function useCommandPalette() {
   const reader = useGraphReader();
   const spaceId = useSpaceId();
@@ -58,7 +66,7 @@ export function useCommandPalette() {
   // ⌘K / Ctrl+K toggles the palette, through the app's one shortcut registry —
   // so it stays out of the way while the user is typing in the editor, and an
   // overlay's own binding can outrank it.
-  useHotkey({ key: 'k', mod: true }, () => setOpen((prev) => !prev));
+  useHotkey(COMMAND_PALETTE_HOTKEY, () => setOpen((prev) => !prev));
 
   const trimmed = term.trim();
   const tooShort = trimmed.length < MIN_TERM_LENGTH;

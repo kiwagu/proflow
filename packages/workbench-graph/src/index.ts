@@ -45,6 +45,7 @@ export {
 export {
   activationForKind,
   commitPaletteSelection,
+  COMMAND_PALETTE_HOTKEY,
   useCommandPalette,
   type CommandPaletteHandlers,
   type NodeActivation,

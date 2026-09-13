@@ -4,6 +4,7 @@ import { type FileNode, newId } from '@workspace/domain';
 import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
+import { hotkeyLabel } from '@workspace/ui/hooks/hotkey-label';
 import { useHotkey } from '@workspace/ui/hooks/use-hotkey';
 import { FilePlus, FolderPlus, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -44,6 +45,17 @@ export interface DocumentActions {
   /** Warms the cache for a document about to be opened. Best-effort. */
   prefetch?: (documentId: string) => void;
 }
+
+/**
+ * The keystroke that creates a document, exported so the hint on the toolbar
+ * button renders from the same description the binding is registered with.
+ *
+ * ⌘J / Ctrl+J rather than the ⌘N this obviously wants: Chromium RESERVES the
+ * new-window, new-tab and new-incognito-window accelerators, so ⌘N, ⌘T and ⌘⇧N
+ * never reach a page at all and binding one would produce a shortcut that
+ * silently does nothing. ⌘J is delivered to the page and is what the user gets.
+ */
+export const NEW_DOCUMENT_HOTKEY = { key: 'j', mod: true } as const;
 
 /**
  * The explorer: every file the user has, in one tree. Folders group;
@@ -175,17 +187,11 @@ export function FileExplorer({
    * The keyboard route to the same action as the toolbar button — one
    * `createDocument`, two ways to reach it.
    *
-   * ⌘J / Ctrl+J rather than the ⌘N this obviously wants: Chromium RESERVES the
-   * new-window, new-tab and new-incognito-window accelerators, so ⌘N, ⌘T and
-   * ⌘⇧N never reach a page at all and binding one would produce a shortcut
-   * that silently does nothing. ⌘J is delivered to the page and is what the
-   * user gets.
-   *
    * Registered only when there is a document surface to create into, so a host
    * that only stores files leaves the keystroke to the browser instead of
    * swallowing it for an affordance it does not have.
    */
-  useHotkey({ key: 'j', mod: true }, () => void createDocument(), {
+  useHotkey(NEW_DOCUMENT_HOTKEY, () => void createDocument(), {
     enabled: Boolean(documents),
   });
 
@@ -311,7 +317,10 @@ export function FileExplorer({
     >
       <div className="flex items-center gap-0.5 px-2 pt-2 pb-1">
         {documents ? (
-          <Hint label={labels.newDocument} keys={labels.newDocumentKeys}>
+          <Hint
+            label={labels.newDocument}
+            keys={hotkeyLabel(NEW_DOCUMENT_HOTKEY)}
+          >
             <Button
               variant="ghost"
               size="icon-sm"
