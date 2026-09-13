@@ -5,6 +5,7 @@ import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chr
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
 import { hotkeyLabel } from '@workspace/ui/hooks/hotkey-label';
+import { useHotkey } from '@workspace/ui/hooks/use-hotkey';
 import {
   buildFileExplorerLabels,
   defaultFileExplorerLabels,
@@ -28,9 +29,20 @@ import {
   type CommandPaletteLabels,
   type GraphServices,
 } from '@workspace/workbench-graph';
-import { Search } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMaybeAgent } from '@workspace/workbench-agent';
+import { MessageSquare, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useServices } from './composition/app-services';
+import {
+  CHAT_PANEL_HOTKEY,
+  CHAT_PANEL_WIDTH,
+} from './features/chat/chat.constants';
+import { ChatPanelContainer } from './features/chat/chat.container';
+import {
+  buildChatPanelLabels,
+  defaultChatPanelLabels,
+  type ChatPanelLabels,
+} from './features/chat/chat.labels';
 import { DocumentPane } from './features/document-pane';
 import { useWorkbenchTranslator } from './i18n';
 import { SIDEBAR_WIDTH } from './shell/layout';
@@ -88,12 +100,23 @@ function Workbench() {
   const { setOpenFileId } = useFileSelection();
   const palette = useCommandPalette();
   const t = useWorkbenchTranslator();
+  // The assistant is offered only when the page actually started a worker;
+  // an environment without one is a working editor, not a broken app.
+  const agent = useMaybeAgent();
+  const [chatOpen, setChatOpen] = useState(false);
+  useHotkey(CHAT_PANEL_HOTKEY, () => setChatOpen((open) => !open), {
+    enabled: agent !== null,
+  });
   const fileLabels: FileExplorerLabels = useMemo(
     () => (t ? buildFileExplorerLabels(t) : defaultFileExplorerLabels),
     [t]
   );
   const paletteLabels: CommandPaletteLabels = useMemo(
     () => (t ? buildCommandPaletteLabels(t) : defaultCommandPaletteLabels),
+    [t]
+  );
+  const chatLabels: ChatPanelLabels = useMemo(
+    () => (t ? buildChatPanelLabels(t) : defaultChatPanelLabels),
     [t]
   );
 
@@ -134,20 +157,40 @@ function Workbench() {
             : 'Documents and files are stored on this device and open without a network.',
         }}
         actions={
-          <Hint
-            label={t ? t('workbench.app.search') : 'Search'}
-            keys={hotkeyLabel(COMMAND_PALETTE_HOTKEY)}
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => palette.setOpen(true)}
-              data-testid="command-palette-trigger"
+          <>
+            {agent ? (
+              <Hint
+                label={t ? t('workbench.chat.toggle') : 'Assistant'}
+                keys={hotkeyLabel(CHAT_PANEL_HOTKEY)}
+              >
+                <Button
+                  variant={chatOpen ? 'secondary' : 'outline'}
+                  size="sm"
+                  aria-pressed={chatOpen}
+                  aria-label={t ? t('workbench.chat.toggle') : 'Assistant'}
+                  onClick={() => setChatOpen((open) => !open)}
+                  data-testid="chat-panel-trigger"
+                >
+                  <MessageSquare aria-hidden />
+                  {t ? t('workbench.chat.toggle') : 'Assistant'}
+                </Button>
+              </Hint>
+            ) : null}
+            <Hint
+              label={t ? t('workbench.app.search') : 'Search'}
+              keys={hotkeyLabel(COMMAND_PALETTE_HOTKEY)}
             >
-              <Search aria-hidden />
-              {t ? t('workbench.app.search') : 'Search'}
-            </Button>
-          </Hint>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => palette.setOpen(true)}
+                data-testid="command-palette-trigger"
+              >
+                <Search aria-hidden />
+                {t ? t('workbench.app.search') : 'Search'}
+              </Button>
+            </Hint>
+          </>
         }
       />
       <WorkbenchShell
@@ -166,6 +209,16 @@ function Workbench() {
               <DocumentPane document={document} />
             )}
           />
+        }
+        aside={
+          agent && chatOpen
+            ? {
+                kind: 'fixed',
+                width: CHAT_PANEL_WIDTH,
+                'aria-label': chatLabels.ariaLabel,
+                children: <ChatPanelContainer labels={chatLabels} />,
+              }
+            : undefined
         }
         className="min-h-0 flex-1"
       />

@@ -215,6 +215,14 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       listDocuments: () => firstOf(services.documentList.watchRecent),
       listFiles: () => firstOf(services.fileTree.watchAll),
     });
+    // The worker builds its gateway from the configuration the page pushes,
+    // and has none until it arrives — an unconfigured worker answers every
+    // turn with a provider error. The worker re-asks for this on every
+    // restart by itself, so one push here covers the life of the page.
+    // No provider key is held anywhere yet, so this selects the scripted
+    // local model; choosing a provider is a later slice.
+    const apiKey = null;
+    agentClient.configure({ provider: 'mock', apiKey });
   } catch (error) {
     console.error('the agent worker did not start', error);
   }

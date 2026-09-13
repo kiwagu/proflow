@@ -6,6 +6,9 @@ import {
 import { PACKAGE_KINDS } from '@workspace/package-kinds';
 import {
   createDocumentCrdtStore,
+  createPgliteChatListReader,
+  createPgliteChatMessageRepository,
+  createPgliteChatRepository,
   createPgliteDocumentListReader,
   createPgliteDocumentRepository,
   createPgliteDocumentVersionStore,
@@ -134,6 +137,9 @@ export async function createAppServices(
     settings: createPgliteSettingsStore(db),
     graph: createPgliteGraphReader(db),
     graphCommands: createPgliteGraphRepository(db),
+    chats: createPgliteChatRepository(db),
+    chatList: createPgliteChatListReader(db),
+    chatMessages: createPgliteChatMessageRepository(db),
     identity: { userId: session.userId, spaceId: session.spaceId },
     reportError,
   };

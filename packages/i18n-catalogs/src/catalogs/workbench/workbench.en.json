@@ -118,5 +118,16 @@
   "workbench.app.failure.deleteEverything": "Delete everything",
   "workbench.app.failure.deleting": "Deleting…",
   "workbench.app.update.available": "A new version is ready.",
-  "workbench.app.update.reload": "Reload"
+  "workbench.app.update.reload": "Reload",
+  "workbench.chat.title": "Assistant",
+  "workbench.chat.ariaLabel": "Assistant",
+  "workbench.chat.toggle": "Assistant",
+  "workbench.chat.placeholder": "Ask about your documents…",
+  "workbench.chat.send": "Send",
+  "workbench.chat.stop": "Stop",
+  "workbench.chat.thinking": "Thinking…",
+  "workbench.chat.empty": "No messages yet. Ask about your documents to start.",
+  "workbench.chat.you": "You",
+  "workbench.chat.assistant": "Assistant",
+  "workbench.chat.opening": "Opening the assistant…"
 }

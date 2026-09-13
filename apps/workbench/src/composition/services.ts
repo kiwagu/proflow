@@ -1,5 +1,8 @@
 import type {
   IBlobStore,
+  IChatListReader,
+  IChatMessageRepository,
+  IChatRepository,
   IDocumentListReader,
   IDocumentRepository,
   IDocumentVersionStore,
@@ -34,6 +37,10 @@ export interface AppServices {
   settings: ISettingsStore;
   graph: GraphReader;
   graphCommands: GraphRepository;
+  /** The assistant's conversations: the chats, their list, their messages. */
+  chats: IChatRepository;
+  chatList: IChatListReader;
+  chatMessages: IChatMessageRepository;
   /** Server-verified session and checked-out space. */
   identity: { userId: string; spaceId: string };
   /** Where a failure the user caused is reported. */
