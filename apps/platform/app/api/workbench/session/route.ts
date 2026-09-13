@@ -38,15 +38,34 @@ export async function GET(request: NextRequest) {
     spaces,
     readActiveSpaceIdFromCookies(request.cookies)
   );
+  const sync = syncTarget();
   const response = NextResponse.json(
     {
       userId: data.user.id,
       email: data.user.email ?? '',
       spaceId,
       spaceName: spaces.find((space) => space.id === spaceId)?.name ?? null,
+      ...(sync ? { sync } : {}),
     },
     { headers }
   );
   if (spaceId) setCanonicalActiveSpaceCookie(response.cookies, spaceId);
   return response;
+}
+
+/**
+ * Where the SPA's replica talks to, and with which publishable key.
+ *
+ * The SPA is a static bundle served from the gateway, so it has no build of
+ * its own per deployment: pinning an origin and a key into it would make
+ * every deployment need its own build. Both values are public by design —
+ * the key is the anonymous one the browser already receives here, and row
+ * level security, not secrecy, is what decides access. Absent when the
+ * server is not configured for it, in which case the SPA simply does not
+ * replicate.
+ */
+function syncTarget(): { url: string; key: string } | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  return url && key ? { url, key } : null;
 }

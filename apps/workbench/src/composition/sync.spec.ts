@@ -1,0 +1,214 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The subject is the DECISION to start replication, not replication itself:
+ * whether the engine is built at all, how many times, and from what. The
+ * engine and the transport are mocked wholesale — they are covered by their
+ * own package's integration suite against a real PGlite on both sides, and
+ * re-proving them here would only prove the mocks.
+ */
+
+/**
+ * The mocks carry their real parameter shapes: what the spec asserts is WHAT
+ * the composition passed (the space it watches, the identity it builds the
+ * engine from), so the recorded arguments have to stay typed rather than
+ * collapse to an empty tuple.
+ */
+const {
+  watch,
+  createGraphSync,
+  createSupabaseGraphRowTransport,
+  createBrowserClient,
+} = vi.hoisted(() => {
+  const watch = vi.fn(
+    (_spaceId: string, _options?: { onError?: (error: unknown) => void }) =>
+      vi.fn()
+  );
+  return {
+    watch,
+    createGraphSync: vi.fn((_options: { identity: { userId: string } }) => ({
+      watch,
+      pull: vi.fn(),
+      push: vi.fn(),
+      pendingCount: vi.fn(),
+    })),
+    createSupabaseGraphRowTransport: vi.fn((_client: unknown) => ({})),
+    createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
+  };
+});
+
+vi.mock('@workspace/graph-sync', () => ({
+  createGraphSync,
+  createSupabaseGraphRowTransport,
+}));
+vi.mock('@supabase/ssr', () => ({ createBrowserClient }));
+vi.mock('@workspace/persistence-pglite', () => ({
+  createPgliteGraphReplicaWriter: vi.fn(() => ({})),
+  createPgliteGraphSyncLedger: vi.fn(() => ({})),
+}));
+
+import { ok } from 'neverthrow';
+import type { ISettingsStore } from '@workspace/domain';
+import type { AppDb } from '@workspace/persistence-pglite';
+import {
+  rememberSyncSettings,
+  startGraphSync,
+  SYNC_SETTINGS_KEY,
+} from './sync';
+
+const IDENTITY = { userId: 'user-1', spaceId: 'spc_abc.01m2' };
+
+function settingsHolding(value: string | null): ISettingsStore {
+  return {
+    get: vi.fn(async () => ok(value)),
+    set: vi.fn(async () => ok(undefined)),
+    remove: vi.fn(async () => ok(undefined)),
+  };
+}
+
+function setOnline(online: boolean) {
+  Object.defineProperty(window.navigator, 'onLine', {
+    configurable: true,
+    get: () => online,
+  });
+}
+
+/** Lets the settings read (a promise chain) land before asserting. */
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const CONFIGURED = JSON.stringify({
+  url: 'https://server.test',
+  key: 'publishable-key',
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setOnline(true);
+});
+
+describe('starting graph replication', () => {
+  it('does not build an engine when no configuration was ever received', async () => {
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(null),
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('does not build an engine while the device is offline', async () => {
+    setOnline(false);
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('builds one engine and watches the checked-out space when configured and online', async () => {
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createGraphSync).toHaveBeenCalledTimes(1);
+    expect(createBrowserClient).toHaveBeenCalledWith(
+      'https://server.test',
+      'publishable-key'
+    );
+    expect(createGraphSync.mock.calls[0]?.[0]).toMatchObject({
+      identity: { userId: 'user-1' },
+    });
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(watch.mock.calls[0]?.[0]).toBe('spc_abc.01m2');
+    stop();
+  });
+
+  it('starts once when the network returns, not once per event', async () => {
+    setOnline(false);
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+
+    setOnline(true);
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(new Event('online'));
+    await settled();
+
+    expect(createGraphSync).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('stops watching when disposed and never starts afterwards', async () => {
+    const dispose = vi.fn();
+    watch.mockReturnValueOnce(dispose);
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+    });
+    await settled();
+    stop();
+    expect(dispose).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('online'));
+    await settled();
+    expect(createGraphSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a stored configuration that is not usable', async () => {
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding('{"url":"https://server.test"}'),
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it('retries on the next network event after a failed attempt', async () => {
+    // A start that throws must not be the last one this page makes: the
+    // journal keeps filling, so a permanently wedged starter is a queue
+    // that silently never drains again.
+    const onError = vi.fn();
+    createBrowserClient.mockImplementationOnce(() => {
+      throw new Error('unusable configuration');
+    });
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+      onError,
+    });
+    await settled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('online'));
+    await settled();
+    expect(createGraphSync).toHaveBeenCalledTimes(1);
+    stop();
+  });
+});
+
+describe('remembering the configuration the server sent', () => {
+  it('stores it under one key, as sent', async () => {
+    const settings = settingsHolding(null);
+    await rememberSyncSettings(settings, {
+      url: 'https://server.test',
+      key: 'publishable-key',
+    });
+    expect(settings.set).toHaveBeenCalledWith(SYNC_SETTINGS_KEY, CONFIGURED);
+  });
+});

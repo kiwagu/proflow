@@ -1,6 +1,7 @@
 import './index.css';
 import { createRoot, type Root } from 'react-dom/client';
 import type { ReactNode } from 'react';
+import type { ISettingsStore } from '@workspace/domain';
 import { createWorkerEmbedder } from '@workspace/embedding';
 import { createPgliteSemanticSearch } from '@workspace/persistence-pglite';
 import {
@@ -25,6 +26,7 @@ import {
   type WorkbenchSession,
 } from './composition/session';
 import { installOfflineShell } from './shell/offline-shell';
+import { rememberSyncSettings, startGraphSync } from './composition/sync';
 
 const container = requireRoot();
 
@@ -95,6 +97,24 @@ function reportError(message: string) {
 }
 
 /**
+ * The replication target the server last stated, and where to keep it.
+ *
+ * The server's answer arrives before the local store exists (the session is
+ * checked first, so the database is opened under the right account), so the
+ * newest one is held here until there is somewhere to put it and written
+ * from then on by every online check. Only an online answer carries one —
+ * the recalled offline session deliberately does not.
+ */
+let syncSettings: ISettingsStore | undefined;
+let latestSyncTarget: { url: string; key: string } | undefined;
+
+function noteSyncTarget(session: WorkbenchSession | null) {
+  if (!session?.sync) return;
+  latestSyncTarget = session.sync;
+  if (syncSettings) void rememberSyncSettings(syncSettings, session.sync);
+}
+
+/**
  * The frame first, the services behind it. The static boot screen in
  * index.html paints before any script runs; the shell replaces it as soon
  * as the bundle executes, and the full app replaces the shell when its
@@ -156,8 +176,10 @@ async function openingSession(): Promise<{
 }> {
   try {
     const session = await readSession();
-    if (session) rememberSession(session);
-    else forgetSession();
+    if (session) {
+      noteSyncTarget(session);
+      rememberSession(session);
+    } else forgetSession();
     return { session, offline: false };
   } catch (error) {
     if (!(error instanceof SessionUnreachable)) throw error;
@@ -183,6 +205,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       signIn();
       return;
     }
+    noteSyncTarget(latest);
     if (
       latest.userId !== session.userId ||
       latest.spaceId !== session.spaceId
@@ -276,6 +299,43 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     notice.textContent = 'Offline. Changes are saved on this device.';
     notice.style.display = 'grid';
   }
+  /**
+   * Replication starts here, after the local store is open and the identity
+   * has been re-checked — never before, because there would be nowhere to
+   * put what the server sends and no confirmed space to converge.
+   *
+   * Nothing is awaited: an app whose start-up waited on the network would
+   * no longer be local-first. Starting is a decision the module makes for
+   * itself and re-makes when the network returns.
+   */
+  syncSettings = services.settings;
+  if (latestSyncTarget)
+    await rememberSyncSettings(services.settings, latestSyncTarget);
+  startGraphSync({
+    db: services.db,
+    settings: services.settings,
+    // The services were built from this session, and building them requires
+    // a space — so by here the identity is the one they were opened under.
+    identity: services.identity,
+    onReconciled: ({ refused, nodeIds }) => {
+      // The server refused a change made here and the affected items were
+      // re-read from it. Saying so is not an error report: nothing is lost
+      // locally and nothing is required of the user — this is the same
+      // banner, borrowed for a moment.
+      notice.style.inset = 'auto 0 0';
+      notice.textContent = `Refreshed ${nodeIds.length === 1 ? '1 item' : `${nodeIds.length} items`} from the server: ${refused === 1 ? 'a change' : `${refused} changes`} made here could not be applied.`;
+      notice.style.display = 'grid';
+      window.setTimeout(() => {
+        if (notice.textContent?.startsWith('Refreshed'))
+          notice.style.display = 'none';
+      }, 8_000);
+    },
+    onError: (error: unknown) => {
+      // A replication pass that failed is not a failure of the app: the
+      // journal keeps the work and the next pass retries it.
+      console.error('graph replication pass failed', error);
+    },
+  });
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;
     checking = true;
@@ -301,6 +361,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       container.inert = false;
       container.style.visibility = '';
       verifiedCookies = authCookieFingerprint();
+      noteSyncTarget(next);
       rememberSession(next);
       notice.style.display = 'none';
     } catch (error) {

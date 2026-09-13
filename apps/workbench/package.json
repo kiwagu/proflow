@@ -15,9 +15,12 @@
     "test": "bunx vitest run"
   },
   "dependencies": {
+    "@supabase/ssr": "catalog:",
     "@workspace/blob-store": "workspace:*",
+    "@workspace/db": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
+    "@workspace/graph-sync": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
