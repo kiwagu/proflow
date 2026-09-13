@@ -4,6 +4,7 @@ import { Hint } from '@workspace/ui/components/hint';
 import { WorkbenchChrome } from '@workspace/ui/components/platform/workbench-chrome';
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { WorkbenchShell } from '@workspace/ui/components/workbench-shell';
+import { hotkeyLabel } from '@workspace/ui/hooks/hotkey-label';
 import {
   buildFileExplorerLabels,
   defaultFileExplorerLabels,
@@ -19,6 +20,7 @@ import {
 import {
   buildCommandPaletteLabels,
   CommandPalette,
+  COMMAND_PALETTE_HOTKEY,
   defaultCommandPaletteLabels,
   GraphServicesProvider,
   useCommandPalette,
@@ -134,7 +136,7 @@ function Workbench() {
         actions={
           <Hint
             label={t ? t('workbench.app.search') : 'Search'}
-            keys={t ? t('workbench.app.searchKeys') : '⌘K'}
+            keys={hotkeyLabel(COMMAND_PALETTE_HOTKEY)}
           >
             <Button
               variant="outline"
