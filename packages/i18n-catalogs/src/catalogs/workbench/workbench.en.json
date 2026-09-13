@@ -116,5 +116,7 @@
   "workbench.app.failure.confirmHint": "Other tabs of this app should be closed, or their copy of the database may outlive this.",
   "workbench.app.failure.keepData": "Keep my data",
   "workbench.app.failure.deleteEverything": "Delete everything",
-  "workbench.app.failure.deleting": "Deleting…"
+  "workbench.app.failure.deleting": "Deleting…",
+  "workbench.app.update.available": "A new version is ready.",
+  "workbench.app.update.reload": "Reload"
 }

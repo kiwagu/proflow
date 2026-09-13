@@ -17,8 +17,14 @@ import {
   readSession,
   signIn,
   platformPath,
+  authCookieFingerprint,
+  forgetSession,
+  recallSession,
+  rememberSession,
+  SessionUnreachable,
   type WorkbenchSession,
 } from './composition/session';
+import { installOfflineShell } from './shell/offline-shell';
 
 const container = requireRoot();
 
@@ -97,11 +103,23 @@ function reportError(message: string) {
  * has no UI to report itself in, which is why it builds its own.
  */
 takeOver(<BootShell />);
+// Installed before the session is checked: the worker is what makes the
+// next reload work, and whether this one reached the server is beside the
+// point. Its scope is this app's mount, so nothing else on the origin is
+// affected.
+installOfflineShell(
+  // A Vite build-time constant computed from the configured base, not an
+  // environment variable — the lint rule that tracks env reads for cache
+  // invalidation cannot tell the two apart.
+  // eslint-disable-next-line turbo/no-undeclared-env-vars
+  import.meta.env.BASE_URL
+);
 try {
-  const session = await readSession();
-  if (!session) {
+  const opening = await openingSession();
+  if (!opening.session) {
+    forgetSession();
     signIn();
-  } else if (!session.spaceId) {
+  } else if (!opening.session.spaceId) {
     takeOver(
       <div className="p-6" data-testid="workbench-no-space">
         <p>Choose or create a space to open Workbench.</p>
@@ -112,27 +130,66 @@ try {
       </div>
     );
   } else {
-    await openWorkbench(session);
+    await openWorkbench(opening.session, opening.offline);
   }
 } catch (error) {
   console.error('the workbench failed to start', error);
   takeOver(<BootFailure error={error} />);
 }
 
-async function openWorkbench(session: WorkbenchSession) {
+/**
+ * The identity to open with, and whether the server was reached for it.
+ *
+ * Normally the server's answer, which is the only one that can grant
+ * access to a new account. When the server cannot be reached at all — and
+ * only then — the last identity it confirmed is used instead, provided the
+ * same account's cookies are still in the browser. Everything it opens is
+ * already on this device, under that account's namespace, and the next
+ * successful check has the last word, including signing the user out.
+ *
+ * Without this the offline promise would hold only for a tab that never
+ * reloads: the app would fail to start over a database sitting intact.
+ */
+async function openingSession(): Promise<{
+  session: WorkbenchSession | null;
+  offline: boolean;
+}> {
+  try {
+    const session = await readSession();
+    if (session) rememberSession(session);
+    else forgetSession();
+    return { session, offline: false };
+  } catch (error) {
+    if (!(error instanceof SessionUnreachable)) throw error;
+    const remembered = recallSession();
+    if (!remembered) throw error;
+    return { session: remembered, offline: true };
+  }
+}
+
+async function openWorkbench(session: WorkbenchSession, offline: boolean) {
   const services = await withTimeout(
     createAppServices(reportError, session),
     BOOT_TIMEOUT_MS
   );
-  // A session may have changed while the database was opening.
-  const latest = await readSession();
-  if (!latest) {
-    signIn();
-    return;
-  }
-  if (latest.userId !== session.userId || latest.spaceId !== session.spaceId) {
-    window.location.reload();
-    return;
+  // A session may have changed while the database was opening. Offline
+  // there is nothing to ask: the identity was already taken from the last
+  // confirmed one, and the recheck below runs the moment the server is
+  // reachable again.
+  if (!offline) {
+    const latest = await readSession();
+    if (!latest) {
+      forgetSession();
+      signIn();
+      return;
+    }
+    if (
+      latest.userId !== session.userId ||
+      latest.spaceId !== session.spaceId
+    ) {
+      window.location.reload();
+      return;
+    }
   }
   /**
    * One worker for the life of the page, started here rather than in a
@@ -196,24 +253,25 @@ async function openWorkbench(session: WorkbenchSession) {
   let checking = false;
   // Cookie changes invalidate the in-memory identity. They are only a signal
   // to recheck the server, never a source of trusted identity themselves.
-  const authCookies = () =>
-    document.cookie
-      .split(';')
-      .map((part) => part.trim())
-      .filter((part) => part.startsWith('sb-'))
-      .sort()
-      .join(';');
-  let verifiedCookies = authCookies();
+  let verifiedCookies = authCookieFingerprint();
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.style.cssText =
     'position:fixed;inset:0;display:none;place-content:center;background:Canvas;color:CanvasText;padding:2rem;z-index:1000';
   notice.textContent = 'Connection lost. Reconnecting to verify your session…';
   document.body.append(notice);
+  if (offline) {
+    // Started from the last confirmed identity with no server in reach.
+    // The user is told so at once rather than after the first poll, and
+    // the loop below clears it the moment a check succeeds.
+    notice.style.inset = 'auto 0 0';
+    notice.textContent = 'Offline. Changes are saved on this device.';
+    notice.style.display = 'grid';
+  }
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;
     checking = true;
-    if (authCookies() !== verifiedCookies) {
+    if (authCookieFingerprint() !== verifiedCookies) {
       container.inert = true;
       container.style.visibility = 'hidden';
     }
@@ -222,6 +280,7 @@ async function openWorkbench(session: WorkbenchSession) {
       if (!next) {
         container.inert = true;
         container.style.visibility = 'hidden';
+        forgetSession();
         signIn();
         return;
       }
@@ -233,11 +292,12 @@ async function openWorkbench(session: WorkbenchSession) {
       }
       container.inert = false;
       container.style.visibility = '';
-      verifiedCookies = authCookies();
+      verifiedCookies = authCookieFingerprint();
+      rememberSession(next);
       notice.style.display = 'none';
     } catch (error) {
       console.error('session verification failed', error);
-      if (authCookies() === verifiedCookies) {
+      if (authCookieFingerprint() === verifiedCookies) {
         // An already verified account can keep editing locally during an
         // outage. Opening a new account still requires server verification.
         container.inert = false;
