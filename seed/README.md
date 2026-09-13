@@ -205,7 +205,7 @@ src/
 
 `@workspace/e2e` depends on `@workspace/seed`. The e2e helper re-exports the engine
 primitives (so existing specs are unchanged) and the Drive specs build their trees
-with the shared HTTP client + catalog fixtures (`drive-cascade`, `drive-copy-chain`).
+with the shared row vocabulary + catalog fixtures (`drive-cascade`, `drive-copy-chain`).
 The per-person-sharing access-matrix spec
 (`knowledge-per-user-share.e2e.spec.ts`) likewise draws ENTIRELY from the shared
 `per-user-share` scenario via `seedPerUserShareFixture` — the seeded grant, the
@@ -235,11 +235,13 @@ child auto-appearing, a folder REVOKE removing the inherited subtree, a RE-GRANT
 demo DB and the test exercise one owner-scoped inheritance predicate identically.
 
 The lexical-search matrix spec (`knowledge-search.e2e.spec.ts`, slice-12)
-draws its corpus from the shared `knowledge-base` scenario via `seedSearchCorpusFixture`,
-and runs the search itself through the SAME create-vocabulary — `seedClientFor(actor).search`
-ran the query RLS-fenced as the acting user, so a hit's presence/absence was the live runtime
-truth. Search is a server-side operation that no row write expresses, so the row vocabulary
-does not carry it; this spec waits on that capability. It asserts the match classes (Cyrillic /
+draws its corpus from the shared `knowledge-base` scenario via `seedSearchCorpusFixture`.
+The corpus is the seed's whole contribution: search is an operation OVER the rows, not a
+row write, so the row vocabulary does not carry it — and does not need to. The search
+itself is the app's own, running on the device against the replica
+(`searchByTitle` for the lexical lens, the hybrid vector+FTS engine behind the
+`ISemanticSearch` port for meaning), fenced by what the replica holds for that user. The
+spec asserts the match classes (Cyrillic /
 accented / case-insensitive prefix, plus the Phase-2 fuzzy typo and title>description
 ranking) and the security proof: another user's PRIVATE node is
 ABSENT for a non-grantee, an ancestor-shared child is PRESENT for the grantee (inherited
@@ -288,12 +290,13 @@ visible list is deterministic) plus TWO loose docs soft-deleted at seed time (th
 `trash` list → a known Trash lens). The spec proves the runtime behaviours a green build can't:
 multi-select via the per-card checkboxes drives the floating bulk bar (a checkbox toggles
 selection and must NOT open the Details drawer; SHIFT selects a contiguous range), bulk Trash /
-Star / Restore fan out over the existing per-id routes with an honest done-summary, Empty Trash
+Star / Restore fan out over the same per-id local commands with an honest done-summary, Empty Trash
 opens a MANDATORY confirm (cancel keeps, confirm batch-purges all → empty), and the batch purge
-returns the honest partial split — a mix of an own-trashed id (→ `purged`) and a second actor's
-node the caller cannot destroy (→ `skipped`, reason `denied`) — through the shared vocabulary's
-`purgeMany` wrapper. Batch purge is a server-side operation the row vocabulary does not carry;
-this spec waits on that capability.
+returns the honest split — a mix of an id the replica destroys (→ `done`) and one it refuses
+(→ `skipped`) — through the bulk-action bar's own fan-out. Batch purge is an operation OVER
+the rows, not a row write, so the row vocabulary does not carry it — and does not need to:
+the fan-out is the app's, one local transaction per id, and the seed's contribution is the
+known selectable set it runs on.
 
 The SAME `drive-size-filter` fixture ALSO backs the SEARCH-lens variant of that chip
 (`knowledge-search-size-filter.e2e.spec.ts`): the "Only files" chip now lives
@@ -330,6 +333,23 @@ trash-route DELETE, both through the shared create-vocabulary — `seedClientFor
 resolves and the `kmm` satellite is gone. The other-space negative is built in the
 fixture's second tenant (the catalog is single-space). Every denial is proven by RLS, not an
 app filter.
+
+## What the vocabulary deliberately does NOT carry
+
+The vocabulary writes ROWS. Three capabilities a fixture's spec exercises are operations
+OVER those rows, and none of them belongs here — not because they are missing, but because
+each already has ONE real implementation in the app, and a second one in the seed would be a
+copy of product logic that could drift from it silently.
+
+| Capability  | Where the one implementation lives                                                                                                                                               | What the seed contributes instead                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| deep copy   | `copySubtree` in the local graph repository — walks the `contains` subtree in the replica, mints the new ids before the write, and journals the command so it reaches the server | the INPUT tree: the `drive-copy-chain` fixture                                        |
+| batch purge | the bulk-action bar's fan-out — one local transaction per id, in order, with an honest done/skipped summary                                                                      | the selectable set: the `bulk-actions` fixture (four siblings + two pre-trashed docs) |
+| search      | the device's own engines — a lexical title search over the replica, and a hybrid vector+FTS engine behind the `ISemanticSearch` port, read through the lens's `SearchProvider`   | the CORPUS: `seedSearchCorpusFixture` over the `knowledge-base` scenario              |
+
+The shape of the rule generalizes: if a capability is a verb the product performs, the seed
+supplies the noun it performs on. A fixture that wanted the verb too would be asking the
+dictionary to become a second implementation of the app.
 
 ## Extending the catalog
 
