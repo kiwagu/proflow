@@ -7,6 +7,32 @@ import type { EditAuthor } from '@workspace/domain';
 import type { AppDb } from '../db/db.js';
 
 /**
+ * The derived markdown of a tree, rendered by the one headless conversion the
+ * agent and the server-side indexer also use — so text this store writes
+ * reads back exactly as if the editor had serialized it.
+ *
+ * The conversion is loaded when a restore asks for it, not when this module
+ * is evaluated. Opening the local database goes through this file, and a
+ * static import would put the whole editor vocabulary and its headless
+ * engine in front of that open: every start-up would wait for text
+ * conversion it will most likely never perform. A restore is a deliberate
+ * user action with none of that urgency. This is the bundle-splitting case
+ * the static-import rule exempts, and it is measured, not assumed — with the
+ * static import, the reload in the session acceptance test failed five runs
+ * out of six.
+ *
+ * The tree is structurally an editor state root; the domain type describes
+ * the same JSON without depending on the editor library, which is why the
+ * shape has to be asserted rather than imported here.
+ */
+async function treeAsMarkdown(tree: SerializedTree): Promise<string> {
+  const { stateToMarkdown } = await import('@workspace/lexical-nodes/utils');
+  return stateToMarkdown({ root: tree.root } as Parameters<
+    typeof stateToMarkdown
+  >[0]);
+}
+
+/**
  * How many journal entries may accumulate before the document is snapshotted
  * and the journal trimmed.
  *
@@ -202,6 +228,10 @@ export function createDocumentCrdtStore(db: AppDb) {
       entry.crdt.revertTo(ref, author);
       const updates = entry.pending.splice(0, entry.pending.length);
       const tree = entry.crdt.toTree();
+      // Derived before the transaction opens: the conversion loads its own
+      // module on first use, and a transaction must never be the thing that
+      // waits for a network fetch.
+      const markdown = tree ? await treeAsMarkdown(tree) : '';
       await db.transaction(async (tx) => {
         for (const bytes of updates) {
           await tx.query(
@@ -212,10 +242,12 @@ export function createDocumentCrdtStore(db: AppDb) {
         if (tree) {
           await tx.query(
             `insert into document_content (document_id, lexical_json, markdown)
-             values ($1, $2, '')
+             values ($1, $2, $3)
              on conflict (document_id) do update
-               set lexical_json = excluded.lexical_json, updated_at = now()`,
-            [id, JSON.stringify(tree)]
+               set lexical_json = excluded.lexical_json,
+                   markdown = excluded.markdown,
+                   updated_at = now()`,
+            [id, JSON.stringify(tree), markdown]
           );
         }
       });

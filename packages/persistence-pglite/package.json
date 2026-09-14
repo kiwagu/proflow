@@ -41,6 +41,7 @@
     "@workspace/domain": "workspace:*",
     "@workspace/embedding": "workspace:*",
     "@workspace/knowledge-contracts": "workspace:*",
+    "@workspace/lexical-nodes": "workspace:*",
     "neverthrow": "catalog:",
     "zod": "catalog:"
   },
