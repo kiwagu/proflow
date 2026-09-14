@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchRetryingGoaway } from './supabase-goaway-retry.js';
+import { fetchRetryingGoaway } from './supabase-goaway-retry';
 
 function goawayError(): Error {
   const cause = Object.assign(
@@ -30,7 +30,16 @@ describe('fetchRetryingGoaway', () => {
   });
 
   it('retries at most once, so a persistent GOAWAY still surfaces', async () => {
-    const impl = vi.fn<typeof fetch>().mockRejectedValue(goawayError());
+    // The stub answers GOAWAY only for the two attempts the contract allows and
+    // then throws a distinguishable fuse error. An unbounded retry therefore
+    // fails this test on the third call instead of spinning until the test
+    // worker is killed — a loop cannot be observed as a passing run.
+    const fuse = new Error('RETRY_FUSE: fetch called more than twice');
+    const impl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(goawayError())
+      .mockRejectedValueOnce(goawayError())
+      .mockRejectedValue(fuse);
     vi.stubGlobal('fetch', impl);
 
     await expect(fetchRetryingGoaway('https://edge.test/rest')).rejects.toThrow(

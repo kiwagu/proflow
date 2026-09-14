@@ -2,7 +2,7 @@ import type { Database } from '@workspace/db';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-import { fetchRetryingGoaway } from './supabase-goaway-retry.js';
+import { fetchRetryingGoaway } from './supabase-goaway-retry';
 
 /**
  * New client per call (Fluid / serverless safe). Same pattern across gateway apps.

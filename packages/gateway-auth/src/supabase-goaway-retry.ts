@@ -35,6 +35,9 @@ export async function fetchRetryingGoaway(
     if (!isUnprocessedGoawayError(error)) {
       throw error;
     }
-    return fetchRetryingGoaway(input, init);
   }
+  // A single replay on a fresh connection. Expressed without recursion so a
+  // peer that keeps sending `GOAWAY` surfaces on the second attempt instead of
+  // retrying forever.
+  return fetch(input, init);
 }
