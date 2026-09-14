@@ -3,6 +3,14 @@ export interface WorkbenchSession {
   email: string;
   spaceId: string | null;
   spaceName: string | null;
+  /**
+   * Where this deployment's replica talks to, as the server states it.
+   *
+   * Only an online answer carries it: the SPA keeps it as a local setting
+   * and reads it from there, so a recalled offline session deliberately
+   * has none. Absent when the server is not configured for replication.
+   */
+  sync?: { url: string; key: string };
 }
 
 export const platformPath =
@@ -56,11 +64,25 @@ export async function readSession(): Promise<WorkbenchSession | null> {
     !('email' in value) ||
     typeof value.email !== 'string' ||
     !('spaceName' in value) ||
-    !(value.spaceName === null || typeof value.spaceName === 'string')
+    !(value.spaceName === null || typeof value.spaceName === 'string') ||
+    !('sync' in value ? isSyncTarget(value.sync) : true)
   ) {
     throw new Error('Invalid session response');
   }
   return value as WorkbenchSession;
+}
+
+function isSyncTarget(value: unknown): value is { url: string; key: string } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'url' in value &&
+    typeof value.url === 'string' &&
+    value.url.length > 0 &&
+    'key' in value &&
+    typeof value.key === 'string' &&
+    value.key.length > 0
+  );
 }
 
 export function storageNamespace(session: WorkbenchSession): string {
@@ -148,7 +170,16 @@ export function rememberSession(session: WorkbenchSession): void {
     window.localStorage.setItem(
       REMEMBERED,
       JSON.stringify({
-        session,
+        // Without the replication target: it is kept as a local setting
+        // instead, in the store the replica itself reads. Two copies of one
+        // fact would be two things to keep current, and this one — unlike
+        // the identity — is not what the record exists to remember.
+        session: {
+          userId: session.userId,
+          email: session.email,
+          spaceId: session.spaceId,
+          spaceName: session.spaceName,
+        },
         cookies: authCookieFingerprint(),
         confirmedAt: Date.now(),
       })

@@ -88,6 +88,22 @@ describe('the last confirmed identity', () => {
     // Still usable for what it exists for.
     expect(recallSession()).toEqual(SESSION);
   });
+
+  /**
+   * The replication target the server states belongs in the settings store
+   * the replica reads, not in the offline record. Keeping it in both would
+   * make one fact into two things to keep current, and would let a stale
+   * copy in a record built for identity outlive a key rotation.
+   */
+  it('keeps no replication target, even when the session carried one', () => {
+    rememberSession({
+      ...SESSION,
+      sync: { url: 'https://server.test', key: 'publishable-key' },
+    });
+    const stored = window.localStorage.getItem('workbench.session') ?? '';
+    expect(stored).not.toContain('publishable-key');
+    expect(recallSession()).toEqual(SESSION);
+  });
 });
 
 /**
