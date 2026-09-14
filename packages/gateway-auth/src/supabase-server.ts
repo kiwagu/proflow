@@ -2,6 +2,8 @@ import type { Database } from '@workspace/db';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
+import { fetchRetryingGoaway } from './supabase-goaway-retry.js';
+
 /**
  * New client per call (Fluid / serverless safe). Same pattern across gateway apps.
  */
@@ -12,6 +14,7 @@ export async function createServerSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      global: { fetch: fetchRetryingGoaway },
       cookies: {
         getAll() {
           return cookieStore.getAll();

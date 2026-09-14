@@ -28,6 +28,7 @@ import {
   resolvePlatformLocaleFromAcceptLanguage,
 } from '@workspace/settings-runtime';
 import { createServerClient } from '@supabase/ssr';
+import { fetchRetryingGoaway } from '@workspace/gateway-auth/supabase/goaway-retry';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const PLATFORM_BASE = getAppBasePath('/platform');
@@ -74,6 +75,7 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      global: { fetch: fetchRetryingGoaway },
       cookies: {
         getAll() {
           return request.cookies.getAll();
