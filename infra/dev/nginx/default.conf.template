@@ -89,7 +89,16 @@ server {
             # only upload-length/upload-metadata — would still 201, so the symptom is
             # "create OK, chunks CORS-error, upload never finishes"). Node (e2e) skips
             # CORS, which is why this only bites the real browser client (slice-14).
-            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
+            #
+            # accept-profile / content-profile are the same class of bug one layer up:
+            # postgrest-js sends `accept-profile` on every READ and `content-profile` on
+            # every WRITE whenever a schema is configured, so a browser client talking to
+            # /rest/v1 is blocked on preflight before a single row moves. Measured on the
+            # SPA's graph replication: the setting arrived, the client was built, the GET
+            # left the page, and Chrome refused it with "Request header field
+            # accept-profile is not allowed by Access-Control-Allow-Headers". Node (e2e)
+            # again skips CORS, so only the real browser sees it.
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Accept-Profile, Content-Profile, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
             add_header Access-Control-Allow-Credentials true;
             add_header Access-Control-Max-Age 86400;
             return 204;
