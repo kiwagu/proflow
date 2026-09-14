@@ -26,6 +26,7 @@ import {
 import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 import { createAgentSeam } from './document-editor.agent-state';
+import { useDocumentRevision } from './document-revision';
 
 /** Keystrokes settle for this long before the document is written. */
 const SAVE_DEBOUNCE_MS = 400;
@@ -40,8 +41,14 @@ const VERSION_DEBOUNCE_MS = 30_000;
  */
 export function DocumentEditor({ document }: { document: DocumentMeta }) {
   // Keyed by identity: a switch remounts the surface below with fresh state,
-  // so no effect has to reset anything when the document changes.
-  return <OpenDocument key={document.id} document={document} />;
+  // so no effect has to reset anything when the document changes. The
+  // revision joins the key because a restore rewrote the stored document
+  // under a surface that owns its content after mount — remounting is how
+  // the editor reads it again without an agent bridge to push a tree through.
+  const { revision } = useDocumentRevision();
+  return (
+    <OpenDocument key={`${document.id}:${revision}`} document={document} />
+  );
 }
 
 function OpenDocument({ document }: { document: DocumentMeta }) {
@@ -58,7 +65,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     [t]
   );
   const [initial, setInitial] = useState<
-    { markdown: string } | { error: string } | null
+    { tree?: SerializedTree; markdown: string } | { error: string } | null
   >(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
 
@@ -67,7 +74,14 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     void documents.load(document.id).then((result) => {
       if (cancelled) return;
       if (result.isErr()) setInitial({ error: result.error });
-      else setInitial({ markdown: result.value.content?.markdown ?? '' });
+      else
+        // Both, and the view prefers the tree: the stored pair can disagree
+        // after a restore, which rewrites the canonical tree and leaves the
+        // derived markdown as it was. The tree is what the document is.
+        setInitial({
+          tree: result.value.content?.tree,
+          markdown: result.value.content?.markdown ?? '',
+        });
     });
     return () => {
       cancelled = true;
@@ -215,6 +229,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       <DocumentView
         key={document.id}
         namespace={`document:${document.id}`}
+        initialTree={initial.tree}
         initialMarkdown={initial.markdown}
         onWrapper={onWrapper}
         className="min-h-0 flex-1"

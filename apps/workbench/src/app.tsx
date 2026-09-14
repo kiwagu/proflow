@@ -13,6 +13,7 @@ import {
   FilePane,
   FileSelectionProvider,
   FileServicesProvider,
+  useFileNodes,
   useFileSelection,
   type DocumentActions,
   type FileExplorerLabels,
@@ -30,8 +31,13 @@ import {
   type GraphServices,
 } from '@workspace/workbench-graph';
 import { useMaybeAgent } from '@workspace/workbench-agent';
-import { MessageSquare, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  buildHistoryLabels,
+  defaultHistoryLabels,
+  type HistoryLabels,
+} from '@workspace/workbench-editor';
+import { History, MessageSquare, Search } from 'lucide-react';
+import { useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import {
   CHAT_PANEL_HOTKEY,
@@ -44,7 +50,14 @@ import {
   type ChatPanelLabels,
 } from './features/chat/chat.labels';
 import { DocumentPane } from './features/document-pane';
+import { DocumentRevisionProvider } from './features/document-revision';
+import {
+  HISTORY_PANEL_HOTKEY,
+  HISTORY_PANEL_WIDTH,
+} from './features/history/history.constants';
+import { HistoryPanelContainer } from './features/history/history.container';
 import { useWorkbenchTranslator } from './i18n';
+import { useAside } from './shell/aside';
 import { SIDEBAR_WIDTH } from './shell/layout';
 
 /**
@@ -87,7 +100,12 @@ export function App() {
       <GraphServicesProvider services={graphServices}>
         <FileServicesProvider services={fileServices}>
           <FileSelectionProvider>
-            <Workbench />
+            {/* The history panel and the editor pane are siblings, so the
+                fact that a restore rewrote the open document has to be
+                shared above both of them. */}
+            <DocumentRevisionProvider>
+              <Workbench />
+            </DocumentRevisionProvider>
           </FileSelectionProvider>
         </FileServicesProvider>
       </GraphServicesProvider>
@@ -97,15 +115,25 @@ export function App() {
 
 function Workbench() {
   const services = useServices();
-  const { setOpenFileId } = useFileSelection();
+  const { openFileId, setOpenFileId } = useFileSelection();
+  const nodes = useFileNodes();
   const palette = useCommandPalette();
   const t = useWorkbenchTranslator();
   // The assistant is offered only when the page actually started a worker;
   // an environment without one is a working editor, not a broken app.
   const agent = useMaybeAgent();
-  const [chatOpen, setChatOpen] = useState(false);
-  useHotkey(CHAT_PANEL_HOTKEY, () => setChatOpen((open) => !open), {
+  // The shell has ONE right-hand region, so the assistant and the history are
+  // alternatives: opening either closes the other, by construction.
+  const aside = useAside();
+  // The history is a document's history; with none open there is nothing to
+  // show, so neither the trigger nor the shortcut exists.
+  const openDocumentId =
+    nodes.find((node) => node.id === openFileId)?.documentId ?? null;
+  useHotkey(CHAT_PANEL_HOTKEY, () => aside.toggle('chat'), {
     enabled: agent !== null,
+  });
+  useHotkey(HISTORY_PANEL_HOTKEY, () => aside.toggle('history'), {
+    enabled: openDocumentId !== null,
   });
   const fileLabels: FileExplorerLabels = useMemo(
     () => (t ? buildFileExplorerLabels(t) : defaultFileExplorerLabels),
@@ -117,6 +145,10 @@ function Workbench() {
   );
   const chatLabels: ChatPanelLabels = useMemo(
     () => (t ? buildChatPanelLabels(t) : defaultChatPanelLabels),
+    [t]
+  );
+  const historyLabels: HistoryLabels = useMemo(
+    () => (t ? buildHistoryLabels(t) : defaultHistoryLabels),
     [t]
   );
 
@@ -145,6 +177,35 @@ function Workbench() {
     [setOpenFileId]
   );
 
+  /**
+   * The one right-hand region, resolved from the single aside state. Two
+   * panels, one slot: a closed companion surface costs no layout at all,
+   * which is why the shell takes an absent descriptor rather than a hidden
+   * one. The assistant's region also disappears when its worker does.
+   */
+  const asideRegion = useMemo(() => {
+    if (aside.open === 'chat' && agent)
+      return {
+        kind: 'fixed' as const,
+        width: CHAT_PANEL_WIDTH,
+        'aria-label': chatLabels.ariaLabel,
+        children: <ChatPanelContainer labels={chatLabels} />,
+      };
+    if (aside.open === 'history' && openDocumentId)
+      return {
+        kind: 'fixed' as const,
+        width: HISTORY_PANEL_WIDTH,
+        'aria-label': historyLabels.ariaLabel,
+        children: (
+          <HistoryPanelContainer
+            documentId={openDocumentId}
+            labels={historyLabels}
+          />
+        ),
+      };
+    return undefined;
+  }, [aside.open, agent, chatLabels, historyLabels, openDocumentId]);
+
   return (
     <div className="bg-background text-foreground flex h-full flex-col">
       <WorkbenchChrome
@@ -164,15 +225,33 @@ function Workbench() {
                 keys={hotkeyLabel(CHAT_PANEL_HOTKEY)}
               >
                 <Button
-                  variant={chatOpen ? 'secondary' : 'outline'}
+                  variant={aside.open === 'chat' ? 'secondary' : 'outline'}
                   size="sm"
-                  aria-pressed={chatOpen}
+                  aria-pressed={aside.open === 'chat'}
                   aria-label={t ? t('workbench.chat.toggle') : 'Assistant'}
-                  onClick={() => setChatOpen((open) => !open)}
+                  onClick={() => aside.toggle('chat')}
                   data-testid="chat-panel-trigger"
                 >
                   <MessageSquare aria-hidden />
                   {t ? t('workbench.chat.toggle') : 'Assistant'}
+                </Button>
+              </Hint>
+            ) : null}
+            {openDocumentId ? (
+              <Hint
+                label={t ? t('workbench.history.toggle') : 'History'}
+                keys={hotkeyLabel(HISTORY_PANEL_HOTKEY)}
+              >
+                <Button
+                  variant={aside.open === 'history' ? 'secondary' : 'outline'}
+                  size="sm"
+                  aria-pressed={aside.open === 'history'}
+                  aria-label={t ? t('workbench.history.toggle') : 'History'}
+                  onClick={() => aside.toggle('history')}
+                  data-testid="history-panel-trigger"
+                >
+                  <History aria-hidden />
+                  {t ? t('workbench.history.toggle') : 'History'}
                 </Button>
               </Hint>
             ) : null}
@@ -210,16 +289,7 @@ function Workbench() {
             )}
           />
         }
-        aside={
-          agent && chatOpen
-            ? {
-                kind: 'fixed',
-                width: CHAT_PANEL_WIDTH,
-                'aria-label': chatLabels.ariaLabel,
-                children: <ChatPanelContainer labels={chatLabels} />,
-              }
-            : undefined
-        }
+        aside={asideRegion}
         className="min-h-0 flex-1"
       />
       <CommandPalette

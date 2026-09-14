@@ -135,5 +135,18 @@
   "workbench.chat.empty": "No messages yet. Ask about your documents to start.",
   "workbench.chat.you": "You",
   "workbench.chat.assistant": "Assistant",
-  "workbench.chat.opening": "Opening the assistant…"
+  "workbench.chat.opening": "Opening the assistant…",
+  "workbench.history.title": "History",
+  "workbench.history.ariaLabel": "Document history",
+  "workbench.history.toggle": "History",
+  "workbench.history.empty": "No versions yet. They are marked as you write.",
+  "workbench.history.restore": "Restore this version",
+  "workbench.history.previewUnavailable": "This version cannot be previewed.",
+  "workbench.history.kind.manual": "Saved",
+  "workbench.history.kind.idle": "Auto",
+  "workbench.history.kind.preAiEdit": "Before assistant",
+  "workbench.history.age.now": "Just now",
+  "workbench.history.age.minutes": "{count} min ago",
+  "workbench.history.age.hours": "{count} h ago",
+  "workbench.history.age.days": "{count} d ago"
 }

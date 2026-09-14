@@ -26,6 +26,7 @@
     "@lexical/rich-text": "catalog:",
     "@lexical/table": "catalog:",
     "@lexical/utils": "catalog:",
+    "@workspace/domain": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",

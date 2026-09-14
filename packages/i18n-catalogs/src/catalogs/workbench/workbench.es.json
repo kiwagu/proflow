@@ -135,5 +135,18 @@
   "workbench.chat.empty": "Todavía no hay mensajes. Pregunta sobre tus documentos para empezar.",
   "workbench.chat.you": "Tú",
   "workbench.chat.assistant": "Asistente",
-  "workbench.chat.opening": "Abriendo el asistente…"
+  "workbench.chat.opening": "Abriendo el asistente…",
+  "workbench.history.title": "Historial",
+  "workbench.history.ariaLabel": "Historial del documento",
+  "workbench.history.toggle": "Historial",
+  "workbench.history.empty": "Todavía no hay versiones. Se marcan mientras escribes.",
+  "workbench.history.restore": "Restaurar esta versión",
+  "workbench.history.previewUnavailable": "Esta versión no se puede previsualizar.",
+  "workbench.history.kind.manual": "Guardada",
+  "workbench.history.kind.idle": "Automática",
+  "workbench.history.kind.preAiEdit": "Antes del asistente",
+  "workbench.history.age.now": "Ahora mismo",
+  "workbench.history.age.minutes": "hace {count} min",
+  "workbench.history.age.hours": "hace {count} h",
+  "workbench.history.age.days": "hace {count} d"
 }
