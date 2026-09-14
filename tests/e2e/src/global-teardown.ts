@@ -18,9 +18,12 @@ async function globalTeardown(): Promise<void> {
     const sweep = await sweepE2EArtifacts();
     if (sweep.errors.length > 0) {
       console.warn('[e2e teardown] sweep warnings:', sweep.errors);
-    } else if (sweep.usersDeleted + sweep.orgsDeleted > 0) {
+    } else if (
+      sweep.usersDeleted + sweep.orgsDeleted + sweep.rolesDeleted >
+      0
+    ) {
       console.log(
-        `[e2e teardown] swept ${sweep.usersDeleted} users, ${sweep.orgsDeleted} orgs, ${sweep.invitesDeleted} invites`
+        `[e2e teardown] swept ${sweep.usersDeleted} users, ${sweep.orgsDeleted} orgs, ${sweep.rolesDeleted} roles, ${sweep.invitesDeleted} invites`
       );
     }
   } finally {
