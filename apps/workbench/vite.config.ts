@@ -100,6 +100,17 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
+    rolldownOptions: {
+      output: {
+        // The syntax highlighter's grammars are CommonJS files that reach
+        // for a `Prism` global its core sets up, without requiring it — so
+        // the bundler sees no edge between them and is free to run the
+        // grammars first, which throws `Prism is not defined` before the
+        // app's first render. Declaration order is the only thing that
+        // expresses that dependency, so the output has to honour it.
+        strictExecutionOrder: true,
+      },
+    },
   },
   // ES-format workers are required by the database and embedding workers.
   worker: {
