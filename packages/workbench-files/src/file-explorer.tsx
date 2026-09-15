@@ -211,7 +211,7 @@ export function FileExplorer({
     async (list: File[], parentId: string | null) => {
       if (parentId) reveal(parentId, nodes);
       for (const file of list) {
-        const id = newId('fileNode');
+        const id = newId('knowledgeResource');
         setPending((prev) => [
           ...prev,
           { id, name: file.name, parentId, progress: 0 },

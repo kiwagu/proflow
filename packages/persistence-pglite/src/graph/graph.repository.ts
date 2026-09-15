@@ -1,7 +1,7 @@
 import { newId } from '@workspace/domain';
 import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import { err, ok, type Result } from 'neverthrow';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { AppDb } from '../db/db.js';
 import {
   GRAPH_NODE_COLUMNS,
@@ -61,6 +61,8 @@ export type GraphOpKind = (typeof GRAPH_OPS)[keyof typeof GRAPH_OPS];
  */
 export type MoveNodeInput = z.input<typeof moveKnowledgeResourceInputSchema>;
 
+const localBodyRefSchema = z.record(z.string(), z.unknown()).nullable();
+
 export type CreateNodeInput = {
   spaceId: string;
   kind: string;
@@ -71,6 +73,8 @@ export type CreateNodeInput = {
   status?: string;
   visibility?: ResourceFloor;
   ownerUserId?: string | null;
+  /** Local only: document bodies are not yet replicated upstream. */
+  body_ref?: z.infer<typeof localBodyRefSchema>;
   /** Optional container: creates the `contains` edge in the same transaction. */
   parentId?: string | null;
   position?: number;
@@ -222,7 +226,9 @@ async function journal(
   );
 }
 
-export function createPgliteGraphRepository(db: AppDb): GraphRepository {
+export function createPgliteGraphRepository(
+  db: Pick<AppDb, 'query' | 'transaction'>
+): GraphRepository {
   /**
    * Run a command's local write and its journal append as one unit. The two
    * must not come apart: a replica row without its journal entry is a change
@@ -278,8 +284,8 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           const tx = raw as unknown as Tx;
           await tx.query(
             `insert into knowledge_resources
-               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id, body_ref)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
              on conflict (id) do nothing`,
             [
               id,
@@ -290,6 +296,7 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
               input.visibility ?? 'private',
               input.createdBy,
               input.ownerUserId ?? input.createdBy,
+              JSON.stringify(localBodyRefSchema.parse(input.body_ref ?? null)),
             ]
           );
           if (input.parentId && edgeId) {

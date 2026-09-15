@@ -5,6 +5,7 @@ import {
 } from '@workspace/domain';
 import { err, ok } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
+import { graphInTransaction } from '../graph/graph.transaction.js';
 import { type ContentCache, createContentCache } from './content-cache.js';
 import type { DocumentCrdtStore } from './document.crdt-store.js';
 import { type DocumentRow, toDocumentMeta } from './document.mapper.js';
@@ -15,6 +16,8 @@ const META_COLUMNS =
 export function createPgliteDocumentRepository(
   db: AppDb,
   crdt: DocumentCrdtStore,
+  spaceId: string,
+  userId: string,
   cache: ContentCache = createContentCache()
 ): IDocumentRepository {
   // Minted per instance: each tab and each worker is its own writer.
@@ -30,7 +33,7 @@ export function createPgliteDocumentRepository(
     async create(input) {
       try {
         const id = input?.id ?? newId('document');
-        const nodeId = input?.nodeId ?? newId('fileNode');
+        const nodeId = input?.nodeId ?? newId('knowledgeResource');
         // The document and its place in the file tree are one fact.
         const row = await db.transaction(async (tx) => {
           const { rows } = await tx.query<DocumentRow>(
@@ -39,11 +42,16 @@ export function createPgliteDocumentRepository(
              returning ${META_COLUMNS}`,
             [id, input?.title ?? '', input?.kind ?? 'md']
           );
-          await tx.query(
-            `insert into file_node (id, parent_id, kind, name, document_id)
-             values ($1, $2, 'document', $3, $4)`,
-            [nodeId, input?.parentId ?? null, input?.title ?? '', id]
-          );
+          const created = await graphInTransaction(tx).createNode({
+            id: nodeId,
+            spaceId,
+            createdBy: userId,
+            kind: 'text',
+            title: input?.title ?? '',
+            parentId: input?.parentId ?? null,
+            body_ref: { doc_id: id },
+          });
+          if (created.isErr()) throw new Error(created.error);
           return rows[0];
         });
         if (!row) return err('insert returned no row');
