@@ -36,7 +36,7 @@ import {
   defaultHistoryLabels,
   type HistoryLabels,
 } from '@workspace/workbench-editor';
-import { History, MessageSquare, Search } from 'lucide-react';
+import { History, MessageSquare, Search, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import {
@@ -56,6 +56,7 @@ import {
   HISTORY_PANEL_WIDTH,
 } from './features/history/history.constants';
 import { HistoryPanelContainer } from './features/history/history.container';
+import { TrashPanel } from './features/trash/trash.panel';
 import { useWorkbenchTranslator } from './i18n';
 import { useAside } from './shell/aside';
 import { SIDEBAR_WIDTH } from './shell/layout';
@@ -184,6 +185,13 @@ function Workbench() {
    * one. The assistant's region also disappears when its worker does.
    */
   const asideRegion = useMemo(() => {
+    if (aside.open === 'trash')
+      return {
+        kind: 'fixed' as const,
+        width: HISTORY_PANEL_WIDTH,
+        'aria-label': t ? t('workbench.trash.title') : 'Trash',
+        children: <TrashPanel />,
+      };
     if (aside.open === 'chat' && agent)
       return {
         kind: 'fixed' as const,
@@ -204,7 +212,7 @@ function Workbench() {
         ),
       };
     return undefined;
-  }, [aside.open, agent, chatLabels, historyLabels, openDocumentId]);
+  }, [aside.open, agent, chatLabels, historyLabels, openDocumentId, t]);
 
   return (
     <div className="bg-background text-foreground flex h-full flex-col">
@@ -219,6 +227,16 @@ function Workbench() {
         }}
         actions={
           <>
+            <Button
+              variant={aside.open === 'trash' ? 'secondary' : 'outline'}
+              size="sm"
+              aria-pressed={aside.open === 'trash'}
+              onClick={() => aside.toggle('trash')}
+              data-testid="trash-panel-trigger"
+            >
+              <Trash2 aria-hidden />
+              {t ? t('workbench.trash.title') : 'Trash'}
+            </Button>
             {agent ? (
               <Hint
                 label={t ? t('workbench.chat.toggle') : 'Assistant'}

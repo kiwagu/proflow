@@ -84,6 +84,25 @@ it.each(['trash', 'purge'] as const)(
       (
         await createPgliteGraphRepository(db).purgeNode(file.id)
       )._unsafeUnwrap();
+    if (operation === 'trash') {
+      expect((await h.maintenance.report())._unsafeUnwrap().reclaimable).toBe(
+        0
+      );
+      (await h.files.collectGarbage())._unsafeUnwrap();
+      expect((await h.maintenance.freeUnused())._unsafeUnwrap()).toBe(0);
+      expect(
+        (await db.query('select hash from blob where hash = $1', [h.hash])).rows
+      ).toHaveLength(1);
+      expect(h.unpacked.has(h.hash)).toBe(true);
+      (
+        await createPgliteGraphRepository(db).restoreNode(file.id)
+      )._unsafeUnwrap();
+      expect((await h.files.get(file.id))._unsafeUnwrap().blobHash).toBe(
+        h.hash
+      );
+      expect(await (await h.blobs.get(h.hash))?.text()).toBe('hello');
+      return;
+    }
     const report = (await h.maintenance.report())._unsafeUnwrap();
     expect(report.files).toBe(0);
     expect(report.reclaimable).toBe(15);
@@ -113,6 +132,11 @@ it('keeps a shared hash until its last live graph reference is gone', async () =
   expect(await h.blobs.has(h.hash)).toBe(true);
   expect((await h.maintenance.report())._unsafeUnwrap().files).toBe(5);
   (await h.files.softDelete(second.id))._unsafeUnwrap();
+  expect((await h.maintenance.freeUnused())._unsafeUnwrap()).toBe(0);
+  const graph = createPgliteGraphRepository(db);
+  (await graph.purgeNode(first.id))._unsafeUnwrap();
+  expect((await h.maintenance.freeUnused())._unsafeUnwrap()).toBe(0);
+  (await graph.purgeNode(second.id))._unsafeUnwrap();
   expect((await h.maintenance.freeUnused())._unsafeUnwrap()).toBe(15);
   expect(await h.blobs.has(h.hash)).toBe(false);
 });
@@ -152,7 +176,7 @@ it('trashes the full local contains subtree with one durable root operation', as
     before + 1
   );
   (await h.files.collectGarbage())._unsafeUnwrap();
-  expect(await h.blobs.has(h.hash)).toBe(false);
+  expect(await h.blobs.has(h.hash)).toBe(true);
 });
 
 it.each(['trash', 'purge'] as const)(
@@ -180,18 +204,31 @@ it.each(['trash', 'purge'] as const)(
         body_ref: { doc_id: docId },
       })
     )._unsafeUnwrap();
-    (await h.files.softDelete(file.id))._unsafeUnwrap();
+    (await graph.purgeNode(file.id))._unsafeUnwrap();
     (await h.files.collectGarbage())._unsafeUnwrap();
     expect(await h.blobs.has(h.hash)).toBe(true);
     expect((await h.maintenance.report())._unsafeUnwrap().files).toBe(5);
     if (operation === 'trash')
       (await graph.trashNode(node.id, TEST_USER))._unsafeUnwrap();
     else (await graph.purgeNode(node.id))._unsafeUnwrap();
-    expect((await h.maintenance.report())._unsafeUnwrap().files).toBe(0);
-    (await h.files.collectGarbage())._unsafeUnwrap();
-    expect(await h.blobs.has(h.hash)).toBe(false);
+    expect((await h.maintenance.report())._unsafeUnwrap().files).toBe(
+      operation === 'trash' ? 5 : 0
+    );
+    (await h.maintenance.freeUnused())._unsafeUnwrap();
+    expect(await h.blobs.has(h.hash)).toBe(operation === 'trash');
   }
 );
+
+it('reclaims a file_node without a graph node', async () => {
+  const h = harness();
+  const file = await h.importFile();
+  await db.query('delete from knowledge_resources where id = $1', [file.id]);
+  expect((await h.maintenance.freeUnused())._unsafeUnwrap()).toBe(15);
+  expect(await h.blobs.has(h.hash)).toBe(false);
+  expect(
+    (await db.query('select id from file_node where id = $1', [file.id])).rows
+  ).toEqual([]);
+});
 
 it('rolls back the root and journal if the local cascade is refused', async () => {
   const h = harness();

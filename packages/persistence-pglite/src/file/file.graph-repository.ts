@@ -172,14 +172,14 @@ export function createGraphFileRepository(
       try {
         // The graph owns liveness; blob metadata also outlives purged nodes.
         await db.query(`delete from file_node f where not exists (
-          select 1 from knowledge_resources r where r.id = f.id and r.deleted_at is null
+          select 1 from knowledge_resources r where r.id = f.id
         )`);
         const { rows } = await db.query<{ hash: string }>(`delete from blob b
           where not exists (select 1 from file_node f join knowledge_resources r on r.id = f.id
-            where f.blob_hash = b.hash and r.deleted_at is null)
+            where f.blob_hash = b.hash)
           and not exists (select 1 from document_content dc join document d on d.id = dc.document_id
             join knowledge_resources r on r.body_ref ->> 'doc_id' = d.id and r.kind = 'text'
-            where r.deleted_at is null and d.deleted_at is null and position(b.hash in dc.markdown) > 0)
+            where position(b.hash in dc.markdown) > 0)
           returning b.hash`);
         await Promise.all(
           rows.flatMap(({ hash }) => [

@@ -1,5 +1,12 @@
 {
   "workbench.editor.toolbar": "Formatting",
+  "workbench.trash.title": "Trash",
+  "workbench.trash.empty": "Trash is empty.",
+  "workbench.trash.restore": "Restore",
+  "workbench.trash.purge": "Delete forever",
+  "workbench.trash.cancel": "Cancel",
+  "workbench.trash.confirm": "Permanently delete “{title}”? Its local data cannot be restored.",
+  "workbench.trash.freed": "Freed {bytes} bytes.",
   "workbench.editor.undo": "Undo",
   "workbench.editor.redo": "Redo",
   "workbench.editor.bold": "Bold",

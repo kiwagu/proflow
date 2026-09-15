@@ -1,5 +1,12 @@
 {
   "workbench.editor.toolbar": "Formato",
+  "workbench.trash.title": "Papelera",
+  "workbench.trash.empty": "La papelera está vacía.",
+  "workbench.trash.restore": "Restaurar",
+  "workbench.trash.purge": "Eliminar para siempre",
+  "workbench.trash.cancel": "Cancelar",
+  "workbench.trash.confirm": "¿Eliminar «{title}» permanentemente? Sus datos locales no se podrán restaurar.",
+  "workbench.trash.freed": "Se liberaron {bytes} bytes.",
   "workbench.editor.undo": "Deshacer",
   "workbench.editor.redo": "Rehacer",
   "workbench.editor.bold": "Negrita",
