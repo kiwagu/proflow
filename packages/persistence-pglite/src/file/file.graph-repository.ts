@@ -141,14 +141,45 @@ export function createGraphFileRepository(
       }
     },
     setStarred: (id, starred) => graph.setStarred(spaceId, id, userId, starred),
-    softDelete: (id) => graph.trashNode(id, userId),
+    async softDelete(id) {
+      try {
+        await db.transaction(async (tx) => {
+          const result = await graphInTransaction(tx).trashNode(id, userId);
+          if (result.isErr()) throw new Error(result.error);
+          // Mirror the server's contains cascade while offline. Only the root
+          // is journaled; its timestamp also belongs to the local descendants.
+          await tx.query(
+            `with recursive sub(id) as (
+              select id from knowledge_resources where id = $1 and space_id = $2
+              union
+              select e.to_id from knowledge_edges e join sub on e.from_id = sub.id
+              where e.relation_type = 'contains' and e.space_id = $2
+            )
+            update knowledge_resources r
+            set deleted_at = root.deleted_at, trashed_by = root.trashed_by, updated_at = root.updated_at
+            from knowledge_resources root
+            where root.id = $1 and r.space_id = $2 and r.id in (select id from sub)
+              and r.deleted_at is null`,
+            [id, spaceId]
+          );
+        });
+        return ok(undefined);
+      } catch (e) {
+        return err(`file.softDelete failed: ${String(e)}`);
+      }
+    },
     async collectGarbage() {
       try {
-        await db.query('delete from file_node where deleted_at is not null');
+        // The graph owns liveness; blob metadata also outlives purged nodes.
+        await db.query(`delete from file_node f where not exists (
+          select 1 from knowledge_resources r where r.id = f.id and r.deleted_at is null
+        )`);
         const { rows } = await db.query<{ hash: string }>(`delete from blob b
-          where not exists (select 1 from file_node f where f.blob_hash = b.hash and f.deleted_at is null)
+          where not exists (select 1 from file_node f join knowledge_resources r on r.id = f.id
+            where f.blob_hash = b.hash and r.deleted_at is null)
           and not exists (select 1 from document_content dc join document d on d.id = dc.document_id
-            where d.deleted_at is null and position(b.hash in dc.markdown) > 0)
+            join knowledge_resources r on r.body_ref ->> 'doc_id' = d.id and r.kind = 'text'
+            where r.deleted_at is null and d.deleted_at is null and position(b.hash in dc.markdown) > 0)
           returning b.hash`);
         await Promise.all(
           rows.flatMap(({ hash }) => [
