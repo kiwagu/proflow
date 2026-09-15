@@ -11,12 +11,19 @@
  *      (cascades → role_permission, user_role).
  *   5. Deletes profiles.
  *   6. Deletes auth users.
+ *   7. Deletes outbox jobs addressed to e2e- recipients.
+ *   8. Deletes fully orphaned audit rows on the local test stand only.
  *
  * Safe to run after any test run or standalone via:
- *   npx tsx tests/e2e/src/helpers/e2e-artifact-sweep.ts
+ *   bun run --cwd tests/e2e test:e2e:db-sweep
  */
 import 'dotenv/config';
+import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
+import { parse } from 'dotenv';
 
 import { resolveServiceRoleKey, resolveSupabaseUrl } from './test-user.js';
 
@@ -42,6 +49,78 @@ const E2E_ORG_SLUG_PREFIXES = ['e2e-', 'iso-', 'a-iso', 'b-iso'];
 // `scope = 'global'` today, but an org-scoped e2e role would leak the same way.
 const E2E_ROLE_KEY_LIKE = 'e2e\\_%';
 
+const execFileAsync = promisify(execFile);
+
+async function sweepOrphanedAudit(): Promise<number> {
+  const stackDirectory = fileURLToPath(
+    new URL('../../../../infra/dev/supabase/', import.meta.url)
+  ).replace(/\/$/, '');
+  // Never inherit a remote Docker context: this bypass is test-stand-only.
+  const dockerArgs = ['--host', 'unix:///var/run/docker.sock'];
+  const { stdout: directory } = await execFileAsync(
+    'docker',
+    [
+      ...dockerArgs,
+      'inspect',
+      '--format',
+      '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
+      'supabase-db',
+    ],
+    { timeout: 10_000 }
+  );
+  if (directory.trim() !== stackDirectory) {
+    throw new Error(
+      'Database container does not belong to this local test stand'
+    );
+  }
+  const { POSTGRES_PASSWORD } = parse(
+    await readFile(`${stackDirectory}/.env`, 'utf8')
+  );
+  if (!POSTGRES_PASSWORD) throw new Error('Test stand password is unavailable');
+
+  // The product audit stays append-only. Only this transaction bypasses its
+  // trigger, and only rows with ALL three parents gone are eligible.
+  const { stdout } = await execFileAsync(
+    'docker',
+    [
+      ...dockerArgs,
+      'exec',
+      '-e',
+      'PGPASSWORD',
+      'supabase-db',
+      'psql',
+      '-X',
+      '-U',
+      'supabase_admin',
+      '-d',
+      'postgres',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-Atq',
+      '-c',
+      `begin;
+       set local session_replication_role = replica;
+       with deleted as (
+         delete from public.space_admin_audit_log
+         where organization_id is null
+           and space_id is null
+           and actor_user_id is null
+         returning id
+       ) select count(*) from deleted;
+       commit;`,
+    ],
+    {
+      env: { ...process.env, PGPASSWORD: POSTGRES_PASSWORD },
+      timeout: 30_000,
+    }
+  );
+  const count = Number(stdout.trim());
+  if (!/^\d+$/.test(stdout.trim()) || !Number.isSafeInteger(count)) {
+    throw new Error('Unexpected audit sweep count');
+  }
+  return count;
+}
+
 function serviceSupabase() {
   return createClient(resolveSupabaseUrl(), resolveServiceRoleKey(), {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -54,6 +133,8 @@ export type SweepResult = {
   rolesDeleted: number;
   profilesDeleted: number;
   usersDeleted: number;
+  outboxDeleted: number;
+  auditDeleted: number;
   errors: string[];
 };
 
@@ -65,6 +146,8 @@ export async function sweepE2EArtifacts(): Promise<SweepResult> {
     rolesDeleted: 0,
     profilesDeleted: 0,
     usersDeleted: 0,
+    outboxDeleted: 0,
+    auditDeleted: 0,
     errors: [],
   };
 
@@ -148,6 +231,28 @@ export async function sweepE2EArtifacts(): Promise<SweepResult> {
     }
   }
 
+  // ── 7. Outbox has no FK cascade; its recipient is the test marker ────────
+  const { count: outboxCount, error: outboxErr } = await supabase
+    .from('outbox_jobs')
+    .delete({ count: 'exact' })
+    .like('recipient', 'e2e-%');
+  if (outboxErr) {
+    result.errors.push(`delete outbox: ${outboxErr.message}`);
+  } else {
+    result.outboxDeleted = outboxCount ?? 0;
+  }
+
+  // ── 8. Last: org/space/user deletion must first null ALL audit FKs ───────
+  try {
+    result.auditDeleted = await sweepOrphanedAudit();
+  } catch {
+    // Child-process errors can carry credentials/environment details. Never
+    // log them; teardown reports this bounded warning and keeps going.
+    result.errors.push(
+      'delete audit: local test database channel unavailable or sweep failed; audit cleanup not confirmed'
+    );
+  }
+
   return result;
 }
 
@@ -165,6 +270,8 @@ if (
     console.log(`  roles deleted:    ${r.rolesDeleted}`);
     console.log(`  profiles deleted: ${r.profilesDeleted}`);
     console.log(`  users deleted:    ${r.usersDeleted}`);
+    console.log(`  outbox deleted:   ${r.outboxDeleted}`);
+    console.log(`  audit deleted:    ${r.auditDeleted}`);
     if (r.errors.length > 0) {
       console.error('  errors:', r.errors);
     }
