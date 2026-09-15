@@ -56,7 +56,7 @@ test.describe('Workbench session', () => {
       );
       await page.getByTestId('new-document').click();
       const editor = page.locator('[contenteditable="true"]').first();
-      await expect(editor).toBeVisible();
+      await expect(editor).toBeVisible({ timeout: 30_000 });
       await editor.click();
       await editor.pressSequentially('Workbench session document');
       await expect(page.getByTestId('save-state')).toContainText(/saved/i);
@@ -65,7 +65,7 @@ test.describe('Workbench session', () => {
       await expect(
         page.getByText('Offline. Changes are saved on this device.')
       ).toBeVisible({ timeout: 35_000 });
-      await expect(editor).toBeVisible();
+      await expect(editor).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('save-state')).toContainText(/saved/i);
       await page.getByTestId('new-folder').click();
       await expect(

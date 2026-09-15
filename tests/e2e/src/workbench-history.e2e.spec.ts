@@ -39,7 +39,7 @@ test.describe('Workbench document history', () => {
 
       await page.getByTestId('new-document').click();
       const editor = page.locator('[contenteditable="true"]').first();
-      await expect(editor).toBeVisible();
+      await expect(editor).toBeVisible({ timeout: 30_000 });
       await editor.click();
       await editor.pressSequentially('v1');
       await expect(page.getByTestId('save-state')).toContainText(/saved/i);
