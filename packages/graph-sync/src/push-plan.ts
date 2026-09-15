@@ -57,6 +57,9 @@ export function planWrites(
             visibility: str(payload['visibility']),
             created_by: identity.userId,
             owner_user_id: identity.userId,
+            ...(payload['body_ref'] !== undefined
+              ? { body_ref: payload['body_ref'] }
+              : {}),
           },
         },
       ];

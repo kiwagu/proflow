@@ -73,7 +73,7 @@ export type CreateNodeInput = {
   status?: string;
   visibility?: ResourceFloor;
   ownerUserId?: string | null;
-  /** Local only: document bodies are not yet replicated upstream. */
+  /** Opaque body pointer; replication of the document bytes is independent. */
   body_ref?: z.infer<typeof localBodyRefSchema>;
   /** Optional container: creates the `contains` edge in the same transaction. */
   parentId?: string | null;
@@ -327,6 +327,9 @@ export function createPgliteGraphRepository(
               status: input.status ?? 'draft',
               visibility: input.visibility ?? 'private',
               ownerUserId: input.ownerUserId ?? input.createdBy,
+              ...(input.body_ref !== undefined
+                ? { body_ref: localBodyRefSchema.parse(input.body_ref) }
+                : {}),
               parentId: input.parentId ?? null,
               position: input.position ?? 0,
               edgeId,

@@ -64,7 +64,9 @@ it('creates a document with a journaled text node and local body reference', asy
     title: 'Draft',
     parentId: parent,
   });
-  expect(journal.rows[0]?.payload).not.toHaveProperty('body_ref');
+  expect(journal.rows[0]?.payload).toMatchObject({
+    body_ref: { doc_id: doc.id },
+  });
   const files = createGraphFileRepository(
     db,
     {} as IBlobStore,
@@ -77,16 +79,38 @@ it('creates a document with a journaled text node and local body reference', asy
   ).toEqual([{ title: 'Renamed' }]);
 });
 
-it('keeps a local document reachable after the server returns its node without a body reference', async () => {
-  const documents = createPgliteDocumentRepository(db, createDocumentCrdtStore(db), spaceId, TEST_USER);
-  const doc = (await documents.create({ title: 'Round trip' }))._unsafeUnwrap();
-  const { rows } = await db.query<Record<string, unknown> & { id: string }>(
-    "select * from knowledge_resources where body_ref ->> 'doc_id' = $1", [doc.id]);
-  const node = rows[0]!;
-  await createPgliteGraphReplicaWriter(db).applyPullBatch('knowledge_resources', [{ ...node, body_ref: null }]);
-  const files = createGraphFileRepository(db, {} as IBlobStore, spaceId, TEST_USER);
-  expect((await files.get(node.id))._unsafeUnwrap().documentId).toBe(doc.id);
-});
+it.each([true, false])(
+  'converges document reachability to the server body reference (present: %s)',
+  async (present) => {
+    const documents = createPgliteDocumentRepository(
+      db,
+      createDocumentCrdtStore(db),
+      spaceId,
+      TEST_USER
+    );
+    const doc = (
+      await documents.create({ title: 'Round trip' })
+    )._unsafeUnwrap();
+    const { rows } = await db.query<Record<string, unknown> & { id: string }>(
+      "select * from knowledge_resources where body_ref ->> 'doc_id' = $1",
+      [doc.id]
+    );
+    const node = rows[0]!;
+    await createPgliteGraphReplicaWriter(db).applyPullBatch(
+      'knowledge_resources',
+      [{ ...node, body_ref: present ? { doc_id: doc.id } : null }]
+    );
+    const files = createGraphFileRepository(
+      db,
+      {} as IBlobStore,
+      spaceId,
+      TEST_USER
+    );
+    expect((await files.get(node.id))._unsafeUnwrap().documentId).toBe(
+      present ? doc.id : null
+    );
+  }
+);
 
 it('rolls back a document when its graph node is refused', async () => {
   const documents = createPgliteDocumentRepository(
