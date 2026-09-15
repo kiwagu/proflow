@@ -24,10 +24,10 @@ import type { GraphNode, ResourceFloor } from './graph.types.js';
  * drops that op and every journaled op touching the same node and re-pulls
  * those rows — the pull IS the rollback, so there is no local undo log here.
  *
- * Every op is idempotent by construction (upsert by client-minted id, column
- * patch keyed by id, edge upsert on the natural key, timestamp write, delete
- * by id), which is what makes at-least-once replay safe without dedup
- * machinery.
+ * Journal replay is idempotent at the server transport (upsert by
+ * client-minted id, column patch, edge upsert, timestamp write, delete by id).
+ * A new local create is not a replay: a duplicate id must report a conflict
+ * rather than claim an existing node was just created.
  */
 
 /** The op vocabulary the journal carries, one entry per structural command. */
@@ -280,13 +280,13 @@ export function createPgliteGraphRepository(
       const id = input.id ?? newId('knowledgeResource');
       const edgeId = input.parentId ? newId('knowledgeEdge') : null;
       try {
-        await db.transaction(async (raw) => {
+        const node = await db.transaction(async (raw) => {
           const tx = raw as unknown as Tx;
-          await tx.query(
+          const { rows } = await tx.query(
             `insert into knowledge_resources
                (id, space_id, kind, title, status, visibility, created_by, owner_user_id, body_ref)
              values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
-             on conflict (id) do nothing`,
+             returning ${GRAPH_NODE_COLUMNS}`,
             [
               id,
               input.spaceId,
@@ -299,6 +299,12 @@ export function createPgliteGraphRepository(
               JSON.stringify(localBodyRefSchema.parse(input.body_ref ?? null)),
             ]
           );
+          if (rows.length !== 1) {
+            throw new Error(
+              `knowledge_resources INSERT RETURNING expected 1 row, received ${rows.length} for id ${id}`
+            );
+          }
+          const inserted = toGraphNode(rows[0] as GraphNodeRow);
           if (input.parentId && edgeId) {
             await tx.query(
               `insert into knowledge_edges
@@ -336,17 +342,17 @@ export function createPgliteGraphRepository(
             },
             input.parentId ? [id, input.parentId] : [id]
           );
+          // Capture the result before sync can evict the row after commit.
+          return inserted;
         });
+        return node
+          ? ok(node)
+          : err(
+              `graph.createNode: transaction returned no result for id ${id}`
+            );
       } catch (e) {
         return err(`graph.createNode failed: ${String(e)}`);
       }
-      const { rows } = await db.query<GraphNodeRow>(
-        `select ${GRAPH_NODE_COLUMNS} from knowledge_resources where id = $1`,
-        [id]
-      );
-      return rows[0]
-        ? ok(toGraphNode(rows[0]))
-        : err('graph.createNode: insert returned no row');
     },
 
     renameNode(nodeId, title) {
