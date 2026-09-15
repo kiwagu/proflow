@@ -12,8 +12,8 @@ import {
   createPgliteDocumentListReader,
   createPgliteDocumentRepository,
   createPgliteDocumentVersionStore,
-  createPgliteFileRepository,
-  createPgliteFileTreeReader,
+  createGraphFileRepository,
+  createGraphFileTreeReader,
   createPgliteGraphReader,
   createPgliteGraphRepository,
   createPglitePackageReader,
@@ -103,9 +103,20 @@ export async function createAppServices(
     documentList,
   } = createOptimisticFiles({
     entities: optimistic,
-    files: createPgliteFileRepository(db, blobs, blobs.packages),
-    tree: createPgliteFileTreeReader(db),
-    documents: createPgliteDocumentRepository(db, documentCrdt),
+    files: createGraphFileRepository(
+      db,
+      blobs,
+      session.spaceId,
+      session.userId,
+      blobs.packages
+    ),
+    tree: createGraphFileTreeReader(db, session.spaceId, session.userId),
+    documents: createPgliteDocumentRepository(
+      db,
+      documentCrdt,
+      session.spaceId,
+      session.userId
+    ),
     documentList: createPgliteDocumentListReader(db),
     onError: reportError,
   });

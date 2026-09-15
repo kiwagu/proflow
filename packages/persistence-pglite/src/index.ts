@@ -15,6 +15,8 @@ export { createPgliteDocumentListReader } from './document/document.reader.js';
 export { createPgliteDocumentRepository } from './document/document.repository.js';
 export { createPgliteDocumentVersionStore } from './document/document-version.store.js';
 export { createPgliteFileTreeReader } from './file/file.reader.js';
+export { createGraphFileTreeReader } from './file/file.graph-reader.js';
+export { createGraphFileRepository } from './file/file.graph-repository.js';
 export { createPgliteFileRepository } from './file/file.repository.js';
 export { createPgliteBlobSyncLocal } from './file/blob-sync.local.js';
 export {

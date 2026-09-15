@@ -1,6 +1,12 @@
 import { expect, test } from './fixtures.js';
+import { createClient } from '@supabase/supabase-js';
 import { loginViaUi } from './helpers/auth.js';
-import { seedTestUser, cleanupTestUser } from './helpers/test-user.js';
+import {
+  seedTestUser,
+  cleanupTestUser,
+  resolveServiceRoleKey,
+  resolveSupabaseUrl,
+} from './helpers/test-user.js';
 import {
   bootstrapOrgSpaceAdminForUser,
   bootstrapAdditionalSpaceAdminForUser,
@@ -61,17 +67,56 @@ test.describe('Workbench session', () => {
       ).toBeVisible({ timeout: 35_000 });
       await expect(editor).toBeVisible();
       await expect(page.getByTestId('save-state')).toContainText(/saved/i);
-      await page.context().setOffline(false);
-      await page.reload();
+      await page.getByTestId('new-folder').click();
       await expect(
-        page.getByTestId('files-section').getByTestId('file-row').first()
-      ).toBeVisible({
-        timeout: 120_000,
-      });
+        page.getByTestId('files-section').getByTestId('file-row')
+      ).toHaveCount(2);
+      await page.context().setOffline(false);
+      // Wait for actual persisted rows, not the optimistic tree overlay.
+      const service = createClient(
+        resolveSupabaseUrl(),
+        resolveServiceRoleKey(),
+        {
+          auth: { persistSession: false, autoRefreshToken: false },
+        }
+      );
+      await expect
+        .poll(
+          async () => {
+            const { data, error } = await service
+              .from('knowledge_resources')
+              .select('kind,title')
+              .eq('space_id', org.spaceId);
+            if (error) throw error;
+            return data;
+          },
+          { timeout: 30_000 }
+        )
+        .toEqual(
+          expect.arrayContaining([
+            { kind: 'folder', title: 'New folder' },
+            { kind: 'text', title: 'Untitled' },
+          ])
+        );
+      for (let reload = 0; reload < 2; reload++) {
+        await page.reload();
+        const rows = page.getByTestId('files-section').getByTestId('file-row');
+        await expect(rows).toHaveCount(2, { timeout: 120_000 });
+        await expect(rows.filter({ hasText: 'New folder' })).toBeVisible();
+        await expect(rows.filter({ hasText: 'Untitled' })).toBeVisible();
+        await page.getByTestId('command-palette-trigger').click();
+        for (const title of ['New folder', 'Untitled']) {
+          await page.getByTestId('command-palette-input').fill(title);
+          await expect(
+            page.getByTestId('command-palette-results')
+          ).toContainText(title);
+        }
+        await page.keyboard.press('Escape');
+      }
       await page
         .getByTestId('files-section')
         .getByTestId('file-row')
-        .first()
+        .filter({ hasText: 'Untitled' })
         .click();
       await expect(
         page.locator('[contenteditable="true"]').first()

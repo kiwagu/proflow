@@ -13,7 +13,7 @@ create table blob (
 );
 
 create table file_node (
-  id text primary key check (public.is_entity_id_with_prefix(id, 'fil')),
+  id text primary key check (public.is_entity_id(id)),
   parent_id text references file_node(id) on delete cascade,
   kind text not null check (kind in ('folder', 'document', 'blob')),
   name text not null,
