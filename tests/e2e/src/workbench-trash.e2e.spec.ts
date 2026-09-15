@@ -113,7 +113,9 @@ test('@smoke trash restores original bytes and permanent deletion reclaims only 
     expect(await probe(content)).toEqual({ rows: 1, bytes: content });
     await expect(page.getByTestId('trash-empty')).toBeVisible();
   } finally {
-    await page.context().setOffline(false);
+    // Stop the browser before server cleanup. Reconnecting here would replay
+    // queued graph writes between content deletion and the organization cascade.
+    await page.context().close();
     await deleteOrganizationCascade(org.organizationId);
   }
 });
