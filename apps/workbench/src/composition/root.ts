@@ -19,6 +19,7 @@ import {
   createPglitePackageReader,
   createPglitePackageRepository,
   createPgliteSettingsStore,
+  createPgliteStorageMaintenance,
   type OpenStage,
   openLocalDatabase,
 } from '@workspace/persistence-pglite';
@@ -138,6 +139,12 @@ export async function createAppServices(
     files,
     fileTree,
     blobs,
+    storageMaintenance: createPgliteStorageMaintenance(
+      db,
+      blobs,
+      blobs.packages,
+      files
+    ),
     packages: createPglitePackageRepository(
       db,
       blobs,

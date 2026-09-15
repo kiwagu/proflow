@@ -11,6 +11,7 @@ import type {
   IPackageReader,
   IPackageRepository,
   ISettingsStore,
+  IStorageMaintenance,
 } from '@workspace/domain';
 import type {
   AppDb,
@@ -35,6 +36,7 @@ export interface AppServices {
   packages: IPackageRepository;
   packageList: IPackageReader;
   settings: ISettingsStore;
+  storageMaintenance: IStorageMaintenance;
   graph: GraphReader;
   graphCommands: GraphRepository;
   /** The assistant's conversations: the chats, their list, their messages. */

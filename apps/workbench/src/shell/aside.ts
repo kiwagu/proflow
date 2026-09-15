@@ -9,7 +9,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 
-export type AsidePanel = 'chat' | 'history';
+export type AsidePanel = 'chat' | 'history' | 'trash';
 
 export interface AsideState {
   /** The panel on screen, or `null` when the slot is closed. */
