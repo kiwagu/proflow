@@ -120,6 +120,11 @@ export default defineConfig({
   // PGlite must not be pre-bundled: its worker + WASM asset resolution relies
   // on import.meta.url staying intact.
   optimizeDeps: {
+    // Worker entry points are reached through new Worker(new URL(...)), not
+    // ordinary imports. Scan them up front: discovering their dependencies
+    // after the editor opens can change shared chunks and force a page reload,
+    // discarding the current chat. Keep the page entry in the same scan.
+    entries: ['index.html', '../../packages/*/src/**/*.worker.ts'],
     exclude: ['@electric-sql/pglite', '@electric-sql/pglite-pgvector'],
     // Dependency pre-bundling has its own target, and it defaults to browsers
     // old enough to reject top-level await — which is how the CRDT's WASM
