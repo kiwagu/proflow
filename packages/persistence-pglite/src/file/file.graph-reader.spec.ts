@@ -60,7 +60,7 @@ it('watches the scoped graph, containment, own stars and blob metadata', async (
     "insert into blob (hash, size, mime) values ('reader-hash', 7, 'text/plain')"
   );
   await db.query(
-    "insert into file_node (id, kind, name, blob_hash, size, mime) values ($1, 'blob', 'obsolete name', 'reader-hash', 7, 'text/plain')",
+    "insert into file_node (id, blob_hash, size, mime) values ($1, 'reader-hash', 7, 'text/plain')",
     [file]
   );
   await graph.setStarred(spaceId, text, TEST_USER, true);

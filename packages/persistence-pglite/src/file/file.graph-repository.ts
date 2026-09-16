@@ -79,8 +79,8 @@ export function createGraphFileRepository(
           );
           // Containment belongs to the graph, not to the blob metadata row.
           await tx.query(
-            "insert into file_node (id, kind, name, mime, size, blob_hash) values ($1, 'blob', $2, $3, $4, $5)",
-            [id, name, info.mime, info.size, info.hash]
+            'insert into file_node (id, mime, size, blob_hash) values ($1, $2, $3, $4)',
+            [id, info.mime, info.size, info.hash]
           );
           const result = await graphInTransaction(tx).createNode({
             id,
