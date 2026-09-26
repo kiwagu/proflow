@@ -6,13 +6,19 @@
  * a stale deploy) or a converter that throws must reach the user as one
  * reported error and never as an unhandled rejection behind a `void`.
  */
-import type { IDocumentRepository, IFileRepository } from '@workspace/domain';
+import type {
+  IDocumentRepository,
+  IFileRepository,
+  SerializedTree,
+} from '@workspace/domain';
+import { markdownToState } from '@workspace/lexical-nodes/utils';
 import { err, ok, type Result } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDocumentActions,
   type DocumentActionDeps,
 } from './document-actions';
+import * as markdown from './document-markdown';
 import { createLiveDocuments } from './live-documents';
 
 type Markdown = Awaited<ReturnType<DocumentActionDeps['loadMarkdown']>>;
@@ -132,5 +138,82 @@ describe('importing through the document actions', () => {
       h.actions.importMarkdown!({ name: 'note', text: '# Hi', parentId: null })
     ).resolves.toBeNull();
     expect(h.reportError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the export snapshot belongs to the moment the user asked', () => {
+  const tree = (text: string): SerializedTree =>
+    markdownToState(text).state as unknown as SerializedTree;
+
+  /** A port whose written content is `# Old`, and a loader we release by hand. */
+  function raceHarness() {
+    const live = createLiveDocuments();
+    const downloadText = vi.fn();
+    const reportError = vi.fn();
+    let releaseLoader: () => void = () => {};
+    const loaderReleased = new Promise<void>((resolve) => {
+      releaseLoader = resolve;
+    });
+    const services: DocumentActionDeps['services'] = {
+      documents: {
+        writer: 'test',
+        load: async () =>
+          ok({
+            meta: {
+              id: 'doc-1',
+              title: 'note',
+              kind: 'md',
+              preview: '',
+              starred: false,
+              createdAt: new Date(0),
+              updatedAt: new Date(0),
+            },
+            content: { tree: tree('# Old'), markdown: '# Old' },
+          }),
+      } as unknown as IDocumentRepository,
+      files: {} as unknown as IFileRepository,
+      identity: { userId: 'user-1', spaceId: 'space-1' },
+      reportError,
+    };
+    const actions = createDocumentActions({
+      services,
+      live,
+      // The real converter, behind a loader that waits for the test.
+      loadMarkdown: () => loaderReleased.then(() => markdown),
+      loadDownload: async () => ({ downloadText }) as unknown as Download,
+    });
+    return { actions, live, downloadText, reportError, releaseLoader };
+  }
+
+  it('exports what the editor showed when the command ran, even if the editor closed meanwhile', async () => {
+    const h = raceHarness();
+    const release = h.live.register('doc-1', () => tree('# New words'));
+
+    const exporting = h.actions.exportMarkdown('doc-1');
+    // The user switches documents while the conversion module is loading:
+    // the editor unmounts and lets go of its reader. The save of `# New
+    // words` is still in flight, so the port knows only `# Old`.
+    release();
+    h.releaseLoader();
+    await exporting;
+
+    const [, text] = h.downloadText.mock.calls[0] ?? [];
+    expect(text).toContain('# New words');
+    expect(text).not.toContain('# Old');
+    expect(h.reportError).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the port when nothing was open at the moment of asking', async () => {
+    const h = raceHarness();
+    const exporting = h.actions.exportMarkdown('doc-1');
+    // An editor opening AFTER the command must not change what this export
+    // is about either.
+    h.live.register('doc-1', () => tree('# Later'));
+    h.releaseLoader();
+    await exporting;
+
+    const [, text] = h.downloadText.mock.calls[0] ?? [];
+    expect(text).toContain('# Old');
+    expect(text).not.toContain('# Later');
   });
 });

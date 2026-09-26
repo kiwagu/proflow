@@ -16,7 +16,7 @@ import type {
 } from '@workspace/ai-agent';
 import { markdownToState } from '@workspace/lexical-nodes/utils';
 import { AgentProvider } from '@workspace/workbench-agent';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppServicesProvider } from '../composition/app-services';
 import type { AppServices } from '../composition/services';
 import { act, render, screen } from '../test-utils';
@@ -37,9 +37,11 @@ const DOCUMENT: DocumentMeta = {
   updatedAt: new Date(0),
 };
 
-/** Ports for one document whose saves never land. */
-function stubServices(): AppServices {
+/** Ports for one document whose saves start but never land. */
+function stubServices(): AppServices & { save: ReturnType<typeof vi.fn> } {
+  const save = vi.fn(() => new Promise(() => {}));
   return {
+    save,
     documents: {
       load: () =>
         Promise.resolve({
@@ -49,12 +51,12 @@ function stubServices(): AppServices {
             content: { markdown: '# Title\n\nFirst paragraph.' },
           },
         }),
-      save: () => new Promise(() => {}),
+      save,
     },
     documentVersions: { mark: () => Promise.resolve({ isErr: () => false }) },
     identity: { userId: 'user-1', spaceId: 'space-1' },
     reportError: () => {},
-  } as unknown as AppServices;
+  } as unknown as AppServices & { save: ReturnType<typeof vi.fn> };
 }
 
 function recordingClient(): {
@@ -79,11 +81,12 @@ function Probe({ onLive }: { onLive: (live: LiveDocuments) => void }) {
 const said = (live: LiveDocuments) => JSON.stringify(live.read(DOCUMENT.id));
 
 describe('the open document as the registry sees it', () => {
-  it('answers with what the editor holds, ahead of any save', async () => {
+  it('answers with what the editor holds while its save is still in flight', async () => {
     let live!: LiveDocuments;
     const { client, hooks } = recordingClient();
+    const services = stubServices();
     render(
-      <AppServicesProvider services={stubServices()}>
+      <AppServicesProvider services={services}>
         <LiveDocumentsProvider>
           <Probe onLive={(value) => (live = value)} />
           <AgentProvider client={client}>
@@ -100,9 +103,25 @@ describe('the open document as the registry sees it', () => {
       hooks()!.applyEdit(DOCUMENT.id, { state: next } as EditOutcome, false);
     });
 
-    // No save ever completed, and the registry already says the new text.
+    // The registry already says the new text before any save was even
+    // scheduled…
     expect(said(live)).toContain('Second paragraph.');
     expect(said(live)).not.toContain('First paragraph.');
+
+    // …and still says it once the debounced save has STARTED and hangs: this
+    // is the window the port cannot see into. Reading the registry is not a
+    // write, so no further save is scheduled by the asking.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(services.save).toHaveBeenCalledTimes(1);
+    said(live);
+    said(live);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(services.save).toHaveBeenCalledTimes(1);
+    expect(said(live)).toContain('Second paragraph.');
   });
 
   it('forgets the document when its editor unmounts', async () => {

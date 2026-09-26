@@ -69,13 +69,18 @@ export function createDocumentActions(
     },
 
     async exportMarkdown(documentId) {
+      // The snapshot belongs to the moment the user asked: taken before the
+      // first await, because the editor may close (and let go of its reader)
+      // while the conversion module is still loading, and the port would then
+      // answer with the last WRITTEN state — the very thing this avoids.
+      const held = live.read(documentId);
       try {
         const [{ exportDocumentMarkdown }, { downloadText }] =
           await Promise.all([deps.loadMarkdown(), deps.loadDownload()]);
         const result = await exportDocumentMarkdown(
           services.documents,
           documentId,
-          live
+          { read: () => held }
         );
         if (result.isErr()) {
           services.reportError(result.error);

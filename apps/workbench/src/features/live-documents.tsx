@@ -22,6 +22,10 @@ export interface LiveDocuments {
    * that forgets it again — a release from an older registration of the same
    * document leaves a newer one alone, because a remount registers the new
    * editor before the old one's cleanup runs.
+   *
+   * One editor per document is the contract: the workbench opens a document
+   * in one surface at a time, and the LAST registration owns the id. Two
+   * editors on the same document would need a stack here, not a slot.
    */
   register(documentId: string, read: () => SerializedTree): () => void;
   /** The tree the open editor holds this instant; null when none holds it. */

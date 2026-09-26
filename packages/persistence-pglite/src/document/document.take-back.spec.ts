@@ -13,6 +13,7 @@ import { createGraphFileTreeReader } from '../file/file.graph-reader.js';
 import { createGraphFileRepository } from '../file/file.graph-repository.js';
 import { openTestDb, TEST_USER, testId } from '../graph/graph.test-db.js';
 import { createDocumentCrdtStore } from './document.crdt-store.js';
+import { createPgliteDocumentListReader } from './document.reader.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
 
 describe('taking a created document back', () => {
@@ -72,6 +73,46 @@ describe('taking a created document back', () => {
       // The compensation that works: take the node back.
       expect((await files.softDelete(nodeId)).isOk()).toBe(true);
       await expect.poll(() => !listsNode()).toBe(true);
+    } finally {
+      stop();
+      await db.query('select 1');
+    }
+  });
+
+  it('drops a document from the recent list once its node is taken back', async () => {
+    // The recent list is what the assistant reads as the documents that
+    // exist; a document whose node the explorer no longer shows must not
+    // survive there as a phantom.
+    const spaceId = testId('spc');
+    const documents = createPgliteDocumentRepository(
+      db,
+      createDocumentCrdtStore(db),
+      spaceId,
+      TEST_USER
+    );
+    const files = createGraphFileRepository(
+      db,
+      {} as unknown as IBlobStore,
+      spaceId,
+      TEST_USER
+    );
+    const recent = createPgliteDocumentListReader(db);
+    const id = testId('doc');
+    const nodeId = testId('knr');
+    let listed: string[] = [];
+    const stop = recent.watchRecent((rows) => {
+      listed = rows.map((row) => row.id);
+    });
+    try {
+      expect(
+        (
+          await documents.create({ title: 'note', parentId: null, id, nodeId })
+        ).isOk()
+      ).toBe(true);
+      await expect.poll(() => listed.includes(id)).toBe(true);
+
+      expect((await files.softDelete(nodeId)).isOk()).toBe(true);
+      await expect.poll(() => listed.includes(id)).toBe(false);
     } finally {
       stop();
       await db.query('select 1');

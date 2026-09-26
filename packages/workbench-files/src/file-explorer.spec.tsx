@@ -3,7 +3,7 @@ import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { act } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { FileExplorer } from './file-explorer.js';
-import { FileSelectionProvider } from './file-selection.js';
+import { FileSelectionProvider, useFileSelection } from './file-selection.js';
 import { FileServicesProvider, type FileServices } from './file-services.js';
 import { fakeServices, testNode } from './testing.js';
 
@@ -581,5 +581,132 @@ describe('what a markdown file may contain', () => {
     expect(importMarkdown.mock.calls[0]?.[0]).toMatchObject({
       name: 'Untitled',
     });
+  });
+});
+
+describe('a pick made while an import is still answering', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const noteNode = testNode({
+    id: 'node-note',
+    kind: 'document',
+    name: 'note',
+    documentId: 'doc-1',
+    mime: null,
+    blobHash: null,
+  });
+  const other = testNode({ id: 'other', name: 'other.txt' });
+  const selectedName = () =>
+    screen
+      .queryAllByTestId('file-row')
+      .find((row) => row.querySelector('[aria-current="true"]'))
+      ?.textContent?.trim();
+  /** The palette's route to the same selection, from outside the explorer. */
+  let selectFromOutside: (id: string) => void = () => {};
+  function Palette() {
+    selectFromOutside = useFileSelection().setOpenFileId;
+    return null;
+  }
+  const deferredImport = () => {
+    let finish: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn(
+      () => new Promise<{ id: string }>((resolve) => (finish = resolve))
+    );
+    return { importMarkdown, finish: (id: string) => finish({ id }) };
+  };
+
+  it('keeps a pick by hand made before the import answered', async () => {
+    const tree = fakeServices([other]);
+    const { importMarkdown, finish } = deferredImport();
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    act(() => tree.deliver([other, noteNode]));
+
+    await act(async () => {
+      screen.getByText('other.txt').click();
+    });
+    await act(async () => finish('doc-1'));
+
+    expect(selectedName()).toBe('other.txt');
+  });
+
+  it('keeps a pick made from the palette before the import answered', async () => {
+    const tree = fakeServices([other]);
+    const { importMarkdown, finish } = deferredImport();
+    mount(
+      tree.services,
+      <>
+        <Palette />
+        <FileExplorer documents={{ create, importMarkdown }} />
+      </>
+    );
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    act(() => tree.deliver([other, noteNode]));
+
+    act(() => selectFromOutside('other'));
+    await act(async () => finish('doc-1'));
+
+    expect(selectedName()).toBe('other.txt');
+  });
+
+  it('survives an unrelated tree delivery while still waiting for the node', async () => {
+    const tree = fakeServices([other]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await act(async () => {
+      screen.getByText('other.txt').click();
+    });
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    // Something else changes in the tree before the awaited node arrives.
+    act(() =>
+      tree.deliver([other, testNode({ id: 'stranger', name: 'stranger.txt' })])
+    );
+    act(() =>
+      tree.deliver([
+        other,
+        testNode({ id: 'stranger', name: 'stranger.txt' }),
+        noteNode,
+      ])
+    );
+
+    await waitFor(() => expect(selectedName()).toBe('note'));
+  });
+
+  it('keeps a pick that lands in the same commit as the awaited node', async () => {
+    const tree = fakeServices([other]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <>
+        <Palette />
+        <FileExplorer documents={{ create, importMarkdown }} />
+      </>
+    );
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      selectFromOutside('other');
+      tree.deliver([other, noteNode]);
+    });
+
+    await waitFor(() => expect(rowNames()).toContain('note'));
+    expect(selectedName()).toBe('other.txt');
   });
 });

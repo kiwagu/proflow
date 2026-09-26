@@ -196,6 +196,18 @@ export function FileExplorer({
   // again when the answer then arrives, not only when the tree moves.
   const awaiting = useRef<string | undefined>(undefined);
   const [awaitingChanged, setAwaitingChanged] = useState(0);
+  // Every change of the selection, whoever made it — a pick by hand, the last
+  // file of a batch, the palette — outranks a document still waiting on its
+  // node, so the wait ends here. The generation lets an operation that was
+  // already running when the user picked (its answer not in yet) see that it
+  // has been outranked and not start a wait of its own. Declared before the
+  // match below so that a pick and the awaited node landing in one commit
+  // resolve in the user's favour.
+  const selectionGeneration = useRef(0);
+  useEffect(() => {
+    selectionGeneration.current += 1;
+    awaiting.current = undefined;
+  }, [openFileId]);
   useEffect(() => {
     const documentId = awaiting.current;
     if (!documentId) return;
@@ -205,22 +217,20 @@ export function FileExplorer({
     setOpenFileId(node.id);
     reveal(node.id, nodes);
   }, [nodes, awaitingChanged, setOpenFileId, reveal]);
-  // Any selection made meanwhile — a pick by hand, the last file of a batch,
-  // the palette — outranks a document still waiting on its node: the wait
-  // ends with whatever the user saw selected, never by stealing it back.
-  useEffect(() => {
-    if (openFileId === undefined || !awaiting.current) return;
-    const awaited = nodes.find((n) => n.documentId === awaiting.current);
-    if (awaited?.id !== openFileId) awaiting.current = undefined;
-  }, [openFileId, nodes]);
+  /** Waits for `documentId`'s node — unless the user picked something since `generation`. */
+  const awaitDocumentSince = (documentId: string, generation: number) => {
+    if (selectionGeneration.current !== generation) return;
+    awaiting.current = documentId;
+    setAwaitingChanged((n) => n + 1);
+  };
 
   const createDocument = async () => {
     if (!documents) return;
     const parentId = targetFolder();
+    const generation = selectionGeneration.current;
     const created = await documents.create({ title: 'Untitled', parentId });
     if (!created) return;
-    awaiting.current = created.id;
-    setAwaitingChanged((n) => n + 1);
+    awaitDocumentSince(created.id, generation);
   };
 
   /**
@@ -255,6 +265,7 @@ export function FileExplorer({
         // to show the progress of, so it never gets a placeholder row, and
         // it is selected the way a new document is — once its node arrives.
         if (documents?.importMarkdown && isMarkdownFile(file)) {
+          const generation = selectionGeneration.current;
           try {
             const text = await readMarkdownText(file);
             const created = await documents.importMarkdown({
@@ -262,8 +273,7 @@ export function FileExplorer({
               text,
               parentId,
             });
-            if (created) awaiting.current = created.id;
-            setAwaitingChanged((n) => n + 1);
+            if (created) awaitDocumentSince(created.id, generation);
           } catch (e) {
             reportError(
               e instanceof MarkdownEncodingError
