@@ -710,3 +710,104 @@ describe('a pick made while an import is still answering', () => {
     expect(selectedName()).toBe('other.txt');
   });
 });
+
+describe('automatic selections inside one batch', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const documentNode = (name: string, documentId: string) =>
+    testNode({
+      id: `node-${name}`,
+      kind: 'document',
+      name,
+      documentId,
+      mime: null,
+      blobHash: null,
+    });
+  const selectedName = () =>
+    screen
+      .queryAllByTestId('file-row')
+      .find((row) => row.querySelector('[aria-current="true"]'))
+      ?.textContent?.trim();
+
+  it('lets the second markdown file of a batch take the selection after the first opened itself', async () => {
+    const tree = fakeServices([]);
+    let finishA: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn((input: { name: string }) =>
+      input.name === 'a'
+        ? new Promise<{ id: string }>((resolve) => (finishA = resolve))
+        : Promise.resolve({ id: 'doc-b' })
+    );
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([
+      new File(['# A'], 'a.md', { type: 'text/markdown' }),
+      new File(['# B'], 'b.md', { type: 'text/markdown' }),
+    ]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    // A's node is already in the tree when A answers: A opens itself, and
+    // that automatic opening is not a pick by the user.
+    act(() => tree.deliver([documentNode('a', 'doc-a')]));
+    await act(async () => finishA({ id: 'doc-a' }));
+    await waitFor(() => expect(selectedName()).toBe('a'));
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(2));
+
+    act(() =>
+      tree.deliver([documentNode('a', 'doc-a'), documentNode('b', 'doc-b')])
+    );
+    await waitFor(() => expect(selectedName()).toBe('b'));
+  });
+
+  it('lets a markdown file that follows an attachment take the selection', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([
+      new File(['x'], 'photo.png', { type: 'image/png' }),
+      new File(['# Hi'], 'note.md', { type: 'text/markdown' }),
+    ]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    act(() => tree.deliver([...tree.nodes(), documentNode('note', 'doc-1')]));
+    await waitFor(() => expect(selectedName()).toBe('note'));
+  });
+
+  it('treats picking the already selected file again as a pick', async () => {
+    const other = testNode({ id: 'other', name: 'other.txt' });
+    const tree = fakeServices([other]);
+    let finish: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn(
+      () => new Promise<{ id: string }>((resolve) => (finish = resolve))
+    );
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await act(async () => {
+      screen.getByText('other.txt').click();
+    });
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    act(() => tree.deliver([other, documentNode('note', 'doc-1')]));
+
+    // The user confirms the file they already have open, while the import
+    // is still answering.
+    await act(async () => {
+      screen.getByText('other.txt').click();
+    });
+    await act(async () => finish({ id: 'doc-1' }));
+
+    expect(selectedName()).toBe('other.txt');
+  });
+});

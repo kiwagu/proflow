@@ -73,8 +73,8 @@ export function createDocumentActions(
       // first await, because the editor may close (and let go of its reader)
       // while the conversion module is still loading, and the port would then
       // answer with the last WRITTEN state — the very thing this avoids.
-      const held = live.read(documentId);
       try {
+        const held = live.read(documentId);
         const [{ exportDocumentMarkdown }, { downloadText }] =
           await Promise.all([deps.loadMarkdown(), deps.loadDownload()]);
         const result = await exportDocumentMarkdown(

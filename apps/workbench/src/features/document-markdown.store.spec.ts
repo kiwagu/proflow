@@ -66,27 +66,43 @@ describe('a markdown import whose content cannot be written', () => {
       return rows;
     };
 
-    const result = await importMarkdownDocument(
-      {
-        documents: { ...documents, save: async () => err('disk is full') },
-        files,
-      },
-      AUTHOR,
-      { name: 'note', text: '# Hi', parentId: null }
-    );
-    expect(result.isErr() && result.error).toBe('disk is full');
-    await db.query('select 1');
+    // Readers that were already listening when the import failed — the
+    // session in which it happened — and fresh ones, the next session.
+    let treeLive: string[] = [];
+    let recentLive: string[] = [];
+    const stopTree = treeOf().watchAll((rows) => {
+      treeLive = rows.map((node) => node.name);
+    });
+    const stopRecent = recentOf().watchRecent((rows) => {
+      recentLive = rows.map((document) => document.title);
+    });
+    try {
+      const result = await importMarkdownDocument(
+        {
+          documents: { ...documents, save: async () => err('disk is full') },
+          files,
+        },
+        AUTHOR,
+        { name: 'note', text: '# Hi', parentId: null }
+      );
+      expect(result.isErr() && result.error).toBe('disk is full');
 
-    const treeNow = await once(treeOf().watchAll);
-    expect(treeNow.map((node) => node.name)).not.toContain('note');
-    const recentNow = await once(recentOf().watchRecent);
-    expect(recentNow.map((document) => document.title)).not.toContain('note');
+      // The live subscriptions settle on a tree and a list without the
+      // document; a window in which they showed it is what a user of the
+      // running session would have glimpsed, and is allowed to close.
+      await expect.poll(() => treeLive.includes('note')).toBe(false);
+      await expect.poll(() => recentLive.includes('note')).toBe(false);
 
-    // The next session opens fresh readers over the same database.
-    const treeNext = await once(treeOf().watchAll);
-    expect(treeNext.map((node) => node.name)).not.toContain('note');
-    const recentNext = await once(recentOf().watchRecent);
-    expect(recentNext.map((document) => document.title)).not.toContain('note');
+      const treeNext = await once(treeOf().watchAll);
+      expect(treeNext.map((node) => node.name)).not.toContain('note');
+      const recentNext = await once(recentOf().watchRecent);
+      expect(recentNext.map((document) => document.title)).not.toContain(
+        'note'
+      );
+    } finally {
+      stopTree();
+      stopRecent();
+    }
     await db.query('select 1');
   });
 });

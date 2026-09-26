@@ -93,6 +93,18 @@ describe('exporting through the document actions', () => {
     expect(h.downloadText).not.toHaveBeenCalled();
   });
 
+  it('reports a reader that threw while taking the snapshot', async () => {
+    const live = createLiveDocuments();
+    live.register('doc-1', () => {
+      throw new Error('snapshot failed');
+    });
+    const h = harness({ live });
+    await expect(h.actions.exportMarkdown('doc-1')).resolves.toBeUndefined();
+    expect(h.reportError).toHaveBeenCalledTimes(1);
+    expect(h.reportError.mock.calls[0]?.[0]).toContain('snapshot failed');
+    expect(h.downloadText).not.toHaveBeenCalled();
+  });
+
   it('reports an export the port refused', async () => {
     const h = harness();
     h.exportDocumentMarkdown.mockImplementationOnce(async () => err('gone'));
