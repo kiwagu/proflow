@@ -89,6 +89,7 @@
   "workbench.files.error.discardUnpacked": "No se pudieron eliminar los archivos desempaquetados: {reason}",
   "workbench.files.error.createFolder": "No se pudo crear la carpeta: {reason}",
   "workbench.files.error.import": "No se pudo importar {name}: {reason}",
+  "workbench.files.error.importEncoding": "No se pudo importar {name}: el archivo no es texto UTF-8",
   "workbench.palette.title": "Buscar en la base de conocimiento",
   "workbench.palette.description": "Encuentra un recurso por título y ábrelo.",
   "workbench.palette.placeholder": "Buscar recursos…",

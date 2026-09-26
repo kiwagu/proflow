@@ -52,6 +52,7 @@ export type FileExplorerLabels = {
     discardUnpacked: (reason: string) => string;
     createFolder: (reason: string) => string;
     import: (name: string, reason: string) => string;
+    importEncoding: (name: string) => string;
   };
 };
 
@@ -100,6 +101,8 @@ export const defaultFileExplorerLabels: FileExplorerLabels = {
       `Could not delete the unpacked files: ${reason}`,
     createFolder: (reason) => `Could not create the folder: ${reason}`,
     import: (name, reason) => `Could not import ${name}: ${reason}`,
+    importEncoding: (name) =>
+      `Could not import ${name}: the file is not UTF-8 text`,
   },
 };
 
@@ -158,6 +161,8 @@ export function buildFileExplorerLabels(
         t('workbench.files.error.createFolder', { reason }),
       import: (name, reason) =>
         t('workbench.files.error.import', { name, reason }),
+      importEncoding: (name) =>
+        t('workbench.files.error.importEncoding', { name }),
     },
   };
 }

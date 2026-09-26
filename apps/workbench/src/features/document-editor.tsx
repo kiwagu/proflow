@@ -27,6 +27,7 @@ import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 import { createAgentSeam } from './document-editor.agent-state';
 import { useDocumentRevision } from './document-revision';
+import { useLiveDocuments } from './live-documents';
 
 /** Keystrokes settle for this long before the document is written. */
 const SAVE_DEBOUNCE_MS = 400;
@@ -170,9 +171,19 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
    */
   const [agent] = useState(createAgentSeam);
   useEditorBridge(agent.bridge);
+  // The surfaces that act on this document from outside (an export from the
+  // explorer's menu or the palette) ask the registry, and the registry asks
+  // the editor — a plain serialization at the moment of asking, never a
+  // write, so the answer is fresher than anything the port has been told.
+  const live = useLiveDocuments();
   const onWrapper = useCallback(
     (wrapper: LexicalWrapper) => {
       edited.current = false;
+      const release = live.register(
+        document.id,
+        () =>
+          wrapper.editor.getEditorState().toJSON() as unknown as SerializedTree
+      );
       if (isWrapperWithIds(wrapper)) {
         agent.setLive({
           documentId: document.id,
@@ -201,11 +212,12 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       const cleanup = wrapper.cleanup;
       wrapper.cleanup = () => {
         agent.setLive(null);
+        release();
         unregister();
         cleanup();
       };
     },
-    [persist, document.id, agent]
+    [persist, document.id, agent, live]
   );
 
   if (!initial)

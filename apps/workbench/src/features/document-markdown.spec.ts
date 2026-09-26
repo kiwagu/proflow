@@ -8,6 +8,7 @@
 import type {
   DocumentMeta,
   IDocumentRepository,
+  IFileRepository,
   SerializedNode,
   SerializedTree,
 } from '@workspace/domain';
@@ -35,20 +36,27 @@ function meta(id: string, title: string): DocumentMeta {
   };
 }
 
-/** The port in memory: records what it was asked, serves one document. */
+/** The ports in memory: they record what they were asked, and serve one document. */
 function fakeRepository(
   options: {
     content?: SerializedTree;
     saveFails?: string;
     loadFails?: string;
+    nodeDeleteFails?: string;
   } = {}
 ) {
   const saved: Parameters<IDocumentRepository['save']>[0][] = [];
-  const deleted: string[] = [];
+  const created: NonNullable<Parameters<IDocumentRepository['create']>[0]>[] =
+    [];
+  const documentDeletes: string[] = [];
+  const nodeDeletes: string[] = [];
   const repository: IDocumentRepository = {
     writer: 'test',
     invalidate: () => {},
-    create: vi.fn(async (input) => ok(meta('doc-1', input?.title ?? ''))),
+    create: vi.fn(async (input) => {
+      created.push(input ?? {});
+      return ok(meta('doc-1', input?.title ?? ''));
+    }),
     load: vi.fn(async (id) =>
       options.loadFails
         ? err(options.loadFails)
@@ -66,12 +74,23 @@ function fakeRepository(
     }),
     rename: async () => ok(undefined),
     softDelete: vi.fn(async (id) => {
-      deleted.push(id);
+      documentDeletes.push(id);
       return ok(undefined);
     }),
   };
-  return { repository, saved, deleted };
+  const files = {
+    softDelete: vi.fn(async (id: string) => {
+      nodeDeletes.push(id);
+      return options.nodeDeleteFails
+        ? err(options.nodeDeleteFails)
+        : ok(undefined);
+    }),
+  } as unknown as IFileRepository;
+  return { repository, files, saved, created, documentDeletes, nodeDeletes };
 }
+
+/** No editor holds anything open. */
+const NOTHING_OPEN = { read: () => null };
 
 /** Every node of the tree, depth first. */
 function nodesOf(node: SerializedNode): SerializedNode[] {
@@ -80,18 +99,24 @@ function nodesOf(node: SerializedNode): SerializedNode[] {
 
 describe('importing markdown as a document', () => {
   it('saves a tree carrying the markdown structure under the given title', async () => {
-    const { repository, saved } = fakeRepository();
+    const { repository, files, saved } = fakeRepository();
 
-    const result = await importMarkdownDocument(repository, AUTHOR, {
-      name: 'note',
-      text: '# Title\n\nPara **bold**',
-      parentId: 'folder-1',
-    });
+    const result = await importMarkdownDocument(
+      { documents: repository, files },
+      AUTHOR,
+      {
+        name: 'note',
+        text: '# Title\n\nPara **bold**',
+        parentId: 'folder-1',
+      }
+    );
 
     expect(result.isOk() && result.value).toEqual({ id: 'doc-1' });
+    // The importer names the node it creates, so it can take it back.
     expect(repository.create).toHaveBeenCalledWith({
       title: 'note',
       parentId: 'folder-1',
+      nodeId: expect.stringMatching(/^knr_/) as string,
     });
     const [write] = saved;
     expect(write?.id).toBe('doc-1');
@@ -105,9 +130,9 @@ describe('importing markdown as a document', () => {
   });
 
   it('reads the internal mention form as well as the portable one', async () => {
-    const { repository, saved } = fakeRepository();
+    const { repository, files, saved } = fakeRepository();
 
-    await importMarkdownDocument(repository, AUTHOR, {
+    await importMarkdownDocument({ documents: repository, files }, AUTHOR, {
       name: 'note',
       text: `${MENTION}\n\nsee [Plan](resource://knr_2)`,
       parentId: null,
@@ -120,27 +145,88 @@ describe('importing markdown as a document', () => {
   });
 
   it('takes the document back when its content cannot be written', async () => {
-    const { repository, deleted } = fakeRepository({
-      saveFails: 'disk is full',
-    });
+    const { repository, files, nodeDeletes, documentDeletes, created } =
+      fakeRepository({ saveFails: 'disk is full' });
 
-    const result = await importMarkdownDocument(repository, AUTHOR, {
-      name: 'note',
-      text: '# Hi',
-      parentId: null,
-    });
+    const result = await importMarkdownDocument(
+      { documents: repository, files },
+      AUTHOR,
+      {
+        name: 'note',
+        text: '# Hi',
+        parentId: null,
+      }
+    );
 
     expect(result.isErr() && result.error).toBe('disk is full');
-    expect(deleted).toEqual(['doc-1']);
+    // The explorer lists graph nodes, not document rows: only taking the
+    // node back removes the shell from the tree, so the importer must know
+    // the node's id — it handed it to `create` itself.
+    const nodeId = created[0]?.nodeId;
+    expect(nodeId).toMatch(/^knr_/);
+    expect(nodeDeletes).toEqual([nodeId]);
+    expect(documentDeletes).toEqual([]);
+  });
+
+  it('says so when the empty document could not be taken back either', async () => {
+    const { repository, files } = fakeRepository({
+      saveFails: 'disk is full',
+      nodeDeleteFails: 'locked',
+    });
+
+    const result = await importMarkdownDocument(
+      { documents: repository, files },
+      AUTHOR,
+      { name: 'note', text: '# Hi', parentId: null }
+    );
+
+    expect(result.isErr()).toBe(true);
+    const reason = result.isErr() ? result.error : '';
+    expect(reason).toContain('disk is full');
+    expect(reason).toContain('locked');
   });
 });
 
 describe('exporting a document as portable markdown', () => {
+  it('exports what the open editor holds, not the last written state', async () => {
+    // The port lags the editor by a debounce, an in-flight write and its
+    // retry; the user exports what they see.
+    const written = markdownToState('# Old').state as unknown as SerializedTree;
+    const held = markdownToState('# New words')
+      .state as unknown as SerializedTree;
+    const { repository } = fakeRepository({ content: written });
+
+    const result = await exportDocumentMarkdown(repository, 'doc-1', {
+      read: (id) => (id === 'doc-1' ? held : null),
+    });
+
+    const exported = result.isOk() ? result.value : null;
+    expect(exported?.markdown).toContain('# New words');
+    expect(exported?.markdown).not.toContain('# Old');
+  });
+
+  it('falls back to the written state for a document no editor holds', async () => {
+    const written = markdownToState('# Old').state as unknown as SerializedTree;
+    const { repository } = fakeRepository({ content: written });
+
+    const result = await exportDocumentMarkdown(
+      repository,
+      'doc-1',
+      NOTHING_OPEN
+    );
+
+    expect(result.isOk() ? result.value.markdown : '').toContain('# Old');
+  });
+
   it('renders an own node in its portable form, never its internal tag', async () => {
     const content = markdownToState(MENTION).state as unknown as SerializedTree;
     const { repository } = fakeRepository({ content });
 
-    const result = await exportDocumentMarkdown(repository, 'doc-1');
+    const result = await exportDocumentMarkdown(
+      repository,
+      'doc-1',
+      NOTHING_OPEN
+    );
 
     expect(result.isOk()).toBe(true);
     const exported = result.isOk() ? result.value : null;
@@ -152,7 +238,11 @@ describe('exporting a document as portable markdown', () => {
   it('reports a document that cannot be read', async () => {
     const { repository } = fakeRepository({ loadFails: 'gone' });
 
-    const result = await exportDocumentMarkdown(repository, 'doc-1');
+    const result = await exportDocumentMarkdown(
+      repository,
+      'doc-1',
+      NOTHING_OPEN
+    );
 
     expect(result.isErr() && result.error).toBe('gone');
   });

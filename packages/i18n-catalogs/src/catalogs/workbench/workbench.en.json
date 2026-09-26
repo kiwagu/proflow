@@ -89,6 +89,7 @@
   "workbench.files.error.discardUnpacked": "Could not delete the unpacked files: {reason}",
   "workbench.files.error.createFolder": "Could not create the folder: {reason}",
   "workbench.files.error.import": "Could not import {name}: {reason}",
+  "workbench.files.error.importEncoding": "Could not import {name}: the file is not UTF-8 text",
   "workbench.palette.title": "Search the knowledge base",
   "workbench.palette.description": "Find a resource by title and open it.",
   "workbench.palette.placeholder": "Search resources…",

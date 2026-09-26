@@ -15,7 +15,6 @@ import {
   FileServicesProvider,
   useFileNodes,
   useFileSelection,
-  type DocumentActions,
   type FileExplorerLabels,
   type FileServices,
 } from '@workspace/workbench-files';
@@ -38,7 +37,7 @@ import {
   type HistoryLabels,
 } from '@workspace/workbench-editor';
 import { History, MessageSquare, Search, Trash2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import {
   CHAT_PANEL_HOTKEY,
@@ -50,6 +49,7 @@ import {
   defaultChatPanelLabels,
   type ChatPanelLabels,
 } from './features/chat/chat.labels';
+import { createDocumentActions } from './features/document-actions';
 import { DocumentPane } from './features/document-pane';
 import { DocumentRevisionProvider } from './features/document-revision';
 import {
@@ -57,6 +57,10 @@ import {
   HISTORY_PANEL_WIDTH,
 } from './features/history/history.constants';
 import { HistoryPanelContainer } from './features/history/history.container';
+import {
+  LiveDocumentsProvider,
+  useLiveDocuments,
+} from './features/live-documents';
 import { TrashPanel } from './features/trash/trash.panel';
 import { useWorkbenchTranslator } from './i18n';
 import { useAside } from './shell/aside';
@@ -106,7 +110,11 @@ export function App() {
                 fact that a restore rewrote the open document has to be
                 shared above both of them. */}
             <DocumentRevisionProvider>
-              <Workbench />
+              {/* Likewise for what the open editor holds: the export in the
+                  explorer's menu reads it from outside the pane. */}
+              <LiveDocumentsProvider>
+                <Workbench />
+              </LiveDocumentsProvider>
             </DocumentRevisionProvider>
           </FileSelectionProvider>
         </FileServicesProvider>
@@ -154,65 +162,19 @@ function Workbench() {
     [t]
   );
 
-  /**
-   * The document as portable markdown, handed to the browser as a download.
-   *
-   * The headless editor and its transformers are the editor's weight, so
-   * they load with the first export rather than with the app — the same way
-   * the editor pane itself does.
-   */
-  const exportMarkdown = useCallback(
-    async (documentId: string) => {
-      const [{ exportDocumentMarkdown }, { downloadText }] = await Promise.all([
-        import('./features/document-markdown'),
-        import('./features/download'),
-      ]);
-      const result = await exportDocumentMarkdown(
-        services.documents,
-        documentId
-      );
-      if (result.isErr()) {
-        services.reportError(result.error);
-        return;
-      }
-      downloadText(
-        `${result.value.title}.md`,
-        result.value.markdown,
-        'text/markdown'
-      );
-    },
-    [services]
-  );
-
-  // A document is created through the document port and opened by the
-  // file node the port lists it under — the explorer resolves the node.
-  const documents = useMemo<DocumentActions>(
-    () => ({
-      async create({ title, parentId }) {
-        const result = await services.documents.create({ title, parentId });
-        if (result.isErr()) {
-          services.reportError(result.error);
-          return null;
-        }
-        return { id: result.value.id };
-      },
-      async importMarkdown({ name, text, parentId }) {
-        const { importMarkdownDocument } =
-          await import('./features/document-markdown');
-        const result = await importMarkdownDocument(
-          services.documents,
-          { user: services.identity.userId, src: 'human' },
-          { name, text, parentId }
-        );
-        if (result.isErr()) {
-          services.reportError(result.error);
-          return null;
-        }
-        return { id: result.value.id };
-      },
-      exportMarkdown,
-    }),
-    [services, exportMarkdown]
+  // Everything the explorer and the palette do to a document, over the ports;
+  // the conversion modules load on first use so the headless editor stays out
+  // of the boot chunk, the same way the editor pane does.
+  const live = useLiveDocuments();
+  const documents = useMemo(
+    () =>
+      createDocumentActions({
+        services,
+        live,
+        loadMarkdown: () => import('./features/document-markdown'),
+        loadDownload: () => import('./features/download'),
+      }),
+    [services, live]
   );
 
   // What the palette can do, beyond finding: the open document's export.
@@ -225,11 +187,11 @@ function Workbench() {
               label: t
                 ? t('workbench.palette.command.exportMarkdown')
                 : 'Export as Markdown',
-              run: () => void exportMarkdown(openDocumentId),
+              run: () => void documents.exportMarkdown(openDocumentId),
             },
           ]
         : [],
-    [openDocumentId, exportMarkdown, t]
+    [openDocumentId, documents, t]
   );
 
   const paletteHandlers = useMemo<CommandPaletteHandlers>(

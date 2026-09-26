@@ -28,7 +28,12 @@ import {
   pendingToShow,
   type TreeItem,
 } from './file-tree.js';
-import { documentTitleOf, isMarkdownFile } from './markdown-file.js';
+import {
+  documentTitleOf,
+  isMarkdownFile,
+  MarkdownEncodingError,
+  readMarkdownText,
+} from './markdown-file.js';
 import { useFileDrop } from './use-file-drop.js';
 
 /**
@@ -177,31 +182,93 @@ export function FileExplorer({
   };
 
   const open = (node: FileNode) => {
-    setOpenFileId(node.id);
+    pick(node.id);
     if (node.kind === 'folder') toggle(node.id);
   };
 
   // A document is created through the document surface, and its file node
   // arrives separately through the live tree. Selecting it therefore has
   // to wait for that delivery — remembering which document to select and
-  // reacting when it lands, rather than polling for it.
+  // reacting when it lands, rather than polling for it. The ref holds WHICH
+  // document is awaited; the counter says THAT it changed, because the node
+  // may land BEFORE the surface answers (an optimistic tree publishes it
+  // while the content is still being written) and the match below must run
+  // again when the answer then arrives, not only when the tree moves.
   const awaiting = useRef<string | undefined>(undefined);
+  const [awaitingChanged, setAwaitingChanged] = useState(0);
+  // Every change of the selection, whoever made it — a pick by hand, the last
+  // file of a batch, the palette — outranks a document still waiting on its
+  // node, so the wait ends here. The generation lets an operation that was
+  // already running when the user picked (its answer not in yet) see that it
+  // has been outranked and not start a wait of its own. Declared before the
+  // match below so that a pick and the awaited node landing in one commit
+  // resolve in the user's favour.
+  const selectionGeneration = useRef(0);
+  // A selection this surface makes FOR the user — an import that opens
+  // itself, the next file of a batch — carries no intent of theirs, so it
+  // must not count as a pick against the operations still answering; the id
+  // is remembered so the effect below can tell it from the user's own.
+  const ownSelection = useRef<string | undefined>(undefined);
+  // The selection as last committed, for the async paths below: their
+  // closures may hold an older render's value.
+  const latestOpenFileId = useRef(openFileId);
+  useEffect(() => {
+    // Whatever transition this is, it consumes the marker: a marker that
+    // outlived its own transition would later disguise a pick by the user.
+    const own = ownSelection.current;
+    ownSelection.current = undefined;
+    latestOpenFileId.current = openFileId;
+    if (openFileId !== undefined && openFileId === own) return;
+    selectionGeneration.current += 1;
+    awaiting.current = undefined;
+  }, [openFileId]);
+  /**
+   * Marks the transition an automatic selection is about to cause. A
+   * selection that changes nothing — the id already committed, or a batch of
+   * automatic selections that ends where it started — causes no transition
+   * and so no effect to consume a marker: it must leave none behind, or the
+   * user's next real pick of that file would pass for ours.
+   */
+  const markOwn = (id: string) => {
+    ownSelection.current = id === latestOpenFileId.current ? undefined : id;
+  };
   useEffect(() => {
     const documentId = awaiting.current;
     if (!documentId) return;
     const node = nodes.find((n) => n.documentId === documentId);
     if (!node) return;
     awaiting.current = undefined;
+    markOwn(node.id);
     setOpenFileId(node.id);
     reveal(node.id, nodes);
-  }, [nodes, setOpenFileId, reveal]);
+  }, [nodes, awaitingChanged, setOpenFileId, reveal]);
+  /** Waits for `documentId`'s node — unless the user picked something since `generation`. */
+  const awaitDocumentSince = (documentId: string, generation: number) => {
+    if (selectionGeneration.current !== generation) return;
+    awaiting.current = documentId;
+    setAwaitingChanged((n) => n + 1);
+  };
+  /** The latest import wins: selecting it ends whatever an earlier one still waited for. */
+  const selectAutomatically = (id: string) => {
+    awaiting.current = undefined;
+    markOwn(id);
+    setOpenFileId(id);
+  };
+  /** A pick by the user, counted even when it names the file already open. */
+  const pick = (id: string) => {
+    selectionGeneration.current += 1;
+    awaiting.current = undefined;
+    ownSelection.current = undefined;
+    setOpenFileId(id);
+  };
 
   const createDocument = async () => {
     if (!documents) return;
     const parentId = targetFolder();
+    const generation = selectionGeneration.current;
     const created = await documents.create({ title: 'Untitled', parentId });
     if (!created) return;
-    awaiting.current = created.id;
+    awaitDocumentSince(created.id, generation);
   };
 
   /**
@@ -228,72 +295,74 @@ export function FileExplorer({
     } else reportError(labels.errors.createFolder(created.error));
   };
 
-  const importFiles = useCallback(
-    async (list: File[], parentId: string | null) => {
-      if (parentId) reveal(parentId, nodes);
-      for (const file of list) {
-        // A markdown file becomes a document, not bytes: there is no upload
-        // to show the progress of, so it never gets a placeholder row, and
-        // it is selected the way a new document is — once its node arrives.
-        if (documents?.importMarkdown && isMarkdownFile(file)) {
-          try {
-            const created = await documents.importMarkdown({
-              name: documentTitleOf(file.name),
-              text: await file.text(),
-              parentId,
-            });
-            if (created) awaiting.current = created.id;
-          } catch (e) {
-            reportError(labels.errors.import(file.name, String(e)));
-          }
-          continue;
-        }
-        const id = newId('knowledgeResource');
-        setPending((prev) => [
-          ...prev,
-          { id, name: file.name, parentId, progress: 0 },
-        ]);
+  // Not memoized: the helpers it calls are plain functions of this render,
+  // and the drop hook re-binds its handlers on every callback change anyway.
+  const importFiles = async (list: File[], parentId: string | null) => {
+    if (parentId) reveal(parentId, nodes);
+    for (const file of list) {
+      // A markdown file becomes a document, not bytes: there is no upload
+      // to show the progress of, so it never gets a placeholder row, and
+      // it is selected the way a new document is — once its node arrives.
+      if (documents?.importMarkdown && isMarkdownFile(file)) {
+        const generation = selectionGeneration.current;
         try {
-          const result = await files.importFile({
-            id,
+          const text = await readMarkdownText(file);
+          const created = await documents.importMarkdown({
+            name: documentTitleOf(file.name) || labels.row.untitled,
+            text,
             parentId,
-            name: file.name,
-            blob: file,
-            onProgress: (done, total) =>
-              setPending((prev) =>
-                prev.map((p) =>
-                  p.id === id ? { ...p, progress: total ? done / total : 0 } : p
-                )
-              ),
           });
-          if (result.isOk()) setOpenFileId(result.value.id);
-          else reportError(labels.errors.import(file.name, result.error));
+          if (created) awaitDocumentSince(created.id, generation);
         } catch (e) {
-          reportError(labels.errors.import(file.name, String(e)));
-        } finally {
-          setPending((prev) => prev.filter((p) => p.id !== id));
+          reportError(
+            e instanceof MarkdownEncodingError
+              ? labels.errors.importEncoding(file.name)
+              : labels.errors.import(file.name, String(e))
+          );
         }
+        continue;
       }
-    },
-    [files, documents, nodes, reveal, setOpenFileId, reportError, labels]
-  );
+      const id = newId('knowledgeResource');
+      setPending((prev) => [
+        ...prev,
+        { id, name: file.name, parentId, progress: 0 },
+      ]);
+      try {
+        const result = await files.importFile({
+          id,
+          parentId,
+          name: file.name,
+          blob: file,
+          onProgress: (done, total) =>
+            setPending((prev) =>
+              prev.map((p) =>
+                p.id === id ? { ...p, progress: total ? done / total : 0 } : p
+              )
+            ),
+        });
+        if (result.isOk()) selectAutomatically(result.value.id);
+        else reportError(labels.errors.import(file.name, result.error));
+      } catch (e) {
+        reportError(labels.errors.import(file.name, String(e)));
+      } finally {
+        setPending((prev) => prev.filter((p) => p.id !== id));
+      }
+    }
+  };
 
   const picker = useRef<HTMLInputElement>(null);
   // A drop lands where the pointer is, not where the selection is: the
   // target folder is read at drop time, so a drop on the empty tree with
   // a file selected still imports beside it.
-  const onDropped = useCallback(
-    (list: File[]) => {
-      const current = nodes.find((n) => n.id === openFileId);
-      const parentId = !current
-        ? null
-        : current.kind === 'folder'
-          ? current.id
-          : current.parentId;
-      void importFiles(list, parentId);
-    },
-    [nodes, openFileId, importFiles]
-  );
+  const onDropped = (list: File[]) => {
+    const current = nodes.find((n) => n.id === openFileId);
+    const parentId = !current
+      ? null
+      : current.kind === 'folder'
+        ? current.id
+        : current.parentId;
+    void importFiles(list, parentId);
+  };
   const { dragging, handlers } = useFileDrop(onDropped);
 
   const renderRows = (
