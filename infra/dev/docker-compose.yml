@@ -3,6 +3,9 @@ name: proflow
 services:
   maildev:
     image: maildev/maildev:2.2.1
+    # Auth depends on this for dev SMTP; without a policy it stays down after a
+    # reboot while GoTrue keeps retrying mail delivery.
+    restart: unless-stopped
     ports:
       - '127.0.0.1:2500:1025' # SMTP
       - '127.0.0.1:9090:1080' # Web UI
@@ -27,6 +30,9 @@ services:
   # Conflicts with any other compose binding host 80/443 (e.g. Supabase docker-compose.nginx.yml).
   nginx:
     image: nginx:1.27-alpine
+    # Binds host 80/443 for proflow.local; without a policy the local HTTPS edge
+    # silently disappears after a reboot.
+    restart: unless-stopped
     ports:
       - '80:80'
       - '443:443'

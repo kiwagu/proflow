@@ -22,12 +22,20 @@ services:
 
   functions:
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
   meta:
     ports:
       - 5555:8080
   db:
-    restart: 'no'
+    # `unless-stopped`, NOT `no`: on host reboot Docker autostarts every dependent
+    # service (pooler/auth/realtime/storage are `unless-stopped`), but `depends_on:
+    # service_healthy` is honoured only by `docker compose up` — never by the daemon's
+    # own autostart. With `no` the DB stayed down while dependents crash-looped
+    # forever, and each restart tore down a veth pair; the resulting netlink storm
+    # made Chromium fire NotifyObserversOfIPAddressChange and abort in-flight
+    # requests with ERR_NETWORK_CHANGED. `unless-stopped` also respects a manual
+    # `docker compose stop` — a deliberately stopped stack stays down across reboots.
+    restart: unless-stopped
     # Loopback-only: Makefile db-push/db-diff/db-pull use supabase_admin on this port; pooler session role may lack ownership on existing tables.
     ports:
       - '127.0.0.1:54322:5432'
