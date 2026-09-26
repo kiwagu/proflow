@@ -15,6 +15,7 @@ import {
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ChevronRight,
+  FileDown,
   Folder,
   LoaderCircle,
   MoreHorizontal,
@@ -62,6 +63,8 @@ export interface FileRowProps {
   /** Folders this node could move into (never itself or its descendants). */
   moveTargets?: MoveTarget[];
   onMove?: (parentId: string | null) => void;
+  /** Downloads the row's document as portable markdown; absent when the row is not one. */
+  onExport?: () => void;
   dropTarget?: boolean;
   labels?: FileExplorerLabels;
 }
@@ -213,6 +216,16 @@ export function FileRow(props: FileRowProps) {
                   {props.node.starred ? labels.row.unstar : labels.row.star}
                 </span>
               </DropdownMenuItem>
+              {props.onExport ? (
+                <DropdownMenuItem
+                  className="gap-2"
+                  data-testid="file-export-markdown"
+                  onSelect={() => props.onExport?.()}
+                >
+                  <FileDown className="size-4" />
+                  <span className="text-xs">{labels.row.exportMarkdown}</span>
+                </DropdownMenuItem>
+              ) : null}
               {isArchive && props.onUnpack ? (
                 <DropdownMenuItem
                   className="gap-2"

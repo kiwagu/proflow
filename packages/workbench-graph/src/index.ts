@@ -1,6 +1,7 @@
 export {
   CommandPalette,
   type CommandPaletteLabels,
+  type PaletteCommand,
 } from './command-palette.js';
 export {
   buildCommandPaletteLabels,

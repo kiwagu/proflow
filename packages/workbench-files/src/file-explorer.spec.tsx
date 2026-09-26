@@ -291,3 +291,158 @@ describe('the explorer over a live tree', () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+/** Opens the hover menu of the row at `index` and waits for its items. */
+async function openMenu(index = 0) {
+  const trigger = screen.getAllByTestId('file-menu')[index];
+  await act(async () => {
+    trigger?.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0 })
+    );
+    trigger?.click();
+  });
+  await waitFor(() =>
+    expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(0)
+  );
+}
+
+describe('importing markdown as a document', () => {
+  const pick = async (file: File) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file] });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+
+  it('creates a document from a markdown file instead of storing an attachment', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pick(new File(['# Hi'], 'note.md', { type: 'text/markdown' }));
+    await waitFor(() =>
+      expect(importMarkdown).toHaveBeenCalledWith({
+        name: 'note',
+        text: '# Hi',
+        parentId: null,
+      })
+    );
+    expect(tree.calls.imported).toEqual([]);
+    // A document has no bytes in flight, so nothing shows as importing.
+    expect(screen.queryByTestId('importing')).toBeNull();
+  });
+
+  it('goes by the extension when the browser reports no type', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pick(new File(['# Hi'], 'note.md', { type: '' }));
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    expect(tree.calls.imported).toEqual([]);
+  });
+
+  it('keeps every other file on the attachment path', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pick(new File(['x'], 'photo.png', { type: 'image/png' }));
+    await waitFor(() =>
+      expect(tree.calls.imported).toEqual([
+        { name: 'photo.png', parentId: null },
+      ])
+    );
+    expect(importMarkdown).not.toHaveBeenCalled();
+  });
+
+  it('stores markdown as an attachment when no surface can import it as a document', async () => {
+    const tree = fakeServices([]);
+    mount(tree.services, <FileExplorer documents={{ create }} />);
+    await pick(new File(['# Hi'], 'note.md', { type: 'text/markdown' }));
+    await waitFor(() =>
+      expect(tree.calls.imported).toEqual([{ name: 'note.md', parentId: null }])
+    );
+  });
+
+  it('selects the imported document once its node arrives through the tree', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pick(new File(['# Hi'], 'note.md', { type: 'text/markdown' }));
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    expect(screen.queryAllByTestId('file-row')).toHaveLength(0);
+
+    act(() =>
+      tree.deliver([
+        testNode({
+          id: 'node-1',
+          kind: 'document',
+          name: 'note',
+          documentId: 'doc-1',
+          mime: null,
+          blobHash: null,
+        }),
+      ])
+    );
+    await waitFor(() => {
+      const row = screen.getAllByTestId('file-row')[0];
+      expect(row?.querySelector('[aria-current="true"]')).toBeTruthy();
+    });
+  });
+});
+
+describe('exporting a document from its row', () => {
+  const document = testNode({
+    id: 'node-1',
+    kind: 'document',
+    name: 'note',
+    documentId: 'doc-1',
+    mime: null,
+    blobHash: null,
+  });
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+
+  it("exports the row's document through the surface that can render it", async () => {
+    const tree = fakeServices([document]);
+    const exportMarkdown = vi.fn(async () => {});
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, exportMarkdown }} />
+    );
+    await openMenu();
+    await act(async () => {
+      screen.getByTestId('file-export-markdown').click();
+    });
+    expect(exportMarkdown).toHaveBeenCalledWith('doc-1');
+  });
+
+  it('offers no export for an attachment', async () => {
+    const tree = fakeServices([testNode({ id: 'photo.png' })]);
+    const exportMarkdown = vi.fn(async () => {});
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, exportMarkdown }} />
+    );
+    await openMenu();
+    expect(screen.queryByTestId('file-export-markdown')).toBeNull();
+  });
+
+  it('offers no export when no surface can render one', async () => {
+    const tree = fakeServices([document]);
+    mount(tree.services, <FileExplorer documents={{ create }} />);
+    await openMenu();
+    expect(screen.queryByTestId('file-export-markdown')).toBeNull();
+  });
+});

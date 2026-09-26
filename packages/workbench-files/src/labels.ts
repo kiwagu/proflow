@@ -32,6 +32,7 @@ export type FileExplorerLabels = {
     actionUnpacked: string;
     discardUnpacked: string;
     moveTo: string;
+    exportMarkdown: string;
     delete: string;
   };
   pane: {
@@ -78,6 +79,7 @@ export const defaultFileExplorerLabels: FileExplorerLabels = {
     actionUnpacked: 'Unpacked',
     discardUnpacked: 'Delete unpacked files',
     moveTo: 'Move to',
+    exportMarkdown: 'Export as Markdown',
     delete: 'Delete',
   },
   pane: {
@@ -132,6 +134,7 @@ export function buildFileExplorerLabels(
       actionUnpacked: t('workbench.files.action.unpacked'),
       discardUnpacked: t('workbench.files.action.discardUnpacked'),
       moveTo: t('workbench.files.action.moveTo'),
+      exportMarkdown: t('workbench.files.action.exportMarkdown'),
       delete: t('workbench.files.action.delete'),
     },
     pane: {

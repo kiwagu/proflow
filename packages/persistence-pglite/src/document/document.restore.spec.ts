@@ -107,4 +107,46 @@ describe('restoring a document to an earlier version', () => {
     expect(rows[0]?.markdown).toContain('body');
     expect(rows[0]?.markdown).not.toContain('replaced');
   });
+
+  it('keeps an own node in its lossless internal form', async () => {
+    const store = createDocumentCrdtStore(db);
+    const id = await newDocument();
+
+    // A mention has two markdown forms: the internal tag, which round-trips
+    // with nothing lost, and the portable link a foreign reader gets. The
+    // cache is read by the agent and the sync layer, so it must hold the
+    // former — a restore that derived the portable form would silently
+    // downgrade every own node in the document.
+    const mention =
+      '<x-resource>{"resourceId":"knr_1","kind":"document","label":"Spec","display":"inline"}</x-resource>';
+    const tree = treeOf(mention);
+    // The fixture must hold the NODE: literal text would satisfy the
+    // assertions below without exercising the derivation at all.
+    expect(JSON.stringify(tree)).toContain('"type":"resource-mention"');
+    await store.save({
+      id,
+      tree,
+      markdown: mention,
+      preview: 'Spec',
+      author: AUTHOR,
+    });
+    const mentioned = await store.frontiers(id);
+    await store.save({
+      id,
+      tree: treeOf('replaced'),
+      markdown: 'replaced',
+      preview: 'replaced',
+      author: AUTHOR,
+    });
+
+    await store.restore(id, mentioned, AUTHOR);
+
+    const { rows } = await db.query<{ markdown: string }>(
+      'select markdown from document_content where document_id = $1',
+      [id]
+    );
+    expect(rows[0]?.markdown).toContain('<x-resource>');
+    expect(rows[0]?.markdown).toContain('"resourceId":"knr_1"');
+    expect(rows[0]?.markdown).not.toContain('resource://');
+  });
 });

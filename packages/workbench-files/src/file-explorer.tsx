@@ -28,6 +28,7 @@ import {
   pendingToShow,
   type TreeItem,
 } from './file-tree.js';
+import { documentTitleOf, isMarkdownFile } from './markdown-file.js';
 import { useFileDrop } from './use-file-drop.js';
 
 /**
@@ -44,6 +45,18 @@ export interface DocumentActions {
   }) => Promise<{ id: string } | null>;
   /** Warms the cache for a document about to be opened. Best-effort. */
   prefetch?: (documentId: string) => void;
+  /**
+   * Makes a document out of markdown text. Absent, a markdown file is stored
+   * as an attachment like any other, so a host without an editor still keeps
+   * the bytes.
+   */
+  importMarkdown?: (input: {
+    name: string;
+    text: string;
+    parentId: string | null;
+  }) => Promise<{ id: string } | null>;
+  /** Hands the document to the user as a portable markdown download. */
+  exportMarkdown?: (documentId: string) => Promise<void>;
 }
 
 /**
@@ -86,6 +99,14 @@ export function FileExplorer({
     if (!documentId || prefetched.current.has(documentId)) return;
     prefetched.current.add(documentId);
     documents?.prefetch?.(documentId);
+  };
+  // Only a document row exports, and only when the host can render one.
+  const exportFor = (node: FileNode): (() => void) | undefined => {
+    const exportMarkdown = documents?.exportMarkdown;
+    const documentId = node.documentId;
+    return exportMarkdown && documentId
+      ? () => void exportMarkdown(documentId)
+      : undefined;
   };
 
   const isUnpacked = (node: FileNode) =>
@@ -211,6 +232,22 @@ export function FileExplorer({
     async (list: File[], parentId: string | null) => {
       if (parentId) reveal(parentId, nodes);
       for (const file of list) {
+        // A markdown file becomes a document, not bytes: there is no upload
+        // to show the progress of, so it never gets a placeholder row, and
+        // it is selected the way a new document is — once its node arrives.
+        if (documents?.importMarkdown && isMarkdownFile(file)) {
+          try {
+            const created = await documents.importMarkdown({
+              name: documentTitleOf(file.name),
+              text: await file.text(),
+              parentId,
+            });
+            if (created) awaiting.current = created.id;
+          } catch (e) {
+            reportError(labels.errors.import(file.name, String(e)));
+          }
+          continue;
+        }
         const id = newId('knowledgeResource');
         setPending((prev) => [
           ...prev,
@@ -238,7 +275,7 @@ export function FileExplorer({
         }
       }
     },
-    [files, nodes, reveal, setOpenFileId, reportError, labels]
+    [files, documents, nodes, reveal, setOpenFileId, reportError, labels]
   );
 
   const picker = useRef<HTMLInputElement>(null);
@@ -295,6 +332,7 @@ export function FileExplorer({
               packages ? () => void discardUnpacked(node) : undefined
             }
             onApproach={() => prefetch(node.documentId)}
+            onExport={exportFor(node)}
             moveTargets={moveTargetsFor(nodes, node.id)}
             onMove={(parentId) => {
               void files.move(node.id, parentId);
@@ -411,6 +449,7 @@ export function FileExplorer({
                 }}
                 onStar={(starred) => void files.setStarred(node.id, starred)}
                 onApproach={() => prefetch(node.documentId)}
+                onExport={exportFor(node)}
                 labels={labels}
               />
             ))}

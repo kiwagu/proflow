@@ -29,6 +29,7 @@ import {
   type CommandPaletteHandlers,
   type CommandPaletteLabels,
   type GraphServices,
+  type PaletteCommand,
 } from '@workspace/workbench-graph';
 import { useMaybeAgent } from '@workspace/workbench-agent';
 import {
@@ -37,7 +38,7 @@ import {
   type HistoryLabels,
 } from '@workspace/workbench-editor';
 import { History, MessageSquare, Search, Trash2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import {
   CHAT_PANEL_HOTKEY,
@@ -153,6 +154,36 @@ function Workbench() {
     [t]
   );
 
+  /**
+   * The document as portable markdown, handed to the browser as a download.
+   *
+   * The headless editor and its transformers are the editor's weight, so
+   * they load with the first export rather than with the app — the same way
+   * the editor pane itself does.
+   */
+  const exportMarkdown = useCallback(
+    async (documentId: string) => {
+      const [{ exportDocumentMarkdown }, { downloadText }] = await Promise.all([
+        import('./features/document-markdown'),
+        import('./features/download'),
+      ]);
+      const result = await exportDocumentMarkdown(
+        services.documents,
+        documentId
+      );
+      if (result.isErr()) {
+        services.reportError(result.error);
+        return;
+      }
+      downloadText(
+        `${result.value.title}.md`,
+        result.value.markdown,
+        'text/markdown'
+      );
+    },
+    [services]
+  );
+
   // A document is created through the document port and opened by the
   // file node the port lists it under — the explorer resolves the node.
   const documents = useMemo<DocumentActions>(
@@ -165,8 +196,40 @@ function Workbench() {
         }
         return { id: result.value.id };
       },
+      async importMarkdown({ name, text, parentId }) {
+        const { importMarkdownDocument } =
+          await import('./features/document-markdown');
+        const result = await importMarkdownDocument(
+          services.documents,
+          { user: services.identity.userId, src: 'human' },
+          { name, text, parentId }
+        );
+        if (result.isErr()) {
+          services.reportError(result.error);
+          return null;
+        }
+        return { id: result.value.id };
+      },
+      exportMarkdown,
     }),
-    [services]
+    [services, exportMarkdown]
+  );
+
+  // What the palette can do, beyond finding: the open document's export.
+  const paletteCommands = useMemo<PaletteCommand[]>(
+    () =>
+      openDocumentId
+        ? [
+            {
+              id: 'export-markdown',
+              label: t
+                ? t('workbench.palette.command.exportMarkdown')
+                : 'Export as Markdown',
+              run: () => void exportMarkdown(openDocumentId),
+            },
+          ]
+        : [],
+    [openDocumentId, exportMarkdown, t]
   );
 
   const paletteHandlers = useMemo<CommandPaletteHandlers>(
@@ -314,6 +377,7 @@ function Workbench() {
         labels={paletteLabels}
         handlers={paletteHandlers}
         state={palette}
+        commands={paletteCommands}
       />
     </div>
   );
