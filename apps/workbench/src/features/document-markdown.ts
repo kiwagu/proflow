@@ -7,13 +7,17 @@
  * written. The import reads both markdown forms — the lossless internal tags
  * and the portable links — because a file may come from either side.
  *
- * Export renders the tree in the portable form only: an own node degrades to
- * what any reader understands, and the internal tags never leave the product.
+ * Export renders a tree in the portable form: an own node degrades to what
+ * any reader understands. The tree comes from the open editor when there is
+ * one — the port lags it by a debounce, a write and a retry — and from the
+ * port otherwise.
  */
-import type {
-  EditAuthor,
-  IDocumentRepository,
-  SerializedTree,
+import {
+  type EditAuthor,
+  type IDocumentRepository,
+  type IFileRepository,
+  newId,
+  type SerializedTree,
 } from '@workspace/domain';
 import {
   ALL_TRANSFORMERS,
@@ -34,20 +38,38 @@ const asTree = (state: SerializedEditorState): SerializedTree =>
 const asState = (tree: SerializedTree): SerializedEditorState =>
   tree as unknown as SerializedEditorState;
 
+/** The two ports an import writes through: the document, and its node in the tree. */
+export type DocumentPorts = {
+  documents: IDocumentRepository;
+  files: Pick<IFileRepository, 'softDelete'>;
+};
+
+/** Where an export asks for the tree of a document an editor holds open. */
+export type OpenDocuments = {
+  read(documentId: string): SerializedTree | null;
+};
+
 export async function importMarkdownDocument(
-  documents: IDocumentRepository,
+  { documents, files }: DocumentPorts,
   author: EditAuthor,
   input: { name: string; text: string; parentId: string | null }
 ): Promise<Result<{ id: string }, string>> {
+  // Parsed before anything is created, so a conversion that throws leaves
+  // nothing behind to take back.
+  const tree = asTree(markdownToState(input.text, ALL_TRANSFORMERS).state);
+  const markdown = stateToMarkdown(asState(tree));
+
+  // The importer mints the node's id itself: the explorer lists graph nodes,
+  // not document rows, so this is the id that can take the document back.
+  const nodeId = newId('knowledgeResource');
   const created = await documents.create({
     title: input.name,
     parentId: input.parentId,
+    nodeId,
   });
   if (created.isErr()) return err(created.error);
   const id = created.value.id;
 
-  const tree = asTree(markdownToState(input.text, ALL_TRANSFORMERS).state);
-  const markdown = stateToMarkdown(asState(tree));
   const saved = await documents.save({
     id,
     tree,
@@ -56,24 +78,30 @@ export async function importMarkdownDocument(
     author,
   });
   if (saved.isErr()) {
-    // A document whose content never landed is an empty shell in the tree:
-    // take it back rather than leave it. Best effort — the write failure is
-    // the one worth reporting.
-    await documents.softDelete(id);
-    return err(saved.error);
+    // A document whose content never landed is an empty shell in the tree.
+    // Taking back the NODE is what removes it from the explorer; the
+    // document row alone would leave a live entry that opens to nothing.
+    const taken = await files.softDelete(nodeId);
+    return err(
+      taken.isErr()
+        ? `${saved.error}; the empty document could not be removed: ${taken.error}`
+        : saved.error
+    );
   }
   return ok({ id });
 }
 
 export async function exportDocumentMarkdown(
   documents: IDocumentRepository,
-  id: string
+  id: string,
+  open: OpenDocuments
 ): Promise<Result<{ title: string; markdown: string }, string>> {
   const loaded = await documents.load(id);
   if (loaded.isErr()) return err(loaded.error);
   const { meta, content } = loaded.value;
-  const markdown = content?.tree
-    ? stateToMarkdown(asState(content.tree), EXTERNAL_TRANSFORMERS)
+  const tree = open.read(id) ?? content?.tree ?? null;
+  const markdown = tree
+    ? stateToMarkdown(asState(tree), EXTERNAL_TRANSFORMERS)
     : '';
   return ok({ title: meta.title, markdown });
 }

@@ -446,3 +446,140 @@ describe('exporting a document from its row', () => {
     expect(screen.queryByTestId('file-export-markdown')).toBeNull();
   });
 });
+
+describe('selecting an imported document, whichever arrives first', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const noteNode = testNode({
+    id: 'node-note',
+    kind: 'document',
+    name: 'note',
+    documentId: 'doc-1',
+    mime: null,
+    blobHash: null,
+  });
+  const selectedName = () =>
+    screen
+      .queryAllByTestId('file-row')
+      .find((row) => row.querySelector('[aria-current="true"]'))
+      ?.textContent?.trim();
+
+  it('selects the document when its node arrived before the import finished', async () => {
+    const tree = fakeServices([]);
+    let finish: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn(
+      () => new Promise<{ id: string }>((resolve) => (finish = resolve))
+    );
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    // The optimistic wrapper publishes the node while the content is still
+    // being written: the tree delivers first, the result second.
+    act(() => tree.deliver([noteNode]));
+    expect(selectedName()).toBeUndefined();
+    await act(async () => finish({ id: 'doc-1' }));
+
+    await waitFor(() => expect(selectedName()).toBe('note'));
+  });
+
+  it('lets the last import of a batch keep the selection', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([
+      new File(['# Hi'], 'note.md', { type: 'text/markdown' }),
+      new File(['x'], 'photo.png', { type: 'image/png' }),
+    ]);
+    await waitFor(() => expect(selectedName()).toBe('photo.png'));
+
+    // The document's node lands late; it must not steal the selection from
+    // the file the user saw imported last.
+    act(() => tree.deliver([noteNode, ...tree.nodes()]));
+    await waitFor(() => expect(rowNames()).toContain('note'));
+    expect(selectedName()).toBe('photo.png');
+  });
+
+  it('lets an explicit pick cancel a pending selection', async () => {
+    const other = testNode({ id: 'other', name: 'other.txt' });
+    const tree = fakeServices([other]);
+    const importMarkdown = vi.fn(async () => ({ id: 'doc-1' }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([new File(['# Hi'], 'note.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+
+    // The user moves on before the node arrives.
+    await act(async () => {
+      screen.getByText('other.txt').click();
+    });
+    expect(selectedName()).toBe('other.txt');
+    act(() => tree.deliver([other, noteNode]));
+    await waitFor(() => expect(rowNames()).toContain('note'));
+    expect(selectedName()).toBe('other.txt');
+  });
+});
+
+describe('what a markdown file may contain', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+
+  it('refuses a file that is not UTF-8 text and goes on with the rest', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async (_input: { name: string }) => ({
+      id: 'doc-1',
+    }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    const cp1251 = new Uint8Array([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]);
+    await pickAll([
+      new File([cp1251], 'legacy.md', { type: 'text/markdown' }),
+      new File(['# Hi'], 'good.md', { type: 'text/markdown' }),
+    ]);
+    await waitFor(() =>
+      expect(tree.calls.errors).toEqual([
+        'Could not import legacy.md: the file is not UTF-8 text',
+      ])
+    );
+    expect(importMarkdown).toHaveBeenCalledTimes(1);
+    expect(importMarkdown.mock.calls[0]?.[0]).toMatchObject({ name: 'good' });
+  });
+
+  it('gives a file that is only an extension the untitled name', async () => {
+    const tree = fakeServices([]);
+    const importMarkdown = vi.fn(async (_input: { name: string }) => ({
+      id: 'doc-1',
+    }));
+    mount(
+      tree.services,
+      <FileExplorer documents={{ create, importMarkdown }} />
+    );
+    await pickAll([new File(['# Hi'], '.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    expect(importMarkdown.mock.calls[0]?.[0]).toMatchObject({
+      name: 'Untitled',
+    });
+  });
+});

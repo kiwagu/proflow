@@ -28,6 +28,8 @@ export interface FakeTree {
   services: FileServices;
   /** Delivers a new tree to every live subscriber, as the reader would. */
   deliver: (nodes: FileNode[]) => void;
+  /** The tree as last delivered, for a test that re-delivers it with additions. */
+  nodes: () => FileNode[];
   calls: {
     rename: Array<[string, string]>;
     move: Array<[string, string | null]>;
@@ -162,5 +164,5 @@ export function fakeServices(
     onError: (message) => calls.errors.push(message),
   };
 
-  return { services, deliver, calls };
+  return { services, deliver, nodes: () => nodes, calls };
 }

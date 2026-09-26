@@ -28,7 +28,12 @@ import {
   pendingToShow,
   type TreeItem,
 } from './file-tree.js';
-import { documentTitleOf, isMarkdownFile } from './markdown-file.js';
+import {
+  documentTitleOf,
+  isMarkdownFile,
+  MarkdownEncodingError,
+  readMarkdownText,
+} from './markdown-file.js';
 import { useFileDrop } from './use-file-drop.js';
 
 /**
@@ -184,8 +189,13 @@ export function FileExplorer({
   // A document is created through the document surface, and its file node
   // arrives separately through the live tree. Selecting it therefore has
   // to wait for that delivery — remembering which document to select and
-  // reacting when it lands, rather than polling for it.
+  // reacting when it lands, rather than polling for it. The ref holds WHICH
+  // document is awaited; the counter says THAT it changed, because the node
+  // may land BEFORE the surface answers (an optimistic tree publishes it
+  // while the content is still being written) and the match below must run
+  // again when the answer then arrives, not only when the tree moves.
   const awaiting = useRef<string | undefined>(undefined);
+  const [awaitingChanged, setAwaitingChanged] = useState(0);
   useEffect(() => {
     const documentId = awaiting.current;
     if (!documentId) return;
@@ -194,7 +204,15 @@ export function FileExplorer({
     awaiting.current = undefined;
     setOpenFileId(node.id);
     reveal(node.id, nodes);
-  }, [nodes, setOpenFileId, reveal]);
+  }, [nodes, awaitingChanged, setOpenFileId, reveal]);
+  // Any selection made meanwhile — a pick by hand, the last file of a batch,
+  // the palette — outranks a document still waiting on its node: the wait
+  // ends with whatever the user saw selected, never by stealing it back.
+  useEffect(() => {
+    if (openFileId === undefined || !awaiting.current) return;
+    const awaited = nodes.find((n) => n.documentId === awaiting.current);
+    if (awaited?.id !== openFileId) awaiting.current = undefined;
+  }, [openFileId, nodes]);
 
   const createDocument = async () => {
     if (!documents) return;
@@ -202,6 +220,7 @@ export function FileExplorer({
     const created = await documents.create({ title: 'Untitled', parentId });
     if (!created) return;
     awaiting.current = created.id;
+    setAwaitingChanged((n) => n + 1);
   };
 
   /**
@@ -237,14 +256,20 @@ export function FileExplorer({
         // it is selected the way a new document is — once its node arrives.
         if (documents?.importMarkdown && isMarkdownFile(file)) {
           try {
+            const text = await readMarkdownText(file);
             const created = await documents.importMarkdown({
-              name: documentTitleOf(file.name),
-              text: await file.text(),
+              name: documentTitleOf(file.name) || labels.row.untitled,
+              text,
               parentId,
             });
             if (created) awaiting.current = created.id;
+            setAwaitingChanged((n) => n + 1);
           } catch (e) {
-            reportError(labels.errors.import(file.name, String(e)));
+            reportError(
+              e instanceof MarkdownEncodingError
+                ? labels.errors.importEncoding(file.name)
+                : labels.errors.import(file.name, String(e))
+            );
           }
           continue;
         }
