@@ -222,15 +222,23 @@ export function FileExplorer({
     selectionGeneration.current += 1;
     awaiting.current = undefined;
   }, [openFileId]);
+  /**
+   * Marks the transition an automatic selection is about to cause. A
+   * selection that changes nothing — the id already committed, or a batch of
+   * automatic selections that ends where it started — causes no transition
+   * and so no effect to consume a marker: it must leave none behind, or the
+   * user's next real pick of that file would pass for ours.
+   */
+  const markOwn = (id: string) => {
+    ownSelection.current = id === latestOpenFileId.current ? undefined : id;
+  };
   useEffect(() => {
     const documentId = awaiting.current;
     if (!documentId) return;
     const node = nodes.find((n) => n.documentId === documentId);
     if (!node) return;
     awaiting.current = undefined;
-    // Marked only when the selection will actually change: selecting what is
-    // already selected runs no effect to consume the marker.
-    if (node.id !== latestOpenFileId.current) ownSelection.current = node.id;
+    markOwn(node.id);
     setOpenFileId(node.id);
     reveal(node.id, nodes);
   }, [nodes, awaitingChanged, setOpenFileId, reveal]);
@@ -243,7 +251,7 @@ export function FileExplorer({
   /** The latest import wins: selecting it ends whatever an earlier one still waited for. */
   const selectAutomatically = (id: string) => {
     awaiting.current = undefined;
-    if (id !== latestOpenFileId.current) ownSelection.current = id;
+    markOwn(id);
     setOpenFileId(id);
   };
   /** A pick by the user, counted even when it names the file already open. */

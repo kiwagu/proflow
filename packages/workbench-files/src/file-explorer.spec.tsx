@@ -886,3 +886,127 @@ describe('the marker of an automatic selection', () => {
     expect(selectedName()).toBe('a.png');
   });
 });
+
+describe('each defence of the automatic-selection marker, on its own', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const selectedName = () =>
+    screen
+      .queryAllByTestId('file-row')
+      .find((row) => row.querySelector('[aria-current="true"]'))
+      ?.textContent?.trim();
+  let selectFromOutside: (id: string) => void = () => {};
+  function Palette() {
+    selectFromOutside = useFileSelection().setOpenFileId;
+    return null;
+  }
+  const cNode = testNode({
+    id: 'node-c',
+    kind: 'document',
+    name: 'c',
+    documentId: 'doc-c',
+    mime: null,
+    blobHash: null,
+  });
+  /** Mounts with attachments x and y present, a deferred import fake, and a held markdown import. */
+  function harness() {
+    const x = testNode({ id: 'x', name: 'x.txt' });
+    const y = testNode({ id: 'y', name: 'y.txt' });
+    const tree = fakeServices([x, y], { importDeferred: true });
+    let finishC: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn(
+      () => new Promise<{ id: string }>((resolve) => (finishC = resolve))
+    );
+    mount(
+      tree.services,
+      <>
+        <Palette />
+        <FileExplorer documents={{ create, importMarkdown }} />
+      </>
+    );
+    const idOf = (name: string) =>
+      tree.nodes().find((n) => n.name === name)!.id;
+    /** Starts the markdown import C and lands its node; C is still answering. */
+    const startC = async () => {
+      await pickAll([new File(['# C'], 'c.md', { type: 'text/markdown' })]);
+      await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+      act(() => tree.deliver([...tree.nodes(), cNode]));
+    };
+    return { tree, idOf, startC, finishC: () => finishC({ id: 'doc-c' }) };
+  }
+
+  it('drops the marker when a batch of automatic selections ends where it started', async () => {
+    const h = harness();
+    // Two attachments answer in one batch, B then A, while A is already the
+    // user's selection: the batch changes nothing, so it must mark nothing.
+    await pickAll([new File(['b'], 'b.png', { type: 'image/png' })]);
+    await pickAll([new File(['a'], 'a.png', { type: 'image/png' })]);
+    await waitFor(() => expect(rowNames()).toContain('a.png'));
+    await act(async () => {
+      screen.getByText('a.png').click();
+    });
+    await act(async () => h.tree.finishImports());
+    expect(selectedName()).toBe('a.png');
+
+    await h.startC();
+    // A real pick, A → B, through the palette's route.
+    act(() => selectFromOutside(h.idOf('b.png')));
+    await act(async () => h.finishC());
+
+    expect(selectedName()).toBe('b.png');
+  });
+
+  it('consumes a marker whose transition the user overrode from the palette', async () => {
+    const h = harness();
+    await act(async () => {
+      screen.getByText('x.txt').click();
+    });
+    await pickAll([new File(['b'], 'b.png', { type: 'image/png' })]);
+    await waitFor(() => expect(rowNames()).toContain('b.png'));
+    // The automatic selection of B and the user's pick of Y land in one
+    // commit: the transition is X → Y, not ours, and B's marker must go. The
+    // import's answer arrives a tick after it is released, so the pick waits
+    // for it before joining the same batch.
+    await act(async () => {
+      h.tree.finishImports();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      selectFromOutside('y');
+    });
+    await waitFor(() => expect(selectedName()).toBe('y.txt'));
+
+    await h.startC();
+    act(() => selectFromOutside(h.idOf('b.png')));
+    await act(async () => h.finishC());
+
+    expect(selectedName()).toBe('b.png');
+  });
+
+  it('clears the marker when a pick by hand cancels the transition out', async () => {
+    const h = harness();
+    await act(async () => {
+      screen.getByText('x.txt').click();
+    });
+    await pickAll([new File(['b'], 'b.png', { type: 'image/png' })]);
+    await waitFor(() => expect(rowNames()).toContain('b.png'));
+    // B is selected automatically and the user clicks X again in the same
+    // commit: nothing changes on screen, and nothing may linger.
+    await act(async () => {
+      h.tree.finishImports();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      screen.getByText('x.txt').click();
+    });
+    expect(selectedName()).toBe('x.txt');
+
+    await h.startC();
+    act(() => selectFromOutside(h.idOf('b.png')));
+    await act(async () => h.finishC());
+
+    expect(selectedName()).toBe('b.png');
+  });
+});
