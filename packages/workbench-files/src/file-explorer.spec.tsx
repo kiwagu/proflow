@@ -811,3 +811,78 @@ describe('automatic selections inside one batch', () => {
     expect(selectedName()).toBe('other.txt');
   });
 });
+
+describe('the marker of an automatic selection', () => {
+  const create = vi.fn(async () => ({ id: 'doc-0' }));
+  const pickAll = async (files: File[]) => {
+    const input = screen.getByTestId('file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  };
+  const selectedName = () =>
+    screen
+      .queryAllByTestId('file-row')
+      .find((row) => row.querySelector('[aria-current="true"]'))
+      ?.textContent?.trim();
+  let selectFromOutside: (id: string) => void = () => {};
+  function Palette() {
+    selectFromOutside = useFileSelection().setOpenFileId;
+    return null;
+  }
+
+  it('does not outlive its transition and mistake a later pick from the palette for its own', async () => {
+    const b = testNode({ id: 'b', name: 'b.txt' });
+    const tree = fakeServices([b], { importDeferred: true });
+    let finishC: (value: { id: string }) => void = () => {};
+    const importMarkdown = vi.fn(
+      () => new Promise<{ id: string }>((resolve) => (finishC = resolve))
+    );
+    mount(
+      tree.services,
+      <>
+        <Palette />
+        <FileExplorer documents={{ create, importMarkdown }} />
+      </>
+    );
+
+    // An attachment A: its node is in the tree before the import answers, and
+    // the user opens it by hand meanwhile — so the answer's automatic
+    // selection of A changes nothing.
+    await pickAll([new File(['x'], 'a.png', { type: 'image/png' })]);
+    await waitFor(() => expect(rowNames()).toContain('a.png'));
+    await act(async () => {
+      screen.getByText('a.png').click();
+    });
+    await act(async () => tree.finishImports());
+    expect(selectedName()).toBe('a.png');
+
+    // The user moves to B, then starts importing a markdown file C.
+    await act(async () => {
+      screen.getByText('b.txt').click();
+    });
+    await pickAll([new File(['# C'], 'c.md', { type: 'text/markdown' })]);
+    await waitFor(() => expect(importMarkdown).toHaveBeenCalledTimes(1));
+    act(() =>
+      tree.deliver([
+        ...tree.nodes(),
+        testNode({
+          id: 'node-c',
+          kind: 'document',
+          name: 'c',
+          documentId: 'doc-c',
+          mime: null,
+          blobHash: null,
+        }),
+      ])
+    );
+
+    // A REAL pick, B → A, through the palette's route: it must count.
+    const aId = tree.nodes().find((n) => n.name === 'a.png')!.id;
+    act(() => selectFromOutside(aId));
+    await act(async () => finishC({ id: 'doc-c' }));
+
+    expect(selectedName()).toBe('a.png');
+  });
+});

@@ -209,11 +209,16 @@ export function FileExplorer({
   // must not count as a pick against the operations still answering; the id
   // is remembered so the effect below can tell it from the user's own.
   const ownSelection = useRef<string | undefined>(undefined);
+  // The selection as last committed, for the async paths below: their
+  // closures may hold an older render's value.
+  const latestOpenFileId = useRef(openFileId);
   useEffect(() => {
-    if (openFileId !== undefined && openFileId === ownSelection.current) {
-      ownSelection.current = undefined;
-      return;
-    }
+    // Whatever transition this is, it consumes the marker: a marker that
+    // outlived its own transition would later disguise a pick by the user.
+    const own = ownSelection.current;
+    ownSelection.current = undefined;
+    latestOpenFileId.current = openFileId;
+    if (openFileId !== undefined && openFileId === own) return;
     selectionGeneration.current += 1;
     awaiting.current = undefined;
   }, [openFileId]);
@@ -223,7 +228,9 @@ export function FileExplorer({
     const node = nodes.find((n) => n.documentId === documentId);
     if (!node) return;
     awaiting.current = undefined;
-    ownSelection.current = node.id;
+    // Marked only when the selection will actually change: selecting what is
+    // already selected runs no effect to consume the marker.
+    if (node.id !== latestOpenFileId.current) ownSelection.current = node.id;
     setOpenFileId(node.id);
     reveal(node.id, nodes);
   }, [nodes, awaitingChanged, setOpenFileId, reveal]);
@@ -236,13 +243,14 @@ export function FileExplorer({
   /** The latest import wins: selecting it ends whatever an earlier one still waited for. */
   const selectAutomatically = (id: string) => {
     awaiting.current = undefined;
-    ownSelection.current = id;
+    if (id !== latestOpenFileId.current) ownSelection.current = id;
     setOpenFileId(id);
   };
   /** A pick by the user, counted even when it names the file already open. */
   const pick = (id: string) => {
     selectionGeneration.current += 1;
     awaiting.current = undefined;
+    ownSelection.current = undefined;
     setOpenFileId(id);
   };
 

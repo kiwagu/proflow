@@ -76,20 +76,35 @@ describe('a markdown import whose content cannot be written', () => {
     const stopRecent = recentOf().watchRecent((rows) => {
       recentLive = rows.map((document) => document.title);
     });
+    // The write fails only when the test says so: the live subscriptions
+    // must first SHOW the document (proof they deliver updates at all), then
+    // lose it once the compensation runs.
+    let failWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      failWrite = resolve;
+    });
     try {
-      const result = await importMarkdownDocument(
+      const importing = importMarkdownDocument(
         {
-          documents: { ...documents, save: async () => err('disk is full') },
+          documents: {
+            ...documents,
+            save: async () => {
+              await writeGate;
+              return err('disk is full');
+            },
+          },
           files,
         },
         AUTHOR,
         { name: 'note', text: '# Hi', parentId: null }
       );
+      await expect.poll(() => treeLive.includes('note')).toBe(true);
+      await expect.poll(() => recentLive.includes('note')).toBe(true);
+
+      failWrite();
+      const result = await importing;
       expect(result.isErr() && result.error).toBe('disk is full');
 
-      // The live subscriptions settle on a tree and a list without the
-      // document; a window in which they showed it is what a user of the
-      // running session would have glimpsed, and is allowed to close.
       await expect.poll(() => treeLive.includes('note')).toBe(false);
       await expect.poll(() => recentLive.includes('note')).toBe(false);
 
