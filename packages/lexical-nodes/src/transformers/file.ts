@@ -9,7 +9,7 @@ import type { ElementTransformer } from '@lexical/markdown';
 import type { ElementNode, LexicalNode } from 'lexical';
 import { $createFileNode, $isFileNode, FileNode } from '../nodes/FileNode';
 import { UnknownEmbedNode } from '../nodes/UnknownEmbedNode';
-import { parseXmlPayload, wrapXml, xmlMatcher } from './inline';
+import { $placeBlock, parseXmlPayload, wrapXml, xmlMatcher } from './inline';
 
 const TAG = 'x-file';
 
@@ -24,18 +24,17 @@ export const I_FILE: ElementTransformer = {
     if (!node.getHash()) return null;
     return wrapXml(TAG, JSON.stringify(node.getInfo()));
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parseXmlPayload(parent, TAG, match, (data) => {
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    const node = parseXmlPayload(TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
-      return parent.append(
-        $createFileNode({
-          hash: data.hash,
-          fileName: String(data.fileName ?? ''),
-          mimeType: String(data.mimeType ?? 'application/octet-stream'),
-          size: Number(data.size) || 0,
-        })
-      );
+      return $createFileNode({
+        hash: data.hash,
+        fileName: String(data.fileName ?? ''),
+        mimeType: String(data.mimeType ?? 'application/octet-stream'),
+        size: Number(data.size) || 0,
+      });
     });
+    $placeBlock(parent, children, node, isImport);
   },
 };
 
@@ -49,14 +48,17 @@ export const FILE_LINK: ElementTransformer = {
     const info = node.getInfo();
     return `[${info.fileName}](blob://${info.hash})`;
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.append(
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    $placeBlock(
+      parent,
+      children,
       $createFileNode({
         hash: match[2] ?? '',
         fileName: match[1] ?? '',
         mimeType: 'application/octet-stream',
         size: 0,
-      })
+      }),
+      isImport
     );
   },
 };
