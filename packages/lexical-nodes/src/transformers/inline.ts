@@ -15,6 +15,7 @@ import type {
 import {
   $createLineBreakNode,
   $createParagraphNode,
+  $isTextNode,
   type ElementNode,
   type LexicalNode,
 } from 'lexical';
@@ -80,6 +81,59 @@ export function parseXmlPayload<T extends LexicalNode>(
   } catch {
     return $createUnknownEmbedNode({ tag, raw });
   }
+}
+
+/** Whether the children a block rule was handed still carry anything of the user's. */
+function holdsContent(children: LexicalNode[]): boolean {
+  return children.some(
+    (child) => !$isTextNode(child) || child.getTextContentSize() > 0
+  );
+}
+
+/**
+ * Put a block node where the line's paragraph stands.
+ *
+ * On import the paragraph is the importer's own and `children` is the line's
+ * emptied text, so the node takes the paragraph's place. While typing, the
+ * markdown shortcut hands over the paragraph the user is in, with whatever
+ * followed the tag still inside it as `children`: that content is theirs and
+ * stays, so the node goes in front of it. The last line of the document is
+ * kept as well, so the cursor has a paragraph to continue in. The text the
+ * cursor sat in is about to go, so on the typing path the cursor is moved to
+ * what follows the node.
+ */
+export function $placeBlock(
+  parent: ElementNode,
+  children: LexicalNode[],
+  node: LexicalNode,
+  isImport: boolean
+): void {
+  if (
+    holdsContent(children) ||
+    (!isImport && parent.getNextSibling() === null)
+  ) {
+    parent.insertBefore(node);
+  } else {
+    parent.replace(node);
+  }
+  if (!isImport) node.selectNext(0, 0);
+}
+
+/**
+ * Put an inline node where the line's tag was: in front of whatever followed
+ * it, inside the same paragraph. Same two callers as `$placeBlock`, same
+ * reason for the cursor move.
+ */
+export function $placeInline(
+  parent: ElementNode,
+  children: LexicalNode[],
+  node: LexicalNode,
+  isImport: boolean
+): void {
+  const first = children[0];
+  if (first) first.insertBefore(node);
+  else parent.append(node);
+  if (!isImport) node.selectNext(0, 0);
 }
 
 /**
@@ -172,10 +226,13 @@ export const I_RESOURCE_MENTION_BLOCK: ElementTransformer = {
     if (!$isResourceMentionNode(node)) return null;
     return wrapXml(RESOURCE_TAG, JSON.stringify(node.getInfo()));
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
     const node = parseXmlPayload(RESOURCE_TAG, match, buildMention);
-    if ($isResourceMentionNode(node) && node.isInline()) parent.append(node);
-    else parent.replace(node);
+    if ($isResourceMentionNode(node) && node.isInline()) {
+      $placeInline(parent, children, node, isImport);
+    } else {
+      $placeBlock(parent, children, node, isImport);
+    }
   },
 };
 
@@ -254,8 +311,8 @@ export const RESOURCE_LINK_BLOCK: ElementTransformer = {
     if (!$isResourceMentionNode(node)) return null;
     return portableLink(node);
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.append(portableMention(match));
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    $placeInline(parent, children, portableMention(match), isImport);
   },
 };
 

@@ -12,7 +12,7 @@ import type { ElementNode, LexicalNode } from 'lexical';
 import { $createImageNode, $isImageNode, ImageNode } from '../nodes/ImageNode';
 import { UnknownEmbedNode } from '../nodes/UnknownEmbedNode';
 import { $createVideoNode, $isVideoNode, VideoNode } from '../nodes/VideoNode';
-import { parseXmlPayload, wrapXml, xmlMatcher } from './inline';
+import { $placeBlock, parseXmlPayload, wrapXml, xmlMatcher } from './inline';
 
 const IMAGE_TAG = 'x-image';
 const VIDEO_TAG = 'x-video';
@@ -27,7 +27,7 @@ export const I_IMAGE: ElementTransformer = {
     if (!node.getHash()) return null;
     return wrapXml(IMAGE_TAG, JSON.stringify(node.getImageInfo()));
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
     const node = parseXmlPayload(IMAGE_TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
       return $createImageNode({
@@ -49,7 +49,7 @@ export const I_IMAGE: ElementTransformer = {
           : { scale: Number(data.scale) || undefined }),
       });
     });
-    parent.replace(node);
+    $placeBlock(parent, children, node, isImport);
   },
 };
 
@@ -63,7 +63,7 @@ export const I_VIDEO: ElementTransformer = {
     if (!node.getHash()) return null;
     return wrapXml(VIDEO_TAG, JSON.stringify(node.getVideoInfo()));
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
     const node = parseXmlPayload(VIDEO_TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
       return $createVideoNode({
@@ -74,7 +74,7 @@ export const I_VIDEO: ElementTransformer = {
         controls: data.controls !== false,
       });
     });
-    parent.replace(node);
+    $placeBlock(parent, children, node, isImport);
   },
 };
 
@@ -105,20 +105,23 @@ export const IMAGE_LINK: ElementTransformer = {
     if (!hash) return null;
     return `![${node.getAlt()}](blob://${hash})`;
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
     const alt = match[1] ?? '';
     const target = match[2] ?? '';
     const hash = target.startsWith('blob://')
       ? target.slice('blob://'.length)
       : '';
-    parent.replace(
+    $placeBlock(
+      parent,
+      children,
       $createImageNode({
         hash,
         mime: 'image/*',
         width: 0,
         height: 0,
         alt,
-      })
+      }),
+      isImport
     );
   },
 };
@@ -134,15 +137,18 @@ export const VIDEO_LINK: ElementTransformer = {
     if (!hash) return null;
     return `[video](blob://${hash})`;
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.replace(
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    $placeBlock(
+      parent,
+      children,
       $createVideoNode({
         hash: match[2] ?? '',
         mime: 'video/*',
         width: 0,
         height: 0,
         controls: true,
-      })
+      }),
+      isImport
     );
   },
 };

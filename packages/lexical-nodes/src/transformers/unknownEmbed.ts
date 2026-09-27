@@ -13,6 +13,7 @@ import {
   $isUnknownEmbedNode,
   UnknownEmbedNode,
 } from '../nodes/UnknownEmbedNode';
+import { $placeBlock } from './inline';
 
 /**
  * Any `<x-*>...</x-*>` tag this build does not have a transformer for, as
@@ -28,12 +29,15 @@ export const I_UNKNOWN_EMBED: ElementTransformer = {
     if (!$isUnknownEmbedNode(node)) return null;
     return node.getRaw();
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.replace(
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    $placeBlock(
+      parent,
+      children,
       $createUnknownEmbedNode({
         tag: match[2] ?? 'x-unknown',
         raw: match[1] ?? '',
-      })
+      }),
+      isImport
     );
   },
 };
