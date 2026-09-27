@@ -25,17 +25,16 @@ export const I_FILE: ElementTransformer = {
     return wrapXml(TAG, JSON.stringify(node.getInfo()));
   },
   replace: (parent: ElementNode, _children, match: string[]) => {
-    parseXmlPayload(parent, TAG, match, (data) => {
+    const node = parseXmlPayload(TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
-      return parent.append(
-        $createFileNode({
-          hash: data.hash,
-          fileName: String(data.fileName ?? ''),
-          mimeType: String(data.mimeType ?? 'application/octet-stream'),
-          size: Number(data.size) || 0,
-        })
-      );
+      return $createFileNode({
+        hash: data.hash,
+        fileName: String(data.fileName ?? ''),
+        mimeType: String(data.mimeType ?? 'application/octet-stream'),
+        size: Number(data.size) || 0,
+      });
     });
+    parent.replace(node);
   },
 };
 
@@ -50,7 +49,7 @@ export const FILE_LINK: ElementTransformer = {
     return `[${info.fileName}](blob://${info.hash})`;
   },
   replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.append(
+    parent.replace(
       $createFileNode({
         hash: match[2] ?? '',
         fileName: match[1] ?? '',

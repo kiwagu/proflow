@@ -28,29 +28,28 @@ export const I_IMAGE: ElementTransformer = {
     return wrapXml(IMAGE_TAG, JSON.stringify(node.getImageInfo()));
   },
   replace: (parent: ElementNode, _children, match: string[]) => {
-    parseXmlPayload(parent, IMAGE_TAG, match, (data) => {
+    const node = parseXmlPayload(IMAGE_TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
-      return parent.append(
-        $createImageNode({
-          hash: data.hash,
-          mime: String(data.mime ?? 'image/*'),
-          width: Number(data.width) || 0,
-          height: Number(data.height) || 0,
-          alt: String(data.alt ?? ''),
-          ...(data.constrainedWidth === undefined
-            ? {}
-            : { constrainedWidth: Number(data.constrainedWidth) || undefined }),
-          ...(data.constrainedHeight === undefined
-            ? {}
-            : {
-                constrainedHeight: Number(data.constrainedHeight) || undefined,
-              }),
-          ...(data.scale === undefined
-            ? {}
-            : { scale: Number(data.scale) || undefined }),
-        })
-      );
+      return $createImageNode({
+        hash: data.hash,
+        mime: String(data.mime ?? 'image/*'),
+        width: Number(data.width) || 0,
+        height: Number(data.height) || 0,
+        alt: String(data.alt ?? ''),
+        ...(data.constrainedWidth === undefined
+          ? {}
+          : { constrainedWidth: Number(data.constrainedWidth) || undefined }),
+        ...(data.constrainedHeight === undefined
+          ? {}
+          : {
+              constrainedHeight: Number(data.constrainedHeight) || undefined,
+            }),
+        ...(data.scale === undefined
+          ? {}
+          : { scale: Number(data.scale) || undefined }),
+      });
     });
+    parent.replace(node);
   },
 };
 
@@ -65,18 +64,17 @@ export const I_VIDEO: ElementTransformer = {
     return wrapXml(VIDEO_TAG, JSON.stringify(node.getVideoInfo()));
   },
   replace: (parent: ElementNode, _children, match: string[]) => {
-    parseXmlPayload(parent, VIDEO_TAG, match, (data) => {
+    const node = parseXmlPayload(VIDEO_TAG, match, (data) => {
       if (typeof data.hash !== 'string' || !data.hash) return null;
-      return parent.append(
-        $createVideoNode({
-          hash: data.hash,
-          mime: String(data.mime ?? 'video/*'),
-          width: Number(data.width) || 0,
-          height: Number(data.height) || 0,
-          controls: data.controls !== false,
-        })
-      );
+      return $createVideoNode({
+        hash: data.hash,
+        mime: String(data.mime ?? 'video/*'),
+        width: Number(data.width) || 0,
+        height: Number(data.height) || 0,
+        controls: data.controls !== false,
+      });
     });
+    parent.replace(node);
   },
 };
 
@@ -85,7 +83,10 @@ export const I_VIDEO: ElementTransformer = {
  *
  * An ELEMENT transformer, not a text-match one: the image node is
  * block-level, and a text-match rule only ever replaces an inline text node,
- * so it would never fire for this node on export.
+ * so it would never fire for this node on export. On import the node takes
+ * the place of the line's paragraph for the same reason: a block left inside
+ * a paragraph is invisible to the element rules when the document is written
+ * back, and would come out as its alt text.
  *
  * Registered AFTER the internal image transformer, which it is the fallback
  * for. A plain `![alt](http://...)` also matches here: the hash is left empty
@@ -110,7 +111,7 @@ export const IMAGE_LINK: ElementTransformer = {
     const hash = target.startsWith('blob://')
       ? target.slice('blob://'.length)
       : '';
-    parent.append(
+    parent.replace(
       $createImageNode({
         hash,
         mime: 'image/*',
@@ -134,7 +135,7 @@ export const VIDEO_LINK: ElementTransformer = {
     return `[video](blob://${hash})`;
   },
   replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.append(
+    parent.replace(
       $createVideoNode({
         hash: match[2] ?? '',
         mime: 'video/*',

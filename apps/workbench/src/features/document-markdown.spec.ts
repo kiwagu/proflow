@@ -129,12 +129,12 @@ describe('importing markdown as a document', () => {
     expect(write?.preview).toContain('Title');
   });
 
-  it('reads the internal mention form as well as the portable one', async () => {
+  it('reads the internal mention form as well as the portable one, mid-sentence', async () => {
     const { repository, files, saved } = fakeRepository();
 
     await importMarkdownDocument({ documents: repository, files }, AUTHOR, {
       name: 'note',
-      text: `${MENTION}\n\nsee [Plan](resource://knr_2)`,
+      text: `see ${MENTION} now\n\nsee [Plan](resource://knr_2)`,
       parentId: null,
     });
 
@@ -142,6 +142,11 @@ describe('importing markdown as a document', () => {
       .map((n) => n.resourceId)
       .filter(Boolean);
     expect(mentioned).toEqual(['knr_1', 'knr_2']);
+    // The words around the tag stay where they were written.
+    const first = saved[0]!.tree.root.children?.[0];
+    expect(
+      first?.children?.map((n: SerializedNode) => n.text ?? n.type)
+    ).toEqual(['see ', 'resource-mention', ' now']);
   });
 
   it('takes the document back when its content cannot be written', async () => {
@@ -232,6 +237,25 @@ describe('exporting a document as portable markdown', () => {
     const exported = result.isOk() ? result.value : null;
     expect(exported?.title).toBe('note');
     expect(exported?.markdown).toContain('[Spec](resource://knr_1)');
+    expect(exported?.markdown).not.toContain('<x-resource');
+  });
+
+  it('renders a mention inside a table cell in the portable form as well', async () => {
+    // A cell is converted with a transformer list of its own; the portable
+    // choice has to reach it, or the internal tag leaks out of the table.
+    const content = markdownToState(
+      `| ${MENTION} | y |\n| --- | --- |\n| a | b |`
+    ).state as unknown as SerializedTree;
+    const { repository } = fakeRepository({ content });
+
+    const result = await exportDocumentMarkdown(
+      repository,
+      'doc-1',
+      NOTHING_OPEN
+    );
+
+    const exported = result.isOk() ? result.value : null;
+    expect(exported?.markdown).toContain('| [Spec](resource://knr_1) | y |');
     expect(exported?.markdown).not.toContain('<x-resource');
   });
 
