@@ -126,10 +126,6 @@ export default defineConfig({
     // discarding the current chat. Keep the page entry in the same scan.
     entries: ['index.html', '../../packages/*/src/**/*.worker.ts'],
     exclude: ['@electric-sql/pglite', '@electric-sql/pglite-pgvector'],
-    // Dependency pre-bundling has its own target, and it defaults to browsers
-    // old enough to reject top-level await — which is how the CRDT's WASM
-    // loader initialises itself. `build.target` does not cover this step.
-    esbuildOptions: { target: 'esnext' },
   },
   resolve: {
     dedupe: ['react', 'react-dom', 'lexical'],

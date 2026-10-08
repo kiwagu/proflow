@@ -8,7 +8,9 @@ services:
     restart: unless-stopped
     ports:
       - '127.0.0.1:2500:1025' # SMTP
-      - '127.0.0.1:9090:1080' # Web UI
+      # Web UI on every interface, so a machine on the LAN can read the dev
+      # stand's mail (sign-up confirmations, magic links). SMTP stays local.
+      - '9090:1080' # Web UI
     logging:
       driver: none
 
