@@ -3,10 +3,12 @@ export {
   FindAndReplace,
   type FindAndReplaceProps,
 } from './find-and-replace.js';
+export { FIND_HIGHLIGHT_TAG, stripFindHighlights } from './find-replace.js';
 export { FormatTools, type FormatToolsProps } from './format-tools.js';
 export { HistoryPanel, type HistoryPanelProps } from './history-panel.js';
 export { newestFirst, versionAge, type VersionAge } from './history.js';
 export { Outline, type OutlineProps } from './outline-panel.js';
+export { shouldShowOutline, useOutlineHeadings } from './outline.js';
 export { TableInsert, type TableInsertProps } from './table-insert.js';
 export {
   BLOCK_OPTIONS,

@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import type { Containment } from './containment.js';
 import { isSelfOrDescendant } from './containment.js';
 import {
+  type GraphErrorOptions,
   useCurrentUserId,
   useGraphCommands,
   useReportGraphError,
@@ -32,12 +33,21 @@ export function useDriveMutations(containment: Containment) {
   const userId = useCurrentUserId();
   const reportError = useReportGraphError();
 
-  /** Runs a command, surfacing its failure to the host rather than throwing. */
+  /**
+   * Runs a command, surfacing its failure to the host rather than throwing.
+   * A command whose repeat is harmless (a move to the same place is a no-op)
+   * hands the host its retry along with the failure, under a key naming the
+   * operation — so a retry that fails again replaces the notice instead of
+   * adding one.
+   */
   const run = useCallback(
-    async (result: Promise<{ isErr: () => boolean; error?: string }>) => {
+    async (
+      result: Promise<{ isErr: () => boolean; error?: string }>,
+      options?: GraphErrorOptions
+    ) => {
       const outcome = await result;
       if (outcome.isErr()) {
-        reportError(String((outcome as { error: string }).error));
+        reportError(String((outcome as { error: string }).error), options);
         return false;
       }
       return true;
@@ -59,12 +69,15 @@ export function useDriveMutations(containment: Containment) {
         reportError('A folder cannot be moved into its own subtree.');
         return false;
       }
-      return run(
-        commands.moveNode(
-          { spaceId, nodeId, targetParentId: target, position: 0 },
-          userId
-        )
-      );
+      const move = (): Promise<boolean> =>
+        run(
+          commands.moveNode(
+            { spaceId, nodeId, targetParentId: target, position: 0 },
+            userId
+          ),
+          { key: `move:${nodeId}`, retry: move }
+        );
+      return move();
     },
     [commands, containment, reportError, run, spaceId, userId]
   );

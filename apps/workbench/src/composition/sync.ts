@@ -46,6 +46,14 @@ export interface StartGraphSyncOptions {
   /** Fired when the server refused a local change and the replica was re-read. */
   onReconciled?: (event: { refused: number; nodeIds: string[] }) => void;
   onError?: (error: unknown) => void;
+  /**
+   * A push completed: whatever was reported failing is now through. Only a
+   * push says so — a pull succeeding while writes cannot reach the server
+   * is not recovery.
+   */
+  onSettled?: () => void;
+  /** A push found the server unreachable: local changes are waiting. */
+  onStalled?: () => void;
 }
 
 export function parseSyncSettings(raw: string | null): SyncSettings | null {
@@ -125,6 +133,8 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
           onReconciled: options.onReconciled,
         });
         const stop = sync.watch(identity.spaceId, {
+          onPush: (outcome) =>
+            outcome.stalled ? options.onStalled?.() : options.onSettled?.(),
           onError: (error: unknown) => options.onError?.(error),
         });
         // Disposal may have landed while the settings read was in flight.

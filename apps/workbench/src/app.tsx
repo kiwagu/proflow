@@ -36,7 +36,7 @@ import {
   defaultHistoryLabels,
   type HistoryLabels,
 } from '@workspace/workbench-editor';
-import { History, MessageSquare, Search, Trash2 } from 'lucide-react';
+import { History, ListTree, MessageSquare, Search, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useServices } from './composition/app-services';
 import {
@@ -61,6 +61,17 @@ import {
   LiveDocumentsProvider,
   useLiveDocuments,
 } from './features/live-documents';
+import { LiveEditorsProvider } from './features/live-editor';
+import {
+  OUTLINE_PANEL_HOTKEY,
+  OUTLINE_PANEL_WIDTH,
+} from './features/outline/outline.constants';
+import { OutlinePanelContainer } from './features/outline/outline.container';
+import {
+  buildOutlinePanelLabels,
+  defaultOutlinePanelLabels,
+  type OutlinePanelLabels,
+} from './features/outline/outline.labels';
 import { TrashPanel } from './features/trash/trash.panel';
 import { useWorkbenchTranslator } from './i18n';
 import { useAside } from './shell/aside';
@@ -113,7 +124,11 @@ export function App() {
               {/* Likewise for what the open editor holds: the export in the
                   explorer's menu reads it from outside the pane. */}
               <LiveDocumentsProvider>
-                <Workbench />
+                {/* And for the editor instance itself: the outline in the
+                    aside draws over the editor the pane has open. */}
+                <LiveEditorsProvider>
+                  <Workbench />
+                </LiveEditorsProvider>
               </LiveDocumentsProvider>
             </DocumentRevisionProvider>
           </FileSelectionProvider>
@@ -145,6 +160,10 @@ function Workbench() {
   useHotkey(HISTORY_PANEL_HOTKEY, () => aside.toggle('history'), {
     enabled: openDocumentId !== null,
   });
+  // The outline, like the history, is a document's: no document, no panel.
+  useHotkey(OUTLINE_PANEL_HOTKEY, () => aside.toggle('outline'), {
+    enabled: openDocumentId !== null,
+  });
   const fileLabels: FileExplorerLabels = useMemo(
     () => (t ? buildFileExplorerLabels(t) : defaultFileExplorerLabels),
     [t]
@@ -159,6 +178,10 @@ function Workbench() {
   );
   const historyLabels: HistoryLabels = useMemo(
     () => (t ? buildHistoryLabels(t) : defaultHistoryLabels),
+    [t]
+  );
+  const outlineLabels: OutlinePanelLabels = useMemo(
+    () => (t ? buildOutlinePanelLabels(t) : defaultOutlinePanelLabels),
     [t]
   );
 
@@ -236,8 +259,28 @@ function Workbench() {
           />
         ),
       };
+    if (aside.open === 'outline' && openDocumentId)
+      return {
+        kind: 'fixed' as const,
+        width: OUTLINE_PANEL_WIDTH,
+        'aria-label': outlineLabels.ariaLabel,
+        children: (
+          <OutlinePanelContainer
+            documentId={openDocumentId}
+            labels={outlineLabels}
+          />
+        ),
+      };
     return undefined;
-  }, [aside.open, agent, chatLabels, historyLabels, openDocumentId, t]);
+  }, [
+    aside.open,
+    agent,
+    chatLabels,
+    historyLabels,
+    outlineLabels,
+    openDocumentId,
+    t,
+  ]);
 
   return (
     <div className="bg-background text-foreground flex h-full flex-col">
@@ -277,6 +320,24 @@ function Workbench() {
                 >
                   <MessageSquare aria-hidden />
                   {t ? t('workbench.chat.toggle') : 'Assistant'}
+                </Button>
+              </Hint>
+            ) : null}
+            {openDocumentId ? (
+              <Hint
+                label={outlineLabels.toggle}
+                keys={hotkeyLabel(OUTLINE_PANEL_HOTKEY)}
+              >
+                <Button
+                  variant={aside.open === 'outline' ? 'secondary' : 'outline'}
+                  size="sm"
+                  aria-pressed={aside.open === 'outline'}
+                  aria-label={outlineLabels.toggle}
+                  onClick={() => aside.toggle('outline')}
+                  data-testid="outline-panel-trigger"
+                >
+                  <ListTree aria-hidden />
+                  {outlineLabels.toggle}
                 </Button>
               </Hint>
             ) : null}

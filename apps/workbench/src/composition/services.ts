@@ -18,6 +18,7 @@ import type {
   GraphReader,
   GraphRepository,
 } from '@workspace/persistence-pglite';
+import type { ReportError } from '../shell/operation-errors';
 
 /**
  * Everything the workbench surfaces reach for, built once by the composition
@@ -45,6 +46,11 @@ export interface AppServices {
   chatMessages: IChatMessageRepository;
   /** Server-verified session and checked-out space. */
   identity: { userId: string; spaceId: string };
-  /** Where a failure the user caused is reported. */
-  reportError: (message: string) => void;
+  /**
+   * Where a failure is reported so the user sees it. A report under a key
+   * replaces the earlier one under that key; `resolveError` withdraws it
+   * once the operation has gone through after all.
+   */
+  reportError: ReportError;
+  resolveError: (key: string) => void;
 }

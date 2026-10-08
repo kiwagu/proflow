@@ -158,5 +158,15 @@
   "workbench.history.age.now": "Just now",
   "workbench.history.age.minutes": "{count} min ago",
   "workbench.history.age.hours": "{count} h ago",
-  "workbench.history.age.days": "{count} d ago"
+  "workbench.history.age.days": "{count} d ago",
+  "workbench.outline.title": "Outline",
+  "workbench.outline.ariaLabel": "Document outline",
+  "workbench.outline.toggle": "Outline",
+  "workbench.outline.empty": "No headings yet. Add headings to navigate the document.",
+  "workbench.errors.ariaLabel": "Problems",
+  "workbench.errors.retry": "Retry",
+  "workbench.errors.dismiss": "Dismiss",
+  "workbench.errors.save": "Could not save “{title}”: {reason}. Trying again…",
+  "workbench.errors.sync": "Changes made here could not be sent to the server: {reason}. They stay on this device and are sent again automatically.",
+  "workbench.errors.syncStalled": "Changes made here are waiting to be sent: the server cannot be reached. They stay on this device and are sent automatically once it answers."
 }

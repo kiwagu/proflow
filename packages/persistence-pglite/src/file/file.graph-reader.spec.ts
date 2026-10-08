@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { FileNode } from '@workspace/domain';
 import {
   openTestDb,
@@ -10,6 +10,8 @@ import { createPgliteGraphRepository } from '../graph/graph.repository.js';
 import {
   createGraphFileTreeReader,
   graphFileKind,
+  toGraphFileNodes,
+  type GraphFileRow,
 } from './file.graph-reader.js';
 
 let db: Awaited<ReturnType<typeof openTestDb>>;
@@ -20,11 +22,82 @@ afterAll(async () => {
   await db?.close();
 });
 
-it('maps every graph kind explicitly and rejects unknown kinds', () => {
+it('maps every file kind explicitly and leaves a kind the tree does not show unmapped', () => {
   expect(
     ['folder', 'text', 'file', 'link', 'video'].map(graphFileKind)
   ).toEqual(['folder', 'document', 'blob', 'blob', 'blob']);
-  expect(() => graphFileKind('unknown')).toThrow(/kind/);
+  // A tag is graph vocabulary the file tree has no row for; a kind the
+  // server may add later is the same case. Neither is an error.
+  expect(graphFileKind('tag')).toBeNull();
+  expect(graphFileKind('x-future')).toBeNull();
+});
+
+it('skips a row whose kind the tree does not show, warning once per kind, instead of failing the whole tree', () => {
+  const row = (kind: string, id: string): GraphFileRow => ({
+    id,
+    parent_id: null,
+    kind,
+    name: id,
+    mime: null,
+    size: null,
+    blob_hash: null,
+    document_id: null,
+    starred: false,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
+  const skipped = vi.fn();
+  const nodes = toGraphFileNodes(
+    [
+      row('tag', 't1'),
+      row('folder', 'f1'),
+      row('tag', 't2'),
+      row('x-future', 'x1'),
+    ],
+    skipped
+  );
+  expect(nodes.map((node) => node.id)).toEqual(['f1']);
+  expect(skipped.mock.calls).toEqual([['tag'], ['x-future']]);
+});
+
+it('leaves tags and unknown kinds out of the live tree at the query, so a seeded space still opens', async () => {
+  const spaceId = testId('spc');
+  const graph = createPgliteGraphRepository(db);
+  const create = async (
+    kind: string,
+    title: string,
+    parentId: string | null = null
+  ) =>
+    (
+      await graph.createNode({
+        spaceId,
+        kind,
+        title,
+        parentId,
+        createdBy: TEST_USER,
+      })
+    )._unsafeUnwrap().id;
+  const folder = await create('folder', 'Folder');
+  const text = await create('text', 'Doc', folder);
+  const file = await create('file', 'File');
+  await create('tag', 'Topic');
+  await create('x-future', 'Later');
+  const skipped = vi.fn();
+  let rows: FileNode[] = [];
+  const stop = createGraphFileTreeReader(db, spaceId, TEST_USER, {
+    onSkippedKind: skipped,
+  }).watchAll((value) => {
+    rows = value;
+  });
+  try {
+    await expect.poll(() => rows.length).toBe(3);
+    expect(rows.map((r) => r.id).sort()).toEqual([folder, file, text].sort());
+    // Filtered at the source: the mapper never even sees them.
+    expect(skipped).not.toHaveBeenCalled();
+  } finally {
+    stop();
+    await db.query('select 1');
+  }
 });
 
 it('watches the scoped graph, containment, own stars and blob metadata', async () => {

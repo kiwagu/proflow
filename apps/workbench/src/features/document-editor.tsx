@@ -8,14 +8,24 @@ import {
   type LexicalWrapper,
 } from '@workspace/lexical-react';
 import { editorStateAsMarkdown } from '@workspace/lexical-react/utils';
+import { Button } from '@workspace/ui/components/button';
+import { Hint } from '@workspace/ui/components/hint';
+import { hotkeyLabel } from '@workspace/ui/hooks/hotkey-label';
+import { useHotkey } from '@workspace/ui/hooks/use-hotkey';
 import { useEditorBridge } from '@workspace/workbench-agent';
 import {
+  buildFindReplaceLabels,
   buildFormatToolsLabels,
   buildTableInsertLabels,
+  defaultFindReplaceLabels,
   DocumentView,
+  FIND_HIGHLIGHT_TAG,
+  FindAndReplace,
   FormatTools,
+  stripFindHighlights,
   TableInsert,
 } from '@workspace/workbench-editor';
+import { TextSearch } from 'lucide-react';
 import type { SerializedEditorState } from 'lexical';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -27,7 +37,9 @@ import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 import { createAgentSeam } from './document-editor.agent-state';
 import { useDocumentRevision } from './document-revision';
+import { FIND_HOTKEY } from './find/find.constants';
 import { useLiveDocuments } from './live-documents';
+import { useLiveEditors } from './live-editor';
 
 /** Keystrokes settle for this long before the document is written. */
 const SAVE_DEBOUNCE_MS = 400;
@@ -55,7 +67,7 @@ export function DocumentEditor({ document }: { document: DocumentMeta }) {
 function OpenDocument({ document }: { document: DocumentMeta }) {
   const documents = useDocuments();
   const versions = useDocumentVersions();
-  const { identity } = useServices();
+  const { identity, reportError, resolveError } = useServices();
   const t = useWorkbenchTranslator();
   const formatToolsLabels = useMemo(
     () => (t ? buildFormatToolsLabels(t) : undefined),
@@ -65,6 +77,40 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     () => (t ? buildTableInsertLabels(t) : undefined),
     [t]
   );
+  const findLabels = useMemo(
+    () => (t ? buildFindReplaceLabels(t) : defaultFindReplaceLabels),
+    [t]
+  );
+  /**
+   * Find & replace is this surface's state, not the panel's: the surface is
+   * keyed by the document, so opening another document forgets the search
+   * by construction instead of carrying it over. The editor is kept in a
+   * ref for the one thing the panel cannot do itself — hand focus back to
+   * the text when it closes.
+   */
+  const [find, setFind] = useState(false);
+  // Counts every request to open: the panel refocuses its field on each,
+  // so the shortcut pressed again from the text brings the keyboard back.
+  const [findFocus, setFindFocus] = useState(0);
+  const wrapperRef = useRef<LexicalWrapper | null>(null);
+  const openFind = useCallback(() => {
+    setFind(true);
+    setFindFocus((count) => count + 1);
+  }, []);
+  const onFindOpenChange = useCallback((open: boolean) => {
+    setFind(open);
+    if (open) return;
+    const editor = wrapperRef.current?.editor;
+    if (!editor) return;
+    // The editor restores its own selection; the DOM focus is made explicit
+    // because setting a selection moves focus only in some browsers.
+    editor.focus();
+    const root = editor.getRootElement();
+    if (root && !root.contains(root.ownerDocument.activeElement))
+      root.focus({ preventScroll: true });
+  }, []);
+  useHotkey(FIND_HOTKEY, openFind);
+  const liveEditors = useLiveEditors();
   const [initial, setInitial] = useState<
     { tree?: SerializedTree; markdown: string } | { error: string } | null
   >(null);
@@ -106,8 +152,11 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     []
   );
 
+  /** Whether a refusal has been reported and not yet withdrawn. */
+  const refused = useRef(false);
   useEffect(() => {
     const author: EditAuthor = { user: identity.userId, src: 'human' };
+    const failureKey = `save:${document.id}`;
     persistRef.current = async (tree, markdown) => {
       setSaved('saving');
       unsaved.current = undefined;
@@ -120,14 +169,23 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       });
       if (result.isErr()) {
         // Not saved: say so, and try again — the usual cause is the database
-        // re-electing a leader after another tab closed, which passes.
-        console.error(result.error);
+        // re-electing a leader after another tab closed, which passes. One
+        // notice per document: the retry replaces it rather than adding.
+        refused.current = true;
+        reportError(
+          { kind: 'save', title: document.title, reason: result.error },
+          { key: failureKey }
+        );
         setSaved('idle');
         clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => persist(tree, markdown), 1000);
         return;
       }
       setSaved('saved');
+      if (refused.current) {
+        refused.current = false;
+        resolveError(failureKey);
+      }
       // Nothing changed: no write happened, so there is no new state to mark.
       if (!result.value) return;
       clearTimeout(versionTimer.current);
@@ -135,7 +193,16 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
         void versions.mark({ documentId: document.id, kind: 'idle' });
       }, VERSION_DEBOUNCE_MS);
     };
-  }, [documents, versions, document.id, identity.userId, persist]);
+  }, [
+    documents,
+    versions,
+    document.id,
+    document.title,
+    identity.userId,
+    persist,
+    reportError,
+    resolveError,
+  ]);
 
   useEffect(
     () => () => {
@@ -179,10 +246,17 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   const onWrapper = useCallback(
     (wrapper: LexicalWrapper) => {
       edited.current = false;
-      const release = live.register(
-        document.id,
-        () =>
+      wrapperRef.current = wrapper;
+      const releaseEditor = liveEditors.register({
+        documentId: document.id,
+        wrapper,
+      });
+      // Search highlights are the panel's, not the document's: what leaves
+      // this surface — a save, an export — is the tree without them.
+      const release = live.register(document.id, () =>
+        stripFindHighlights(
           wrapper.editor.getEditorState().toJSON() as unknown as SerializedTree
+        )
       );
       if (isWrapperWithIds(wrapper)) {
         agent.setLive({
@@ -193,12 +267,15 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       }
       const unregister = wrapper.editor.registerUpdateListener(
         ({ editorState, dirtyElements, dirtyLeaves, tags }) => {
+          // A search moving its highlights is not an edit.
+          if (tags.has(FIND_HIGHLIGHT_TAG)) return;
           if (tags.has('history-merge') && !edited.current) return;
           if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
           edited.current = true;
-          const tree = editorState.toJSON() as SerializedEditorState as
+          const held = editorState.toJSON() as SerializedEditorState as
             SerializedTree | undefined;
-          if (!tree) return;
+          if (!held) return;
+          const tree = stripFindHighlights(held);
           const markdown = editorStateAsMarkdown(editorState);
           unsaved.current = { tree, markdown };
           clearTimeout(saveTimer.current);
@@ -212,12 +289,14 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       const cleanup = wrapper.cleanup;
       wrapper.cleanup = () => {
         agent.setLive(null);
+        releaseEditor();
+        wrapperRef.current = null;
         release();
         unregister();
         cleanup();
       };
     },
-    [persist, document.id, agent, live]
+    [persist, document.id, agent, live, liveEditors]
   );
 
   if (!initial)
@@ -237,7 +316,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <DocumentView
         key={document.id}
         namespace={`document:${document.id}`}
@@ -253,6 +332,19 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
           <FormatTools className="flex-1" labels={formatToolsLabels}>
             <TableInsert labels={tableInsertLabels} />
           </FormatTools>
+          <Hint label={findLabels.toggle} keys={hotkeyLabel(FIND_HOTKEY)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={findLabels.toggle}
+              aria-pressed={find}
+              onClick={openFind}
+              data-testid="find-replace-trigger"
+            >
+              <TextSearch aria-hidden />
+            </Button>
+          </Hint>
           <span
             className="text-muted-foreground shrink-0 text-xs"
             data-testid="save-state"
@@ -268,6 +360,13 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
                 : ''}
           </span>
         </div>
+        <FindAndReplace
+          open={find}
+          onOpenChange={onFindOpenChange}
+          focusRequest={findFocus}
+          labels={findLabels}
+          className="absolute top-12 right-4 z-10"
+        />
       </DocumentView>
     </div>
   );

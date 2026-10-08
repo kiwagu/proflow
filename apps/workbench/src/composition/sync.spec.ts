@@ -130,6 +130,37 @@ describe('starting graph replication', () => {
     stop();
   });
 
+  it('tells a stalled push from a completed one, and never takes a pull for recovery', async () => {
+    const onSettled = vi.fn();
+    const onStalled = vi.fn();
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+      onSettled,
+      onStalled,
+    });
+    await settled();
+    const hooks = watch.mock.calls[0]?.[1] as
+      | {
+          onPush?: (outcome: { stalled: boolean }) => void;
+          onPull?: (outcome: unknown) => void;
+        }
+      | undefined;
+    expect(hooks?.onPush).toBeTypeOf('function');
+
+    // Reads succeed while writes cannot reach the server: that is not
+    // recovery, and a pull after a stalled push must not say so.
+    hooks?.onPush?.({ stalled: true });
+    hooks?.onPull?.({ pulled: 3 });
+    expect(onStalled).toHaveBeenCalledTimes(1);
+    expect(onSettled).not.toHaveBeenCalled();
+
+    hooks?.onPush?.({ stalled: false });
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it('starts once when the network returns, not once per event', async () => {
     setOnline(false);
     const stop = startGraphSync({

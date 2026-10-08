@@ -15,8 +15,113 @@ import { $isTextNode, type LexicalEditor, type TextNode } from 'lexical';
 
 const MATCH_ID_PREFIX = 'find-match-';
 
+/**
+ * The tag on every update that only moves highlights around. A host that
+ * persists the editor's changes skips updates carrying it: a search is not
+ * an edit, and must never write to the document on its own.
+ */
+export const FIND_HIGHLIGHT_TAG = 'find-highlight';
+
 export function matchId(index: number): string {
   return `${MATCH_ID_PREFIX}${index}`;
+}
+
+/** Is this MarkNode id one of ours — a search highlight, not content? */
+export function isFindHighlightId(id: string): boolean {
+  return id.startsWith(MATCH_ID_PREFIX);
+}
+
+type SerializedNode = {
+  type: string;
+  children?: SerializedNode[];
+  ids?: string[];
+  text?: string;
+  [property: string]: unknown;
+};
+
+/**
+ * The serialised tree without the search highlights: each highlight mark is
+ * replaced by its children, and the text the wrap had split is joined back
+ * when the pieces are text nodes that agree on EVERYTHING but their text —
+ * formatting, style, mode, detail and any node state (an `unlinked` URL
+ * must not lose the state that keeps it unlinked). A mark that is not a
+ * highlight (a comment anchor, say) is content and stays. Returns the SAME
+ * object when there was nothing to strip, so a caller can tell.
+ */
+export function stripFindHighlights<T extends { root: object }>(tree: T): T {
+  const root = tree.root as SerializedNode;
+  const stripped = stripNode(root);
+  return stripped === root ? tree : { ...tree, root: stripped };
+}
+
+function stripNode(node: SerializedNode): SerializedNode {
+  if (!node.children) return node;
+  let changed = false;
+  let joinNext = false;
+  const next: SerializedNode[] = [];
+  for (const child of node.children) {
+    const inner = stripNode(child);
+    if (inner !== child) changed = true;
+    if (
+      inner.type === 'mark' &&
+      inner.ids?.some(isFindHighlightId) &&
+      inner.children
+    ) {
+      changed = true;
+      // Only the pieces a highlight split are joined: text that was already
+      // two nodes before the search stays two nodes.
+      for (const grandchild of inner.children) pushJoining(next, grandchild);
+      joinNext = true;
+    } else {
+      if (joinNext) pushJoining(next, inner);
+      else next.push(inner);
+      joinNext = false;
+    }
+  }
+  if (!changed) return node;
+  return { ...node, children: next };
+}
+
+/** Appends a node, joining it into a preceding text node of the same shape. */
+function pushJoining(out: SerializedNode[], node: SerializedNode): void {
+  const previous = out[out.length - 1];
+  if (previous && sameButText(previous, node)) {
+    out[out.length - 1] = {
+      ...previous,
+      text: (previous.text ?? '') + (node.text ?? ''),
+    };
+    return;
+  }
+  out.push(node);
+}
+
+/** Two text nodes that differ in nothing but their text. */
+function sameButText(a: SerializedNode, b: SerializedNode): boolean {
+  if (a.type !== 'text' || b.type !== 'text') return false;
+  return withoutText(a) === withoutText(b);
+}
+
+function withoutText(node: SerializedNode): string {
+  const { text: _text, ...rest } = node;
+  return stable(rest);
+}
+
+/**
+ * A canonical serialisation: keys sorted at EVERY level, nothing dropped.
+ * (`JSON.stringify` with an array replacer would filter property names at
+ * every depth, so nested node state such as `$: { unlinked }` would vanish
+ * from the comparison and two differently-stated nodes would read equal.)
+ */
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stable(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
 }
 
 export type FindMatch = {
@@ -150,14 +255,17 @@ export function searchAndHighlight(
         }
       }
     },
-    { discrete: true }
+    { discrete: true, tag: FIND_HIGHLIGHT_TAG }
   );
   return marks;
 }
 
 /** Clears any highlights from the last search without starting a new one. */
 export function clearHighlights(editor: LexicalEditor): void {
-  editor.update(() => $clearHighlights(), { discrete: true });
+  editor.update(() => $clearHighlights(), {
+    discrete: true,
+    tag: FIND_HIGHLIGHT_TAG,
+  });
 }
 
 function $findMarkById(id: string): MarkNode | undefined {

@@ -30,6 +30,11 @@ export type FindAndReplaceProps = {
    * toggle or a keyboard shortcut (Cmd/Ctrl+F handling is the host's). */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Bump to put the keyboard back in the search field while the panel is
+   * already open — the shortcut pressed again from the text, typically.
+   */
+  focusRequest?: number;
   className?: string;
 };
 
@@ -43,6 +48,7 @@ export function FindAndReplace({
   labels = defaultFindReplaceLabels,
   open,
   onOpenChange,
+  focusRequest = 0,
   className,
 }: FindAndReplaceProps) {
   const wrapper = useLexicalWrapper();
@@ -63,7 +69,7 @@ export function FindAndReplace({
   useEffect(() => {
     if (!open) return;
     searchInputRef.current?.focus();
-  }, [open]);
+  }, [open, focusRequest]);
 
   useEffect(() => {
     if (!open) return;

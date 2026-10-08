@@ -158,5 +158,15 @@
   "workbench.history.age.now": "Ahora mismo",
   "workbench.history.age.minutes": "hace {count} min",
   "workbench.history.age.hours": "hace {count} h",
-  "workbench.history.age.days": "hace {count} d"
+  "workbench.history.age.days": "hace {count} d",
+  "workbench.outline.title": "Esquema",
+  "workbench.outline.ariaLabel": "Esquema del documento",
+  "workbench.outline.toggle": "Esquema",
+  "workbench.outline.empty": "Aún no hay títulos. Añade títulos para navegar por el documento.",
+  "workbench.errors.ariaLabel": "Problemas",
+  "workbench.errors.retry": "Reintentar",
+  "workbench.errors.dismiss": "Descartar",
+  "workbench.errors.save": "No se pudo guardar “{title}”: {reason}. Reintentando…",
+  "workbench.errors.sync": "Los cambios hechos aquí no se pudieron enviar al servidor: {reason}. Se conservan en este dispositivo y se enviarán de nuevo automáticamente.",
+  "workbench.errors.syncStalled": "Los cambios hechos aquí esperan para enviarse: no se puede contactar con el servidor. Se conservan en este dispositivo y se enviarán automáticamente cuando responda."
 }

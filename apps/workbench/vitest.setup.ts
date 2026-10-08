@@ -44,3 +44,26 @@ if (typeof Element !== 'undefined') {
   proto.releasePointerCapture ??= () => {};
   proto.scrollIntoView ??= () => {};
 }
+
+// Lexical scrolls the selection into view by measuring the DOM Range the
+// browser selection holds; jsdom's Range has no box to measure, and the
+// editor would log a TypeError on every selection update a spec makes.
+if (
+  typeof Range !== 'undefined' &&
+  !('getBoundingClientRect' in Range.prototype)
+) {
+  Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      toJSON: () => ({}),
+    }),
+  });
+}

@@ -35,6 +35,12 @@ export type TestGraph = {
   document: (title: string, markdown: string) => Promise<string>;
   /** The failures the surface reported to the host during the case. */
   errors: string[];
+  /** The same reports with what came along — a key and a retry, when offered. */
+  reported: Array<{
+    message: string;
+    key?: string;
+    retry?: () => Promise<boolean>;
+  }>;
 };
 
 export async function openTestGraph(
@@ -53,6 +59,7 @@ export async function openTestGraph(
   const commands = createPgliteGraphRepository(db);
   const graph = createPgliteGraphReader(db);
   const errors: string[] = [];
+  const reported: TestGraph['reported'] = [];
   const engine = options.withSearch
     ? createPgliteSemanticSearch(db, createHashEmbedder())
     : null;
@@ -63,7 +70,14 @@ export async function openTestGraph(
     spaceId: TEST_SPACE,
     userId: TEST_USER,
     ...(engine ? { search: localSearchProvider(engine) } : {}),
-    onError: (message) => errors.push(message),
+    onError: (message, options) => {
+      errors.push(message);
+      reported.push({
+        message,
+        ...(options?.key ? { key: options.key } : {}),
+        ...(options?.retry ? { retry: options.retry } : {}),
+      });
+    },
   };
 
   const node = async (
@@ -106,7 +120,7 @@ export async function openTestGraph(
     return id;
   };
 
-  return { db, services, node, document, errors };
+  return { db, services, node, document, errors, reported };
 }
 
 /** A syntactically valid node id that is deliberately not in the replica. */

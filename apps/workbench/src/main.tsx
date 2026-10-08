@@ -26,6 +26,12 @@ import {
   type WorkbenchSession,
 } from './composition/session';
 import { installOfflineShell } from './shell/offline-shell';
+import {
+  createOperationErrors,
+  OperationErrorsView,
+  type FailureText,
+  type ReportOptions,
+} from './shell/operation-errors';
 import { rememberSyncSettings, startGraphSync } from './composition/sync';
 
 const container = requireRoot();
@@ -89,11 +95,20 @@ function takeOver(view: ReactNode) {
 
 /**
  * Failures the user caused (a rename that collided, an import that failed)
- * are reported here. A toaster is a later slice; until then the console is
- * the one place that always exists.
+ * and failures the app met on their behalf (a save refused, a push that did
+ * not go through) are reported here. The channel is what the user sees; the
+ * console keeps the same record for whoever is debugging.
  */
-function reportError(message: string) {
+const errors = createOperationErrors();
+function reportError(message: FailureText, options?: ReportOptions) {
   console.error(message);
+  errors.report(message, options);
+}
+const resolveError = (key: string) => errors.resolve(key);
+
+/** The one-line reason a failure carries, for a notice. */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -191,7 +206,7 @@ async function openingSession(): Promise<{
 
 async function openWorkbench(session: WorkbenchSession, offline: boolean) {
   const services = await withTimeout(
-    createAppServices(reportError, session),
+    createAppServices({ report: reportError, resolve: resolveError }, session),
     BOOT_TIMEOUT_MS
   );
   // A session may have changed while the database was opening. Offline
@@ -278,6 +293,8 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
           app
         )}
       </div>
+      {/* Below the app, in the column: it takes room instead of covering. */}
+      <OperationErrorsView errors={errors} />
     </div>
   );
   takeOver(view);
@@ -332,9 +349,16 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     },
     onError: (error: unknown) => {
       // A replication pass that failed is not a failure of the app: the
-      // journal keeps the work and the next pass retries it.
+      // journal keeps the work and the next pass retries it. The user is
+      // told once — under one key, so the poll replaces rather than stacks —
+      // and the next pass that completes withdraws it.
       console.error('graph replication pass failed', error);
+      errors.report({ kind: 'sync', reason: reasonOf(error) }, { key: 'sync' });
     },
+    // Writes could not reach the server: the journal keeps them and the
+    // next pass retries, but the user is told their changes are waiting.
+    onStalled: () => errors.report({ kind: 'sync-stalled' }, { key: 'sync' }),
+    onSettled: () => resolveError('sync'),
   });
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;

@@ -25,6 +25,7 @@ import {
 } from '@workspace/persistence-pglite';
 import { storageNamespace, type WorkbenchSession } from './session';
 import type { AppServices } from './services';
+import type { ReportError } from '../shell/operation-errors';
 
 /**
  * Composition root — the only module in the app allowed to import adapter
@@ -65,9 +66,10 @@ const DB_STAGE_NAMES: Record<OpenStage, string> = {
 };
 
 export async function createAppServices(
-  reportError: (message: string) => void,
+  errors: { report: ReportError; resolve: (key: string) => void },
   session: WorkbenchSession
 ): Promise<AppServices> {
+  const reportError = errors.report;
   const namespace = storageNamespace(session);
   if (!session.spaceId) throw new Error('No active space');
   // The database and the blob store open side by side: bytes live in the
@@ -160,5 +162,6 @@ export async function createAppServices(
     chatMessages: createPgliteChatMessageRepository(db),
     identity: { userId: session.userId, spaceId: session.spaceId },
     reportError,
+    resolveError: errors.resolve,
   };
 }

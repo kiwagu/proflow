@@ -35,10 +35,18 @@ export interface GraphServices {
   search?: SearchProvider;
   /**
    * Where a failure the user caused is reported. The surface never throws at
-   * them and never swallows: a host without a toaster still gets told.
+   * them and never swallows: a host without a toaster still gets told. A
+   * failure that can be repeated carries its retry, which resolves true once
+   * the operation went through.
    */
-  onError?: (message: string) => void;
+  onError?: (message: string, options?: GraphErrorOptions) => void;
 }
+
+export type GraphErrorOptions = {
+  /** One notice per key: a later report replaces the earlier one. */
+  key?: string;
+  retry?: () => Promise<boolean>;
+};
 
 const GraphServicesContext = createContext<GraphServices | null>(null);
 
@@ -72,7 +80,10 @@ export const useCurrentUserId = () => useGraphServices().userId;
 export const useSearchProvider = () => useGraphServices().search ?? null;
 
 /** Reports a failure to the host, if it asked to hear about them. */
-export function useReportGraphError(): (message: string) => void {
+export function useReportGraphError(): (
+  message: string,
+  options?: GraphErrorOptions
+) => void {
   const { onError } = useGraphServices();
-  return (message: string) => onError?.(message);
+  return (message, options) => onError?.(message, options);
 }
