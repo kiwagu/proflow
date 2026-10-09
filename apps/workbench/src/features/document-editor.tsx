@@ -131,6 +131,14 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
    * afterwards; its older answer must not replace what already arrived.
    */
   const arrived = useRef<{ tree: SerializedTree; markdown: string }>(undefined);
+  /**
+   * The same body, until an editor has shown it. An editor mounting on an
+   * older tree takes its initial content once and hands over its instance
+   * a moment later; a body that lands in between is painted then.
+   */
+  const unpainted = useRef<{ tree: SerializedTree; markdown: string }>(
+    undefined
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -256,6 +264,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
         if (!wrapper) {
           const body = { tree: event.tree, markdown: event.markdown };
           arrived.current = body;
+          unpainted.current = body;
           setInitial((current) =>
             current === null || 'awaiting' in current ? body : current
           );
@@ -344,6 +353,16 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
           );
         }
       );
+      // A merge that landed while this editor was mounting on an older tree.
+      const waiting = unpainted.current;
+      unpainted.current = undefined;
+      if (waiting && isWrapperWithIds(wrapper)) {
+        applyRemoteState(
+          wrapper.editor,
+          wrapper.mapping,
+          waiting.tree as unknown as SerializedEditorState
+        );
+      }
       // The wrapper's own cleanup runs on unmount; chain ours onto it.
       const cleanup = wrapper.cleanup;
       wrapper.cleanup = () => {

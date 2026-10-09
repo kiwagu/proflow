@@ -268,6 +268,42 @@ describe('a remote change in the open editor', () => {
     expect(save).not.toHaveBeenCalled();
   }, 10_000);
 
+  it('shows a body that lands while the editor is still mounting on an older one', async () => {
+    const { services, save } = stubServices({
+      markdown: '# Title\n\nOld body.',
+    });
+    let answer: (value: unknown) => void = () => {};
+    (services.documents as { load: unknown }).load = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const { changes, emit } = feed();
+    render(
+      <AppServicesProvider services={services}>
+        <DocumentChangesProvider value={changes}>
+          <DocumentEditor document={DOCUMENT} />
+        </DocumentChangesProvider>
+      </AppServicesProvider>
+    );
+    // The load answers with what it read; the merge lands before the editor
+    // it is about to mount has handed over its instance.
+    await act(async () => {
+      answer({
+        isErr: () => false,
+        value: {
+          meta: DOCUMENT,
+          content: { markdown: '# Title\n\nOld body.' },
+        },
+      });
+      await Promise.resolve();
+      emit(remote('# Title\n\nRemote body.'));
+    });
+    await screen.findByText('Remote body.');
+    expect(screen.queryByText('Old body.')).toBeNull();
+    await pause(500);
+    expect(save).not.toHaveBeenCalled();
+  }, 10_000);
+
   it('opens with the body when it arrives for a document still waiting for the server', async () => {
     const { services, save } = stubServices('awaiting');
     const { changes, emit } = feed();
