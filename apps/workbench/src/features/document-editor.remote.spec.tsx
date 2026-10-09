@@ -239,6 +239,35 @@ describe('a remote change in the open editor', () => {
     });
   }, 10_000);
 
+  it('opens with the body when it lands while the awaiting answer is still on its way', async () => {
+    const { services, save } = stubServices('awaiting');
+    let answer: (value: unknown) => void = () => {};
+    (services.documents as { load: unknown }).load = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const { changes, emit } = feed();
+    render(
+      <AppServicesProvider services={services}>
+        <DocumentChangesProvider value={changes}>
+          <DocumentEditor document={DOCUMENT} />
+        </DocumentChangesProvider>
+      </AppServicesProvider>
+    );
+    // The load read the document before the body landed, and answers after.
+    act(() => emit(remote('# Title\n\nFirst paragraph.')));
+    act(() =>
+      answer({
+        isErr: () => false,
+        value: { meta: DOCUMENT, content: null, awaitingSync: true },
+      })
+    );
+    await screen.findByText('First paragraph.');
+    expect(screen.queryByTestId('document-awaiting')).toBeNull();
+    await pause(500);
+    expect(save).not.toHaveBeenCalled();
+  }, 10_000);
+
   it('opens with the body when it arrives for a document still waiting for the server', async () => {
     const { services, save } = stubServices('awaiting');
     const { changes, emit } = feed();

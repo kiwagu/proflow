@@ -371,6 +371,70 @@ describe('a document shared by two devices', () => {
     expect(textOf((await reopened.load(id))!)).toBe('Hello A\nWorld!');
   });
 
+  it('a snapshot that fails after the merge is on disk still paints the merge and reverts nothing', async () => {
+    const id = await sharedDocument();
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.push(id);
+    await b.pull(id);
+    let tree = (await b.store.load(id))!;
+    // The pane: whatever B's editor shows is what a remote change painted.
+    b.store.onChanged((event) => {
+      if (event.source === 'remote') b.live.tree = event.tree;
+    });
+    // Enough of B's own saves that the next journal write snapshots.
+    for (let i = 1; i <= 18; i++) {
+      tree = withParagraph(tree, 1, `World${'!'.repeat(i)}`);
+      await b.save(id, tree);
+    }
+    b.live.tree = withParagraph(tree, 1, 'World typed');
+    await a.save(id, withParagraph((await a.store.load(id))!, 0, 'Hello A'));
+    await a.push(id);
+
+    // The journal write commits; the snapshot after it fails.
+    const original = b.db.transaction.bind(b.db);
+    let calls = 0;
+    (b.db as { transaction: typeof original }).transaction = (async (
+      ...args: Parameters<typeof original>
+    ) => {
+      calls += 1;
+      if (calls === 2) throw new Error('disk full');
+      return original(...args);
+    }) as typeof original;
+    await expect(b.pull(id)).rejects.toThrow(/disk full/);
+    await b.pull(id);
+
+    const reopened = createDocumentCrdtStore(b.db);
+    expect(textOf((await reopened.load(id))!)).toBe('Hello A\nWorld typed');
+  });
+
+  it('a save racing the first open of its document is written', async () => {
+    const documents = createPgliteDocumentRepository(
+      a.db,
+      a.store,
+      SPACE,
+      TEST_USER
+    );
+    const created = (
+      await documents.create({ title: 'Raced' })
+    )._unsafeUnwrap();
+    // A fresh page: the catch-up push and the editor's first save open the
+    // same document at the same moment.
+    const store = createDocumentCrdtStore(a.db);
+    const opening = store.syncable(created.id);
+    const saved = store.save({
+      id: created.id,
+      tree: treeOf('Typed'),
+      markdown: 'Typed',
+      preview: '',
+      author: AUTHOR,
+    });
+    await opening;
+    expect(await saved).toBe(true);
+    expect(
+      textOf((await createDocumentCrdtStore(a.db).load(created.id))!)
+    ).toBe('Typed');
+  });
+
   it('a save whose open copy was dropped under it writes nothing', async () => {
     const id = await sharedDocument();
     await a.save(id, treeOf('Hello\n\nWorld'));

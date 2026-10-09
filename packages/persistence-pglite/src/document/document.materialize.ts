@@ -97,6 +97,8 @@ export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
  * pushed or pulled, and opening it would only load its CRDT to compare two
  * equal versions. Versions, not times: a fold journaled by a pull is a
  * change of this device's even though the pull wrote the ledger after it.
+ * A document holding bytes but no recorded version (written before versions
+ * were kept) is a candidate until it is opened, which records its version.
  */
 export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
   const { rows } = await db.query<{ id: string }>(
@@ -106,6 +108,11 @@ export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
        and (
          s.document_id is null
          or (d.version_vv is not null and d.version_vv is distinct from s.pushed_vv)
+         or (
+           d.version_vv is null
+           and (exists (select 1 from document_update u where u.document_id = d.id)
+             or exists (select 1 from document_snapshot n where n.document_id = d.id))
+         )
        )`
   );
   return rows.map((r) => r.id);

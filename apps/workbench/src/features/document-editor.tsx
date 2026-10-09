@@ -125,12 +125,19 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     | null
   >(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+  /**
+   * A body that arrived from another device before an editor mounted. The
+   * load may have read the document just before it landed and answer only
+   * afterwards; its older answer must not replace what already arrived.
+   */
+  const arrived = useRef<{ tree: SerializedTree; markdown: string }>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     void documents.load(document.id).then((result) => {
       if (cancelled) return;
       if (result.isErr()) setInitial({ error: result.error });
+      else if (arrived.current) setInitial(arrived.current);
       else if (!result.value.content && result.value.awaitingSync)
         // Known from the graph, not yet pulled: a wait, not an empty page.
         setInitial({ awaiting: true });
@@ -247,10 +254,10 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
         if (event.id !== document.id || event.source !== 'remote') return;
         const wrapper = wrapperRef.current;
         if (!wrapper) {
+          const body = { tree: event.tree, markdown: event.markdown };
+          arrived.current = body;
           setInitial((current) =>
-            current && 'awaiting' in current
-              ? { tree: event.tree, markdown: event.markdown }
-              : current
+            current === null || 'awaiting' in current ? body : current
           );
           return;
         }

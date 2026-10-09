@@ -213,6 +213,42 @@ describe('documents with changes the server may not have', () => {
     expect(await listUnpushedDocuments(db)).toContain(id);
   });
 
+  it('lists a document written before versions were kept until it is opened and found pushed', async () => {
+    const store = createDocumentCrdtStore(db);
+    const documents = createPgliteDocumentRepository(
+      db,
+      store,
+      spaceId,
+      TEST_USER
+    );
+    const id = (await documents.create({ title: 'Legacy' }))._unsafeUnwrap().id;
+    await store.save({
+      id,
+      tree: treeOf('kept'),
+      markdown: 'kept',
+      preview: 'kept',
+      author: AUTHOR,
+    });
+    // As a database from before version tracking holds it: an edit on
+    // disk, a ledger row, and no version beside the row.
+    await db.query('update document set version_vv = null where id = $1', [id]);
+    await db.query(
+      `insert into document_sync (document_id, pushed_vv) values ($1, $2)
+       on conflict (document_id) do update set pushed_vv = excluded.pushed_vv`,
+      [id, DocumentCrdt.create().versionBytes()]
+    );
+    expect(await listUnpushedDocuments(db)).toContain(id);
+
+    // Opening it records its version; pushed, it leaves the list for good.
+    const reopened = createDocumentCrdtStore(db);
+    const version = (await reopened.syncable(id))!.versionBytes();
+    await db.query(
+      'update document_sync set pushed_vv = $2 where document_id = $1',
+      [id, version]
+    );
+    expect(await listUnpushedDocuments(db)).not.toContain(id);
+  });
+
   it('leaves out a document only known from the graph', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'Known' });

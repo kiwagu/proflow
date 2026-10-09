@@ -130,10 +130,25 @@ export function createDocumentCrdtStore(
     return entry;
   }
 
-  async function openDocument(id: string): Promise<Open> {
-    const cached = open.get(id);
-    if (cached) return cached;
+  /**
+   * Opens in progress, one per document. Two callers opening the same
+   * document at once — a catch-up push and the editor's first save — must
+   * get the same copy: two copies would each hold half of what is written,
+   * and the one the map dropped would refuse its save.
+   */
+  const opening = new Map<string, Promise<Open>>();
 
+  function openDocument(id: string): Promise<Open> {
+    const cached = open.get(id);
+    if (cached) return Promise.resolve(cached);
+    const pending = opening.get(id);
+    if (pending) return pending;
+    const started = readDocument(id).finally(() => opening.delete(id));
+    opening.set(id, started);
+    return started;
+  }
+
+  async function readDocument(id: string): Promise<Open> {
     const snapshot = await db.query<{ bytes: Uint8Array }>(
       'select bytes from document_snapshot where document_id = $1',
       [id]
@@ -147,6 +162,12 @@ export function createDocumentCrdtStore(
       snapshot: snapshot.rows[0]?.bytes,
       updates: journal,
     });
+    // A document written before its version was kept beside the row gets
+    // it now: replication finds the documents it still has to send by it.
+    await db.query(
+      'update document set version_vv = $2 where id = $1 and version_vv is null',
+      [id, crdt.versionBytes()]
+    );
     const last = updates.rows.at(-1);
     return track(id, crdt, journal.length, last ? Number(last.id) : 0);
   }
@@ -393,11 +414,13 @@ export function createDocumentCrdtStore(
     syncJournal: {
       append: async (id: string, blobs: Uint8Array[]): Promise<void> => {
         const entry = await openDocument(id);
+        const folded = entry.pending.slice();
+        let tree: SerializedTree | null;
+        let markdown: string;
         try {
-          const folded = entry.pending.slice();
-          const tree = entry.crdt.toTree();
+          tree = entry.crdt.toTree();
           // Derived before the transaction opens, as in restore.
-          const markdown = tree ? await treeAsMarkdown(tree) : '';
+          markdown = tree ? await treeAsMarkdown(tree) : '';
           await db.transaction(async (tx) => {
             for (const bytes of [...folded, ...blobs]) {
               const { rows } = await tx.query<{ id: number | string }>(
@@ -427,18 +450,6 @@ export function createDocumentCrdtStore(
               [id, entry.crdt.versionBytes()]
             );
           });
-          entry.pending.splice(0, folded.length);
-          entry.journalled += folded.length + blobs.length;
-          if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
-          if (tree) {
-            emit({
-              id,
-              source: 'remote',
-              tree,
-              markdown,
-              localEdits: folded.length > 0,
-            });
-          }
         } catch (error) {
           // The import changed this copy and nothing of it reached the
           // disk. Kept, it would hold remote operations the editor never
@@ -451,6 +462,20 @@ export function createDocumentCrdtStore(
         } finally {
           entry.merging = false;
         }
+        // On disk from here: whatever fails next must not undo it, and the
+        // editor is told before anything else can fail.
+        entry.pending.splice(0, folded.length);
+        entry.journalled += folded.length + blobs.length;
+        if (tree) {
+          emit({
+            id,
+            source: 'remote',
+            tree,
+            markdown,
+            localEdits: folded.length > 0,
+          });
+        }
+        if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
       },
     },
 
