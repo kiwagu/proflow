@@ -150,8 +150,11 @@ export function createPgliteDocumentRepository(
     async save(input) {
       try {
         const changed = await crdt.save({ ...input, writer });
-        // The save's own payload is the freshest content there is.
-        const cached = cache.get(input.id);
+        // A written save's payload is the freshest content there is. One the
+        // store did not write is either unchanged or refused because a merge
+        // moved the document past it — then its tree must not come back
+        // from the cache, or the next save from it would undo the merge.
+        const cached = changed ? cache.get(input.id) : undefined;
         if (cached) {
           cache.set(input.id, {
             meta: cached.meta,

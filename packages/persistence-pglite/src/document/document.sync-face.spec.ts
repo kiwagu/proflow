@@ -11,7 +11,10 @@ import {
   createDocumentCrdtStore,
   type DocumentChanged,
 } from './document.crdt-store.js';
-import { materializeDocuments } from './document.materialize.js';
+import {
+  listUnpushedDocuments,
+  materializeDocuments,
+} from './document.materialize.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
 
 /**
@@ -163,7 +166,11 @@ describe('a document shared by two devices', () => {
     expect(after.awaitingSync).toBe(false);
     expect(textOf(after.content!.tree)).toBe('Hello\nWorld');
     expect(after.content!.markdown).toContain('Hello');
-    expect(b.events.at(-1)).toMatchObject({ id, source: 'remote' });
+    expect(b.events.at(-1)).toMatchObject({
+      id,
+      source: 'remote',
+      localEdits: false,
+    });
   });
 
   it('a document made here opens empty, not awaiting', async () => {
@@ -297,6 +304,8 @@ describe('a document shared by two devices', () => {
 
     const merged = b.events.at(-1)!;
     expect(merged.source).toBe('remote');
+    // The fold is an edit of this device's: whoever pushes must hear of it.
+    expect(merged.localEdits).toBe(true);
     expect(textOf(merged.tree)).toBe('Hello A\nWorld!');
     const { rows } = await b.db.query<{ lexical_json: SerializedTree }>(
       'select lexical_json from document_content where document_id = $1',
@@ -312,6 +321,69 @@ describe('a document shared by two devices', () => {
     expect((await b.push(id)).pushedSeq).not.toBeNull();
     await a.pull(id);
     expect(textOf((await a.store.load(id))!)).toBe('Hello A\nWorld!');
+  });
+
+  it('a fold journaled by a pull stays listed as unpushed until it is pushed', async () => {
+    const id = await sharedDocument();
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.push(id);
+    await b.pull(id);
+    expect(await listUnpushedDocuments(b.db)).not.toContain(id);
+    const pulled = (await b.store.load(id))!;
+    b.live.tree = withParagraph(pulled, 1, 'World!');
+    await a.save(id, withParagraph(pulled, 0, 'Hello A'));
+    await a.push(id);
+    await b.pull(id);
+    // Found again after a restart: the list is read from the disk.
+    expect(await listUnpushedDocuments(b.db)).toContain(id);
+    await b.push(id);
+    expect(await listUnpushedDocuments(b.db)).not.toContain(id);
+  });
+
+  it('keeps a folded edit when the journal write fails and the pull is retried', async () => {
+    const id = await sharedDocument();
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.push(id);
+    await b.pull(id);
+    const pulled = (await b.store.load(id))!;
+    b.live.tree = withParagraph(pulled, 1, 'World!');
+    await a.save(id, withParagraph(pulled, 0, 'Hello A'));
+    await a.push(id);
+
+    // The journal write of the next pull fails once (a full disk, a
+    // closing tab): its transaction rolls back.
+    const original = b.db.transaction.bind(b.db);
+    let failOnce = true;
+    (b.db as { transaction: typeof original }).transaction = (async (
+      ...args: Parameters<typeof original>
+    ) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error('disk full');
+      }
+      return original(...args);
+    }) as typeof original;
+    await expect(b.pull(id)).rejects.toThrow(/disk full/);
+    await b.pull(id);
+
+    // A restart rebuilds the document from what reached the disk.
+    const reopened = createDocumentCrdtStore(b.db);
+    expect(textOf((await reopened.load(id))!)).toBe('Hello A\nWorld!');
+  });
+
+  it('a save whose open copy was dropped under it writes nothing', async () => {
+    const id = await sharedDocument();
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.push(id);
+    await b.pull(id);
+    const pulled = (await b.store.load(id))!;
+    const rowsBefore = await b.journalRows(id);
+    const late = b.save(id, withParagraph(pulled, 1, 'World!'));
+    // The copy it was writing through is gone (a failed merge, a restore):
+    // what it would commit was diffed against state that is not on disk.
+    b.store.close(id);
+    expect(await late).toBe(false);
+    expect(await b.journalRows(id)).toBe(rowsBefore);
   });
 
   it('refuses a save whose tree a merge in flight has made stale', async () => {
@@ -332,6 +404,42 @@ describe('a document shared by two devices', () => {
     expect(await stale).toBe(false);
     await b.store.syncJournal.append(id, remote);
     expect(textOf((await b.store.load(id))!)).toBe('Hello A\nWorld');
+  });
+
+  it('a save the merge refused leaves the cached body as it was', async () => {
+    const id = await sharedDocument();
+    const documentsB = createPgliteDocumentRepository(
+      b.db,
+      b.store,
+      SPACE,
+      TEST_USER
+    );
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.push(id);
+    await b.pull(id);
+    const pulled = (await documentsB.load(id))._unsafeUnwrap().content!.tree;
+    await a.save(id, withParagraph(pulled, 0, 'Hello A'));
+    await a.push(id);
+
+    const face = (await b.store.syncable(id))!;
+    const remote = (await server.tail(id, 1)).map((r) => r.bytes);
+    face.prepareImport();
+    face.importUpdates(remote);
+    const stale = withParagraph(pulled, 1, 'World!');
+    const saved = await documentsB.save({
+      id,
+      tree: stale,
+      markdown: textOf(stale),
+      preview: '',
+      author: AUTHOR,
+    });
+    expect(saved._unsafeUnwrap()).toBe(false);
+    // Reopening must not hand back the tree the store refused.
+    const reopened = (await documentsB.load(id))._unsafeUnwrap();
+    expect(textOf(reopened.content!.tree)).toBe('Hello\nWorld');
+    await b.store.syncJournal.append(id, remote);
+    const merged = (await documentsB.load(id))._unsafeUnwrap();
+    expect(textOf(merged.content!.tree)).toBe('Hello A\nWorld');
   });
 
   it('a push opening the document mid-merge does not let a stale save through', async () => {

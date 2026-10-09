@@ -187,11 +187,15 @@ describe('documents with changes the server may not have', () => {
       author: AUTHOR,
     });
     const first = await store.frontiers(id);
-    await db.query(
-      `insert into document_sync (document_id, pushed_vv) values ($1, $2)
-       on conflict (document_id) do update set pushed_vv = excluded.pushed_vv, updated_at = now()`,
-      [id, new Uint8Array([1])]
-    );
+    const markPushed = async () => {
+      const version = (await store.syncable(id))!.versionBytes();
+      await db.query(
+        `insert into document_sync (document_id, pushed_vv) values ($1, $2)
+         on conflict (document_id) do update set pushed_vv = excluded.pushed_vv`,
+        [id, version]
+      );
+    };
+    await markPushed();
     expect(await listUnpushedDocuments(db)).not.toContain(id);
 
     await store.save({
@@ -203,10 +207,8 @@ describe('documents with changes the server may not have', () => {
     });
     expect(await listUnpushedDocuments(db)).toContain(id);
 
-    await db.query(
-      'update document_sync set updated_at = now() where document_id = $1',
-      [id]
-    );
+    await markPushed();
+    expect(await listUnpushedDocuments(db)).not.toContain(id);
     await store.restore(id, first, AUTHOR);
     expect(await listUnpushedDocuments(db)).toContain(id);
   });

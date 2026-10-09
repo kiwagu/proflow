@@ -172,7 +172,8 @@ export function startDocumentSync(
           onError: (error) => options.onPassFailed?.(error),
         });
         unsubscribeChanges = store.onChanged((event) => {
-          if (event.source === 'local') schedulePush(event.id);
+          if (event.source === 'local' || event.localEdits)
+            schedulePush(event.id);
         });
         await pullAwaiting();
         await catchUp();

@@ -104,8 +104,14 @@ function stubStore() {
       };
     }),
   } as unknown as DocumentCrdtStore;
-  const change = (id: string, source: 'local' | 'remote') =>
-    listener?.({ id, source, tree: { root: { type: 'root' } }, markdown: '' });
+  const change = (id: string, source: 'local' | 'remote', localEdits = false) =>
+    listener?.({
+      id,
+      source,
+      tree: { root: { type: 'root' } },
+      markdown: '',
+      localEdits,
+    });
   return { store, syncable, change };
 }
 
@@ -198,6 +204,27 @@ describe('starting document replication', () => {
     expect(push).toHaveBeenCalledWith(
       'doc-typed',
       { id: 'doc-typed' },
+      'spc_abc.01m2'
+    );
+    handle.stop();
+  });
+
+  it('a merge that folded edits made here pushes them once they settle', async () => {
+    const { store, change } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+    change('doc-folded', 'remote', true);
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(push).toHaveBeenCalledWith(
+      'doc-folded',
+      { id: 'doc-folded' },
       'spc_abc.01m2'
     );
     handle.stop();

@@ -60,6 +60,12 @@ export interface DocumentChanged {
   source: 'local' | 'remote';
   tree: SerializedTree;
   markdown: string;
+  /**
+   * A remote merge that also carries edits of this device's — the open
+   * editor's tree, committed right before the import. Those still have to
+   * be sent; nothing else will announce them.
+   */
+  localEdits?: boolean;
 }
 
 /** The document as the sync engine drives it — the CRDT's own methods, structurally. */
@@ -225,8 +231,14 @@ export function createDocumentCrdtStore(
       await importForeign(input.id, entry);
       // A remote merge landed, or is between its import and its journal
       // write: the editor's tree was folded in already, and committing the
-      // tree this save carries would diff the remote operations away.
-      if (entry.merging || entry.generation !== seen) return false;
+      // tree this save carries would diff the remote operations away. A copy
+      // dropped meanwhile holds state that never reached the disk.
+      if (
+        entry.merging ||
+        entry.generation !== seen ||
+        open.get(input.id) !== entry
+      )
+        return false;
       const changed = entry.crdt.commitTree(input.tree, input.author);
       const updates = entry.pending.splice(0, entry.pending.length);
       if (!changed) return false;
@@ -255,8 +267,8 @@ export function createDocumentCrdtStore(
           ]
         );
         await tx.query(
-          'update document set preview = $2, updated_at = now() where id = $1',
-          [input.id, input.preview]
+          'update document set preview = $2, version_vv = $3, updated_at = now() where id = $1',
+          [input.id, input.preview, entry.crdt.versionBytes()]
         );
       });
 
@@ -319,9 +331,10 @@ export function createDocumentCrdtStore(
         }
         // A restore is an edit like any other: what tells replication this
         // document changed since it was last sent.
-        await tx.query('update document set updated_at = now() where id = $1', [
-          id,
-        ]);
+        await tx.query(
+          'update document set version_vv = $2, updated_at = now() where id = $1',
+          [id, entry.crdt.versionBytes()]
+        );
       });
       entry.journalled += updates.length;
       if (tree) emit({ id, source: 'local', tree, markdown });
@@ -381,7 +394,7 @@ export function createDocumentCrdtStore(
       append: async (id: string, blobs: Uint8Array[]): Promise<void> => {
         const entry = await openDocument(id);
         try {
-          const folded = entry.pending.splice(0, entry.pending.length);
+          const folded = entry.pending.slice();
           const tree = entry.crdt.toTree();
           // Derived before the transaction opens, as in restore.
           const markdown = tree ? await treeAsMarkdown(tree) : '';
@@ -404,15 +417,37 @@ export function createDocumentCrdtStore(
                        updated_at = now()`,
                 [id, JSON.stringify(tree), markdown]
               );
-              await tx.query(
-                'update document set preview = $2, updated_at = now() where id = $1',
-                [id, markdown.slice(0, 200)]
-              );
+              await tx.query('update document set preview = $2 where id = $1', [
+                id,
+                markdown.slice(0, 200),
+              ]);
             }
+            await tx.query(
+              'update document set version_vv = $2, updated_at = now() where id = $1',
+              [id, entry.crdt.versionBytes()]
+            );
           });
+          entry.pending.splice(0, folded.length);
           entry.journalled += folded.length + blobs.length;
           if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
-          if (tree) emit({ id, source: 'remote', tree, markdown });
+          if (tree) {
+            emit({
+              id,
+              source: 'remote',
+              tree,
+              markdown,
+              localEdits: folded.length > 0,
+            });
+          }
+        } catch (error) {
+          // The import changed this copy and nothing of it reached the
+          // disk. Kept, it would hold remote operations the editor never
+          // saw, and the retried pull would fold the editor's older tree
+          // over them. Dropped, the next access rebuilds from the disk and
+          // the retry folds and imports again from there.
+          entry.unsubscribe();
+          if (open.get(id) === entry) open.delete(id);
+          throw error;
         } finally {
           entry.merging = false;
         }

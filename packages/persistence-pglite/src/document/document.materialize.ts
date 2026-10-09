@@ -91,17 +91,22 @@ export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
 }
 
 /**
- * Documents with local changes the server may not have: never pushed, or
- * changed since their ledger row was last written. What a catch-up push
- * opens — every other document is in step with what was pushed or pulled,
- * and opening it would only load its CRDT to compare two equal versions.
+ * Documents with changes the server may not have: never pushed, or whose
+ * version as of the last local write is not the version last pushed. What
+ * a catch-up push opens — every other document is in step with what was
+ * pushed or pulled, and opening it would only load its CRDT to compare two
+ * equal versions. Versions, not times: a fold journaled by a pull is a
+ * change of this device's even though the pull wrote the ledger after it.
  */
 export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
   const { rows } = await db.query<{ id: string }>(
     `select d.id from document d
      left join document_sync s on s.document_id = d.id
      where d.deleted_at is null
-       and (s.document_id is null or d.updated_at > s.updated_at)`
+       and (
+         s.document_id is null
+         or (d.version_vv is not null and d.version_vv is distinct from s.pushed_vv)
+       )`
   );
   return rows.map((r) => r.id);
 }
