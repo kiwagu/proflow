@@ -172,6 +172,39 @@ describe('the space feed', () => {
     watch.stop();
   });
 
+  it('recovers a head stamped below the cursor on its periodic full pass', async () => {
+    const a = await replica('client-a');
+    // No poll: every pass below is one this test starts.
+    const b = await replica('client-b', {
+      pollIntervalMs: 60 * 60_000,
+      fullPassIntervalMs: 500,
+    });
+    await a.edit(DOC_A, 'alpha. ');
+    await a.push(DOC_A);
+    let passes = 0;
+    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    await expect.poll(() => b.text(DOC_A)).toBe('alpha. ');
+    await expect.poll(() => passes).toBe(1);
+
+    // A transaction that waited past the overlap window commits with the
+    // time it started at — below the cursor b already holds.
+    server.dropNudges();
+    await a.edit(DOC_B, 'late. ');
+    await a.push(DOC_B);
+    await server.backdate(DOC_B, 60 * 60_000);
+
+    watch.kick();
+    await expect.poll(() => passes).toBe(2);
+    // An ordinary pass reads from the cursor and cannot see it.
+    expect(b.has(DOC_B)).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    watch.kick();
+    await expect.poll(() => passes).toBe(3);
+    expect(b.text(DOC_B)).toBe('late. ');
+    watch.stop();
+  });
+
   it('reports a failed pass and succeeds on the next', async () => {
     let failures = 1;
     const flaky: SyncTransport = {

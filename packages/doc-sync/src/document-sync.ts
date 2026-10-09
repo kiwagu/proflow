@@ -30,6 +30,17 @@ const POLL_INTERVAL_MS = 15_000;
 /** Heads per page — one request for a space of ordinary size. */
 const HEADS_PAGE = 500;
 
+/**
+ * How often a watched space is read from the start instead of from its
+ * cursor. A head's time is when its transaction STARTED: one that waited
+ * longer than the overlap window commits below a cursor a faster pass has
+ * already taken, and no cursor-based pass sees it again. Reading every
+ * head now and then is what makes such an update arrive anyway; the first
+ * pass of every watch is one, so nothing missed in an earlier session
+ * waits for the interval.
+ */
+const FULL_PASS_INTERVAL_MS = 5 * 60_000;
+
 export interface SpacePassOutcome {
   /** Documents that imported at least one foreign blob in this pass. */
   pulled: number;
@@ -77,6 +88,8 @@ export interface DocumentSyncOptions {
   /** False disables the automatic proposal after push. */
   compaction?: { maxRows?: number; maxBytes?: number } | false;
   pollIntervalMs?: number;
+  /** How often `watchSpace` reads every head instead of those past its cursor. */
+  fullPassIntervalMs?: number;
 }
 
 function bytesEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -106,6 +119,8 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       ? Infinity
       : (compaction.maxBytes ?? COMPACTION_MAX_BYTES);
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+  const fullPassIntervalMs =
+    options.fullPassIntervalMs ?? FULL_PASS_INTERVAL_MS;
 
   /** Server rows this document is known to exist for (ensure is idempotent
    *  but not free — one upsert per process lifetime is enough). */
@@ -269,9 +284,10 @@ export function createDocumentSync(options: DocumentSyncOptions) {
 
   async function passSpace(
     spaceId: string,
-    hooks: SpaceWatchHooks
+    hooks: SpaceWatchHooks,
+    full: boolean
   ): Promise<SpacePassOutcome> {
-    const since = await ledger.headsCursor(spaceId);
+    const since = full ? null : await ledger.headsCursor(spaceId);
     let newest: Date | null = null;
     const due: SyncDocumentHead[] = [];
     for (let offset = 0; ; offset += HEADS_PAGE) {
@@ -310,6 +326,8 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     let stopped = false;
     let running = false;
     let again = false;
+    /** When the last full pass completed; never, so the first pass is one. */
+    let lastFull = -Infinity;
     const run = () => {
       if (stopped) return;
       if (running) {
@@ -317,8 +335,11 @@ export function createDocumentSync(options: DocumentSyncOptions) {
         return;
       }
       running = true;
-      passSpace(spaceId, hooks)
+      const started = Date.now();
+      const full = started - lastFull >= fullPassIntervalMs;
+      passSpace(spaceId, hooks, full)
         .then((outcome) => {
+          if (full) lastFull = started;
           if (!stopped) hooks.onPass?.(outcome);
         })
         .catch((error: unknown) => {

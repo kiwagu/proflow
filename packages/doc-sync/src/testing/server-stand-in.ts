@@ -25,6 +25,11 @@ export interface ServerStandIn extends SyncTransport {
   spaceNudgeCount(): number;
   /** Stops delivering nudges: the degradation the poll has to cover. */
   dropNudges(): void;
+  /**
+   * Moves a document's head back in time, as a commit stamped with the
+   * start of a long-waiting transaction would land.
+   */
+  backdate(docId: string, ms: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -247,6 +252,14 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     spaceNudgeCount: () => spaceNudges,
     dropNudges: () => {
       nudgesEnabled = false;
+    },
+    async backdate(docId, ms) {
+      await db.query(
+        `update crdt_documents
+         set updated_at = updated_at - make_interval(secs => $2::double precision / 1000)
+         where id = $1`,
+        [docId, ms]
+      );
     },
     close: () => db.close(),
   };

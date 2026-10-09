@@ -32,7 +32,11 @@ export interface SpaceReplica {
 export async function createSpaceReplica(
   name: string,
   transport: SyncTransport,
-  options: { pollIntervalMs?: number; blocked?: string[] } = {}
+  options: {
+    pollIntervalMs?: number;
+    fullPassIntervalMs?: number;
+    blocked?: string[];
+  } = {}
 ): Promise<SpaceReplica> {
   const local = await PGlite.create();
   await local.exec(LOCAL_SCHEMA);
@@ -44,6 +48,7 @@ export async function createSpaceReplica(
     writer: name,
     compaction: false,
     pollIntervalMs: options.pollIntervalMs ?? 25,
+    fullPassIntervalMs: options.fullPassIntervalMs,
   });
   const docs = new Map<
     string,
