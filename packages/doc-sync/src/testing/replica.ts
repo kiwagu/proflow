@@ -16,7 +16,7 @@ import type { SyncableDocument, SyncTransport } from '../types.js';
  * spelled out here rather than imported so this harness does not depend on
  * that package's bundler-specific migration loading.
  */
-const LOCAL_SCHEMA = `
+export const LOCAL_SCHEMA = `
 create table document_snapshot (
   document_id text primary key,
   bytes       bytea not null
@@ -32,10 +32,15 @@ create table document_sync (
   pulled_seq  bigint not null default 0,
   updated_at  timestamptz not null default now()
 );
+create table document_sync_space (
+  space_id     text primary key,
+  heads_cursor timestamptz,
+  updated_at   timestamptz not null default now()
+);
 `;
 
 /** A plain-text Loro document behind the `SyncableDocument` seam. */
-class TextDocument implements SyncableDocument {
+export class TextDocument implements SyncableDocument {
   doc = new LoroDoc();
 
   exportUpdatesSince(from: Uint8Array | null): Uint8Array {

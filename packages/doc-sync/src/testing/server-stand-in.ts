@@ -7,8 +7,9 @@ import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
  *
  * The DDL and the compaction function mirror the deployed schema, guard for
  * guard — the point of these tests is the protocol, so the piece the protocol
- * is defined against has to behave for real: server-assigned identity seq,
- * an append-only log, and a compaction that refuses to advance on a stale or
+ * is defined against has to behave for real: a per-document gap-free seq
+ * assigned by the same trigger, a head that moves with it, an append-only
+ * log, and a compaction that refuses to advance on a stale or
  * beyond-the-tail watermark. What is deliberately NOT reproduced is
  * authentication and row-level security: they are enforced server-side and
  * are the schema's own subject, not the sync engine's.
@@ -20,6 +21,8 @@ export interface ServerStandIn extends SyncTransport {
   resend(docId: string, bytes: Uint8Array, writer: string): Promise<number>;
   /** Number of nudges dispatched to live subscriptions. */
   nudgeCount(): number;
+  /** Number of space nudges dispatched to live space subscriptions. */
+  spaceNudgeCount(): number;
   /** Stops delivering nudges: the degradation the poll has to cover. */
   dropNudges(): void;
   close(): Promise<void>;
@@ -31,17 +34,34 @@ create table crdt_documents (
   space_id     text not null,
   snapshot     bytea,
   snapshot_seq bigint not null default 0,
+  head_seq     bigint not null default 0,
   format       text not null default 'loro-snapshot-v1',
   updated_at   timestamptz not null default now()
 );
 create table crdt_updates (
   doc_id     text not null references crdt_documents(id) on delete cascade,
-  seq        bigint generated always as identity,
+  seq        bigint not null default 0,
   bytes      bytea not null,
   writer     text not null,
   created_at timestamptz not null default now(),
   primary key (doc_id, seq)
 );
+
+-- the server's rule, guard for guard: seq is per document, assigned under
+-- the document row's lock, and the head moves with it.
+create function crdt_updates_assign_seq() returns trigger language plpgsql as $$
+begin
+  update crdt_documents d
+  set head_seq = d.head_seq + 1, updated_at = now()
+  where d.id = new.doc_id
+  returning d.head_seq into new.seq;
+  if new.seq is null then
+    raise exception 'crdt document % not found', new.doc_id;
+  end if;
+  return new;
+end $$;
+create trigger crdt_updates_assign_seq
+before insert on crdt_updates for each row execute function crdt_updates_assign_seq();
 
 create function rpc_compact_document(
   p_doc_id text, p_snapshot bytea, p_covers_seq bigint
@@ -82,13 +102,29 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   await db.exec(SCHEMA);
 
   const subscribers = new Map<string, Set<() => void>>();
+  const spaceSubscribers = new Map<string, Set<() => void>>();
   let nudges = 0;
+  let spaceNudges = 0;
   let nudgesEnabled = true;
 
   function nudge(docId: string) {
     if (!nudgesEnabled) return;
     for (const cb of subscribers.get(docId) ?? []) {
       nudges += 1;
+      cb();
+    }
+  }
+
+  async function nudgeSpaceOf(docId: string) {
+    if (!nudgesEnabled) return;
+    const { rows } = await db.query<{ space_id: string }>(
+      'select space_id from crdt_documents where id = $1',
+      [docId]
+    );
+    const spaceId = rows[0]?.space_id;
+    if (!spaceId) return;
+    for (const cb of spaceSubscribers.get(spaceId) ?? []) {
+      spaceNudges += 1;
       cb();
     }
   }
@@ -101,6 +137,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     );
     const seq = Number(rows[0]?.seq);
     nudge(docId);
+    await nudgeSpaceOf(docId);
     return seq;
   }
 
@@ -167,7 +204,36 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         'select rpc_compact_document($1, $2, $3)',
         [docId, snapshot, coversSeq]
       );
-      return rows[0]?.rpc_compact_document === true;
+      const accepted = rows[0]?.rpc_compact_document === true;
+      if (accepted) await nudgeSpaceOf(docId);
+      return accepted;
+    },
+
+    async heads(spaceId, since, limit, offset) {
+      const { rows } = await db.query<{
+        id: string;
+        head_seq: string;
+        updated_at: string | Date;
+      }>(
+        `select id, head_seq, updated_at from crdt_documents
+         where space_id = $1 and ($2::timestamptz is null or updated_at >= $2)
+         order by updated_at, id
+         limit $3 offset $4`,
+        [spaceId, since, limit + 1, offset]
+      );
+      const all = rows.map((r) => ({
+        docId: r.id,
+        headSeq: Number(r.head_seq),
+        updatedAt: new Date(r.updated_at),
+      }));
+      return { rows: all.slice(0, limit), hasMore: all.length > limit };
+    },
+
+    subscribeSpace(spaceId, onNudge) {
+      const set = spaceSubscribers.get(spaceId) ?? new Set();
+      set.add(onNudge);
+      spaceSubscribers.set(spaceId, set);
+      return () => set.delete(onNudge);
     },
 
     subscribeInserts(docId, onNudge) {
@@ -178,6 +244,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     },
 
     nudgeCount: () => nudges,
+    spaceNudgeCount: () => spaceNudges,
     dropNudges: () => {
       nudgesEnabled = false;
     },

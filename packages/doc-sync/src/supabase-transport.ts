@@ -112,5 +112,47 @@ export function createSupabaseTransport(
         channel = null;
       };
     },
+
+    async heads(spaceId, since, limit, offset) {
+      let query = client
+        .from('crdt_documents')
+        .select('id, head_seq, updated_at')
+        .eq('space_id', spaceId)
+        // Id as tiebreaker: equal timestamps must order deterministically
+        // or offset pages could overlap or skip between requests.
+        .order('updated_at', { ascending: true })
+        .order('id', { ascending: true })
+        // One extra row answers "is there more?" without a count query.
+        .range(offset, offset + limit);
+      if (since) query = query.gte('updated_at', since.toISOString());
+      const { data, error } = await query;
+      if (error) throw new Error(`heads query failed: ${error.message}`);
+      const rows = (data ?? []).map((row) => ({
+        docId: row.id,
+        headSeq: Number(row.head_seq),
+        updatedAt: new Date(row.updated_at),
+      }));
+      return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+    },
+
+    subscribeSpace(spaceId, onNudge) {
+      let channel: RealtimeChannel | null = client
+        .channel(`doc-sync:space:${spaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'crdt_documents',
+            filter: `space_id=eq.${spaceId}`,
+          },
+          () => onNudge()
+        )
+        .subscribe();
+      return () => {
+        if (channel) void client.removeChannel(channel);
+        channel = null;
+      };
+    },
   };
 }

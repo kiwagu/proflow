@@ -2,6 +2,7 @@ import type {
   PullResult,
   PushResult,
   SyncableDocument,
+  SyncDocumentHead,
   SyncJournal,
   SyncLedger,
   SyncTransport,
@@ -25,6 +26,37 @@ const COMPACTION_MAX_BYTES = 1024 * 1024;
  * catch-up prompt; the poll makes it inevitable.
  */
 const POLL_INTERVAL_MS = 15_000;
+
+/** Heads per page — one request for a space of ordinary size. */
+const HEADS_PAGE = 500;
+
+export interface SpacePassOutcome {
+  /** Documents that imported at least one foreign blob in this pass. */
+  pulled: number;
+  /** Heads the hook could not open: no local row for them yet. */
+  skipped: number;
+}
+
+export interface SpaceWatchHooks {
+  /**
+   * The local document for a head, or null when this device has no row for
+   * it. A null is not an error, and it does not hold the cursor: whoever
+   * creates the row later pulls the document then.
+   */
+  open(docId: string): Promise<SyncableDocument | null>;
+  /** After every pull of the pass that imported at least one foreign blob. */
+  onPulled?: (docId: string, result: PullResult) => void;
+  /** A pass completed, whether or not anything was pulled. */
+  onPass?: (outcome: SpacePassOutcome) => void;
+  /** A failed pass; the next nudge or poll simply tries again. */
+  onError?: (error: unknown) => void;
+}
+
+export interface SpaceWatch {
+  stop(): void;
+  /** Run a pass now. */
+  kick(): void;
+}
 
 export interface DocumentSyncOptions {
   transport: SyncTransport;
@@ -136,22 +168,37 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     docId: string,
     doc: SyncableDocument
   ): Promise<PullResult> {
-    const { pulledSeq } = await ledger.read(docId);
+    const { pushedVv, pulledSeq } = await ledger.read(docId);
     const head = await transport.head(docId);
-    const durable: Uint8Array[] = [];
+    const incoming: Uint8Array[] = [];
     let floor = pulledSeq;
     if (head.snapshot && head.snapshotSeq > pulledSeq) {
       // The snapshot covers everything through snapshotSeq — rows at or
       // below it may already be compacted away, so the tail floor moves up.
-      doc.importUpdates([head.snapshot]);
-      durable.push(head.snapshot);
+      incoming.push(head.snapshot);
       floor = head.snapshotSeq;
     }
     const rows = await transport.tail(docId, floor);
     const foreign = rows.filter((r) => r.writer !== writer);
-    if (foreign.length > 0) {
-      doc.importUpdates(foreign.map((r) => r.bytes));
-      durable.push(...foreign.map((r) => r.bytes));
+    incoming.push(...foreign.map((r) => r.bytes));
+    /**
+     * The version after the import, when everything this replica held
+     * before it had already been acknowledged: then the server holds all of
+     * it, and recording it as pushed is what keeps the next push from
+     * sending pulled operations back. Captured in the same synchronous step
+     * as the import, after the document committed what it was still
+     * holding, so nothing local can slip in between.
+     */
+    let settledVv: Uint8Array | null = null;
+    if (incoming.length > 0) {
+      doc.prepareImport?.();
+      const before = doc.versionBytes();
+      // Everything in one import: a document that folds a live editor in
+      // before merging must do so once, against the state it was edited from.
+      doc.importUpdates(incoming);
+      if (pushedVv !== null && bytesEqual(pushedVv, before)) {
+        settledVv = doc.versionBytes();
+      }
       tailByteGauge.set(
         docId,
         (tailByteGauge.get(docId) ?? 0) +
@@ -163,8 +210,9 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       // Durability before the watermark: once pulled_seq advances, these
       // bytes are never asked for again, so they must already be able to
       // survive a restart locally.
-      if (durable.length > 0) await journal?.append(docId, durable);
+      if (incoming.length > 0) await journal?.append(docId, incoming);
       await ledger.recordPull(docId, newSeq);
+      if (settledVv) await ledger.recordPush(docId, settledVv);
     }
     return {
       imported: foreign.length,
@@ -219,10 +267,89 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     };
   }
 
+  async function passSpace(
+    spaceId: string,
+    hooks: SpaceWatchHooks
+  ): Promise<SpacePassOutcome> {
+    const since = await ledger.headsCursor(spaceId);
+    let newest: Date | null = null;
+    const due: SyncDocumentHead[] = [];
+    for (let offset = 0; ; offset += HEADS_PAGE) {
+      const page = await transport.heads(spaceId, since, HEADS_PAGE, offset);
+      for (const head of page.rows) {
+        if (!newest || head.updatedAt > newest) newest = head.updatedAt;
+        const { pulledSeq } = await ledger.read(head.docId);
+        if (head.headSeq > pulledSeq) due.push(head);
+      }
+      if (!page.hasMore) break;
+    }
+    let pulled = 0;
+    let skipped = 0;
+    for (const head of due) {
+      const doc = await hooks.open(head.docId);
+      if (!doc) {
+        skipped += 1;
+        continue;
+      }
+      const result = await pull(head.docId, doc);
+      if (result.imported > 0) {
+        pulled += 1;
+        hooks.onPulled?.(head.docId, result);
+      }
+    }
+    if (newest) await ledger.advanceHeadsCursor(spaceId, newest);
+    return { pulled, skipped };
+  }
+
+  /**
+   * Keeps every document of a space converged: an immediate pass, a nudge
+   * subscription on the space, and the same poll `watch` has. Passes never
+   * overlap — a nudge during a pass queues one more.
+   */
+  function watchSpace(spaceId: string, hooks: SpaceWatchHooks): SpaceWatch {
+    let stopped = false;
+    let running = false;
+    let again = false;
+    const run = () => {
+      if (stopped) return;
+      if (running) {
+        again = true;
+        return;
+      }
+      running = true;
+      passSpace(spaceId, hooks)
+        .then((outcome) => {
+          if (!stopped) hooks.onPass?.(outcome);
+        })
+        .catch((error: unknown) => {
+          if (!stopped) hooks.onError?.(error);
+        })
+        .finally(() => {
+          running = false;
+          if (again) {
+            again = false;
+            run();
+          }
+        });
+    };
+    const unsubscribe = transport.subscribeSpace(spaceId, run);
+    const timer = setInterval(run, pollIntervalMs);
+    run();
+    return {
+      stop() {
+        stopped = true;
+        clearInterval(timer);
+        unsubscribe();
+      },
+      kick: run,
+    };
+  }
+
   return {
     push,
     pull,
     watch,
+    watchSpace,
     /**
      * Explicit compaction proposal — for callers that decide on their own
      * schedule. `coversSeq` must be a seq this client has fully caught up
