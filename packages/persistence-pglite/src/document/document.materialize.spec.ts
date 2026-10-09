@@ -69,7 +69,7 @@ const ledgerRow = async (id: string) => {
 };
 
 describe('materializing documents the graph brought in', () => {
-  it('gives a live text node without a document a row: known, empty, not yet pulled', async () => {
+  it('gives a live text node without a document a row: known, empty, never pulled', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'From another device' });
     expect(await materializeDocuments(db, spaceId)).toBe(1);
@@ -81,7 +81,7 @@ describe('materializing documents the graph brought in', () => {
     // been "pushed", so whatever the first pull brings is not sent back.
     expect(await ledgerRow(docId)).toEqual({
       pushedVv: DocumentCrdt.create().versionBytes(),
-      pulledSeq: 0,
+      pulledSeq: -1,
     });
   });
 

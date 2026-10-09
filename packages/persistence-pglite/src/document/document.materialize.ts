@@ -2,16 +2,24 @@ import { DocumentCrdt } from '@workspace/doc-crdt';
 import type { AppDb } from '../db/db.js';
 
 /**
- * A document this device knows only from the graph: the sync ledger says it
- * was never pulled, and no byte of it is held here. Its body is on the
- * server, so an empty page would be a lie — the editor says it is loading.
- * A document created here has no ledger row until its first push, and one
- * pushed or pulled holds bytes, so neither ever matches. `d` is the
- * document row.
+ * The pull watermark of a document this device knows only from the graph
+ * and has never asked the server about. Below every real watermark, so the
+ * first pull — even one that finds nothing — moves it up for good, and the
+ * space feed takes any head of it as due.
+ */
+const NEVER_PULLED = -1;
+
+/**
+ * A document this device knows only from the graph: never asked the server
+ * about, and no byte of it held here. Its body may be on the server, so an
+ * empty page would be a lie — the editor says it is loading. A document
+ * created here is never marked so, even once pushed while still empty;
+ * one the server turned out to hold nothing for stops matching after that
+ * first pull. `d` is the document row.
  */
 export const AWAITING_SYNC = `exists (
     select 1 from document_sync s
-    where s.document_id = d.id and s.pulled_seq = 0
+    where s.document_id = d.id and s.pulled_seq < 0
   )
   and not exists (select 1 from document_update u where u.document_id = d.id)
   and not exists (select 1 from document_snapshot n where n.document_id = d.id)`;
@@ -26,8 +34,8 @@ export const AWAITING_SYNC = `exists (
  * be journaled against it — the journal and the ledger both reference it.
  *
  * The row is created from the node (same id, the node's title, the default
- * kind) and the sync ledger records it as known and empty: nothing pulled
- * yet, and the empty version as what has been pushed — this device has
+ * kind) and the sync ledger records it as known and empty: never pulled,
+ * and the empty version as what has been pushed — this device has
  * nothing of its own to send, so whatever its first pull brings is not
  * sent back. Nodes in the trash are left alone; restoring one brings it
  * here on the next run. Idempotent: a run that finds nothing to add
@@ -57,9 +65,13 @@ export async function materializeDocuments(
     if (rows.length > 0) {
       await tx.query(
         `insert into document_sync (document_id, pushed_vv, pulled_seq)
-         select unnest($1::text[]), $2::bytea, 0
+         select unnest($1::text[]), $2::bytea, $3
          on conflict (document_id) do nothing`,
-        [rows.map((r) => r.id), DocumentCrdt.create().versionBytes()]
+        [
+          rows.map((r) => r.id),
+          DocumentCrdt.create().versionBytes(),
+          NEVER_PULLED,
+        ]
       );
     }
     return rows.length;

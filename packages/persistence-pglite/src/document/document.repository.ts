@@ -101,7 +101,27 @@ export function createPgliteDocumentRepository(
           [id]
         );
         const row = rows[0];
-        if (!row) return err(`document ${id} not found`);
+        if (!row) {
+          // The graph brought the node and the explorer shows it at once;
+          // the document row follows with the materializer. In between, the
+          // body is on its way, not missing.
+          const { rows: nodes } = await db.query<DocumentRow>(
+            `select $1::text as id, r.title, 'md' as kind, '' as preview,
+                    false as starred, r.created_at, r.updated_at
+             from knowledge_resources r
+             where r.kind = 'text' and r.deleted_at is null
+               and r.body_ref ->> 'doc_id' = $1
+             limit 1`,
+            [id]
+          );
+          const node = nodes[0];
+          if (!node) return err(`document ${id} not found`);
+          return ok({
+            meta: toDocumentMeta(node),
+            content: null,
+            awaitingSync: true,
+          });
+        }
 
         let tree =
           row.lexical_json == null

@@ -179,6 +179,81 @@ describe('a document shared by two devices', () => {
     expect(loaded.awaitingSync).toBe(false);
   });
 
+  it('a node opened before its document row was materialized waits instead of failing', async () => {
+    const documentsA = createPgliteDocumentRepository(
+      a.db,
+      a.store,
+      SPACE,
+      TEST_USER
+    );
+    const created = (
+      await documentsA.create({ title: 'Raced' })
+    )._unsafeUnwrap();
+    await a.save(created.id, treeOf('Body'));
+    await a.push(created.id);
+    // The explorer shows the node the moment the graph applies it; the
+    // document row comes with the materializer a moment later.
+    await b.db.query(
+      `insert into knowledge_resources (id, space_id, kind, title, created_by, body_ref)
+       values ($1, $2, 'text', $3, $4, $5::jsonb)`,
+      [
+        testId('knr'),
+        SPACE,
+        'Raced',
+        TEST_USER,
+        JSON.stringify({ doc_id: created.id }),
+      ]
+    );
+    const documentsB = createPgliteDocumentRepository(
+      b.db,
+      b.store,
+      SPACE,
+      TEST_USER
+    );
+    const early = (await documentsB.load(created.id))._unsafeUnwrap();
+    expect(early.content).toBeNull();
+    expect(early.awaitingSync).toBe(true);
+    expect(early.meta.title).toBe('Raced');
+
+    await materializeDocuments(b.db, SPACE);
+    await b.pull(created.id);
+    const later = (await documentsB.load(created.id))._unsafeUnwrap();
+    expect(textOf(later.content!.tree)).toBe('Body');
+  });
+
+  it('a document made here and pushed while still empty opens empty, not awaiting', async () => {
+    const documents = createPgliteDocumentRepository(
+      a.db,
+      a.store,
+      SPACE,
+      TEST_USER
+    );
+    const created = (
+      await documents.create({ title: 'Fresh' })
+    )._unsafeUnwrap();
+    // A catch-up push can reach a document before the first keystroke.
+    await a.push(created.id);
+    const loaded = (await documents.load(created.id))._unsafeUnwrap();
+    expect(loaded.content).toBeNull();
+    expect(loaded.awaitingSync).toBe(false);
+  });
+
+  it('a document the server holds nothing for stops awaiting after its first pull', async () => {
+    const id = await sharedDocument();
+    const documentsB = createPgliteDocumentRepository(
+      b.db,
+      b.store,
+      SPACE,
+      TEST_USER
+    );
+    expect((await documentsB.load(id))._unsafeUnwrap().awaitingSync).toBe(true);
+    // A never typed into it, so the server has no row: asking is the answer.
+    await b.pull(id);
+    expect((await documentsB.load(id))._unsafeUnwrap().awaitingSync).toBe(
+      false
+    );
+  });
+
   it('a document this device already opened reopens with the merged body', async () => {
     const id = await sharedDocument();
     const documentsB = createPgliteDocumentRepository(
