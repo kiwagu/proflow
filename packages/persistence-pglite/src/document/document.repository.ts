@@ -9,6 +9,7 @@ import { graphInTransaction } from '../graph/graph.transaction.js';
 import { type ContentCache, createContentCache } from './content-cache.js';
 import type { DocumentCrdtStore } from './document.crdt-store.js';
 import { type DocumentRow, toDocumentMeta } from './document.mapper.js';
+import { AWAITING_SYNC } from './document.materialize.js';
 
 const META_COLUMNS =
   'id, title, kind, preview, starred, created_at, updated_at';
@@ -22,6 +23,18 @@ export function createPgliteDocumentRepository(
 ): IDocumentRepository {
   // Minted per instance: each tab and each worker is its own writer.
   const writer = newId('writer');
+  // A merge from another device rewrote the document: an entry cached
+  // before it would reopen the old body, and the next save from that body
+  // would revert what the other device wrote.
+  crdt.onChanged((event) => {
+    if (event.source !== 'remote') return;
+    const cached = cache.get(event.id);
+    if (!cached) return;
+    cache.set(event.id, {
+      meta: cached.meta,
+      content: { tree: event.tree, markdown: event.markdown },
+    });
+  });
   return {
     writer,
 
@@ -77,10 +90,12 @@ export function createPgliteDocumentRepository(
           DocumentRow & {
             lexical_json: unknown;
             content_markdown: string | null;
+            awaiting_sync: boolean;
           }
         >(
           `select ${META_COLUMNS.replaceAll(/(^|, )/g, '$1d.')},
-                  c.lexical_json, c.markdown as content_markdown
+                  c.lexical_json, c.markdown as content_markdown,
+                  (${AWAITING_SYNC}) as awaiting_sync
            from document d left join document_content c on c.document_id = d.id
            where d.id = $1 and d.deleted_at is null`,
           [id]
@@ -102,7 +117,11 @@ export function createPgliteDocumentRepository(
           ? { tree, markdown: row.content_markdown ?? '' }
           : null;
         if (content) cache.set(id, { meta, content });
-        return ok({ meta, content });
+        return ok({
+          meta,
+          content,
+          awaitingSync: !content && row.awaiting_sync,
+        });
       } catch (e) {
         return err(`document.load failed: ${String(e)}`);
       }

@@ -605,6 +605,7 @@
       "devDependencies": {
         "@types/node": "catalog:",
         "@types/react": "catalog:",
+        "@workspace/doc-sync": "workspace:*",
         "@workspace/eslint-config": "workspace:^",
         "@workspace/typescript-config": "workspace:^",
         "eslint": "catalog:",

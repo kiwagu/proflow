@@ -43,6 +43,31 @@ async function treeAsMarkdown(tree: SerializedTree): Promise<string> {
  */
 const JOURNAL_LIMIT = 20;
 
+/**
+ * The open editor, as the store may read it: the tree it holds right now
+ * and the author its content is attributed to. Handed in by the
+ * composition, which owns the registry the editor announces itself to.
+ */
+export interface LiveTree {
+  read(id: string): SerializedTree | null;
+  author: EditAuthor;
+}
+
+/** What the document now says, and whose change it was. */
+export interface DocumentChanged {
+  id: string;
+  /** `local`: this instance saved or restored. `remote`: a pull merged in. */
+  source: 'local' | 'remote';
+  tree: SerializedTree;
+  markdown: string;
+}
+
+/** The document as the sync engine drives it — the CRDT's own methods, structurally. */
+export type SyncableCrdt = Pick<
+  DocumentCrdt,
+  'exportUpdatesSince' | 'versionBytes' | 'exportSnapshot' | 'importUpdates'
+> & { prepareImport(): void };
+
 type Open = {
   crdt: DocumentCrdt;
   /** Updates emitted by the current commit, drained after it. */
@@ -52,6 +77,10 @@ type Open = {
   journalled: number;
   /** Highest journal row this instance has imported. */
   lastUpdateId: number;
+  /** Bumped by every remote merge; a save started before one is stale. */
+  generation: number;
+  /** A remote merge is between its import and its journal write. */
+  merging: boolean;
 };
 
 /**
@@ -62,8 +91,16 @@ type Open = {
  * to read its text. Delete the cache and the document is unharmed; delete the
  * CRDT and its history is gone.
  */
-export function createDocumentCrdtStore(db: AppDb) {
+export function createDocumentCrdtStore(
+  db: AppDb,
+  options: { live?: LiveTree } = {}
+) {
   const open = new Map<string, Open>();
+  const live = options.live;
+  const listeners = new Set<(event: DocumentChanged) => void>();
+  function emit(event: DocumentChanged): void {
+    for (const listener of listeners) listener(event);
+  }
 
   function track(
     id: string,
@@ -76,6 +113,8 @@ export function createDocumentCrdtStore(db: AppDb) {
       pending: [],
       journalled,
       lastUpdateId,
+      generation: 0,
+      merging: false,
       unsubscribe: () => {},
     };
     entry.unsubscribe = crdt.onLocalUpdate((bytes) =>
@@ -122,6 +161,21 @@ export function createDocumentCrdtStore(db: AppDb) {
     entry.lastUpdateId = Number(rows.at(-1)?.id ?? entry.lastUpdateId);
   }
 
+  /**
+   * Commits what the open editor holds before remote operations merge in.
+   *
+   * The editor saves whole trees and a save diffs the tree against the
+   * CRDT: a stale tree committed AFTER remote operations landed would diff
+   * them away. Committed first, against the state it was edited from, it
+   * is one more change of this device's, and the remote operations merge
+   * on top of it.
+   */
+  function foldLive(id: string, entry: Open): void {
+    const tree = live?.read(id);
+    if (!live || !tree) return;
+    entry.crdt.commitTree(tree, live.author);
+  }
+
   async function snapshot(id: string, entry: Open): Promise<void> {
     const bytes = entry.crdt.exportSnapshot();
     await db.transaction(async (tx) => {
@@ -162,10 +216,17 @@ export function createDocumentCrdtStore(db: AppDb) {
       author: EditAuthor;
       writer?: string;
     }): Promise<boolean> {
+      // Read before the first await: a merge that lands while this save
+      // waits is what makes the tree it carries stale.
+      const seen = open.get(input.id)?.generation ?? 0;
       const entry = await openDocument(input.id);
       // Converge before committing: the commit's diff must be against
       // everything already written, not this instance's last sight of it.
       await importForeign(input.id, entry);
+      // A remote merge landed, or is between its import and its journal
+      // write: the editor's tree was folded in already, and committing the
+      // tree this save carries would diff the remote operations away.
+      if (entry.merging || entry.generation !== seen) return false;
       const changed = entry.crdt.commitTree(input.tree, input.author);
       const updates = entry.pending.splice(0, entry.pending.length);
       if (!changed) return false;
@@ -201,6 +262,12 @@ export function createDocumentCrdtStore(db: AppDb) {
 
       entry.journalled += updates.length;
       if (entry.journalled >= JOURNAL_LIMIT) await snapshot(input.id, entry);
+      emit({
+        id: input.id,
+        source: 'local',
+        tree: input.tree,
+        markdown: input.markdown,
+      });
       return true;
     },
 
@@ -252,12 +319,99 @@ export function createDocumentCrdtStore(db: AppDb) {
         }
       });
       entry.journalled += updates.length;
+      if (tree) emit({ id, source: 'local', tree, markdown });
     },
 
     /** The document's change history, oldest first. */
     async changes(id: string) {
       const entry = await openDocument(id);
       return entry.crdt.listChanges();
+    },
+
+    /** Told after every save, restore and remote merge. */
+    onChanged(listener: (event: DocumentChanged) => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+
+    /**
+     * The document for the sync engine, or null when this device has no
+     * row for it (not materialized yet). Rows other writers appended come
+     * in first, so a fold diffs against everything already journaled.
+     *
+     * A merge in flight is left alone: a push opening the document between
+     * a pull's import and its journal write must not reopen the window in
+     * which a stale save could commit — only the journal write closes it.
+     */
+    async syncable(id: string): Promise<SyncableCrdt | null> {
+      const { rows } = await db.query('select 1 from document where id = $1', [
+        id,
+      ]);
+      if (rows.length === 0) return null;
+      const entry = await openDocument(id);
+      await importForeign(id, entry);
+      return {
+        exportUpdatesSince: (from) => entry.crdt.exportUpdatesSince(from),
+        versionBytes: () => entry.crdt.versionBytes(),
+        exportSnapshot: () => entry.crdt.exportSnapshot(),
+        prepareImport: () => foldLive(id, entry),
+        importUpdates: (updates) => {
+          entry.crdt.importUpdates(updates);
+          entry.generation += 1;
+          // Set last: the engine follows a successful import with the
+          // journal write that clears it.
+          entry.merging = true;
+        },
+      };
+    },
+
+    /**
+     * The engine's journal: pulled bytes become locally durable here,
+     * together with the bytes of the fold that preceded the import, and
+     * the derived content follows the merged document.
+     */
+    syncJournal: {
+      append: async (id: string, blobs: Uint8Array[]): Promise<void> => {
+        const entry = await openDocument(id);
+        try {
+          const folded = entry.pending.splice(0, entry.pending.length);
+          const tree = entry.crdt.toTree();
+          // Derived before the transaction opens, as in restore.
+          const markdown = tree ? await treeAsMarkdown(tree) : '';
+          await db.transaction(async (tx) => {
+            for (const bytes of [...folded, ...blobs]) {
+              const { rows } = await tx.query<{ id: number | string }>(
+                'insert into document_update (document_id, bytes) values ($1, $2) returning id',
+                [id, bytes]
+              );
+              entry.lastUpdateId = Number(rows[0]?.id ?? entry.lastUpdateId);
+            }
+            if (tree) {
+              await tx.query(
+                `insert into document_content (document_id, lexical_json, markdown, writer)
+                 values ($1, $2, $3, null)
+                 on conflict (document_id) do update
+                   set lexical_json = excluded.lexical_json,
+                       markdown = excluded.markdown,
+                       writer = null,
+                       updated_at = now()`,
+                [id, JSON.stringify(tree), markdown]
+              );
+              await tx.query(
+                'update document set preview = $2, updated_at = now() where id = $1',
+                [id, markdown.slice(0, 200)]
+              );
+            }
+          });
+          entry.journalled += folded.length + blobs.length;
+          if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
+          if (tree) emit({ id, source: 'remote', tree, markdown });
+        } finally {
+          entry.merging = false;
+        }
+      },
     },
 
     /** Drops the in-memory document; the stored bytes are untouched. */
