@@ -10,4 +10,6 @@ bun.lock
 # Generated code — generator is the single basis; do not let Prettier fight codegen
 # (Payload regenerates these on boot/predev in its own style → eternal flicker otherwise)
 **/payload-types.ts
+# Supabase types are compared byte for byte with a fresh generation (db:types:check)
+packages/db/src/database.types.ts
 **/admin/importMap.js

@@ -160,6 +160,7 @@ export type Database = {
           created_at: string
           created_by: string
           format: string
+          head_seq: number
           id: string
           snapshot: string | null
           snapshot_seq: number
@@ -170,6 +171,7 @@ export type Database = {
           created_at?: string
           created_by: string
           format?: string
+          head_seq?: number
           id?: string
           snapshot?: string | null
           snapshot_seq?: number
@@ -180,6 +182,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           format?: string
+          head_seq?: number
           id?: string
           snapshot?: string | null
           snapshot_seq?: number
@@ -210,7 +213,7 @@ export type Database = {
           created_at?: string
           created_by: string
           doc_id: string
-          seq?: never
+          seq?: number
           writer: string
         }
         Update: {
@@ -218,7 +221,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           doc_id?: string
-          seq?: never
+          seq?: number
           writer?: string
         }
         Relationships: [
