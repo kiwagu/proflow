@@ -35,7 +35,13 @@ import {
 } from '../composition/app-services';
 import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
-import { createAgentSeam } from './document-editor.agent-state';
+import { useOnline } from '../shell/use-online';
+import { useDocumentChanges } from './document-changes';
+import {
+  applyRemoteState,
+  createAgentSeam,
+  REMOTE_MERGE_TAG,
+} from './document-editor.agent-state';
 import { useDocumentRevision } from './document-revision';
 import { FIND_HOTKEY } from './find/find.constants';
 import { useLiveDocuments } from './live-documents';
@@ -65,6 +71,7 @@ export function DocumentEditor({ document }: { document: DocumentMeta }) {
 }
 
 function OpenDocument({ document }: { document: DocumentMeta }) {
+  const { reload } = useDocumentRevision();
   const documents = useDocuments();
   const versions = useDocumentVersions();
   const { identity, reportError, resolveError } = useServices();
@@ -112,7 +119,10 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   useHotkey(FIND_HOTKEY, openFind);
   const liveEditors = useLiveEditors();
   const [initial, setInitial] = useState<
-    { tree?: SerializedTree; markdown: string } | { error: string } | null
+    | { tree?: SerializedTree; markdown: string }
+    | { error: string }
+    | { awaiting: true }
+    | null
   >(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
 
@@ -121,6 +131,9 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     void documents.load(document.id).then((result) => {
       if (cancelled) return;
       if (result.isErr()) setInitial({ error: result.error });
+      else if (!result.value.content && result.value.awaitingSync)
+        // Known from the graph, not yet pulled: a wait, not an empty page.
+        setInitial({ awaiting: true });
       else
         // Both, and the view prefers the tree: the stored pair can disagree
         // after a restore, which rewrites the canonical tree and leaves the
@@ -220,6 +233,43 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   );
 
   /**
+   * A merge from another device. The store folded this editor's tree in
+   * before merging, so the merged tree is what this editor should now
+   * show — painted through the same id reconciliation an agent result
+   * takes — and a save still scheduled would only carry a tree the document
+   * has moved past. A document still waiting for its first pull opens with
+   * the body instead.
+   */
+  const changes = useDocumentChanges();
+  useEffect(
+    () =>
+      changes.onChanged((event) => {
+        if (event.id !== document.id || event.source !== 'remote') return;
+        const wrapper = wrapperRef.current;
+        if (!wrapper) {
+          setInitial((current) =>
+            current && 'awaiting' in current
+              ? { tree: event.tree, markdown: event.markdown }
+              : current
+          );
+          return;
+        }
+        clearTimeout(saveTimer.current);
+        unsaved.current = undefined;
+        if (isWrapperWithIds(wrapper)) {
+          applyRemoteState(
+            wrapper.editor,
+            wrapper.mapping,
+            event.tree as unknown as SerializedEditorState
+          );
+        } else {
+          reload();
+        }
+      }),
+    [changes, document.id, reload]
+  );
+
+  /**
    * An editor reports what it was given back as a change: mounting it
    * normalizes the content and that normalization arrives here looking
    * exactly like typing. Only a change after the first user edit is saved,
@@ -267,8 +317,10 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
       }
       const unregister = wrapper.editor.registerUpdateListener(
         ({ editorState, dirtyElements, dirtyLeaves, tags }) => {
-          // A search moving its highlights is not an edit.
-          if (tags.has(FIND_HIGHLIGHT_TAG)) return;
+          // A search moving its highlights, or a merge painted from another
+          // device, is not an edit.
+          if (tags.has(FIND_HIGHLIGHT_TAG) || tags.has(REMOTE_MERGE_TAG))
+            return;
           if (tags.has('history-merge') && !edited.current) return;
           if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
           edited.current = true;
@@ -306,6 +358,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
         {t ? t('workbench.app.opening') : 'Opening…'}
       </div>
     );
+  if ('awaiting' in initial) return <Awaiting />;
   if ('error' in initial)
     return (
       <p className="text-destructive p-6 text-sm">
@@ -368,6 +421,30 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
           className="absolute top-12 right-4 z-10"
         />
       </DocumentView>
+    </div>
+  );
+}
+
+/**
+ * A document this device knows only from the graph: its body is on the
+ * server and arrives with the next pull — or, offline, once there is one.
+ */
+function Awaiting() {
+  const t = useWorkbenchTranslator();
+  const online = useOnline();
+  return (
+    <div
+      className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm"
+      data-testid="document-awaiting"
+    >
+      {online ? <Spinner className="animate-spin" /> : null}
+      {online
+        ? t
+          ? t('workbench.app.awaitingServer')
+          : 'Loading from the server…'
+        : t
+          ? t('workbench.app.awaitingDevice')
+          : 'Not on this device yet. It loads once the server can be reached.'}
     </div>
   );
 }

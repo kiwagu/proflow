@@ -111,6 +111,8 @@
   "workbench.app.filesAriaLabel": "Archivos",
   "workbench.app.opening": "Abriendo…",
   "workbench.app.openError": "No se pudo abrir el documento: {reason}",
+  "workbench.app.awaitingServer": "Cargando desde el servidor…",
+  "workbench.app.awaitingDevice": "Todavía no está en este dispositivo. Se cargará cuando se pueda conectar con el servidor.",
   "workbench.app.saving": "Guardando…",
   "workbench.app.saved": "Guardado",
   "workbench.app.editorFailed": "No se pudo abrir el editor para este documento.",

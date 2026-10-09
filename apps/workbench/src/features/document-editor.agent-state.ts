@@ -27,6 +27,7 @@ import {
   $parseSerializedNode,
   $setSelection,
   type ElementNode,
+  HISTORIC_TAG,
   HISTORY_MERGE_TAG,
   HISTORY_PUSH_TAG,
   type LexicalEditor,
@@ -160,6 +161,36 @@ export function applyAgentState(
   // operation landed) produced no update and opened no entry.
   if (editor.getEditorState() !== before) entryOpen.add(editor);
   if (!options.partial) entryOpen.delete(editor);
+}
+
+/**
+ * The tag a remote paint carries, so the surface's save listener can tell
+ * it from typing: the merge is already committed and journaled.
+ */
+export const REMOTE_MERGE_TAG = 'remote-merge';
+
+/**
+ * Land what another device wrote in the live editor.
+ *
+ * Reconciled by node id like an agent result, so the paragraph under the
+ * caret keeps its node when it was not the one that changed. Tagged
+ * historic so undo never takes back someone else's edit.
+ */
+export function applyRemoteState(
+  editor: LexicalEditor,
+  mapping: NodeIdMappings,
+  state: SerializedEditorState
+): void {
+  const before = editor.getEditorState();
+  editor.update(
+    () => {
+      $addUpdateTag(SKIP_DOM_SELECTION_TAG);
+      $addUpdateTag(REMOTE_MERGE_TAG);
+      $reconcileSerializedState(before.toJSON(), state, mapping);
+      $updateAllNodeIds(mapping);
+    },
+    { discrete: true, tag: HISTORIC_TAG }
+  );
 }
 
 type NodeWithChildren = SerializedLexicalNode & {
