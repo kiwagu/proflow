@@ -15,9 +15,12 @@ import type {
 } from '@workspace/domain';
 import type {
   AppDb,
+  DocumentChanged,
+  DocumentCrdtStore,
   GraphReader,
   GraphRepository,
 } from '@workspace/persistence-pglite';
+import type { LiveDocuments } from '../features/live-documents';
 import type { ReportError } from '../shell/operation-errors';
 
 /**
@@ -31,6 +34,14 @@ export interface AppServices {
   documents: IDocumentRepository;
   documentList: IDocumentListReader;
   documentVersions: IDocumentVersionStore;
+  /** The CRDT store itself, for the replication the composition root starts. */
+  documentCrdt: DocumentCrdtStore;
+  /** What the open editors hold: announced by the pane, read by the store before a merge. */
+  liveDocuments: LiveDocuments;
+  /** Every save, restore and remote merge, for the surface showing a document. */
+  documentChanges: {
+    onChanged(listener: (event: DocumentChanged) => void): () => void;
+  };
   files: IFileRepository;
   fileTree: IFileTreeReader;
   blobs: IBlobStore & { persisted: boolean };

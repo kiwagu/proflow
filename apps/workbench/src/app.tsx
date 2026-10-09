@@ -123,7 +123,7 @@ export function App() {
             <DocumentRevisionProvider>
               {/* Likewise for what the open editor holds: the export in the
                   explorer's menu reads it from outside the pane. */}
-              <LiveDocumentsProvider>
+              <LiveDocumentsProvider value={services.liveDocuments}>
                 {/* And for the editor instance itself: the outline in the
                     aside draws over the editor the pane has open. */}
                 <LiveEditorsProvider>

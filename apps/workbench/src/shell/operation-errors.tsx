@@ -30,7 +30,9 @@ export type FailureText =
   | string
   | { kind: 'save'; title: string; reason: string }
   | { kind: 'sync'; reason: string }
-  | { kind: 'sync-stalled' };
+  | { kind: 'sync-stalled' }
+  | { kind: 'push'; title: string; reason: string }
+  | { kind: 'pull'; reason: string };
 
 export interface ReportOptions {
   /** One notice per key: a later report replaces, `resolve` withdraws. */
@@ -126,6 +128,17 @@ export function failureText(
       return t
         ? t('workbench.errors.syncStalled')
         : 'Changes made here are waiting to be sent: the server cannot be reached. They stay on this device and are sent automatically once it answers.';
+    case 'push':
+      return t
+        ? t('workbench.errors.push', {
+            title: message.title,
+            reason: message.reason,
+          })
+        : `Could not send “${message.title}” to the server: ${message.reason}. It stays on this device and is sent again automatically.`;
+    case 'pull':
+      return t
+        ? t('workbench.errors.pull', { reason: message.reason })
+        : `Could not get the latest changes from the server: ${message.reason}. Trying again automatically.`;
   }
 }
 

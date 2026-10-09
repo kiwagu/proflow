@@ -1,9 +1,11 @@
-import { DocumentCrdt } from '@workspace/doc-crdt';
+import { DocumentCrdt, type SerializedTree } from '@workspace/doc-crdt';
+import { markdownToState } from '@workspace/lexical-nodes/utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openTestDb, testId, TEST_USER } from '../graph/graph.test-db.js';
 import { createDocumentCrdtStore } from './document.crdt-store.js';
 import {
   listAwaitingDocuments,
+  listUnpushedDocuments,
   materializeDocuments,
 } from './document.materialize.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
@@ -158,5 +160,61 @@ describe('documents awaiting their first pull', () => {
       [docId, new Uint8Array([0])]
     );
     expect(await listAwaitingDocuments(db)).not.toContain(docId);
+  });
+});
+
+describe('documents with changes the server may not have', () => {
+  const AUTHOR = { user: 'tester', src: 'human' as const };
+  const treeOf = (markdown: string): SerializedTree =>
+    markdownToState(markdown).state as unknown as SerializedTree;
+
+  it('lists one never pushed, drops it once pushed, and lists it again after a save or a restore', async () => {
+    const store = createDocumentCrdtStore(db);
+    const documents = createPgliteDocumentRepository(
+      db,
+      store,
+      spaceId,
+      TEST_USER
+    );
+    const id = (await documents.create({ title: 'Edited' }))._unsafeUnwrap().id;
+    expect(await listUnpushedDocuments(db)).toContain(id);
+
+    await store.save({
+      id,
+      tree: treeOf('v1'),
+      markdown: 'v1',
+      preview: 'v1',
+      author: AUTHOR,
+    });
+    const first = await store.frontiers(id);
+    await db.query(
+      `insert into document_sync (document_id, pushed_vv) values ($1, $2)
+       on conflict (document_id) do update set pushed_vv = excluded.pushed_vv, updated_at = now()`,
+      [id, new Uint8Array([1])]
+    );
+    expect(await listUnpushedDocuments(db)).not.toContain(id);
+
+    await store.save({
+      id,
+      tree: treeOf('v1 v2'),
+      markdown: 'v1 v2',
+      preview: 'v1 v2',
+      author: AUTHOR,
+    });
+    expect(await listUnpushedDocuments(db)).toContain(id);
+
+    await db.query(
+      'update document_sync set updated_at = now() where document_id = $1',
+      [id]
+    );
+    await store.restore(id, first, AUTHOR);
+    expect(await listUnpushedDocuments(db)).toContain(id);
+  });
+
+  it('leaves out a document only known from the graph', async () => {
+    const docId = testId('doc');
+    await pulledTextNode({ docId, title: 'Known' });
+    await materializeDocuments(db, spaceId);
+    expect(await listUnpushedDocuments(db)).not.toContain(docId);
   });
 });

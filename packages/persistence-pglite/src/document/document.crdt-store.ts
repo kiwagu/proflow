@@ -317,6 +317,11 @@ export function createDocumentCrdtStore(
             [id, JSON.stringify(tree), markdown]
           );
         }
+        // A restore is an edit like any other: what tells replication this
+        // document changed since it was last sent.
+        await tx.query('update document set updated_at = now() where id = $1', [
+          id,
+        ]);
       });
       entry.journalled += updates.length;
       if (tree) emit({ id, source: 'local', tree, markdown });

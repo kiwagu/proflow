@@ -77,3 +77,19 @@ export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
   );
   return rows.map((r) => r.id);
 }
+
+/**
+ * Documents with local changes the server may not have: never pushed, or
+ * changed since their ledger row was last written. What a catch-up push
+ * opens — every other document is in step with what was pushed or pulled,
+ * and opening it would only load its CRDT to compare two equal versions.
+ */
+export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
+  const { rows } = await db.query<{ id: string }>(
+    `select d.id from document d
+     left join document_sync s on s.document_id = d.id
+     where d.deleted_at is null
+       and (s.document_id is null or d.updated_at > s.updated_at)`
+  );
+  return rows.map((r) => r.id);
+}

@@ -85,6 +85,7 @@
         "@supabase/ssr": "catalog:",
         "@workspace/blob-store": "workspace:*",
         "@workspace/db": "workspace:*",
+        "@workspace/doc-sync": "workspace:*",
         "@workspace/domain": "workspace:*",
         "@workspace/gateway-auth": "workspace:*",
         "@workspace/graph-sync": "workspace:*",

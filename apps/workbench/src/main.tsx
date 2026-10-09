@@ -32,6 +32,7 @@ import {
   type FailureText,
   type ReportOptions,
 } from './shell/operation-errors';
+import { startDocumentSync } from './composition/document-sync';
 import { rememberSyncSettings, startGraphSync } from './composition/sync';
 
 const container = requireRoot();
@@ -328,6 +329,37 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
   syncSettings = services.settings;
   if (latestSyncTarget)
     await rememberSyncSettings(services.settings, latestSyncTarget);
+  // Document bodies replicate beside the graph, from the same stored target
+  // and on the same conditions. Their failures are their own notices: a
+  // document's push under its own key, a feed pass under a key of its own —
+  // not the graph's `sync`, which a completed document pass must not
+  // withdraw while graph changes are still waiting.
+  const documentSync = startDocumentSync({
+    db: services.db,
+    settings: services.settings,
+    store: services.documentCrdt,
+    identity: services.identity,
+    onPushFailed: (documentId, error) => {
+      console.error('document push failed', documentId, error);
+      // Named by title: the notice is for the user, who does not know ids.
+      void services.documents.load(documentId).then((result) => {
+        const title = result.isOk() ? result.value.meta.title : documentId;
+        errors.report(
+          { kind: 'push', title, reason: reasonOf(error) },
+          { key: `push:${documentId}` }
+        );
+      });
+    },
+    onPushed: (documentId) => resolveError(`push:${documentId}`),
+    onPassFailed: (error) => {
+      console.error('document replication pass failed', error);
+      errors.report(
+        { kind: 'pull', reason: reasonOf(error) },
+        { key: 'document-sync' }
+      );
+    },
+    onPassSettled: () => resolveError('document-sync'),
+  });
   startGraphSync({
     db: services.db,
     settings: services.settings,
@@ -359,6 +391,10 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     // next pass retries, but the user is told their changes are waiting.
     onStalled: () => errors.report({ kind: 'sync-stalled' }, { key: 'sync' }),
     onSettled: () => resolveError('sync'),
+    // New nodes may point at document bodies this device has no row for.
+    onPulled: (outcome) => {
+      if (outcome.applied > 0) documentSync.graphPulled();
+    },
   });
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;

@@ -87,6 +87,32 @@ beforeEach(() => {
 });
 
 describe('starting graph replication', () => {
+  it('hands a pull outcome to the composition', async () => {
+    const onPulled = vi.fn();
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+      onPulled,
+    });
+    await settled();
+    const hooks = watch.mock.calls[0]?.[1] as
+      | {
+          onPull?: (outcome: {
+            applied: number;
+            evicted: number;
+            swept: string[];
+          }) => void;
+        }
+      | undefined;
+    expect(hooks?.onPull).toBeTypeOf('function');
+    hooks?.onPull?.({ applied: 2, evicted: 0, swept: [] });
+    expect(onPulled).toHaveBeenCalledWith(
+      expect.objectContaining({ applied: 2 })
+    );
+    stop();
+  });
+
   it('does not build an engine when no configuration was ever received', async () => {
     const stop = startGraphSync({
       db: {} as AppDb,

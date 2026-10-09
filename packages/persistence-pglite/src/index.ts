@@ -16,6 +16,7 @@ export {
 } from './document/document.crdt-store.js';
 export {
   listAwaitingDocuments,
+  listUnpushedDocuments,
   materializeDocuments,
 } from './document/document.materialize.js';
 export { createPgliteDocumentListReader } from './document/document.reader.js';
