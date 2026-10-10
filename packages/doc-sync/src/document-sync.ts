@@ -129,13 +129,6 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   const tailByteGauge = new Map<string, number>();
   /** One pull at a time per document; concurrent requests coalesce. */
   const pullChain = new Map<string, Promise<PullResult>>();
-  /**
-   * The server rows, by seq, this engine has put into its document: what
-   * its pulls imported, and its own pushes that came straight after them.
-   * A compaction may fold only these — another writer's row this client
-   * never pulled would be deleted with a snapshot that does not hold it.
-   */
-  const heldThrough = new Map<string, number>();
 
   async function ensureDocument(docId: string, spaceId: string) {
     if (ensured.has(docId)) return;
@@ -145,16 +138,22 @@ export function createDocumentSync(options: DocumentSyncOptions) {
 
   async function maybeCompact(
     docId: string,
-    doc: SyncableDocument,
-    coversSeq: number
+    doc: SyncableDocument
   ): Promise<boolean> {
     const rows = await transport.tailCount(docId);
     const gauge = tailByteGauge.get(docId) ?? 0;
     if (rows < maxRows && gauge < maxBytes) return false;
+    // A compaction deletes the rows it folds, so the snapshot must hold every
+    // one of them — including rows other writers pushed that this client
+    // never pulled, and rows another tab pulled into the shared ledger but
+    // not into this copy. Nothing this client records proves that; taking
+    // the whole unfolded log in now does, and it is rare enough to afford.
+    const whole = await pull(docId, doc, 0);
+    if (whole.pulledSeq <= 0) return false;
     const accepted = await transport.compact(
       docId,
       doc.exportSnapshot(),
-      coversSeq
+      whole.pulledSeq
     );
     if (accepted) tailByteGauge.set(docId, 0);
     return accepted;
@@ -180,26 +179,24 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     // the same span next time, and every importer no-ops on it.
     await ledger.recordPush(docId, current);
     tailByteGauge.set(docId, (tailByteGauge.get(docId) ?? 0) + blob.length);
-    // Seqs are gap-free per document: when this row comes right after the
-    // ones held, no other writer's row lies between, and it is held too.
-    // Otherwise the rows in between are someone else's and not pulled yet.
-    const held = heldThrough.get(docId) ?? 0;
-    if (seq === held + 1) heldThrough.set(docId, seq);
-    const coversSeq = heldThrough.get(docId) ?? 0;
-    const compacted =
-      coversSeq > 0 ? await maybeCompact(docId, doc, coversSeq) : false;
+    const compacted = await maybeCompact(docId, doc);
     return { pushedSeq: seq, compacted };
   }
 
+  /**
+   * `from` overrides the ledger's watermark: 0 takes the whole unfolded log
+   * in, whatever the ledger says was pulled.
+   */
   async function pullOnce(
     docId: string,
-    doc: SyncableDocument
+    doc: SyncableDocument,
+    from?: number
   ): Promise<PullResult> {
     const { pushedVv, pulledSeq } = await ledger.read(docId);
     const head = await transport.head(docId);
     const incoming: Uint8Array[] = [];
-    let floor = pulledSeq;
-    if (head.snapshot && head.snapshotSeq > pulledSeq) {
+    let floor = from ?? pulledSeq;
+    if (head.snapshot && head.snapshotSeq > floor) {
       // The snapshot covers everything through snapshotSeq — rows at or
       // below it may already be compacted away, so the tail floor moves up.
       incoming.push(head.snapshot);
@@ -233,17 +230,15 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       );
     }
     const newSeq = Math.max(rows.at(-1)?.seq ?? 0, floor);
+    // Durability before the watermark: once pulled_seq advances, these
+    // bytes are never asked for again, so they must already be able to
+    // survive a restart locally. Every import is journaled, even one below
+    // the watermark — the document's own journal closes the merge it began.
+    if (incoming.length > 0) await journal?.append(docId, incoming);
     if (newSeq > pulledSeq) {
-      // Durability before the watermark: once pulled_seq advances, these
-      // bytes are never asked for again, so they must already be able to
-      // survive a restart locally.
-      if (incoming.length > 0) await journal?.append(docId, incoming);
       await ledger.recordPull(docId, newSeq);
       if (settledVv) await ledger.recordPush(docId, settledVv);
     }
-    // Everything through newSeq is in the document now: the rows imported
-    // here, and this writer's own, which came from it.
-    heldThrough.set(docId, Math.max(heldThrough.get(docId) ?? 0, newSeq));
     return {
       imported: foreign.length,
       skippedOwn: rows.length - foreign.length,
@@ -251,12 +246,18 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     };
   }
 
-  function pull(docId: string, doc: SyncableDocument): Promise<PullResult> {
+  function pull(
+    docId: string,
+    doc: SyncableDocument,
+    from?: number
+  ): Promise<PullResult> {
     // Serialized per document: two pulls interleaving would race the
     // ledger read against each other's write. Chaining loses nothing —
     // the second pull starts from the watermark the first one advanced.
     const previous = pullChain.get(docId) ?? Promise.resolve(null);
-    const next = previous.catch(() => null).then(() => pullOnce(docId, doc));
+    const next = previous
+      .catch(() => null)
+      .then(() => pullOnce(docId, doc, from));
     pullChain.set(docId, next as Promise<PullResult>);
     return next;
   }
