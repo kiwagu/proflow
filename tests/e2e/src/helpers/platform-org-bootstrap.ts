@@ -373,6 +373,66 @@ export async function bootstrapAdditionalSpaceAdminForUser(input: {
   return { spaceId: space.id };
 }
 
+/**
+ * Make an existing user an ordinary member of a space: organization and
+ * space membership plus the system `member` role (read, create and document
+ * updates, but not the knowledge update verb). The negative actor for every
+ * "a member must not see this" assertion.
+ */
+export async function bootstrapSpaceMemberForUser(input: {
+  organizationId: string;
+  spaceId: string;
+  userId: string;
+}): Promise<void> {
+  const supabase = serviceSupabase();
+  const { organizationId, spaceId, userId } = input;
+
+  const { data: role, error: roleErr } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', 'member')
+    .is('owner_organization_id', null)
+    .is('archived_at', null)
+    .maybeSingle();
+  if (roleErr || !role?.id) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: member role missing: ${roleErr?.message ?? 'no row'}`
+    );
+  }
+
+  const { error: omErr } = await supabase
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: userId });
+  if (omErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed org membership: ${omErr.message}`
+    );
+  }
+
+  const { error: smErr } = await supabase.from('space_memberships').insert({
+    space_id: spaceId,
+    user_id: userId,
+    status: 'active',
+  });
+  if (smErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed space membership: ${smErr.message}`
+    );
+  }
+
+  const { error: urErr } = await supabase.from('user_role').insert({
+    user_id: userId,
+    space_id: spaceId,
+    role_id: role.id,
+  });
+  if (urErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed role assignment: ${urErr.message}`
+    );
+  }
+}
+
 export async function deleteOrganizationCascade(
   organizationId: string
 ): Promise<void> {

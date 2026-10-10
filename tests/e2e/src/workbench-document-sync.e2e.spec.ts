@@ -1,9 +1,19 @@
+import { createClient } from '@supabase/supabase-js';
+
 import { expect, test } from './fixtures.js';
 import { loginViaUi } from './helpers/auth.js';
 import {
   bootstrapOrgSpaceAdminForUser,
+  bootstrapSpaceMemberForUser,
   deleteOrganizationCascade,
 } from './helpers/platform-org-bootstrap.js';
+import {
+  cleanupTestUser,
+  resolveAnonKey,
+  resolveServiceRoleKey,
+  resolveSupabaseUrl,
+  seedTestUser,
+} from './helpers/test-user.js';
 
 /**
  * One account on two devices. A second browser context is a second device:
@@ -129,6 +139,166 @@ test.describe('Workbench document sync across devices', () => {
       });
     } finally {
       await deleteOrganizationCascade(org.organizationId);
+    }
+  });
+
+  /**
+   * Two people in one space. The owner's private document must never reach
+   * the member — not its node, and not its body through the API either; a
+   * document shared at the space floor reaches them whole and keeps syncing.
+   */
+  test('@full a private document body never reaches a space member; a shared one does', async ({
+    browser,
+    page: owner,
+    seededUser,
+  }) => {
+    test.setTimeout(300_000);
+    const org = await bootstrapOrgSpaceAdminForUser(seededUser.id);
+    const member = await seedTestUser();
+    await bootstrapSpaceMemberForUser({
+      organizationId: org.organizationId,
+      spaceId: org.spaceId,
+      userId: member.id,
+    });
+    const options = {
+      auth: { autoRefreshToken: false, persistSession: false },
+    };
+    const service = createClient(
+      resolveSupabaseUrl(),
+      resolveServiceRoleKey(),
+      options
+    );
+    const asOwner = createClient(
+      resolveSupabaseUrl(),
+      resolveAnonKey(),
+      options
+    );
+    const asMember = createClient(
+      resolveSupabaseUrl(),
+      resolveAnonKey(),
+      options
+    );
+    const contextB = await browser.newContext({ ignoreHTTPSErrors: true });
+    const deviceB = await contextB.newPage();
+
+    type TextResource = { id: string; body_ref: { doc_id: string } };
+    const textResources = async (): Promise<TextResource[]> => {
+      const { data, error } = await service
+        .from('knowledge_resources')
+        .select('id, body_ref')
+        .eq('space_id', org.spaceId)
+        .eq('kind', 'text');
+      if (error) throw new Error(error.message);
+      return (data ?? []) as TextResource[];
+    };
+
+    try {
+      await loginViaUi(owner, seededUser, '/author');
+      await expect(owner.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
+      });
+
+      // Two documents by the owner: the first stays private, the second is
+      // shared at the space floor. Each is identified by the resource row
+      // that reaches the server once it is saved.
+      const created: TextResource[] = [];
+      for (const text of ['Keep out', 'Shared note']) {
+        await owner.getByTestId('new-document').click();
+        const editor = owner.locator('[contenteditable="true"]').first();
+        await expect(editor).toBeVisible({ timeout: 30_000 });
+        await editor.click();
+        await editor.pressSequentially(text);
+        await expect(owner.getByTestId('save-state')).toContainText(/saved/i);
+        await expect
+          .poll(async () => (await textResources()).length, {
+            timeout: 60_000,
+          })
+          .toBe(created.length + 1);
+        const known = new Set(created.map((row) => row.id));
+        const fresh = (await textResources()).find((row) => !known.has(row.id));
+        if (!fresh) throw new Error('the new document has no resource row');
+        created.push(fresh);
+      }
+      const [privateDoc, sharedDoc] = created as [TextResource, TextResource];
+
+      // Sharing is the owner's act: only the owner's own session may widen a
+      // resource's visibility.
+      const ownerSignIn = await asOwner.auth.signInWithPassword({
+        email: seededUser.email,
+        password: seededUser.password,
+      });
+      if (ownerSignIn.error) throw new Error(ownerSignIn.error.message);
+      const shared = await asOwner
+        .from('knowledge_resources')
+        .update({ visibility: 'space' })
+        .eq('id', sharedDoc.id)
+        .select('id');
+      expect(shared.error).toBeNull();
+      expect(shared.data).toHaveLength(1);
+
+      // The shared body has reached the server.
+      await expect
+        .poll(
+          async () => {
+            const { data } = await service
+              .from('crdt_updates')
+              .select('seq')
+              .eq('doc_id', sharedDoc.body_ref.doc_id);
+            return (data ?? []).length;
+          },
+          { timeout: 60_000 }
+        )
+        .toBeGreaterThan(0);
+
+      // The member's session, straight at the API: the shared body answers,
+      // the private one is empty — not an error, simply no rows.
+      const memberSignIn = await asMember.auth.signInWithPassword({
+        email: member.email,
+        password: member.password,
+      });
+      if (memberSignIn.error) throw new Error(memberSignIn.error.message);
+      const privateHead = await asMember
+        .from('crdt_documents')
+        .select('id')
+        .eq('id', privateDoc.body_ref.doc_id);
+      expect(privateHead.error).toBeNull();
+      expect(privateHead.data).toEqual([]);
+      const privateTail = await asMember
+        .from('crdt_updates')
+        .select('seq')
+        .eq('doc_id', privateDoc.body_ref.doc_id);
+      expect(privateTail.error).toBeNull();
+      expect(privateTail.data).toEqual([]);
+      const sharedTail = await asMember
+        .from('crdt_updates')
+        .select('seq')
+        .eq('doc_id', sharedDoc.body_ref.doc_id);
+      expect(sharedTail.error).toBeNull();
+      expect((sharedTail.data ?? []).length).toBeGreaterThan(0);
+
+      // The member's device: exactly the shared document, with its text, and
+      // the owner's next edit arrives in it.
+      await loginViaUi(deviceB, member, '/author');
+      await expect(deviceB.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
+      });
+      const rows = deviceB.getByTestId('files-section').getByTestId('file-row');
+      await expect(rows).toHaveCount(1, { timeout: 60_000 });
+      await rows.first().click();
+      const editorB = deviceB.locator('[contenteditable="true"]').first();
+      await expect(editorB).toHaveText('Shared note', { timeout: 60_000 });
+
+      const editorA = owner.locator('[contenteditable="true"]').first();
+      await editorA.click();
+      await owner.keyboard.press('End');
+      await editorA.pressSequentially(' for everyone');
+      await expect(editorB).toHaveText('Shared note for everyone', {
+        timeout: 60_000,
+      });
+    } finally {
+      await contextB.close();
+      await deleteOrganizationCascade(org.organizationId);
+      await cleanupTestUser(member.id);
     }
   });
 });
