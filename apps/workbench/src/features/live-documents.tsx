@@ -49,8 +49,15 @@ export function createLiveDocuments(): LiveDocuments {
 
 const Ctx = createContext<LiveDocuments | null>(null);
 
-export function LiveDocumentsProvider({ children }: { children: ReactNode }) {
-  const live = useMemo(() => createLiveDocuments(), []);
+export function LiveDocumentsProvider({
+  value,
+  children,
+}: {
+  /** A registry built elsewhere; the provider makes its own when absent. */
+  value?: LiveDocuments;
+  children: ReactNode;
+}) {
+  const live = useMemo(() => value ?? createLiveDocuments(), [value]);
   return <Ctx.Provider value={live}>{children}</Ctx.Provider>;
 }
 

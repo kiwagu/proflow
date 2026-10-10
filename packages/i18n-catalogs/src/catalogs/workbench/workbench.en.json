@@ -111,6 +111,8 @@
   "workbench.app.filesAriaLabel": "Files",
   "workbench.app.opening": "Opening…",
   "workbench.app.openError": "Could not open the document: {reason}",
+  "workbench.app.awaitingServer": "Loading from the server…",
+  "workbench.app.awaitingDevice": "Not on this device yet. It loads once the server can be reached.",
   "workbench.app.saving": "Saving…",
   "workbench.app.saved": "Saved",
   "workbench.app.editorFailed": "The editor could not open this document.",
@@ -168,5 +170,7 @@
   "workbench.errors.dismiss": "Dismiss",
   "workbench.errors.save": "Could not save “{title}”: {reason}. Trying again…",
   "workbench.errors.sync": "Changes made here could not be sent to the server: {reason}. They stay on this device and are sent again automatically.",
+  "workbench.errors.push": "Could not send “{title}” to the server: {reason}. It stays on this device and is sent again automatically.",
+  "workbench.errors.pull": "Could not get the latest changes from the server: {reason}. Trying again automatically.",
   "workbench.errors.syncStalled": "Changes made here are waiting to be sent: the server cannot be reached. They stay on this device and are sent automatically once it answers."
 }

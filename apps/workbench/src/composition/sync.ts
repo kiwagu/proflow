@@ -54,6 +54,8 @@ export interface StartGraphSyncOptions {
   onSettled?: () => void;
   /** A push found the server unreachable: local changes are waiting. */
   onStalled?: () => void;
+  /** A pull applied rows: a consumer that derives from them may run now. */
+  onPulled?: (outcome: { applied: number }) => void;
 }
 
 export function parseSyncSettings(raw: string | null): SyncSettings | null {
@@ -135,6 +137,7 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
         const stop = sync.watch(identity.spaceId, {
           onPush: (outcome) =>
             outcome.stalled ? options.onStalled?.() : options.onSettled?.(),
+          onPull: (outcome) => options.onPulled?.(outcome),
           onError: (error: unknown) => options.onError?.(error),
         });
         // Disposal may have landed while the settings read was in flight.

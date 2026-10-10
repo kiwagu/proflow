@@ -5,6 +5,7 @@ import {
 } from '@workspace/domain';
 import { PACKAGE_KINDS } from '@workspace/package-kinds';
 import {
+  createBroadcastDocumentPeers,
   createDocumentCrdtStore,
   createPgliteChatListReader,
   createPgliteChatMessageRepository,
@@ -23,6 +24,7 @@ import {
   type OpenStage,
   openLocalDatabase,
 } from '@workspace/persistence-pglite';
+import { createLiveDocuments } from '../features/live-documents';
 import { storageNamespace, type WorkbenchSession } from './session';
 import type { AppServices } from './services';
 import type { ReportError } from '../shell/operation-errors';
@@ -90,8 +92,20 @@ export async function createAppServices(
 
   // Documents are CRDTs; this store owns the open ones and their persistence.
   // Both the repository and the version store read through it, so they always
-  // agree about what a document currently is.
-  const documentCrdt = createDocumentCrdtStore(db);
+  // agree about what a document currently is. What an open editor holds is
+  // folded into its document before a remote merge, so the store reads the
+  // editors' registry — built here and handed to the app's provider, so
+  // both sides hold the same one.
+  const liveDocuments = createLiveDocuments();
+  const documentCrdt = createDocumentCrdtStore(db, {
+    live: {
+      read: (id) => liveDocuments.read(id),
+      author: { user: session.userId, src: 'human' },
+    },
+    // Other tabs of this browser share the database but hold their own
+    // copies of open documents: each tells the others what it wrote.
+    peers: createBroadcastDocumentPeers(),
+  });
 
   // Everything the user edits in place — creating, renaming, moving,
   // starring, deleting — shows the moment it is asked for. A live query
@@ -138,6 +152,9 @@ export async function createAppServices(
     documents,
     documentList,
     documentVersions: createPgliteDocumentVersionStore(db, documentCrdt),
+    documentCrdt,
+    liveDocuments,
+    documentChanges: documentCrdt,
     files,
     fileTree,
     blobs,

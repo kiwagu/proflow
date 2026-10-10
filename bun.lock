@@ -85,6 +85,7 @@
         "@supabase/ssr": "catalog:",
         "@workspace/blob-store": "workspace:*",
         "@workspace/db": "workspace:*",
+        "@workspace/doc-sync": "workspace:*",
         "@workspace/domain": "workspace:*",
         "@workspace/gateway-auth": "workspace:*",
         "@workspace/graph-sync": "workspace:*",
@@ -605,6 +606,7 @@
       "devDependencies": {
         "@types/node": "catalog:",
         "@types/react": "catalog:",
+        "@workspace/doc-sync": "workspace:*",
         "@workspace/eslint-config": "workspace:^",
         "@workspace/typescript-config": "workspace:^",
         "eslint": "catalog:",

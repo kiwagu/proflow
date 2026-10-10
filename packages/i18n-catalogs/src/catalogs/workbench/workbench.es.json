@@ -111,6 +111,8 @@
   "workbench.app.filesAriaLabel": "Archivos",
   "workbench.app.opening": "Abriendo…",
   "workbench.app.openError": "No se pudo abrir el documento: {reason}",
+  "workbench.app.awaitingServer": "Cargando desde el servidor…",
+  "workbench.app.awaitingDevice": "Todavía no está en este dispositivo. Se cargará cuando se pueda conectar con el servidor.",
   "workbench.app.saving": "Guardando…",
   "workbench.app.saved": "Guardado",
   "workbench.app.editorFailed": "No se pudo abrir el editor para este documento.",
@@ -168,5 +170,7 @@
   "workbench.errors.dismiss": "Descartar",
   "workbench.errors.save": "No se pudo guardar “{title}”: {reason}. Reintentando…",
   "workbench.errors.sync": "Los cambios hechos aquí no se pudieron enviar al servidor: {reason}. Se conservan en este dispositivo y se enviarán de nuevo automáticamente.",
+  "workbench.errors.push": "No se pudo enviar “{title}” al servidor: {reason}. Se conserva en este dispositivo y se enviará de nuevo automáticamente.",
+  "workbench.errors.pull": "No se pudieron obtener los últimos cambios del servidor: {reason}. Se volverá a intentar automáticamente.",
   "workbench.errors.syncStalled": "Los cambios hechos aquí esperan para enviarse: no se puede contactar con el servidor. Se conservan en este dispositivo y se enviarán automáticamente cuando responda."
 }

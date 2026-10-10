@@ -95,6 +95,23 @@ describe('the failures as the user sees them', () => {
     expect(failureText({ kind: 'sync-stalled' }, null)).toContain('waiting');
   });
 
+  it('names the document a push failed for, and tells a failed pull from a failed send', () => {
+    const t = (key: string, vars?: Record<string, string | number>) =>
+      `${key}${vars ? ' ' + JSON.stringify(vars) : ''}`;
+    expect(
+      failureText({ kind: 'push', title: 'Notes', reason: 'denied' }, t)
+    ).toBe('workbench.errors.push {"title":"Notes","reason":"denied"}');
+    expect(failureText({ kind: 'pull', reason: 'down' }, t)).toBe(
+      'workbench.errors.pull {"reason":"down"}'
+    );
+    expect(
+      failureText({ kind: 'push', title: 'Notes', reason: 'denied' }, null)
+    ).toContain('“Notes”');
+    expect(failureText({ kind: 'pull', reason: 'down' }, null)).toContain(
+      'latest changes'
+    );
+  });
+
   it('offers a retry when the operation can be repeated, and clears the failure once it succeeds', async () => {
     const errors = createOperationErrors();
     let attempts = 0;

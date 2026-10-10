@@ -50,6 +50,7 @@ import {
   type ChatPanelLabels,
 } from './features/chat/chat.labels';
 import { createDocumentActions } from './features/document-actions';
+import { DocumentChangesProvider } from './features/document-changes';
 import { DocumentPane } from './features/document-pane';
 import { DocumentRevisionProvider } from './features/document-revision';
 import {
@@ -121,15 +122,19 @@ export function App() {
                 fact that a restore rewrote the open document has to be
                 shared above both of them. */}
             <DocumentRevisionProvider>
-              {/* Likewise for what the open editor holds: the export in the
-                  explorer's menu reads it from outside the pane. */}
-              <LiveDocumentsProvider>
-                {/* And for the editor instance itself: the outline in the
-                    aside draws over the editor the pane has open. */}
-                <LiveEditorsProvider>
-                  <Workbench />
-                </LiveEditorsProvider>
-              </LiveDocumentsProvider>
+              {/* So do merges arriving from other devices: the pane applies
+                  them to the editor it holds. */}
+              <DocumentChangesProvider value={services.documentChanges}>
+                {/* Likewise for what the open editor holds: the export in the
+                    explorer's menu reads it from outside the pane. */}
+                <LiveDocumentsProvider value={services.liveDocuments}>
+                  {/* And for the editor instance itself: the outline in the
+                      aside draws over the editor the pane has open. */}
+                  <LiveEditorsProvider>
+                    <Workbench />
+                  </LiveEditorsProvider>
+                </LiveDocumentsProvider>
+              </DocumentChangesProvider>
             </DocumentRevisionProvider>
           </FileSelectionProvider>
         </FileServicesProvider>

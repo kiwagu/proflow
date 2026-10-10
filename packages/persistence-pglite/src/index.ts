@@ -9,8 +9,18 @@ export {
 } from './db/db.js';
 export {
   createDocumentCrdtStore,
+  type DocumentChanged,
   type DocumentCrdtStore,
+  type DocumentPeers,
+  type LiveTree,
+  type SyncableCrdt,
 } from './document/document.crdt-store.js';
+export { createBroadcastDocumentPeers } from './document/document.peers.js';
+export {
+  listAwaitingDocuments,
+  listUnpushedDocuments,
+  materializeDocuments,
+} from './document/document.materialize.js';
 export { createPgliteDocumentListReader } from './document/document.reader.js';
 export { createPgliteDocumentRepository } from './document/document.repository.js';
 export { createPgliteDocumentVersionStore } from './document/document-version.store.js';

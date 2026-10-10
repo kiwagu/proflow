@@ -68,7 +68,7 @@ it('rebuilds a stale migration ledger and loses local rows exactly once', async 
   await migrate(db as unknown as Parameters<typeof migrate>[0]);
   expect((await db.query('select * from blob')).rows).toEqual([]);
   expect((await db.query('select * from schema_migration')).rows).toHaveLength(
-    6
+    8
   );
   await db.query(
     "insert into blob (hash, size, mime) values ('after-reset', 1, 'text/plain')"
