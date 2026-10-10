@@ -826,8 +826,8 @@ begin
   reset role;
 
   -- (5) a forged link: bob's OWN resource naming alice's document grants nothing
-  --     (a resource counts as the body's owner only when its owner is the
-  --     document's creator)
+  --     (a resource counts as the body's owner only when the document names it
+  --     too, and only the document's creator names a document's resource)
   insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
   values (v_a, 'text', 'Bob forged link', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_f))
   returning id into forged;
@@ -974,7 +974,10 @@ begin
   values (v_a, 'text', 'Alice shared note without a body', 'space', u_alice, u_alice) returning id into forged;
   begin perform pg_temp.t14_as(u_adam);
     update public.knowledge_resources set body_ref = jsonb_build_object('doc_id', d_f) where id = forged;
-  exception when others then perform pg_temp.t14_report('N21 setup: body_ref rewrite','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+    get diagnostics n = row_count;
+    -- the probes below mean nothing unless the rewrite really happened
+    perform pg_temp.t14_report('N21 setup: the admin rewrote the body_ref of a shared resource', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N21 setup: the admin rewrote the body_ref of a shared resource','1','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
 
   begin perform pg_temp.t14_as(u_adam);
@@ -1024,6 +1027,28 @@ begin
   exception when others then perform pg_temp.t14_report('N23 the new owner of a resource reads its private body','1','ERR '||sqlerrm); end;
   reset role;
   delete from public.knowledge_resources where id = forged;
+
+  -- (15) the binding is written once, by the creator, and never again: the
+  --      table has no update policy, so neither a plain update nor the
+  --      upsert that merges duplicates can move it, not even for the creator.
+  begin perform pg_temp.t14_as(u_alice);
+    update public.crdt_documents set resource_id = 'knr_rebound' where id = d_orphan;
+    get diagnostics n = row_count;
+    perform pg_temp.t14_report('N24a the creator cannot rebind a document with an update', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N24a the creator cannot rebind a document with an update','0','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id)
+    values (d_orphan, v_a, u_alice, 'knr_rebound')
+    on conflict (id) do update set resource_id = excluded.resource_id;
+    perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  select count(*) into n from public.crdt_documents where id = d_orphan and resource_id is null;
+  perform pg_temp.t14_report('N24c the document is still unbound afterwards', '1', n::text);
 end
 $fence$;
 

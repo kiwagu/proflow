@@ -53,10 +53,10 @@ export function createPgliteDocumentRepository(
         // The document and its place in the file tree are one fact.
         const row = await db.transaction(async (tx) => {
           const { rows } = await tx.query<DocumentRow>(
-            `insert into document (id, title, kind)
-             values ($1, $2, $3)
+            `insert into document (id, title, kind, resource_id)
+             values ($1, $2, $3, $4)
              returning ${META_COLUMNS}`,
-            [id, input?.title ?? '', input?.kind ?? 'md']
+            [id, input?.title ?? '', input?.kind ?? 'md', nodeId]
           );
           const created = await graphInTransaction(tx).createNode({
             id: nodeId,

@@ -25,6 +25,14 @@
  *   forged or rewritten pointer opens nothing. ownership of the resource may
  *   move: the body follows the resource, not its first owner.
  *
+ * documents registered before the column existed
+ *   there is no backfill. an old pointer is not proof that anyone authorized
+ *   the association (a resource's body_ref can be rewritten by whoever may
+ *   edit the resource, and a pair that "agrees" today may have been made
+ *   that way), so nothing is bound on the strength of history. such a body
+ *   has no owner and stays visible to its creator only. document replication
+ *   ships together with this fence, so none exist outside development stands.
+ *
  * the creator
  *   the graph and the document bodies are pushed by two independent engines,
  *   so a body can reach the server before its resource row. the document's
@@ -72,18 +80,6 @@ alter table public.crdt_documents
 
 comment on column public.crdt_documents.resource_id is
   'The resource that owns this body. Set once by the creator when registering the document; never updated (the table has no update policy). A body counts as the resource''s only when the resource points back through body_ref.';
-
--- documents registered before the column existed: bind the pairs that already
--- agree. the same creator made both sides, the resource points back, and they
--- share a space; this runs once, as the table owner, over rows no member
--- could have forged against a fence that did not exist yet.
-update public.crdt_documents d
-set resource_id = r.id
-from public.knowledge_resources r
-where d.resource_id is null
-  and r.body_ref ->> 'doc_id' = d.id
-  and r.space_id = d.space_id
-  and r.created_by = d.created_by;
 
 -- ---------------------------------------------------------------------------
 -- the predicate: the core takes the document's own columns...

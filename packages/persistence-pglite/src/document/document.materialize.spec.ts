@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DocumentCrdt, type SerializedTree } from '@workspace/doc-crdt';
 import { markdownToState } from '@workspace/lexical-nodes/utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -140,25 +141,59 @@ describe('materializing documents the graph brought in', () => {
 });
 
 describe('the resource that owns a document', () => {
-  it('is the node that points at it, and nothing when no node does', async () => {
-    const docId = testId('doc');
-    const nodeId = await pulledTextNode({ docId, title: 'Owned' });
+  const repository = () =>
+    createPgliteDocumentRepository(
+      db,
+      createDocumentCrdtStore(db),
+      spaceId,
+      TEST_USER
+    );
 
-    // The server fences a body through the resource that owns it, and asks
-    // the document's creator to name it when registering the document.
-    expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
+  it('is the node the document was created with, kept with the document', async () => {
+    const nodeId = testId('knr');
+    const made = (
+      await repository().create({ title: 'Owned', nodeId })
+    )._unsafeUnwrap();
+
+    // The server fences a body through the resource that owns it, and the
+    // device that creates the document names that resource once, when it
+    // first registers the document. The pair is written in one transaction
+    // at creation, so it is the creation's own fact, not a lookup.
+    expect(await resourceIdForDocument(db, made.id)).toBe(nodeId);
     expect(await resourceIdForDocument(db, testId('doc'))).toBeNull();
   });
 
-  it('still names a node that sits in the trash: the body is its own until it is purged', async () => {
+  it("is not chosen among other people's claims: an earlier node of someone else that points at the document changes nothing", async () => {
     const docId = testId('doc');
-    const nodeId = await pulledTextNode({
-      docId,
-      title: 'Trashed',
-      trashed: true,
-    });
+    const nodeId = testId('knr');
+    const forged = testId('knr');
+    // Somebody who knows the document id inserts a shared node of their own
+    // pointing at it, stamped earlier than anything here, and it reaches
+    // this device before the document is first registered.
+    await db.query(
+      `insert into knowledge_resources
+         (id, space_id, kind, title, created_by, visibility, body_ref, created_at)
+       values ($1, $2, 'text', 'Claim', $3, 'space', $4::jsonb, now() - interval '1 day')`,
+      [
+        forged,
+        spaceId,
+        // An auth user id, not an entity id: someone else.
+        randomUUID(),
+        JSON.stringify({ doc_id: docId }),
+      ]
+    );
+
+    await repository().create({ id: docId, nodeId, title: 'Mine' });
 
     expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
+  });
+
+  it('is nothing for a document the graph brought in: it was not created here', async () => {
+    const docId = testId('doc');
+    await pulledTextNode({ docId, title: 'Theirs' });
+    await materializeDocuments(db, spaceId);
+
+    expect(await resourceIdForDocument(db, docId)).toBeNull();
   });
 });
 
