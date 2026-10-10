@@ -12,16 +12,19 @@ export function createSupabaseTransport(
   client: SupabaseClient<Database>
 ): SyncTransport {
   return {
-    async ensureDocument(docId, spaceId) {
+    async ensureDocument(docId, spaceId, resourceId = null) {
       const user = await client.auth.getClaims();
       const uid = user.data?.claims.sub;
       if (!uid) throw new Error('no authenticated session for document sync');
-      const { error } = await client
-        .from('crdt_documents')
-        .upsert(
-          { id: docId, space_id: spaceId, created_by: uid },
-          { onConflict: 'id', ignoreDuplicates: true }
-        );
+      const { error } = await client.from('crdt_documents').upsert(
+        {
+          id: docId,
+          space_id: spaceId,
+          created_by: uid,
+          resource_id: resourceId,
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
       if (error) throw new Error(`ensureDocument failed: ${error.message}`);
     },
 

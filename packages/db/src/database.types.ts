@@ -162,6 +162,7 @@ export type Database = {
           format: string
           head_seq: number
           id: string
+          resource_id: string | null
           snapshot: string | null
           snapshot_seq: number
           space_id: string
@@ -173,6 +174,7 @@ export type Database = {
           format?: string
           head_seq?: number
           id?: string
+          resource_id?: string | null
           snapshot?: string | null
           snapshot_seq?: number
           space_id: string
@@ -184,6 +186,7 @@ export type Database = {
           format?: string
           head_seq?: number
           id?: string
+          resource_id?: string | null
           snapshot?: string | null
           snapshot_seq?: number
           space_id?: string

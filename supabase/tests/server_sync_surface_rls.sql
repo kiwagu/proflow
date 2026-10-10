@@ -121,7 +121,7 @@ end $$;
 
 do $probe$
 declare
-  v_a text; v_b text; u_alice uuid; u_adam uuid; u_mal uuid; d_a text; d_b text;
+  v_a text; v_b text; u_alice uuid; u_adam uuid; u_mal uuid; d_a text; d_b text; res_k text;
   n int; b boolean; txt text;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -543,7 +543,9 @@ begin
   -- a delete needs the row visible, and a body is visible through its
   -- resource: the admin deletes a document that is shared at the space floor
   insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
-  values (v_a, 'text', 'K shared note', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_a));
+  values (v_a, 'text', 'K shared note', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_a))
+  returning id into res_k;
+  update public.crdt_documents set resource_id = res_k where id = d_a;
 
   begin perform pg_temp.t14_as(u_adam);
     delete from public.crdt_documents where id = d_a;
@@ -671,7 +673,7 @@ $move$;
 do $fence$
 declare
   v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
-  d_f text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
+  d_f text; d_x text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
   n int; b boolean;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -689,6 +691,9 @@ begin
   insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
   values (v_a, 'text', 'Alice private note', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
   returning id into res_f;
+  -- the document names the resource that owns it (written by its creator at
+  -- registration; the fixture is built as the table owner)
+  update public.crdt_documents set resource_id = res_f where id = d_f;
   -- a named version, and the server search rows, follow the same fence
   insert into public.crdt_document_versions (doc_id, label, kind, frontiers, created_by)
   values (d_f, 'v1', 'manual', '[]'::jsonb, u_alice) returning id into ver_f;
@@ -885,21 +890,24 @@ begin
   exception when others then perform pg_temp.t14_report('N17b resource purged: creator keeps the body','1','ERR '||sqlerrm); end;
   reset role;
 
-  -- (9) the same-space clause, isolated: a resource in space B, owned by the
-  --     document's creator, naming the document, opened to bob (not a member
-  --     of B) by a per-user grant. the grant alone would let bob read it, so
-  --     only the same-space condition keeps the body shut. a grant needs an
-  --     active member of the resource's space, so bob joins B for this probe.
+  -- (9) the same-space clause, isolated: a document of space A that names a
+  --     resource of space B, which points back at it and is opened to bob (not
+  --     a member of B) by a per-user grant. the mutual link is complete and
+  --     the grant alone would let bob read the resource, so only the
+  --     same-space condition keeps the body shut. a grant needs an active
+  --     member of the resource's space, so bob joins B for this probe.
   insert into public.space_memberships (space_id, user_id, status) values (v_b, u_bob, 'active');
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
   insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
-  values (v_b, 'text', 'Alice forged link in B', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
+  values (v_b, 'text', 'Alice resource in B', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_x))
   returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
   insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (forged, u_bob, u_alice);
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_documents where id = d_f;
-    perform pg_temp.t14_report('N18 link from another space grants nothing', '0', n::text);
-  exception when others then perform pg_temp.t14_report('N18 link from another space grants nothing','0','ERR '||sqlerrm); end;
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N18 a complete link to a resource of another space grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N18 a complete link to a resource of another space grants nothing','0','ERR '||sqlerrm); end;
   reset role;
   delete from public.knowledge_resource_user_grants where resource_id = forged;
   delete from public.knowledge_resources where id = forged;
@@ -942,6 +950,80 @@ begin
     perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
+
+  -- (12) the link must be unforgeable by anyone but the document's creator.
+  --      route 1: a member creates a resource of HIS OWN making (created_by is
+  --      checked by the insert policy) but names alice as its owner, shares it
+  --      at the space floor and points it at alice's private document.
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+    values (v_a, 'text', 'Bob names alice as owner', 'space', u_bob, u_alice, jsonb_build_object('doc_id', d_f));
+  exception when others then perform pg_temp.t14_report('N20 setup: forged resource insert','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N20 a resource created by someone else that names the creator as owner grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N20 a resource created by someone else that names the creator as owner grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where title = 'Bob names alice as owner';
+
+  --      route 2: an admin who may update a space-floor resource of alice's
+  --      repoints its body_ref at another document of alice's.
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_a, 'text', 'Alice shared note without a body', 'space', u_alice, u_alice) returning id into forged;
+  begin perform pg_temp.t14_as(u_adam);
+    update public.knowledge_resources set body_ref = jsonb_build_object('doc_id', d_f) where id = forged;
+  exception when others then perform pg_temp.t14_report('N21 setup: body_ref rewrite','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_adam);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N21a repointing a readable resource at another body does not open that body (read)', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N21a repointing a readable resource at another body does not open that body (read)','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-adam';
+  delete from public.knowledge_resources where id = forged;
+
+  -- (13) the link is mutual: a document that names a resource the resource
+  --      does not point back at is not owned by it, even when ANOTHER readable
+  --      resource of the same creator points at the document.
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_a, 'text', 'Alice shared, not pointing back', 'space', u_alice, u_alice) returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, pointing but not named', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_x));
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N22 a link counts only when both sides name each other', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N22 a link counts only when both sides name each other','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where space_id = v_a and title like 'Alice shared, %';
+
+  -- (14) ownership of the resource moves, the body follows the resource: the
+  --      new owner reads a private body whose creator is somebody else.
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice note handed to adam', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_x))
+  returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
+  update public.knowledge_resources set owner_user_id = u_adam where id = forged;
+
+  begin perform pg_temp.t14_as(u_adam);
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N23 the new owner of a resource reads its private body', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N23 the new owner of a resource reads its private body','1','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
 end
 $fence$;
 

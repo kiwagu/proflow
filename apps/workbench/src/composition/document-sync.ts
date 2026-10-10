@@ -14,6 +14,7 @@ import {
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
+  resourceIdForDocument,
 } from '@workspace/persistence-pglite';
 import { parseSyncSettings, SYNC_SETTINGS_KEY } from './sync';
 
@@ -88,7 +89,11 @@ export function startDocumentSync(
     try {
       const doc = await store.syncable(id);
       if (!doc) return;
-      await engine.push(id, doc, identity.spaceId);
+      // The server fences a body through the resource that owns it; this
+      // device knows which node points at the document, and the server
+      // takes the name once, when it first sees the document.
+      const resourceId = await resourceIdForDocument(db, id);
+      await engine.push(id, doc, identity.spaceId, resourceId);
       failed.delete(id);
       options.onPushed?.(id);
     } catch (error) {

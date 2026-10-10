@@ -79,6 +79,29 @@ export async function materializeDocuments(
   return added ?? 0;
 }
 
+/**
+ * The node that owns a document's body: the one whose `body_ref` points at
+ * it. The server fences a body through that resource, and the document's
+ * creator names it once, when registering the document — so this is read
+ * from what the device already holds, trashed or not (a trashed node still
+ * owns its body until it is purged). Null when no node here points at it:
+ * the body is then registered without an owner and stays visible to its
+ * creator only.
+ */
+export async function resourceIdForDocument(
+  db: AppDb,
+  documentId: string
+): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    `select r.id from knowledge_resources r
+     where r.body_ref ->> 'doc_id' = $1
+     order by r.created_at, r.id
+     limit 1`,
+    [documentId]
+  );
+  return rows[0]?.id ?? null;
+}
+
 /** Documents still waiting for their first pull: what a sync start pulls by name. */
 export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
   const { rows } = await db.query<{ id: string }>(

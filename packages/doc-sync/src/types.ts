@@ -72,8 +72,18 @@ export interface SyncTailRow {
  * watermark, a snapshot head, and one guarded destructive operation.
  */
 export interface SyncTransport {
-  /** Creates the server document row if it does not exist yet (idempotent). */
-  ensureDocument(docId: string, spaceId: string): Promise<void>;
+  /**
+   * Creates the server document row if it does not exist yet (idempotent).
+   * `resourceId` names the resource that owns the body; it is written once,
+   * here, by the document's creator — the server fences the body through it.
+   * Null means the owner is not known on this device: the body then stays
+   * visible to its creator only.
+   */
+  ensureDocument(
+    docId: string,
+    spaceId: string,
+    resourceId?: string | null
+  ): Promise<void>;
   /** The latest server snapshot and the watermark folded into it. */
   head(docId: string): Promise<SyncHead>;
   /** Update rows with seq > afterSeq, in seq order — the catch-up tail. */

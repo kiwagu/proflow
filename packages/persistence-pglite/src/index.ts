@@ -20,6 +20,7 @@ export {
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
+  resourceIdForDocument,
 } from './document/document.materialize.js';
 export { createPgliteDocumentListReader } from './document/document.reader.js';
 export { createPgliteDocumentRepository } from './document/document.repository.js';

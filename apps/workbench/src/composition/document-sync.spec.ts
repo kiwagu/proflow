@@ -17,16 +17,24 @@ const {
   materializeDocuments,
   listAwaitingDocuments,
   listUnpushedDocuments,
+  resourceIdForDocument,
 } = vi.hoisted(() => {
   const kick = vi.fn();
   const watchSpace = vi.fn((_spaceId: string, _hooks: unknown) => ({
     stop: vi.fn(),
     kick,
   }));
-  const push = vi.fn(async (_id: string, _doc: unknown, _space: string) => ({
-    pushedSeq: 1,
-    compacted: false,
-  }));
+  const push = vi.fn(
+    async (
+      _id: string,
+      _doc: unknown,
+      _space: string,
+      _resource: string | null
+    ) => ({
+      pushedSeq: 1,
+      compacted: false,
+    })
+  );
   const pull = vi.fn(async (_id: string, _doc: unknown) => ({
     imported: 1,
     skippedOwn: 0,
@@ -52,6 +60,12 @@ const {
     listUnpushedDocuments: vi.fn(async (_db: unknown): Promise<string[]> => [
       'doc-held',
     ]),
+    // A document the device holds is owned by the node that points at it;
+    // `doc-orphan` has no node here.
+    resourceIdForDocument: vi.fn(
+      async (_db: unknown, id: string): Promise<string | null> =>
+        id === 'doc-orphan' ? null : `node-of-${id}`
+    ),
   };
 });
 
@@ -65,6 +79,7 @@ vi.mock('@workspace/persistence-pglite', () => ({
   materializeDocuments,
   listAwaitingDocuments,
   listUnpushedDocuments,
+  resourceIdForDocument,
 }));
 
 import { ok } from 'neverthrow';
@@ -178,7 +193,8 @@ describe('starting document replication', () => {
     expect(push).toHaveBeenCalledWith(
       'doc-held',
       { id: 'doc-held' },
-      'spc_abc.01m2'
+      'spc_abc.01m2',
+      'node-of-doc-held'
     );
     handle.stop();
   });
@@ -204,7 +220,30 @@ describe('starting document replication', () => {
     expect(push).toHaveBeenCalledWith(
       'doc-typed',
       { id: 'doc-typed' },
-      'spc_abc.01m2'
+      'spc_abc.01m2',
+      'node-of-doc-typed'
+    );
+    handle.stop();
+  });
+
+  it('registers a document no node here points at without an owner', async () => {
+    const { store, change } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+    change('doc-orphan', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(push).toHaveBeenCalledWith(
+      'doc-orphan',
+      { id: 'doc-orphan' },
+      'spc_abc.01m2',
+      null
     );
     handle.stop();
   });
@@ -225,7 +264,8 @@ describe('starting document replication', () => {
     expect(push).toHaveBeenCalledWith(
       'doc-folded',
       { id: 'doc-folded' },
-      'spc_abc.01m2'
+      'spc_abc.01m2',
+      'node-of-doc-folded'
     );
     handle.stop();
   });
@@ -332,12 +372,14 @@ describe('starting document replication', () => {
     expect(push).toHaveBeenCalledWith(
       'doc-held',
       { id: 'doc-held' },
-      'spc_abc.01m2'
+      'spc_abc.01m2',
+      'node-of-doc-held'
     );
     expect(push).toHaveBeenCalledWith(
       'doc-offline',
       { id: 'doc-offline' },
-      'spc_abc.01m2'
+      'spc_abc.01m2',
+      'node-of-doc-offline'
     );
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
     handle.stop();

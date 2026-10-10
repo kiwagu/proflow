@@ -60,6 +60,7 @@ export class TextDocument implements SyncableDocument {
 
 export const DOC_ID = 'doc_sync_spec_0001';
 export const SPACE_ID = 'spc_sync_spec_0001';
+export const RESOURCE_ID = 'knr_sync_spec_0001';
 
 export interface Replica {
   readonly name: string;
@@ -87,6 +88,8 @@ export async function createReplica(
   options: {
     pollIntervalMs?: number;
     compaction?: { maxRows?: number; maxBytes?: number };
+    /** The resource that owns the document; null when this device has none. */
+    resourceId?: string | null;
   } = {}
 ): Promise<Replica> {
   const local = await PGlite.create();
@@ -140,7 +143,15 @@ export async function createReplica(
       await settled();
     },
 
-    push: () => sync.push(DOC_ID, document, SPACE_ID),
+    push: () =>
+      sync.push(
+        DOC_ID,
+        document,
+        SPACE_ID,
+        // Not given means the default owner; an explicit null is a device
+        // that does not know one.
+        options.resourceId === undefined ? RESOURCE_ID : options.resourceId
+      ),
     pull: () => sync.pull(DOC_ID, document),
     watch: (hooks) => sync.watch(DOC_ID, document, hooks),
     proposeCompaction: (coversSeq) =>

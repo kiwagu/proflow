@@ -7,6 +7,7 @@ import {
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
+  resourceIdForDocument,
 } from './document.materialize.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
 
@@ -135,6 +136,29 @@ describe('materializing documents the graph brought in', () => {
     await pulledTextNode({ docId, title: 'Once' });
     await materializeDocuments(db, spaceId);
     expect(await materializeDocuments(db, spaceId)).toBe(0);
+  });
+});
+
+describe('the resource that owns a document', () => {
+  it('is the node that points at it, and nothing when no node does', async () => {
+    const docId = testId('doc');
+    const nodeId = await pulledTextNode({ docId, title: 'Owned' });
+
+    // The server fences a body through the resource that owns it, and asks
+    // the document's creator to name it when registering the document.
+    expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
+    expect(await resourceIdForDocument(db, testId('doc'))).toBeNull();
+  });
+
+  it('still names a node that sits in the trash: the body is its own until it is purged', async () => {
+    const docId = testId('doc');
+    const nodeId = await pulledTextNode({
+      docId,
+      title: 'Trashed',
+      trashed: true,
+    });
+
+    expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
   });
 });
 

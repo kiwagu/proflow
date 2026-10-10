@@ -12,6 +12,7 @@ import {
   DOC_ID,
   LOCAL_SCHEMA,
   type Replica,
+  RESOURCE_ID,
   SPACE_ID,
   TextDocument,
 } from './testing/replica.js';
@@ -60,6 +61,26 @@ describe('document sync', () => {
     await a.pull();
     expect(a.text()).toBe('Hello from A. And B replies. ');
     expect(a.versionHex()).toBe(b.versionHex());
+  });
+
+  it('registers a document with the resource that owns it', async () => {
+    const a = await replica('client-a');
+    await a.edit('owned. ');
+    await a.push();
+
+    // The server fences a body through the resource that owns it, and only
+    // the document's creator can say which that is: it is written once, at
+    // registration, from what the replica knows locally.
+    expect(await server.resourceIdOf(DOC_ID)).toBe(RESOURCE_ID);
+  });
+
+  it('registers a document whose resource is not known as unowned', async () => {
+    const a = await createReplica('client-a', server, { resourceId: null });
+    replicas.push(a);
+    await a.edit('orphan. ');
+    await a.push();
+
+    expect(await server.resourceIdOf(DOC_ID)).toBeNull();
   });
 
   it('pushes nothing when the ledger already covers the document', async () => {

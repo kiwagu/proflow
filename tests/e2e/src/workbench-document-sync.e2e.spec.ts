@@ -250,6 +250,36 @@ test.describe('Workbench document sync across devices', () => {
         )
         .toBeGreaterThan(0);
 
+      // Baseline through the service role, so the member's empty reads below
+      // are the fence and not an upload that never happened: the private body
+      // is on the server too, and each document names the resource that owns
+      // it (the device says so when it first registers the document).
+      await expect
+        .poll(
+          async () => {
+            const { data } = await service
+              .from('crdt_updates')
+              .select('seq')
+              .eq('doc_id', privateDoc.body_ref.doc_id);
+            return (data ?? []).length;
+          },
+          { timeout: 60_000 }
+        )
+        .toBeGreaterThan(0);
+      const registered = await service
+        .from('crdt_documents')
+        .select('id, resource_id')
+        .in('id', [privateDoc.body_ref.doc_id, sharedDoc.body_ref.doc_id]);
+      expect(registered.error).toBeNull();
+      expect(
+        Object.fromEntries(
+          (registered.data ?? []).map((row) => [row.id, row.resource_id])
+        )
+      ).toEqual({
+        [privateDoc.body_ref.doc_id]: privateDoc.id,
+        [sharedDoc.body_ref.doc_id]: sharedDoc.id,
+      });
+
       // The member's session, straight at the API: the shared body answers,
       // the private one is empty — not an error, simply no rows.
       const memberSignIn = await asMember.auth.signInWithPassword({

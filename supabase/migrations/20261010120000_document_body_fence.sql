@@ -13,11 +13,17 @@
  *   the resource.
  *
  * the link
- *   knowledge_resources.body_ref->>'doc_id' names the document. a resource
- *   counts as the owner of a body only when it lives in the document's space
- *   AND its owner is the document's creator: any member can create a
- *   resource, so a resource alone must not be able to claim a body it did
- *   not create (a forged body_ref grants nothing).
+ *   the document names the resource that owns it (crdt_documents.resource_id,
+ *   written once by the document's creator when the document is registered;
+ *   the table has no update policy, so nobody rewrites it), and the resource
+ *   names the document back (knowledge_resources.body_ref->>'doc_id'). the
+ *   body counts as the resource's only when BOTH say so and the resource
+ *   lives in the document's space. neither side alone is trusted: any member
+ *   can create a resource, name someone else as its owner and point it at a
+ *   document, and any editor of a shared resource can repoint its body_ref —
+ *   but only the creator of a document can say which resource owns it, so a
+ *   forged or rewritten pointer opens nothing. ownership of the resource may
+ *   move: the body follows the resource, not its first owner.
  *
  * the creator
  *   the graph and the document bodies are pushed by two independent engines,
@@ -58,11 +64,26 @@
  */
 
 -- ---------------------------------------------------------------------------
--- the link: an expression index so the per-row policy check is one lookup
+-- the link: the document names its resource
 -- ---------------------------------------------------------------------------
 
-create index if not exists knowledge_resources_body_doc_idx
-  on public.knowledge_resources ((body_ref ->> 'doc_id'));
+alter table public.crdt_documents
+  add column if not exists resource_id text;
+
+comment on column public.crdt_documents.resource_id is
+  'The resource that owns this body. Set once by the creator when registering the document; never updated (the table has no update policy). A body counts as the resource''s only when the resource points back through body_ref.';
+
+-- documents registered before the column existed: bind the pairs that already
+-- agree. the same creator made both sides, the resource points back, and they
+-- share a space; this runs once, as the table owner, over rows no member
+-- could have forged against a fence that did not exist yet.
+update public.crdt_documents d
+set resource_id = r.id
+from public.knowledge_resources r
+where d.resource_id is null
+  and r.body_ref ->> 'doc_id' = d.id
+  and r.space_id = d.space_id
+  and r.created_by = d.created_by;
 
 -- ---------------------------------------------------------------------------
 -- the predicate: the core takes the document's own columns...
@@ -72,6 +93,7 @@ create or replace function private.auth_user_can_access_document_row(
   p_doc_id text,
   p_space_id text,
   p_created_by uuid,
+  p_resource_id text,
   p_action text
 )
 returns boolean
@@ -90,9 +112,9 @@ as $$
           or exists (
             select 1
             from public.knowledge_resources r
-            where r.body_ref ->> 'doc_id' = p_doc_id
+            where r.id = p_resource_id
+              and r.body_ref ->> 'doc_id' = p_doc_id
               and r.space_id = p_space_id
-              and r.owner_user_id = p_created_by
               and private.auth_user_can_access_resource(
                     r.id, r.space_id, r.owner_user_id, r.visibility,
                     'space.knowledge.read')
@@ -105,12 +127,12 @@ as $$
     end;
 $$;
 
-comment on function private.auth_user_can_access_document_row(text, text, uuid, text) is
-  'The body fence on a document row''s own columns, so it also holds for a row being inserted: the creator, or the resource that owns the body under the resource''s own read predicate; editing additionally needs the space update verb.';
+comment on function private.auth_user_can_access_document_row(text, text, uuid, text, text) is
+  'The body fence on a document row''s own columns, so it also holds for a row being inserted: the creator, or the resource that owns the body (named by the document, pointing back) under the resource''s own read predicate; editing additionally needs the space update verb.';
 
-revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text) from public;
-revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text) from anon;
-grant execute on function private.auth_user_can_access_document_row(text, text, uuid, text) to authenticated;
+revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text, text) from public;
+revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text, text) from anon;
+grant execute on function private.auth_user_can_access_document_row(text, text, uuid, text, text) to authenticated;
 
 -- ...and the wrapper by id, for tables and rpcs whose document row exists
 
@@ -126,7 +148,7 @@ set search_path = ''
 as $$
   select coalesce(
     (
-      select private.auth_user_can_access_document_row(d.id, d.space_id, d.created_by, p_action)
+      select private.auth_user_can_access_document_row(d.id, d.space_id, d.created_by, d.resource_id, p_action)
       from public.crdt_documents d
       where d.id = p_doc_id
     ),
@@ -153,7 +175,8 @@ for select
 to authenticated
 using (
   private.auth_user_can_access_document_row(
-    crdt_documents.id, crdt_documents.space_id, crdt_documents.created_by, 'read')
+    crdt_documents.id, crdt_documents.space_id, crdt_documents.created_by,
+    crdt_documents.resource_id, 'read')
 );
 
 -- ---------------------------------------------------------------------------
