@@ -68,6 +68,17 @@ export interface DocumentChanged {
   localEdits?: boolean;
 }
 
+/**
+ * The other tabs of this browser, which share the local database but each
+ * hold their own copy of an open document. A tab announces a document after
+ * writing to its journal; the others merge what it wrote. Only a hint —
+ * whatever a tab merges, it reads from the database.
+ */
+export interface DocumentPeers {
+  announce(id: string): void;
+  listen(onAnnounce: (id: string) => void): () => void;
+}
+
 /** The document as the sync engine drives it — the CRDT's own methods, structurally. */
 export type SyncableCrdt = Pick<
   DocumentCrdt,
@@ -81,8 +92,18 @@ type Open = {
   unsubscribe: () => void;
   /** Journal entries written since the last snapshot. */
   journalled: number;
-  /** Highest journal row this instance has imported. */
+  /**
+   * Every journal row up to here is in this copy. Moved only by reading the
+   * journal — never by this copy's own writes, which would step over rows
+   * another tab wrote in between.
+   */
   lastUpdateId: number;
+  /** Rows this copy wrote that a read has not passed yet. */
+  own: Set<number>;
+  /** The stored snapshot this copy holds, by its write time. */
+  snapshotStamp: string | null;
+  /** Another tab announced a write while a merge was running here. */
+  mergeAgain: boolean;
   /** Bumped by every remote merge; a save started before one is stale. */
   generation: number;
   /** A remote merge is between its import and its journal write. */
@@ -99,7 +120,7 @@ type Open = {
  */
 export function createDocumentCrdtStore(
   db: AppDb,
-  options: { live?: LiveTree } = {}
+  options: { live?: LiveTree; peers?: DocumentPeers } = {}
 ) {
   const open = new Map<string, Open>();
   const live = options.live;
@@ -112,13 +133,17 @@ export function createDocumentCrdtStore(
     id: string,
     crdt: DocumentCrdt,
     journalled: number,
-    lastUpdateId: number
+    lastUpdateId: number,
+    snapshotStamp: string | null
   ): Open {
     const entry: Open = {
       crdt,
       pending: [],
       journalled,
       lastUpdateId,
+      own: new Set(),
+      snapshotStamp,
+      mergeAgain: false,
       generation: 0,
       merging: false,
       unsubscribe: () => {},
@@ -149,8 +174,8 @@ export function createDocumentCrdtStore(
   }
 
   async function readDocument(id: string): Promise<Open> {
-    const snapshot = await db.query<{ bytes: Uint8Array }>(
-      'select bytes from document_snapshot where document_id = $1',
+    const snapshot = await db.query<{ bytes: Uint8Array; stamp: string }>(
+      'select bytes, updated_at::text as stamp from document_snapshot where document_id = $1',
       [id]
     );
     const updates = await db.query<{ id: number | string; bytes: Uint8Array }>(
@@ -169,23 +194,71 @@ export function createDocumentCrdtStore(
       [id, crdt.versionBytes()]
     );
     const last = updates.rows.at(-1);
-    return track(id, crdt, journal.length, last ? Number(last.id) : 0);
+    return track(
+      id,
+      crdt,
+      journal.length,
+      last ? Number(last.id) : 0,
+      snapshot.rows[0]?.stamp ?? null
+    );
   }
 
+  type JournalRead = {
+    blobs: Uint8Array[];
+    last: number;
+    stamp: string | null;
+  };
+
   /**
-   * Brings in journal rows other writers appended since this instance last
-   * looked — every tab and the agent worker holds its own copy of the
-   * document, over one shared table. Importing our own rows again is a
-   * no-op: the CRDT already holds those operations.
+   * What other writers put in the journal since this copy last looked —
+   * every tab holds its own copy over one shared table — and the stored
+   * snapshot when another tab replaced it: a snapshot folds journal rows
+   * away, including ones this copy never read.
    */
-  async function importForeign(id: string, entry: Open): Promise<void> {
+  async function readJournal(id: string, entry: Open): Promise<JournalRead> {
     const { rows } = await db.query<{ id: number | string; bytes: Uint8Array }>(
       'select id, bytes from document_update where document_id = $1 and id > $2 order by id',
       [id, entry.lastUpdateId]
     );
-    if (rows.length === 0) return;
-    entry.crdt.importUpdates(rows.map((r) => r.bytes));
-    entry.lastUpdateId = Number(rows.at(-1)?.id ?? entry.lastUpdateId);
+    const stored = await db.query<{ stamp: string }>(
+      'select updated_at::text as stamp from document_snapshot where document_id = $1',
+      [id]
+    );
+    const stamp = stored.rows[0]?.stamp ?? null;
+    const blobs: Uint8Array[] = [];
+    if (stamp !== null && stamp !== entry.snapshotStamp) {
+      const { rows: snap } = await db.query<{ bytes: Uint8Array }>(
+        'select bytes from document_snapshot where document_id = $1',
+        [id]
+      );
+      if (snap[0]) blobs.push(snap[0].bytes);
+    }
+    for (const row of rows) {
+      if (!entry.own.has(Number(row.id))) blobs.push(row.bytes);
+    }
+    const last = Number(rows.at(-1)?.id ?? entry.lastUpdateId);
+    return { blobs, last, stamp };
+  }
+
+  /** Takes what was read into the copy; true when that changed the document. */
+  function applyJournal(entry: Open, read: JournalRead): boolean {
+    const before = entry.crdt.versionBytes();
+    if (read.blobs.length > 0) entry.crdt.importUpdates(read.blobs);
+    entry.lastUpdateId = Math.max(entry.lastUpdateId, read.last);
+    for (const rowId of entry.own) {
+      if (rowId <= entry.lastUpdateId) entry.own.delete(rowId);
+    }
+    entry.snapshotStamp = read.stamp;
+    const after = entry.crdt.versionBytes();
+    return (
+      before.length !== after.length || before.some((b, i) => b !== after[i])
+    );
+  }
+
+  /** A copy whose writes failed holds state the disk does not: forget it. */
+  function drop(id: string, entry: Open): void {
+    entry.unsubscribe();
+    if (open.get(id) === entry) open.delete(id);
   }
 
   /**
@@ -205,15 +278,16 @@ export function createDocumentCrdtStore(
 
   async function snapshot(id: string, entry: Open): Promise<void> {
     const bytes = entry.crdt.exportSnapshot();
-    await db.transaction(async (tx) => {
-      await tx.query(
+    const stamp = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ stamp: string }>(
         `insert into document_snapshot (document_id, bytes, frontiers, op_count, updated_at)
          values ($1, $2, $3, $4, now())
          on conflict (document_id) do update
            set bytes = excluded.bytes,
                frontiers = excluded.frontiers,
                op_count = excluded.op_count,
-               updated_at = now()`,
+               updated_at = now()
+         returning updated_at::text as stamp`,
         [
           id,
           bytes,
@@ -222,13 +296,136 @@ export function createDocumentCrdtStore(
         ]
       );
       // Only after the snapshot is stored: the journal is what would rebuild
-      // the document if this transaction never landed.
-      await tx.query('delete from document_update where document_id = $1', [
-        id,
-      ]);
+      // the document if this transaction never landed. And only rows this
+      // copy holds: another tab's rows it has not read stay for that tab's
+      // writes to reach everyone.
+      await tx.query(
+        'delete from document_update where document_id = $1 and (id <= $2 or id = any($3::bigint[]))',
+        [id, entry.lastUpdateId, [...entry.own]]
+      );
+      return rows[0]?.stamp ?? null;
     });
+    entry.own.clear();
+    entry.snapshotStamp = stamp ?? entry.snapshotStamp;
     entry.journalled = 0;
+    options.peers?.announce(id);
   }
+
+  /**
+   * Writes a merge: the bytes of the fold that preceded it, the bytes that
+   * came in (none when they were read from the journal), and the derived
+   * content of the merged document; then tells the editor and the other
+   * tabs. The merge is on disk or the copy is dropped.
+   */
+  async function writeMerge(
+    id: string,
+    entry: Open,
+    blobs: Uint8Array[]
+  ): Promise<void> {
+    const folded = entry.pending.slice();
+    let tree: SerializedTree | null;
+    let markdown: string;
+    try {
+      tree = entry.crdt.toTree();
+      // Derived before the transaction opens, as in restore.
+      markdown = tree ? await treeAsMarkdown(tree) : '';
+      await db.transaction(async (tx) => {
+        for (const bytes of [...folded, ...blobs]) {
+          const { rows } = await tx.query<{ id: number | string }>(
+            'insert into document_update (document_id, bytes) values ($1, $2) returning id',
+            [id, bytes]
+          );
+          entry.own.add(Number(rows[0]?.id));
+        }
+        if (tree) {
+          await tx.query(
+            `insert into document_content (document_id, lexical_json, markdown, writer)
+             values ($1, $2, $3, null)
+             on conflict (document_id) do update
+               set lexical_json = excluded.lexical_json,
+                   markdown = excluded.markdown,
+                   writer = null,
+                   updated_at = now()`,
+            [id, JSON.stringify(tree), markdown]
+          );
+          await tx.query('update document set preview = $2 where id = $1', [
+            id,
+            markdown.slice(0, 200),
+          ]);
+        }
+        await tx.query(
+          'update document set version_vv = $2, updated_at = now() where id = $1',
+          [id, entry.crdt.versionBytes()]
+        );
+      });
+    } catch (error) {
+      // The import changed this copy and nothing of it reached the disk.
+      // Kept, it would hold operations the editor never saw, and the next
+      // fold would commit the editor's older tree over them. Dropped, the
+      // next access rebuilds from the disk and the retry starts from there.
+      drop(id, entry);
+      throw error;
+    } finally {
+      entry.merging = false;
+    }
+    // On disk from here: whatever fails next must not undo it, and the
+    // editor is told before anything else can fail.
+    entry.pending.splice(0, folded.length);
+    entry.journalled += folded.length + blobs.length;
+    if (tree) {
+      emit({
+        id,
+        source: 'remote',
+        tree,
+        markdown,
+        localEdits: folded.length > 0,
+      });
+    }
+    if (folded.length + blobs.length > 0) options.peers?.announce(id);
+    if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
+    if (entry.mergeAgain) {
+      entry.mergeAgain = false;
+      void mergeLocal(id).catch(reportMergeFailure);
+    }
+  }
+
+  /**
+   * Another tab wrote to the journal: what this copy has not seen comes in
+   * the way a pull's bytes do — the editor's tree folded first, the merge
+   * painted after. A document this tab does not hold open has nothing to
+   * merge: it is read from the disk when it opens.
+   */
+  async function mergeLocal(id: string): Promise<void> {
+    const entry = open.get(id);
+    if (!entry) return;
+    if (entry.merging) {
+      entry.mergeAgain = true;
+      return;
+    }
+    const read = await readJournal(id, entry);
+    if (open.get(id) !== entry) return;
+    if (entry.merging) {
+      entry.mergeAgain = true;
+      return;
+    }
+    if (read.blobs.length === 0) {
+      applyJournal(entry, read);
+      return;
+    }
+    foldLive(id, entry);
+    applyJournal(entry, read);
+    entry.generation += 1;
+    entry.merging = true;
+    await writeMerge(id, entry, []);
+  }
+
+  function reportMergeFailure(error: unknown): void {
+    console.error("merging another tab's writes failed", error);
+  }
+
+  options.peers?.listen((id) => {
+    void mergeLocal(id).catch(reportMergeFailure);
+  });
 
   return {
     /**
@@ -247,9 +444,7 @@ export function createDocumentCrdtStore(
       // waits is what makes the tree it carries stale.
       const seen = open.get(input.id)?.generation ?? 0;
       const entry = await openDocument(input.id);
-      // Converge before committing: the commit's diff must be against
-      // everything already written, not this instance's last sight of it.
-      await importForeign(input.id, entry);
+      const read = await readJournal(input.id, entry);
       // A remote merge landed, or is between its import and its journal
       // write: the editor's tree was folded in already, and committing the
       // tree this save carries would diff the remote operations away. A copy
@@ -260,48 +455,81 @@ export function createDocumentCrdtStore(
         open.get(input.id) !== entry
       )
         return false;
+      // The editor's tree first, against the state it was edited from; what
+      // other tabs wrote since merges on top of it. The other order would
+      // diff their writes away — the tree has never seen them.
       const changed = entry.crdt.commitTree(input.tree, input.author);
+      const merged = applyJournal(entry, read);
       const updates = entry.pending.splice(0, entry.pending.length);
-      if (!changed) return false;
-
-      await db.transaction(async (tx) => {
-        for (const bytes of updates) {
-          const { rows } = await tx.query<{ id: number | string }>(
-            'insert into document_update (document_id, bytes) values ($1, $2) returning id',
-            [input.id, bytes]
+      if (!changed && !merged) return false;
+      if (merged) {
+        entry.generation += 1;
+        entry.merging = true;
+      }
+      const tree = merged ? entry.crdt.toTree() : input.tree;
+      let markdown = input.markdown;
+      try {
+        if (merged && tree) markdown = await treeAsMarkdown(tree);
+        await db.transaction(async (tx) => {
+          for (const bytes of updates) {
+            const { rows } = await tx.query<{ id: number | string }>(
+              'insert into document_update (document_id, bytes) values ($1, $2) returning id',
+              [input.id, bytes]
+            );
+            entry.own.add(Number(rows[0]?.id));
+          }
+          if (tree) {
+            await tx.query(
+              `insert into document_content (document_id, lexical_json, markdown, writer)
+               values ($1, $2, $3, $4)
+               on conflict (document_id) do update
+                 set lexical_json = excluded.lexical_json,
+                     markdown = excluded.markdown,
+                     writer = excluded.writer,
+                     updated_at = now()`,
+              [input.id, JSON.stringify(tree), markdown, input.writer ?? null]
+            );
+          }
+          await tx.query(
+            'update document set preview = $2, version_vv = $3, updated_at = now() where id = $1',
+            [
+              input.id,
+              merged ? markdown.slice(0, 200) : input.preview,
+              entry.crdt.versionBytes(),
+            ]
           );
-          entry.lastUpdateId = Number(rows[0]?.id ?? entry.lastUpdateId);
-        }
-        await tx.query(
-          `insert into document_content (document_id, lexical_json, markdown, writer)
-           values ($1, $2, $3, $4)
-           on conflict (document_id) do update
-             set lexical_json = excluded.lexical_json,
-                 markdown = excluded.markdown,
-                 writer = excluded.writer,
-                 updated_at = now()`,
-          [
-            input.id,
-            JSON.stringify(input.tree),
-            input.markdown,
-            input.writer ?? null,
-          ]
-        );
-        await tx.query(
-          'update document set preview = $2, version_vv = $3, updated_at = now() where id = $1',
-          [input.id, input.preview, entry.crdt.versionBytes()]
-        );
-      });
+        });
+      } catch (error) {
+        // The commit is in this copy and not on disk: a retry of the same
+        // tree would find nothing to change and the edit would never be
+        // written. Dropped, the retry commits it again from the disk.
+        drop(input.id, entry);
+        throw error;
+      } finally {
+        entry.merging = false;
+      }
 
       entry.journalled += updates.length;
+      if (merged && tree) {
+        // What other tabs wrote is now in the document: the editor shows it.
+        emit({
+          id: input.id,
+          source: 'remote',
+          tree,
+          markdown,
+          localEdits: changed,
+        });
+      } else if (changed) {
+        emit({
+          id: input.id,
+          source: 'local',
+          tree: input.tree,
+          markdown: input.markdown,
+        });
+      }
+      if (updates.length > 0) options.peers?.announce(input.id);
       if (entry.journalled >= JOURNAL_LIMIT) await snapshot(input.id, entry);
-      emit({
-        id: input.id,
-        source: 'local',
-        tree: input.tree,
-        markdown: input.markdown,
-      });
-      return true;
+      return changed;
     },
 
     /** The document's canonical content, rebuilt from the CRDT. */
@@ -334,10 +562,11 @@ export function createDocumentCrdtStore(
       const markdown = tree ? await treeAsMarkdown(tree) : '';
       await db.transaction(async (tx) => {
         for (const bytes of updates) {
-          await tx.query(
-            'insert into document_update (document_id, bytes) values ($1, $2)',
+          const { rows } = await tx.query<{ id: number | string }>(
+            'insert into document_update (document_id, bytes) values ($1, $2) returning id',
             [id, bytes]
           );
+          entry.own.add(Number(rows[0]?.id));
         }
         if (tree) {
           await tx.query(
@@ -359,6 +588,7 @@ export function createDocumentCrdtStore(
       });
       entry.journalled += updates.length;
       if (tree) emit({ id, source: 'local', tree, markdown });
+      if (updates.length > 0) options.peers?.announce(id);
     },
 
     /** The document's change history, oldest first. */
@@ -377,8 +607,10 @@ export function createDocumentCrdtStore(
 
     /**
      * The document for the sync engine, or null when this device has no
-     * row for it (not materialized yet). Rows other writers appended come
-     * in first, so a fold diffs against everything already journaled.
+     * row for it (not materialized yet). Other tabs' journal rows are NOT
+     * read here: brought in without the fold and the paint that frame every
+     * merge, they would sit under an editor that never saw them. Each tab
+     * pushes what it holds; the others' writes arrive by their announcements.
      *
      * A merge in flight is left alone: a push opening the document between
      * a pull's import and its journal write must not reopen the window in
@@ -390,7 +622,6 @@ export function createDocumentCrdtStore(
       ]);
       if (rows.length === 0) return null;
       const entry = await openDocument(id);
-      await importForeign(id, entry);
       return {
         exportUpdatesSince: (from) => entry.crdt.exportUpdatesSince(from),
         versionBytes: () => entry.crdt.versionBytes(),
@@ -414,68 +645,7 @@ export function createDocumentCrdtStore(
     syncJournal: {
       append: async (id: string, blobs: Uint8Array[]): Promise<void> => {
         const entry = await openDocument(id);
-        const folded = entry.pending.slice();
-        let tree: SerializedTree | null;
-        let markdown: string;
-        try {
-          tree = entry.crdt.toTree();
-          // Derived before the transaction opens, as in restore.
-          markdown = tree ? await treeAsMarkdown(tree) : '';
-          await db.transaction(async (tx) => {
-            for (const bytes of [...folded, ...blobs]) {
-              const { rows } = await tx.query<{ id: number | string }>(
-                'insert into document_update (document_id, bytes) values ($1, $2) returning id',
-                [id, bytes]
-              );
-              entry.lastUpdateId = Number(rows[0]?.id ?? entry.lastUpdateId);
-            }
-            if (tree) {
-              await tx.query(
-                `insert into document_content (document_id, lexical_json, markdown, writer)
-                 values ($1, $2, $3, null)
-                 on conflict (document_id) do update
-                   set lexical_json = excluded.lexical_json,
-                       markdown = excluded.markdown,
-                       writer = null,
-                       updated_at = now()`,
-                [id, JSON.stringify(tree), markdown]
-              );
-              await tx.query('update document set preview = $2 where id = $1', [
-                id,
-                markdown.slice(0, 200),
-              ]);
-            }
-            await tx.query(
-              'update document set version_vv = $2, updated_at = now() where id = $1',
-              [id, entry.crdt.versionBytes()]
-            );
-          });
-        } catch (error) {
-          // The import changed this copy and nothing of it reached the
-          // disk. Kept, it would hold remote operations the editor never
-          // saw, and the retried pull would fold the editor's older tree
-          // over them. Dropped, the next access rebuilds from the disk and
-          // the retry folds and imports again from there.
-          entry.unsubscribe();
-          if (open.get(id) === entry) open.delete(id);
-          throw error;
-        } finally {
-          entry.merging = false;
-        }
-        // On disk from here: whatever fails next must not undo it, and the
-        // editor is told before anything else can fail.
-        entry.pending.splice(0, folded.length);
-        entry.journalled += folded.length + blobs.length;
-        if (tree) {
-          emit({
-            id,
-            source: 'remote',
-            tree,
-            markdown,
-            localEdits: folded.length > 0,
-          });
-        }
-        if (entry.journalled >= JOURNAL_LIMIT) await snapshot(id, entry);
+        await writeMerge(id, entry, blobs);
       },
     },
 

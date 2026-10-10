@@ -5,6 +5,7 @@ import {
 } from '@workspace/domain';
 import { PACKAGE_KINDS } from '@workspace/package-kinds';
 import {
+  createBroadcastDocumentPeers,
   createDocumentCrdtStore,
   createPgliteChatListReader,
   createPgliteChatMessageRepository,
@@ -101,6 +102,9 @@ export async function createAppServices(
       read: (id) => liveDocuments.read(id),
       author: { user: session.userId, src: 'human' },
     },
+    // Other tabs of this browser share the database but hold their own
+    // copies of open documents: each tells the others what it wrote.
+    peers: createBroadcastDocumentPeers(),
   });
 
   // Everything the user edits in place — creating, renaming, moving,

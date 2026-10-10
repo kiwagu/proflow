@@ -11,9 +11,11 @@ export {
   createDocumentCrdtStore,
   type DocumentChanged,
   type DocumentCrdtStore,
+  type DocumentPeers,
   type LiveTree,
   type SyncableCrdt,
 } from './document/document.crdt-store.js';
+export { createBroadcastDocumentPeers } from './document/document.peers.js';
 export {
   listAwaitingDocuments,
   listUnpushedDocuments,

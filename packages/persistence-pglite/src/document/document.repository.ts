@@ -26,8 +26,11 @@ export function createPgliteDocumentRepository(
   // A merge from another device rewrote the document: an entry cached
   // before it would reopen the old body, and the next save from that body
   // would revert what the other device wrote.
+  /** Remote merges seen per document: a save that saw one must not overwrite it. */
+  const merges = new Map<string, number>();
   crdt.onChanged((event) => {
     if (event.source !== 'remote') return;
+    merges.set(event.id, (merges.get(event.id) ?? 0) + 1);
     const cached = cache.get(event.id);
     if (!cached) return;
     cache.set(event.id, {
@@ -149,12 +152,17 @@ export function createPgliteDocumentRepository(
 
     async save(input) {
       try {
+        const mergesBefore = merges.get(input.id) ?? 0;
         const changed = await crdt.save({ ...input, writer });
         // A written save's payload is the freshest content there is. One the
         // store did not write is either unchanged or refused because a merge
         // moved the document past it — then its tree must not come back
         // from the cache, or the next save from it would undo the merge.
-        const cached = changed ? cache.get(input.id) : undefined;
+        // A save that merged another writer's changes cached the merge
+        // already; its own payload is older than that.
+        const mergedMeanwhile = (merges.get(input.id) ?? 0) !== mergesBefore;
+        const cached =
+          changed && !mergedMeanwhile ? cache.get(input.id) : undefined;
         if (cached) {
           cache.set(input.id, {
             meta: cached.meta,
