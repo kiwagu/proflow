@@ -140,7 +140,7 @@ export function startDocumentSync(
   };
 
   const materialize = async () => {
-    await materializeDocuments(db, identity.spaceId);
+    await materializeDocuments(db, identity.spaceId, identity.userId);
     await pullAwaiting();
     space?.kick();
   };
@@ -169,7 +169,7 @@ export function startDocumentSync(
           journal: store.syncJournal,
           writer,
         });
-        await materializeDocuments(db, identity.spaceId);
+        await materializeDocuments(db, identity.spaceId, identity.userId);
         if (disposed) return;
         space = engine.watchSpace(identity.spaceId, {
           open: (id) => store.syncable(id),

@@ -32,6 +32,8 @@ async function pulledTextNode(input: {
   title: string;
   trashed?: boolean;
   space?: string;
+  /** Whose node it is; the device's own user unless somebody else's is given. */
+  createdBy?: string;
 }): Promise<string> {
   const id = testId('knr');
   await db.query(
@@ -41,7 +43,7 @@ async function pulledTextNode(input: {
       id,
       input.space ?? spaceId,
       input.title,
-      TEST_USER,
+      input.createdBy ?? TEST_USER,
       JSON.stringify({ doc_id: input.docId }),
       input.trashed ? new Date() : null,
     ]
@@ -74,7 +76,7 @@ describe('materializing documents the graph brought in', () => {
   it('gives a live text node without a document a row: known, empty, never pulled', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'From another device' });
-    expect(await materializeDocuments(db, spaceId)).toBe(1);
+    expect(await materializeDocuments(db, spaceId, TEST_USER)).toBe(1);
     expect(await documentRow(docId)).toEqual({
       title: 'From another device',
       kind: 'md',
@@ -106,7 +108,7 @@ describe('materializing documents the graph brought in', () => {
       await documents.create({ title: 'Made here' })
     )._unsafeUnwrap();
 
-    expect(await materializeDocuments(db, spaceId)).toBe(0);
+    expect(await materializeDocuments(db, spaceId, TEST_USER)).toBe(0);
     expect(await documentRow(trashed)).toBeUndefined();
     expect(await documentRow(elsewhere)).toBeUndefined();
     expect(await documentRow(own.id)).toEqual({
@@ -123,20 +125,20 @@ describe('materializing documents the graph brought in', () => {
       title: 'Back',
       trashed: true,
     });
-    expect(await materializeDocuments(db, spaceId)).toBe(0);
+    expect(await materializeDocuments(db, spaceId, TEST_USER)).toBe(0);
     await db.query(
       'update knowledge_resources set deleted_at = null where id = $1',
       [nodeId]
     );
-    expect(await materializeDocuments(db, spaceId)).toBe(1);
+    expect(await materializeDocuments(db, spaceId, TEST_USER)).toBe(1);
     expect(await documentRow(docId)).toEqual({ title: 'Back', kind: 'md' });
   });
 
   it('changes nothing when run again', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'Once' });
-    await materializeDocuments(db, spaceId);
-    expect(await materializeDocuments(db, spaceId)).toBe(0);
+    await materializeDocuments(db, spaceId, TEST_USER);
+    expect(await materializeDocuments(db, spaceId, TEST_USER)).toBe(0);
   });
 });
 
@@ -188,10 +190,44 @@ describe('the resource that owns a document', () => {
     expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
   });
 
-  it('is nothing for a document the graph brought in: it was not created here', async () => {
+  it("is the node its own creator made, for a document the graph brought in to the creator's second device", async () => {
     const docId = testId('doc');
-    await pulledTextNode({ docId, title: 'Theirs' });
-    await materializeDocuments(db, spaceId);
+    const nodeId = await pulledTextNode({ docId, title: 'Mine, elsewhere' });
+    await materializeDocuments(db, spaceId, TEST_USER);
+
+    // The same person on another device: the node arrives alone, and if the
+    // body is first registered from here the owner must still be named, or
+    // the body would stay the creator's alone for good.
+    expect(await resourceIdForDocument(db, docId)).toBe(nodeId);
+  });
+
+  it("ignores other people's claims on the document, however early or visible", async () => {
+    const docId = testId('doc');
+    const mine = await pulledTextNode({ docId, title: 'Mine' });
+    await db.query(
+      `insert into knowledge_resources
+         (id, space_id, kind, title, created_by, visibility, body_ref, created_at)
+       values ($1, $2, 'text', 'Claim', $3, 'space', $4::jsonb, now() - interval '1 day')`,
+      [testId('knr'), spaceId, randomUUID(), JSON.stringify({ doc_id: docId })]
+    );
+    await materializeDocuments(db, spaceId, TEST_USER);
+
+    expect(await resourceIdForDocument(db, docId)).toBe(mine);
+  });
+
+  it("is nothing when only somebody else's node points at the document", async () => {
+    const docId = testId('doc');
+    await pulledTextNode({ docId, title: 'Theirs', createdBy: randomUUID() });
+    await materializeDocuments(db, spaceId, TEST_USER);
+
+    expect(await resourceIdForDocument(db, docId)).toBeNull();
+  });
+
+  it("is nothing when two of the creator's own nodes point at the document: which is the owner is not for a guess", async () => {
+    const docId = testId('doc');
+    await pulledTextNode({ docId, title: 'Mine' });
+    await pulledTextNode({ docId, title: 'Mine too' });
+    await materializeDocuments(db, spaceId, TEST_USER);
 
     expect(await resourceIdForDocument(db, docId)).toBeNull();
   });
@@ -201,7 +237,7 @@ describe('documents awaiting their first pull', () => {
   it('lists a materialized document until it holds bytes, and never one made here', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'Waiting' });
-    await materializeDocuments(db, spaceId);
+    await materializeDocuments(db, spaceId, TEST_USER);
     const documents = createPgliteDocumentRepository(
       db,
       createDocumentCrdtStore(db),
@@ -311,7 +347,7 @@ describe('documents with changes the server may not have', () => {
   it('leaves out a document only known from the graph', async () => {
     const docId = testId('doc');
     await pulledTextNode({ docId, title: 'Known' });
-    await materializeDocuments(db, spaceId);
+    await materializeDocuments(db, spaceId, TEST_USER);
     expect(await listUnpushedDocuments(db)).not.toContain(docId);
   });
 });

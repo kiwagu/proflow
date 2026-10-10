@@ -142,7 +142,7 @@ describe('a document shared by two devices', () => {
         JSON.stringify({ doc_id: created.id }),
       ]
     );
-    await materializeDocuments(b.db, SPACE);
+    await materializeDocuments(b.db, SPACE, TEST_USER);
     return created.id;
   }
 
@@ -222,7 +222,7 @@ describe('a document shared by two devices', () => {
     expect(early.awaitingSync).toBe(true);
     expect(early.meta.title).toBe('Raced');
 
-    await materializeDocuments(b.db, SPACE);
+    await materializeDocuments(b.db, SPACE, TEST_USER);
     await b.pull(created.id);
     const later = (await documentsB.load(created.id))._unsafeUnwrap();
     expect(textOf(later.content!.tree)).toBe('Body');

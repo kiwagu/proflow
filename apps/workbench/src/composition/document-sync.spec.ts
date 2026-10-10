@@ -55,7 +55,9 @@ const {
     createSupabaseTransport: vi.fn((_client: unknown) => ({})),
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
     createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
-    materializeDocuments: vi.fn(async (_db: unknown, _space: string) => 0),
+    materializeDocuments: vi.fn(
+      async (_db: unknown, _space: string, _user: string) => 0
+    ),
     listAwaitingDocuments: vi.fn(async (_db: unknown): Promise<string[]> => []),
     listUnpushedDocuments: vi.fn(async (_db: unknown): Promise<string[]> => [
       'doc-held',
@@ -183,7 +185,11 @@ describe('starting document replication', () => {
       'publishable-key'
     );
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
-    expect(materializeDocuments).toHaveBeenCalledWith(db, 'spc_abc.01m2');
+    expect(materializeDocuments).toHaveBeenCalledWith(
+      db,
+      'spc_abc.01m2',
+      'user-1'
+    );
     expect(watchSpace).toHaveBeenCalledWith(
       'spc_abc.01m2',
       expect.objectContaining({ open: expect.any(Function) })

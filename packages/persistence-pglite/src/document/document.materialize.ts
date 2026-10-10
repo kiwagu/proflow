@@ -40,15 +40,29 @@ export const AWAITING_SYNC = `exists (
  * sent back. Nodes in the trash are left alone; restoring one brings it
  * here on the next run. Idempotent: a run that finds nothing to add
  * changes nothing.
+ *
+ * The document also gets its owner when this device can know it: the one
+ * node the signed-in user made for it — the same person's second device
+ * receives the node alone, and if the body is first registered from here
+ * the server must be told whose it is, because the first registration is
+ * the only one it takes. Other people's nodes pointing at the same id are
+ * claims anyone can make and are never taken; with none of the user's own,
+ * or more than one, nobody is named and the body stays visible to its
+ * creator only.
  */
 export async function materializeDocuments(
   db: AppDb,
-  spaceId: string
+  spaceId: string,
+  userId: string
 ): Promise<number> {
   const added = await db.transaction(async (tx) => {
     const { rows } = await tx.query<{ id: string }>(
-      `insert into document (id, title, kind)
-       select r.body_ref ->> 'doc_id', r.title, 'md'
+      `insert into document (id, title, kind, resource_id)
+       select r.body_ref ->> 'doc_id', r.title, 'md',
+              (select case when count(*) = 1 then min(m.id) end
+               from knowledge_resources m
+               where m.body_ref ->> 'doc_id' = r.body_ref ->> 'doc_id'
+                 and m.created_by = $2)
        from knowledge_resources r
        where r.space_id = $1
          and r.kind = 'text'
@@ -60,7 +74,7 @@ export async function materializeDocuments(
          )
        on conflict (id) do nothing
        returning id`,
-      [spaceId]
+      [spaceId, userId]
     );
     if (rows.length > 0) {
       await tx.query(
