@@ -128,6 +128,7 @@ export function createDocumentCrdtStore(
   function emit(event: DocumentChanged): void {
     for (const listener of listeners) listener(event);
   }
+  const settledListeners = new Set<(documentId: string) => void>();
 
   function track(
     id: string,
@@ -637,6 +638,23 @@ export function createDocumentCrdtStore(
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+      };
+    },
+
+    /**
+     * The wait for a document's first pull is over. A body that came with
+     * it is announced as a remote merge; one that was not there merges
+     * nothing, so nothing else says so — and whatever showed the wait has
+     * to be told to look again.
+     */
+    settled(documentId: string): void {
+      for (const listener of settledListeners) listener(documentId);
+    },
+
+    onSettled(listener: (documentId: string) => void): () => void {
+      settledListeners.add(listener);
+      return () => {
+        settledListeners.delete(listener);
       };
     },
 

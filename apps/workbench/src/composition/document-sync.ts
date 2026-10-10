@@ -92,7 +92,7 @@ export function startDocumentSync(
       // The server fences a body through the resource that owns it; this
       // device knows which node points at the document, and the server
       // takes the name once, when it first sees the document.
-      const resourceId = await resourceIdForDocument(db, id);
+      const resourceId = await resourceIdForDocument(db, id, identity.userId);
       await engine.push(id, doc, identity.spaceId, resourceId);
       failed.delete(id);
       options.onPushed?.(id);
@@ -135,12 +135,17 @@ export function startDocumentSync(
     for (const id of await listAwaitingDocuments(db)) {
       if (!engine || disposed) return;
       const doc = await store.syncable(id);
-      if (doc) await engine.pull(id, doc);
+      if (!doc) continue;
+      await engine.pull(id, doc);
+      // The wait is over, with a body or without one. A body is announced
+      // as a merge; an empty answer merges nothing and would leave a pane
+      // that opened a moment earlier waiting for ever.
+      store.settled(id);
     }
   };
 
   const materialize = async () => {
-    await materializeDocuments(db, identity.spaceId, identity.userId);
+    await materializeDocuments(db, identity.spaceId);
     await pullAwaiting();
     space?.kick();
   };
@@ -169,7 +174,7 @@ export function startDocumentSync(
           journal: store.syncJournal,
           writer,
         });
-        await materializeDocuments(db, identity.spaceId, identity.userId);
+        await materializeDocuments(db, identity.spaceId);
         if (disposed) return;
         space = engine.watchSpace(identity.spaceId, {
           open: (id) => store.syncable(id),

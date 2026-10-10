@@ -55,9 +55,7 @@ const {
     createSupabaseTransport: vi.fn((_client: unknown) => ({})),
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
     createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
-    materializeDocuments: vi.fn(
-      async (_db: unknown, _space: string, _user: string) => 0
-    ),
+    materializeDocuments: vi.fn(async (_db: unknown, _space: string) => 0),
     listAwaitingDocuments: vi.fn(async (_db: unknown): Promise<string[]> => []),
     listUnpushedDocuments: vi.fn(async (_db: unknown): Promise<string[]> => [
       'doc-held',
@@ -65,7 +63,11 @@ const {
     // A document the device holds is owned by the node that points at it;
     // `doc-orphan` has no node here.
     resourceIdForDocument: vi.fn(
-      async (_db: unknown, id: string): Promise<string | null> =>
+      async (
+        _db: unknown,
+        id: string,
+        _user: string
+      ): Promise<string | null> =>
         id === 'doc-orphan' ? null : `node-of-${id}`
     ),
   };
@@ -111,8 +113,10 @@ function settingsHolding(value: string | null): ISettingsStore {
 function stubStore() {
   let listener: ((event: DocumentChanged) => void) | undefined;
   const syncable = vi.fn(async (id: string) => ({ id }));
+  const waitEnded = vi.fn();
   const store = {
     syncable,
+    settled: waitEnded,
     syncJournal: { append: vi.fn() },
     onChanged: vi.fn((next: (event: DocumentChanged) => void) => {
       listener = next;
@@ -129,7 +133,7 @@ function stubStore() {
       markdown: '',
       localEdits,
     });
-  return { store, syncable, change };
+  return { store, syncable, waitEnded, change };
 }
 
 function setOnline(online: boolean) {
@@ -171,7 +175,7 @@ describe('starting document replication', () => {
   });
 
   it('materializes, watches the space, pulls what awaits and catches up what changed here', async () => {
-    const { store, syncable } = stubStore();
+    const { store, syncable, waitEnded } = stubStore();
     listAwaitingDocuments.mockResolvedValueOnce(['doc-awaiting']);
     const handle = startDocumentSync({
       db,
@@ -185,16 +189,16 @@ describe('starting document replication', () => {
       'publishable-key'
     );
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
-    expect(materializeDocuments).toHaveBeenCalledWith(
-      db,
-      'spc_abc.01m2',
-      'user-1'
-    );
+    expect(materializeDocuments).toHaveBeenCalledWith(db, 'spc_abc.01m2');
     expect(watchSpace).toHaveBeenCalledWith(
       'spc_abc.01m2',
       expect.objectContaining({ open: expect.any(Function) })
     );
     expect(pull).toHaveBeenCalledWith('doc-awaiting', { id: 'doc-awaiting' });
+    // The wait is over whether or not the server held a body: a pull that
+    // found nothing merges nothing, and the pane showing the wait must be
+    // told to look again.
+    expect(waitEnded).toHaveBeenCalledWith('doc-awaiting');
     expect(syncable).toHaveBeenCalledWith('doc-held');
     expect(push).toHaveBeenCalledWith(
       'doc-held',

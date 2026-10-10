@@ -40,29 +40,15 @@ export const AWAITING_SYNC = `exists (
  * sent back. Nodes in the trash are left alone; restoring one brings it
  * here on the next run. Idempotent: a run that finds nothing to add
  * changes nothing.
- *
- * The document also gets its owner when this device can know it: the one
- * node the signed-in user made for it — the same person's second device
- * receives the node alone, and if the body is first registered from here
- * the server must be told whose it is, because the first registration is
- * the only one it takes. Other people's nodes pointing at the same id are
- * claims anyone can make and are never taken; with none of the user's own,
- * or more than one, nobody is named and the body stays visible to its
- * creator only.
  */
 export async function materializeDocuments(
   db: AppDb,
-  spaceId: string,
-  userId: string
+  spaceId: string
 ): Promise<number> {
   const added = await db.transaction(async (tx) => {
     const { rows } = await tx.query<{ id: string }>(
-      `insert into document (id, title, kind, resource_id)
-       select r.body_ref ->> 'doc_id', r.title, 'md',
-              (select case when count(*) = 1 then min(m.id) end
-               from knowledge_resources m
-               where m.body_ref ->> 'doc_id' = r.body_ref ->> 'doc_id'
-                 and m.created_by = $2)
+      `insert into document (id, title, kind)
+       select r.body_ref ->> 'doc_id', r.title, 'md'
        from knowledge_resources r
        where r.space_id = $1
          and r.kind = 'text'
@@ -74,7 +60,7 @@ export async function materializeDocuments(
          )
        on conflict (id) do nothing
        returning id`,
-      [spaceId, userId]
+      [spaceId]
     );
     if (rows.length > 0) {
       await tx.query(
@@ -94,23 +80,35 @@ export async function materializeDocuments(
 }
 
 /**
- * The node a document was created with — the resource that owns its body.
- * The server fences a body through that resource, and the device that
- * created the document names it once, when it first registers the document.
- * It is the creation's own fact, written beside the row in the transaction
- * that made both: never chosen later among the nodes that point at the
- * document, because anyone who knows a document's id can add one. Null for a
- * document the graph brought in (it was not created here) and for an id that
- * names no document; such a body is registered without an owner and stays
- * visible to its creator only.
+ * The node that owns a document's body, asked for when the body is first
+ * registered with the server. The server fences a body through that
+ * resource, and takes the name only at that first registration, so it has to
+ * be the creator's own and it has to be settled before the body goes.
+ *
+ * A document created here carries the node it was created with, written in
+ * the transaction that made both. A document the graph brought in — the same
+ * person's second device — has none, and gets it from what the device holds
+ * now: the one node the signed-in user made that points at it. Other
+ * people's nodes pointing at the same id are claims anyone can make and are
+ * never taken, however early or visible; with none of the user's own, or
+ * more than one, nobody is named and the body stays visible to its creator
+ * only. It is asked for here and not when the document row is made, because
+ * a row can be made before the user's own node has arrived.
  */
 export async function resourceIdForDocument(
   db: AppDb,
-  documentId: string
+  documentId: string,
+  userId: string
 ): Promise<string | null> {
   const { rows } = await db.query<{ resource_id: string | null }>(
-    'select resource_id from document where id = $1',
-    [documentId]
+    `select coalesce(
+              d.resource_id,
+              (select case when count(*) = 1 then min(m.id) end
+               from knowledge_resources m
+               where m.body_ref ->> 'doc_id' = d.id and m.created_by = $2)
+            ) as resource_id
+     from document d where d.id = $1`,
+    [documentId, userId]
   );
   return rows[0]?.resource_id ?? null;
 }
