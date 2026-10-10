@@ -34,11 +34,14 @@
  *   ships together with this fence, so none exist outside development stands.
  *
  * the creator
- *   the graph and the document bodies are pushed by two independent engines,
- *   so a body can reach the server before its resource row. the document's
- *   creator keeps access through crdt_documents.created_by so their own push
- *   never fails on that race. a body whose resource never arrives is visible
- *   to its creator only; removing it is the orphan reaper's job.
+ *   the graph and the document bodies are pushed by two independent engines.
+ *   registration needs the resource on the server (see registration), so a
+ *   device holds a body back until its node has been accepted. once the body
+ *   is registered the document's creator keeps access through
+ *   crdt_documents.created_by, so their own pushes do not depend on the
+ *   resource staying readable to them (it may change hands, or be trashed
+ *   and purged). a body whose resource is purged is visible to its creator
+ *   only; removing it is the orphan reaper's job.
  *
  * read vs write
  *   read follows the resource read predicate (owner, floor, cohort and
