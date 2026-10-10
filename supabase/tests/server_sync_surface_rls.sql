@@ -540,11 +540,16 @@ begin
   exception when others then perform pg_temp.t14_report('K2 alice compacts own doc','true','ERR '||sqlerrm); end;
   reset role;
 
+  -- a delete needs the row visible, and a body is visible through its
+  -- resource: the admin deletes a document that is shared at the space floor
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'K shared note', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_a));
+
   begin perform pg_temp.t14_as(u_adam);
     delete from public.crdt_documents where id = d_a;
     get diagnostics n = row_count;
-    perform pg_temp.t14_report('K3 admin deletes document', '1', n::text);
-  exception when others then perform pg_temp.t14_report('K3 admin deletes document','1','ERR '||sqlerrm); end;
+    perform pg_temp.t14_report('K3 admin deletes a shared document', '1', n::text);
+  exception when others then perform pg_temp.t14_report('K3 admin deletes a shared document','1','ERR '||sqlerrm); end;
   reset role;
 end
 $probe$;
@@ -779,6 +784,15 @@ begin
     select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
     perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again', '0', n::text);
   exception when others then perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- an admin holds the delete verb but does not see a private body, and a
+  -- delete only reaches rows the caller can see: the document stays
+  begin perform pg_temp.t14_as(u_adam);
+    delete from public.crdt_documents where id = d_f;
+    get diagnostics n = row_count;
+    perform pg_temp.t14_report('N10b private body: admin cannot delete it', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N10b private body: admin cannot delete it','0','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
 
   -- (4) a per-user grant is a READ grant: bob reads, bob does not write
