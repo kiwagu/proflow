@@ -80,4 +80,55 @@ test.describe('Workbench document sync across devices', () => {
       await deleteOrganizationCascade(org.organizationId);
     }
   });
+
+  test("@full two tabs of one browser show each other's edits without a reload", async ({
+    page: tabA,
+    seededUser,
+  }) => {
+    test.setTimeout(300_000);
+    const org = await bootstrapOrgSpaceAdminForUser(seededUser.id);
+    try {
+      await loginViaUi(tabA, seededUser, '/author');
+      await expect(tabA.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
+      });
+      await tabA.getByTestId('new-document').click();
+      const editorA = tabA.locator('[contenteditable="true"]').first();
+      await expect(editorA).toBeVisible({ timeout: 30_000 });
+      await editorA.click();
+      await editorA.pressSequentially('Hello from tab A');
+      await expect(tabA.getByTestId('save-state')).toContainText(/saved/i);
+
+      // A second tab of the same browser: the same local database.
+      const tabB = await tabA.context().newPage();
+      await tabB.goto('/author/');
+      await expect(tabB.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
+      });
+      await tabB
+        .getByTestId('files-section')
+        .getByTestId('file-row')
+        .first()
+        .click();
+      const editorB = tabB.locator('[contenteditable="true"]').first();
+      await expect(editorB).toHaveText('Hello from tab A', { timeout: 60_000 });
+
+      await editorB.click();
+      await tabB.keyboard.press('End');
+      await editorB.pressSequentially(' and tab B');
+      await expect(editorA).toHaveText('Hello from tab A and tab B', {
+        timeout: 60_000,
+      });
+
+      await tabA.bringToFront();
+      await editorA.click();
+      await tabA.keyboard.press('End');
+      await editorA.pressSequentially(' again');
+      await expect(editorB).toHaveText('Hello from tab A and tab B again', {
+        timeout: 60_000,
+      });
+    } finally {
+      await deleteOrganizationCascade(org.organizationId);
+    }
+  });
 });
