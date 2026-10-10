@@ -373,12 +373,17 @@ test.describe('Workbench document sync across devices', () => {
     const contextB = await browser.newContext({ ignoreHTTPSErrors: true });
     const deviceB = await contextB.newPage();
     try {
-      // Device A makes an empty document and never types in it: the node
-      // reaches the server, the body is never registered from here.
+      // Device A makes an empty document: the node reaches the server, and
+      // the body is not registered from here — A's document requests are cut
+      // off, since a device that has pushed its first bytes would otherwise
+      // register the document before anyone else gets the chance to.
       await loginViaUi(deviceA, seededUser, '/author');
       await expect(deviceA.getByTestId('workbench-ready')).toBeVisible({
         timeout: 120_000,
       });
+      await deviceA.route(/\/rest\/v1\/crdt_(documents|updates)/, (route) =>
+        route.abort()
+      );
       await deviceA.getByTestId('new-document').click();
       await expect(
         deviceA.locator('[contenteditable="true"]').first()
@@ -399,6 +404,47 @@ test.describe('Workbench document sync across devices', () => {
         )
         .not.toBeNull();
       const docId = node!.body_ref.doc_id;
+
+      // The owner shares the node at the space floor before anyone types in
+      // it, so a member can see it. Seeing it is not editing it: the member
+      // asks the server to register the body first, with no owner named,
+      // naming the node, and with a node that is not there, and every ask
+      // is refused — registering fixes who owns the body for good, and it is
+      // the node's editors who may say.
+      const ownerSignIn = await asOwner.auth.signInWithPassword({
+        email: seededUser.email,
+        password: seededUser.password,
+      });
+      if (ownerSignIn.error) throw new Error(ownerSignIn.error.message);
+      const shared = await asOwner
+        .from('knowledge_resources')
+        .update({ visibility: 'space' })
+        .eq('id', node!.id)
+        .select('id');
+      expect(shared.error).toBeNull();
+      expect(shared.data).toHaveLength(1);
+      const memberSignIn = await asMember.auth.signInWithPassword({
+        email: member.email,
+        password: member.password,
+      });
+      if (memberSignIn.error) throw new Error(memberSignIn.error.message);
+      for (const resourceId of [null, node!.id, 'knr_not_on_the_server']) {
+        const squat = await asMember.from('crdt_documents').upsert(
+          {
+            id: docId,
+            space_id: org.spaceId,
+            created_by: member.id,
+            resource_id: resourceId,
+          },
+          { onConflict: 'id', ignoreDuplicates: true }
+        );
+        expect(squat.error?.code, `registering as ${resourceId}`).toBe('42501');
+      }
+      const squatted = await service
+        .from('crdt_documents')
+        .select('id')
+        .eq('id', docId);
+      expect(squatted.data).toEqual([]);
 
       // Device B, the same person, receives the node and types first.
       await loginViaUi(deviceB, seededUser, '/author');
@@ -431,7 +477,102 @@ test.describe('Workbench document sync across devices', () => {
         )
         .toBe(node!.id);
 
-      // Shared at the space floor by its owner, the body reaches a member.
+      // Shared at the space floor, the body reaches the member. The row that
+      // names the owner lands first and the bytes follow in the same push.
+      await expect
+        .poll(
+          async () => {
+            const tail = await asMember
+              .from('crdt_updates')
+              .select('seq')
+              .eq('doc_id', docId);
+            expect(tail.error).toBeNull();
+            return (tail.data ?? []).length;
+          },
+          { timeout: 60_000 }
+        )
+        .toBeGreaterThan(0);
+    } finally {
+      await contextB.close();
+      await deleteOrganizationCascade(org.organizationId);
+      await cleanupTestUser(member.id);
+    }
+  });
+
+  /**
+   * A collaborator who may edit what is shared with them is not the one who
+   * registered the body, and has no business naming its owner: their first
+   * push finds the row already there and goes straight to the update log.
+   */
+  test('@full an author edits a shared document its creator registered, and the creator sees it', async ({
+    browser,
+    page: owner,
+    seededUser,
+  }) => {
+    test.setTimeout(300_000);
+    const org = await bootstrapOrgSpaceAdminForUser(seededUser.id);
+    const author = await seedTestUser();
+    await bootstrapSpaceMemberForUser({
+      organizationId: org.organizationId,
+      spaceId: org.spaceId,
+      userId: author.id,
+      role: 'author',
+    });
+    const options = {
+      auth: { autoRefreshToken: false, persistSession: false },
+    };
+    const service = createClient(
+      resolveSupabaseUrl(),
+      resolveServiceRoleKey(),
+      options
+    );
+    const asOwner = createClient(
+      resolveSupabaseUrl(),
+      resolveAnonKey(),
+      options
+    );
+    const contextB = await browser.newContext({ ignoreHTTPSErrors: true });
+    const deviceB = await contextB.newPage();
+    try {
+      await loginViaUi(owner, seededUser, '/author');
+      await expect(owner.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
+      });
+      await owner.getByTestId('new-document').click();
+      const editorA = owner.locator('[contenteditable="true"]').first();
+      await expect(editorA).toBeVisible({ timeout: 30_000 });
+      await editorA.click();
+      await editorA.pressSequentially('Shared with an author');
+      await expect(owner.getByTestId('save-state')).toContainText(/saved/i);
+
+      let node: { id: string; body_ref: { doc_id: string } } | undefined;
+      await expect
+        .poll(
+          async () => {
+            const { data } = await service
+              .from('knowledge_resources')
+              .select('id, body_ref')
+              .eq('space_id', org.spaceId)
+              .eq('kind', 'text');
+            node = (data ?? [])[0] as typeof node;
+            return node?.id ?? null;
+          },
+          { timeout: 60_000 }
+        )
+        .not.toBeNull();
+      await expect
+        .poll(
+          async () => {
+            const { data } = await service
+              .from('crdt_documents')
+              .select('resource_id')
+              .eq('id', node!.body_ref.doc_id);
+            return data?.[0]?.resource_id ?? null;
+          },
+          { timeout: 60_000 }
+        )
+        .toBe(node!.id);
+
       const ownerSignIn = await asOwner.auth.signInWithPassword({
         email: seededUser.email,
         password: seededUser.password,
@@ -444,21 +585,39 @@ test.describe('Workbench document sync across devices', () => {
         .select('id');
       expect(shared.error).toBeNull();
       expect(shared.data).toHaveLength(1);
-      const memberSignIn = await asMember.auth.signInWithPassword({
-        email: member.email,
-        password: member.password,
+
+      await loginViaUi(deviceB, author, '/author');
+      await expect(deviceB.getByTestId('workbench-ready')).toBeVisible({
+        timeout: 120_000,
       });
-      if (memberSignIn.error) throw new Error(memberSignIn.error.message);
-      const tail = await asMember
-        .from('crdt_updates')
-        .select('seq')
-        .eq('doc_id', docId);
-      expect(tail.error).toBeNull();
-      expect((tail.data ?? []).length).toBeGreaterThan(0);
+      const rows = deviceB.getByTestId('files-section').getByTestId('file-row');
+      await expect(rows).toHaveCount(1, { timeout: 60_000 });
+      await rows.first().click();
+      const editorB = deviceB.locator('[contenteditable="true"]').first();
+      await expect(editorB).toHaveText('Shared with an author', {
+        timeout: 60_000,
+      });
+      await editorB.click();
+      await deviceB.keyboard.press('End');
+      await editorB.pressSequentially(' and edited by them');
+
+      await expect(editorA).toHaveText(
+        'Shared with an author and edited by them',
+        { timeout: 60_000 }
+      );
+      // Still named for the node it was registered with, by the creator.
+      const { data } = await service
+        .from('crdt_documents')
+        .select('resource_id, created_by')
+        .eq('id', node!.body_ref.doc_id);
+      expect(data?.[0]).toEqual({
+        resource_id: node!.id,
+        created_by: seededUser.id,
+      });
     } finally {
       await contextB.close();
       await deleteOrganizationCascade(org.organizationId);
-      await cleanupTestUser(member.id);
+      await cleanupTestUser(author.id);
     }
   });
 });

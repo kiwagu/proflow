@@ -1,5 +1,6 @@
 import { DocumentCrdt } from '@workspace/doc-crdt';
 import type { AppDb } from '../db/db.js';
+import { GRAPH_OPS } from '../graph/graph.repository.js';
 
 /**
  * The pull watermark of a document this device knows only from the graph
@@ -111,6 +112,26 @@ export async function resourceIdForDocument(
     [documentId, userId]
   );
   return rows[0]?.resource_id ?? null;
+}
+
+/**
+ * Whether the node's creation is still waiting in the journal to reach the
+ * server. The server takes the name of a body's owner only after checking
+ * that node there, so a body is not registered before the node's creation
+ * has gone through; the graph's own push is what ends the wait.
+ */
+export async function nodeAwaitsServer(
+  db: AppDb,
+  nodeId: string
+): Promise<boolean> {
+  const { rows } = await db.query<{ waits: boolean }>(
+    `select exists (
+       select 1 from graph_op_journal
+       where op = $2 and node_ids @> array[$1]::text[]
+     ) as waits`,
+    [nodeId, GRAPH_OPS.createNode]
+  );
+  return rows[0]?.waits ?? false;
 }
 
 /** Documents still waiting for their first pull: what a sync start pulls by name. */

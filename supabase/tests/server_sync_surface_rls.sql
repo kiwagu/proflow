@@ -674,6 +674,7 @@ do $fence$
 declare
   v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
   d_f text; d_x text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
+  d_reg text; d_reg2 text; d_own text; res_own text; d_xs text; res_xs text; d_priv text; res_reg text; res_reg2 text; res_priv text; res_bob text;
   n int; b boolean;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -931,8 +932,12 @@ begin
   --      the row by id cannot see a row its own statement is inserting: the
   --      creator's first push must work through the policies, not only as the
   --      table owner.
+  new_doc := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice registers through the policies', 'space', u_alice, u_alice, jsonb_build_object('doc_id', new_doc))
+  returning id into forged;
   begin perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into new_doc;
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (new_doc, v_a, u_alice, forged) returning id into new_doc;
     perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
@@ -943,10 +948,11 @@ begin
   exception when others then perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
 
-  -- a second device registering a document that already exists (the upsert
-  -- that ignores duplicates) must not error either
+  -- a second registration of an id that already exists, by someone who may
+  -- edit its resource (the upsert that ignores duplicates), must not error
   begin perform pg_temp.t14_as(u_adam);
-    insert into public.crdt_documents (id, space_id, created_by) values (d_orphan, v_a, u_adam) on conflict (id) do nothing returning id into forged;
+    insert into public.crdt_documents (id, space_id, created_by, resource_id)
+    values (new_doc, v_a, u_adam, forged) on conflict (id) do nothing returning id into forged;
     perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
@@ -1049,6 +1055,123 @@ begin
 
   select count(*) into n from public.crdt_documents where id = d_orphan and resource_id is null;
   perform pg_temp.t14_report('N24c the document is still unbound afterwards', '1', n::text);
+
+  -- (16) who may create a body row at all. the first one to register a
+  --      document becomes its creator and the only one the server will
+  --      accept registration from; a member who can see a shared node but
+  --      holds no right to edit it must not be able to take the body first.
+  --      alice's shared note: its node is on the server, its body is not.
+  d_reg := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, body not registered yet', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_reg))
+  returning id into res_reg;
+  d_priv := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice private, body not registered yet', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_priv))
+  returning id into res_priv;
+  -- bob's own note, pointing at some other document
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob own note', 'private', u_bob, u_bob, jsonb_build_object('doc_id', public.entity_id_generate('doc')))
+  returning id into res_bob;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, null);
+    perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_reg);
+    perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, 'knr_not_on_the_server');
+    perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_bob);
+    perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_priv, v_a, u_adam, res_priv);
+    perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_priv;
+
+  -- the entitled can: the owner, and an admin who may edit a readable node
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_alice, res_reg);
+    perform pg_temp.t14_report('N25f the owner of the node registers its body', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25f the owner of the node registers its body','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  d_reg2 := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared too', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_reg2))
+  returning id into res_reg2;
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg2, v_a, u_adam, res_reg2);
+    perform pg_temp.t14_report('N25g an admin who may edit a readable node registers its body', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25g an admin who may edit a readable node registers its body','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- a creator whose node later changed hands keeps repeating his own
+  -- registration harmlessly; a stranger repeating someone else's does not.
+  d_own := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob own, later handed away', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_own))
+  returning id into res_own;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_own, v_a, u_bob, res_own);
+    perform pg_temp.t14_report('N25h a member registers the body of his own node', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25h a member registers the body of his own node','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  update public.knowledge_resources set owner_user_id = u_alice where id = res_own;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_own, v_a, u_bob, res_own)
+      on conflict (id) do nothing;
+    perform pg_temp.t14_report('N25i the creator repeating his registration after the node was handed away is a no-op', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25i the creator repeating his registration after the node was handed away is a no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_reg)
+      on conflict (id) do nothing;
+    perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select count(*) into n from public.crdt_documents where id = d_reg and created_by = u_alice and resource_id = res_reg;
+  perform pg_temp.t14_report('N25k the registered document still names its first owner', '1', n::text);
+
+  -- the node must live in the document's own space, even for its owner
+  d_xs := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Alice node in the other space', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_xs))
+  returning id into res_xs;
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_xs, v_a, u_alice, res_xs);
+    perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_xs;
 end
 $fence$;
 

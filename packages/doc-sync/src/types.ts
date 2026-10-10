@@ -73,11 +73,12 @@ export interface SyncTailRow {
  */
 export interface SyncTransport {
   /**
-   * Creates the server document row if it does not exist yet (idempotent).
-   * `resourceId` names the resource that owns the body; it is written once,
-   * here, by the document's creator — the server fences the body through it.
-   * Null means the owner is not known on this device: the body then stays
-   * visible to its creator only.
+   * Makes sure the server has the document row (idempotent). A row that
+   * exists is left as it is. Otherwise `resourceId` names the resource that
+   * owns the body; it is written once, here, and only accepted from someone
+   * who could edit that resource — the server fences the body through it.
+   * Null means the owner is not known on this device: no row is created, and
+   * the call rejects with `DocumentNotRegisteredError`.
    */
   ensureDocument(
     docId: string,

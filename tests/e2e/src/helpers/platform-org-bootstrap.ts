@@ -377,27 +377,30 @@ export async function bootstrapAdditionalSpaceAdminForUser(input: {
  * Make an existing user an ordinary member of a space: organization and
  * space membership plus the system `member` role (read, create and document
  * updates, but not the knowledge update verb). The negative actor for every
- * "a member must not see this" assertion.
+ * "a member must not see this" assertion. `role: 'author'` gives the
+ * system `author` role instead, which also holds the knowledge update verb:
+ * the collaborator who may edit what is shared with them.
  */
 export async function bootstrapSpaceMemberForUser(input: {
   organizationId: string;
   spaceId: string;
   userId: string;
+  role?: 'member' | 'author';
 }): Promise<void> {
   const supabase = serviceSupabase();
-  const { organizationId, spaceId, userId } = input;
+  const { organizationId, spaceId, userId, role: roleKey = 'member' } = input;
 
   const { data: role, error: roleErr } = await supabase
     .from('roles')
     .select('id')
     .eq('role_kind', 'system')
-    .eq('key', 'member')
+    .eq('key', roleKey)
     .is('owner_organization_id', null)
     .is('archived_at', null)
     .maybeSingle();
   if (roleErr || !role?.id) {
     throw new Error(
-      `bootstrapSpaceMemberForUser: member role missing: ${roleErr?.message ?? 'no row'}`
+      `bootstrapSpaceMemberForUser: ${roleKey} role missing: ${roleErr?.message ?? 'no row'}`
     );
   }
 

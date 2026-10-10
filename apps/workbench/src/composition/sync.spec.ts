@@ -187,6 +187,28 @@ describe('starting graph replication', () => {
     stop();
   });
 
+  it('says so when a push got changes accepted, and only then', async () => {
+    const onPushed = vi.fn();
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+      onPushed,
+    });
+    await settled();
+    const hooks = watch.mock.calls[0]?.[1] as
+      | { onPush?: (outcome: { stalled: boolean; accepted: number }) => void }
+      | undefined;
+
+    hooks?.onPush?.({ stalled: false, accepted: 0 });
+    hooks?.onPush?.({ stalled: true, accepted: 0 });
+    expect(onPushed).not.toHaveBeenCalled();
+
+    hooks?.onPush?.({ stalled: false, accepted: 2 });
+    expect(onPushed).toHaveBeenCalledWith({ stalled: false, accepted: 2 });
+    stop();
+  });
+
   it('starts once when the network returns, not once per event', async () => {
     setOnline(false);
     const stop = startGraphSync({

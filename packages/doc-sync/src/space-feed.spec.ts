@@ -5,7 +5,7 @@ import {
   createServerStandIn,
   type ServerStandIn,
 } from './testing/server-stand-in.js';
-import { SPACE_ID } from './testing/replica.js';
+import { RESOURCE_ID, SPACE_ID } from './testing/replica.js';
 import {
   createSpaceReplica,
   type SpaceReplica,
@@ -37,8 +37,8 @@ describe('the server assigns seq per document', () => {
   });
 
   it('numbers each document from 1 with no gaps and tracks the head', async () => {
-    await server.ensureDocument(DOC_A, SPACE_ID);
-    await server.ensureDocument(DOC_B, SPACE_ID);
+    await server.ensureDocument(DOC_A, SPACE_ID, RESOURCE_ID);
+    await server.ensureDocument(DOC_B, SPACE_ID, RESOURCE_ID);
     expect(await server.pushUpdate(DOC_A, blob('a1'), 'w')).toBe(1);
     expect(await server.pushUpdate(DOC_B, blob('b1'), 'w')).toBe(1);
     expect(await server.pushUpdate(DOC_A, blob('a2'), 'w')).toBe(2);
@@ -53,7 +53,7 @@ describe('the server assigns seq per document', () => {
   });
 
   it('keeps the head through compaction and continues from it', async () => {
-    await server.ensureDocument(DOC_A, SPACE_ID);
+    await server.ensureDocument(DOC_A, SPACE_ID, RESOURCE_ID);
     await server.pushUpdate(DOC_A, blob('a1'), 'w');
     await server.pushUpdate(DOC_A, blob('a2'), 'w');
     expect(await server.compact(DOC_A, blob('snapshot'), 2)).toBe(true);
@@ -71,7 +71,7 @@ describe('the server assigns seq per document', () => {
 
   it('pages heads oldest first and honours the cursor', async () => {
     for (const id of [DOC_A, DOC_B, DOC_C]) {
-      await server.ensureDocument(id, SPACE_ID);
+      await server.ensureDocument(id, SPACE_ID, RESOURCE_ID);
       await server.pushUpdate(id, blob(id), 'w');
     }
     const first = await server.heads(SPACE_ID, null, 2, 0);

@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { DocumentNotRegisteredError } from '../errors.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
 
 /**
@@ -151,6 +152,12 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
 
   return {
     async ensureDocument(docId, spaceId, resourceId = null) {
+      const { rows } = await db.query(
+        'select 1 from crdt_documents where id = $1',
+        [docId]
+      );
+      if (rows.length > 0) return;
+      if (resourceId === null) throw new DocumentNotRegisteredError(docId);
       await db.query(
         `insert into crdt_documents (id, space_id, resource_id) values ($1, $2, $3)
          on conflict (id) do nothing`,

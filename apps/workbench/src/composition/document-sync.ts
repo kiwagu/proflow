@@ -4,6 +4,7 @@ import {
   createDocumentSync,
   createPgliteLedger,
   createSupabaseTransport,
+  DocumentNotRegisteredError,
   type DocumentSync,
   type SpaceWatch,
 } from '@workspace/doc-sync';
@@ -14,6 +15,7 @@ import {
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
+  nodeAwaitsServer,
   resourceIdForDocument,
 } from '@workspace/persistence-pglite';
 import { parseSyncSettings, SYNC_SETTINGS_KEY } from './sync';
@@ -62,6 +64,11 @@ export interface DocumentSyncHandle {
    * pulling now rather than at the next start.
    */
   graphPulled(): void;
+  /**
+   * The graph carried local changes to the server: a node that was waiting
+   * to be there is, and the bodies that waited for it may be registered.
+   */
+  graphPushed(): void;
 }
 
 export function startDocumentSync(
@@ -83,6 +90,13 @@ export function startDocumentSync(
    * failed here is retried by name as well.
    */
   const failed = new Set<string>();
+  /**
+   * Documents whose body cannot be registered yet: the node that owns it is
+   * not on the server, or this device does not know the owner and the
+   * creator has not registered it. Neither is a failure to tell the user
+   * about, and neither can end before the graph moves.
+   */
+  const deferred = new Set<string>();
 
   const pushDocument = async (id: string) => {
     if (!engine || disposed) return;
@@ -91,15 +105,32 @@ export function startDocumentSync(
       if (!doc) return;
       // The server fences a body through the resource that owns it; this
       // device knows which node points at the document, and the server
-      // takes the name once, when it first sees the document.
+      // takes the name once, when it first sees the document — from
+      // someone who could edit that node, and only once the node is there.
       const resourceId = await resourceIdForDocument(db, id, identity.userId);
+      if (resourceId !== null && (await nodeAwaitsServer(db, resourceId))) {
+        deferred.add(id);
+        return;
+      }
       await engine.push(id, doc, identity.spaceId, resourceId);
+      deferred.delete(id);
       failed.delete(id);
       options.onPushed?.(id);
     } catch (error) {
+      // Not a failure: this device cannot register the document and its
+      // creator has not. The graph moving on is what may change that.
+      if (error instanceof DocumentNotRegisteredError) {
+        deferred.add(id);
+        return;
+      }
       failed.add(id);
       options.onPushFailed?.(id, error);
     }
+  };
+
+  /** What waited for the graph: tried again whenever the graph moves. */
+  const retryDeferred = async () => {
+    for (const id of [...deferred]) await pushDocument(id);
   };
 
   const schedulePush = (id: string) => {
@@ -222,7 +253,10 @@ export function startDocumentSync(
       engine = null;
     },
     graphPulled() {
-      if (engine) report(materialize());
+      if (engine) report(materialize().then(retryDeferred));
+    },
+    graphPushed() {
+      if (engine && deferred.size > 0) report(retryDeferred());
     },
   };
 }

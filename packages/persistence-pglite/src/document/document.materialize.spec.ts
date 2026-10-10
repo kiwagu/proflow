@@ -3,11 +3,13 @@ import { DocumentCrdt, type SerializedTree } from '@workspace/doc-crdt';
 import { markdownToState } from '@workspace/lexical-nodes/utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openTestDb, testId, TEST_USER } from '../graph/graph.test-db.js';
+import { createPgliteGraphSyncLedger } from '../graph/graph.sync-ledger.js';
 import { createDocumentCrdtStore } from './document.crdt-store.js';
 import {
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
+  nodeAwaitsServer,
   resourceIdForDocument,
 } from './document.materialize.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
@@ -248,6 +250,43 @@ describe('the resource that owns a document', () => {
     await materializeDocuments(db, spaceId);
 
     expect(await resourceIdForDocument(db, docId, TEST_USER)).toBeNull();
+  });
+});
+
+describe('a node the server has not accepted yet', () => {
+  it('is waiting while its creation is journaled, and not once the server took it', async () => {
+    const nodeId = testId('knr');
+    await createPgliteDocumentRepository(
+      db,
+      createDocumentCrdtStore(db),
+      spaceId,
+      TEST_USER
+    ).create({ title: 'Just made', nodeId });
+
+    // The server takes a body's name only from someone it can check, and it
+    // checks the node on the server: until the node's creation has gone
+    // through, a body naming it would be refused.
+    expect(await nodeAwaitsServer(db, nodeId)).toBe(true);
+
+    const ledger = createPgliteGraphSyncLedger(db);
+    for (const op of await ledger.pendingOps(spaceId))
+      if (op.nodeIds.includes(nodeId)) await ledger.ackOp(op.id);
+    expect(await nodeAwaitsServer(db, nodeId)).toBe(false);
+  });
+
+  it('is not waiting for a node it knows only from the server, nor for one with other changes journaled', async () => {
+    const pulled = await pulledTextNode({
+      docId: testId('doc'),
+      title: 'From the server',
+    });
+    expect(await nodeAwaitsServer(db, pulled)).toBe(false);
+
+    await db.query(
+      `insert into graph_op_journal (space_id, op, payload, node_ids)
+       values ($1, 'rename_node', '{}'::jsonb, $2)`,
+      [spaceId, [pulled]]
+    );
+    expect(await nodeAwaitsServer(db, pulled)).toBe(false);
   });
 });
 

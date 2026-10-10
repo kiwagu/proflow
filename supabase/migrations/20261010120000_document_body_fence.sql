@@ -49,11 +49,22 @@
  *   resource row is. one function, two actions; the read form is never the
  *   write fence.
  *
+ * registration
+ *   the first row to register a document fixes, for good, who owns its body.
+ *   so registering is allowed only to someone who could edit the resource it
+ *   names: the resource exists on the server, lives in the document's space,
+ *   points back at the document, and the caller reads it and either owns it
+ *   or holds the space update verb. a member who can merely see a shared
+ *   resource cannot take its unregistered body first, and a registration
+ *   that names nothing is refused rather than left as an unowned body. the
+ *   creator repeating a registration of a row that already exists is a
+ *   no-op the policy lets through, so a creator whose node later changed
+ *   hands is never blocked from pushing.
+ *
  * what stays as it is
- *   crdt_documents insert (creator, space create verb) and delete (space
- *   delete verb) keep their policies; the update log is still append-only and
- *   compaction is still the only destructive write, now behind the write
- *   side of the fence.
+ *   crdt_documents delete (space delete verb) keeps its policy; the update
+ *   log is still append-only and compaction is still the only destructive
+ *   write, now behind the write side of the fence.
  *
  * two forms of one predicate
  *   an INSERT ... RETURNING (what the api sends) makes the new row pass the
@@ -160,7 +171,7 @@ revoke all on function private.auth_user_can_access_document(text, text) from an
 grant execute on function private.auth_user_can_access_document(text, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- crdt_documents: read through the fence; insert and delete keep their shape
+-- crdt_documents: read through the fence, register through the resource
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "crdt_documents select for scoped readers" on public.crdt_documents;
@@ -173,6 +184,62 @@ using (
   private.auth_user_can_access_document_row(
     crdt_documents.id, crdt_documents.space_id, crdt_documents.created_by,
     crdt_documents.resource_id, 'read')
+);
+
+create or replace function private.auth_user_can_register_document(
+  p_doc_id text,
+  p_space_id text,
+  p_resource_id text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    public.auth_user_can_access_in_space(p_space_id, 'space.documents.create')
+    and (
+      exists (
+        select 1
+        from public.crdt_documents d
+        where d.id = p_doc_id
+          and d.created_by = (select auth.uid())
+      )
+      or exists (
+        select 1
+        from public.knowledge_resources r
+        where r.id = p_resource_id
+          and r.space_id = p_space_id
+          and r.body_ref ->> 'doc_id' = p_doc_id
+          and private.auth_user_can_access_resource(
+                r.id, r.space_id, r.owner_user_id, r.visibility,
+                'space.knowledge.read')
+          and (
+            r.owner_user_id = (select auth.uid())
+            or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+          )
+      )
+    );
+$$;
+
+comment on function private.auth_user_can_register_document(text, text, text) is
+  'Who may register a document body: the creator repeating a registration that already exists (a no-op), or someone who could edit the resource the document names (it exists, lives in the same space, points back, is readable by the caller, and is owned by them or editable through the space update verb).';
+
+revoke all on function private.auth_user_can_register_document(text, text, text) from public;
+revoke all on function private.auth_user_can_register_document(text, text, text) from anon;
+grant execute on function private.auth_user_can_register_document(text, text, text) to authenticated;
+
+drop policy if exists "crdt_documents insert for scoped creators" on public.crdt_documents;
+drop policy if exists "crdt_documents insert through the body fence" on public.crdt_documents;
+create policy "crdt_documents insert through the body fence"
+on public.crdt_documents
+for insert
+to authenticated
+with check (
+  crdt_documents.created_by = (select auth.uid())
+  and private.auth_user_can_register_document(
+    crdt_documents.id, crdt_documents.space_id, crdt_documents.resource_id)
 );
 
 -- ---------------------------------------------------------------------------

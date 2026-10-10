@@ -18,7 +18,10 @@ const {
   listAwaitingDocuments,
   listUnpushedDocuments,
   resourceIdForDocument,
+  nodeAwaitsServer,
+  DocumentNotRegisteredError,
 } = vi.hoisted(() => {
+  class DocumentNotRegisteredError extends Error {}
   const kick = vi.fn();
   const watchSpace = vi.fn((_spaceId: string, _hooks: unknown) => ({
     stop: vi.fn(),
@@ -70,10 +73,18 @@ const {
       ): Promise<string | null> =>
         id === 'doc-orphan' ? null : `node-of-${id}`
     ),
+    // `node-of-doc-new` was made here a moment ago and the graph push has
+    // not carried it to the server yet.
+    nodeAwaitsServer: vi.fn(
+      async (_db: unknown, node: string): Promise<boolean> =>
+        node === 'node-of-doc-new'
+    ),
+    DocumentNotRegisteredError,
   };
 });
 
 vi.mock('@workspace/doc-sync', () => ({
+  DocumentNotRegisteredError,
   createDocumentSync,
   createSupabaseTransport,
   createPgliteLedger,
@@ -83,6 +94,7 @@ vi.mock('@workspace/persistence-pglite', () => ({
   materializeDocuments,
   listAwaitingDocuments,
   listUnpushedDocuments,
+  nodeAwaitsServer,
   resourceIdForDocument,
 }));
 
@@ -236,17 +248,23 @@ describe('starting document replication', () => {
     handle.stop();
   });
 
-  it('registers a document no node here points at without an owner', async () => {
+  it('offers a document no node here points at without an owner, and waits when the server will not register it', async () => {
     const { store, change } = stubStore();
+    const onPushFailed = vi.fn();
     const handle = startDocumentSync({
       db,
       settings: settingsHolding(CONFIGURED),
       store,
       identity: IDENTITY,
+      onPushFailed,
     });
     await settled();
     push.mockClear();
     vi.useFakeTimers();
+    // A collaborator's edit to a document its creator already registered
+    // needs no owner; one the server has no row for cannot be registered
+    // without one, and that is waiting, not a failure to report.
+    push.mockRejectedValueOnce(new DocumentNotRegisteredError());
     change('doc-orphan', 'local');
     await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
     expect(push).toHaveBeenCalledWith(
@@ -255,6 +273,78 @@ describe('starting document replication', () => {
       'spc_abc.01m2',
       null
     );
+    expect(onPushFailed).not.toHaveBeenCalled();
+    handle.stop();
+  });
+
+  it('does not offer a document whose node the server has not taken yet, and does once the graph push lands', async () => {
+    const { store, change } = stubStore();
+    const onPushFailed = vi.fn();
+    const onPushed = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onPushFailed,
+      onPushed,
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+    change('doc-new', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    // The server checks the node it is told owns the body; one it has not
+    // received would be refused, and a refusal is not what this is.
+    expect(push).not.toHaveBeenCalled();
+    expect(onPushFailed).not.toHaveBeenCalled();
+
+    nodeAwaitsServer.mockResolvedValueOnce(false);
+    handle.graphPushed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).toHaveBeenCalledWith(
+      'doc-new',
+      { id: 'doc-new' },
+      'spc_abc.01m2',
+      'node-of-doc-new'
+    );
+    expect(onPushed).toHaveBeenCalledWith('doc-new');
+
+    // Nothing left waiting: another graph push has nothing to retry.
+    push.mockClear();
+    handle.graphPushed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).not.toHaveBeenCalled();
+    handle.stop();
+  });
+
+  it('retries what waited after a graph pull brought rows, and keeps waiting when it still cannot register', async () => {
+    const { store, change } = stubStore();
+    const onPushFailed = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onPushFailed,
+    });
+    await settled();
+    vi.useFakeTimers();
+    push.mockRejectedValueOnce(new DocumentNotRegisteredError());
+    change('doc-orphan', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    push.mockClear();
+    push.mockRejectedValueOnce(new DocumentNotRegisteredError());
+
+    handle.graphPulled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).toHaveBeenCalledTimes(1);
+
+    // Still unregistered: still waiting, so the next graph change tries again.
+    handle.graphPulled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).toHaveBeenCalledTimes(2);
+    expect(onPushFailed).not.toHaveBeenCalled();
     handle.stop();
   });
 
