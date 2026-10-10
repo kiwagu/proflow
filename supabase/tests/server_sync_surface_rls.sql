@@ -41,7 +41,10 @@ declare
   u_alice uuid := gen_random_uuid();
   u_adam  uuid := gen_random_uuid();
   u_mal   uuid := gen_random_uuid();
-  r_admin text; r_author text;
+  -- bob: an ordinary member of space A who owns nothing there. the body fence
+  -- is about him: membership alone must open no private body.
+  u_bob   uuid := gen_random_uuid();
+  r_admin text; r_author text; r_member text;
   v_doc_a text; v_doc_b text;
 begin
   insert into public.organizations (name, slug) values ('T14 Org', 't14-org-' || substr(md5(random()::text),1,8)) returning id into v_org;
@@ -51,23 +54,26 @@ begin
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
   values (u_alice, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'alice-'||u_alice||'@t14.invalid', '', now(), now(), now()),
          (u_adam,  '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'adam-'||u_adam||'@t14.invalid', '', now(), now(), now()),
-         (u_mal,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mal-'||u_mal||'@t14.invalid', '', now(), now(), now());
+         (u_mal,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mal-'||u_mal||'@t14.invalid', '', now(), now(), now()),
+         (u_bob,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'bob-'||u_bob||'@t14.invalid', '', now(), now(), now());
 
   insert into public.profiles (user_id, email, display_name)
-  values (u_alice, 'alice@t14.invalid', 'Alice'), (u_adam, 'adam@t14.invalid', 'Adam'), (u_mal, 'mallory@t14.invalid', 'Mallory')
+  values (u_alice, 'alice@t14.invalid', 'Alice'), (u_adam, 'adam@t14.invalid', 'Adam'), (u_mal, 'mallory@t14.invalid', 'Mallory'), (u_bob, 'bob@t14.invalid', 'Bob')
   on conflict (user_id) do nothing;
 
   insert into public.space_memberships (space_id, user_id, status) values
-    (v_a, u_alice, 'active'), (v_a, u_adam, 'active'), (v_b, u_mal, 'active');
+    (v_a, u_alice, 'active'), (v_a, u_adam, 'active'), (v_b, u_mal, 'active'), (v_a, u_bob, 'active');
 
   select id into r_admin  from public.roles where key='admin'  and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
   select id into r_author from public.roles where key='author' and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
+  select id into r_member from public.roles where key='member' and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
 
   -- user_role_check: a space-scoped grant carries space_id only (organization_id null).
   insert into public.user_role (user_id, role_id, space_id, organization_id) values
     (u_alice, r_author, v_a, null),
     (u_adam,  r_admin,  v_a, null),
-    (u_mal,   r_admin,  v_b, null);
+    (u_mal,   r_admin,  v_b, null),
+    (u_bob,   r_member, v_a, null);
 
   -- one document + update log in EACH space, seeded as owner (bypasses RLS on purpose)
   insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into v_doc_a;
@@ -89,7 +95,7 @@ begin
     (v_doc_b, v_b, 0, 0, 'mallory grocery list',          array_fill(0.1::real, array[384])::extensions.vector(384), 'test-model');
 
   insert into t14_ids values ('org',v_org),('space_a',v_a),('space_b',v_b),
-    ('alice',u_alice::text),('adam',u_adam::text),('mallory',u_mal::text),
+    ('alice',u_alice::text),('adam',u_adam::text),('mallory',u_mal::text),('bob',u_bob::text),
     ('doc_a',v_doc_a),('doc_b',v_doc_b);
 end
 $fixture$;
@@ -645,5 +651,259 @@ begin
   perform pg_temp.t14_report('M7b prior parent kept after cycle rollback', f1, coalesce(parent_id,'null'));
 end
 $move$;
+
+-- ---------------------------------------------------------------------------
+-- N. the body fence: a space member reaches a document body only through the
+--    resource that owns it, with the floor and grants the resource has.
+--    reads follow the resource read rule; writes follow the resource update
+--    rule (creator, or readable through the resource AND the space update
+--    verb — a member holds read but not that verb).
+--    the section builds its own documents: earlier sections delete and
+--    compact the fixture ones. counts use the two rows seeded by alice so a
+--    probe that unexpectedly writes cannot shift a later count; such stray
+--    rows are removed at once.
+-- ---------------------------------------------------------------------------
+do $fence$
+declare
+  v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
+  d_f text; d_orphan text; res_f text; ver_f text; forged text;
+  n int; b boolean;
+begin
+  select v into v_a from t14_ids where k='space_a';
+  select v into v_b from t14_ids where k='space_b';
+  select v::uuid into u_alice from t14_ids where k='alice';
+  select v::uuid into u_adam  from t14_ids where k='adam';
+  select v::uuid into u_bob   from t14_ids where k='bob';
+  select v::uuid into u_mal   from t14_ids where k='mallory';
+
+  -- alice's PRIVATE resource owns d_f, the only legitimate link to its body
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_f;
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values
+    (d_f, '\x01'::bytea, 'inst-alice', u_alice),
+    (d_f, '\x02'::bytea, 'inst-alice', u_alice);
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice private note', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
+  returning id into res_f;
+  -- a named version, and the server search rows, follow the same fence
+  insert into public.crdt_document_versions (doc_id, label, kind, frontiers, created_by)
+  values (d_f, 'v1', 'manual', '[]'::jsonb, u_alice) returning id into ver_f;
+  insert into public.server_document_index_state (document_id, space_id, title, indexed_watermark, model_id)
+  values (d_f, v_a, 'Alice fenced note', 2, 'test-model');
+  insert into public.server_document_chunk (document_id, space_id, ord, char_start, text, embedding, model_id)
+  values (d_f, v_a, 0, 0, 'alice fenced note body', array_fill(0.1::real, array[384])::extensions.vector(384), 'test-model');
+  -- a body with NO resource row at all (its resource create was refused or has
+  -- not been pushed yet): visible to its creator only
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_orphan;
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x09'::bytea, 'inst-alice', u_alice);
+
+  raise notice '=== N. body fence (bob: member in A, owns nothing) ===';
+
+  -- (1) private resource: bob reads nothing and writes nothing
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N1 private body: crdt_documents hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N1 private body: crdt_documents hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb0'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N3 private body: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.server_document_chunk where document_id = d_f;
+    perform pg_temp.t14_report('N4 private body: search chunks hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N4 private body: search chunks hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.server_document_index_state where document_id = d_f;
+    perform pg_temp.t14_report('N5 private body: index state hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N5 private body: index state hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_document_versions where id = ver_f;
+    perform pg_temp.t14_report('N6 private body: versions hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N6 private body: versions hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (2) the owner shares the resource at the space floor: reading follows
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'space' where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N7 space floor: crdt_documents visible to member', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N7 space floor: crdt_documents visible to member','1','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member', '2', n::text);
+  exception when others then perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member','2','ERR '||sqlerrm); end;
+  reset role;
+
+  -- ...but writing needs the resource update rule: a member reads a shared
+  -- document and does not edit it; an admin does
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb1'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N9 space floor: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    perform pg_temp.t14_report('N9b space floor: admin can push an update', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N9b space floor: admin can push an update','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (3) back to private: the member loses the body again
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'private' where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (4) a per-user grant is a READ grant: bob reads, bob does not write
+  insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (res_f, u_bob, u_alice);
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee', '2', n::text);
+  exception when others then perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee','2','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb2'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  delete from public.knowledge_resource_user_grants where resource_id = res_f and user_id = u_bob;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (5) a forged link: bob's OWN resource naming alice's document grants nothing
+  --     (a resource counts as the body's owner only when its owner is the
+  --     document's creator)
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob forged link', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_f))
+  returning id into forged;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N14 forged body_ref by another owner grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N14 forged body_ref by another owner grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
+
+  -- (6) an orphan body (no resource row at all): its creator only
+  begin perform pg_temp.t14_as(u_alice);
+    select count(*) into n from public.crdt_updates where doc_id = d_orphan;
+    perform pg_temp.t14_report('N15a orphan body: creator reads it', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N15a orphan body: creator reads it','1','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x0a'::bytea, 'inst-alice-2', u_alice);
+    perform pg_temp.t14_report('N15b orphan body: creator pushes to it', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N15b orphan body: creator pushes to it','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_orphan;
+    perform pg_temp.t14_report('N15c orphan body: member sees nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N15c orphan body: member sees nothing','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (7) compaction, the one destructive write, follows the write side
+  begin perform pg_temp.t14_as(u_bob);
+    select public.rpc_compact_document(d_f, '\xff'::bytea, 1) into b;
+    perform pg_temp.t14_report('N16a private body: member cannot compact', 'DENIED', 'ALLOWED ('||coalesce(b::text,'null')||')');
+  exception when raise_exception then perform pg_temp.t14_report('N16a private body: member cannot compact', 'DENIED', 'DENIED ('||sqlerrm||')');
+          when others then perform pg_temp.t14_report('N16a private body: member cannot compact','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    select public.rpc_compact_document(d_f, '\xff'::bytea, 2) into b;
+    perform pg_temp.t14_report('N16b private body: creator compacts', 'true', coalesce(b::text,'null'));
+  exception when others then perform pg_temp.t14_report('N16b private body: creator compacts','true','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (8) purge of the resource: the body falls back to its creator only
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'space' where id = res_f;
+  delete from public.knowledge_resources where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N17a resource purged: member loses the body', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N17a resource purged: member loses the body','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N17b resource purged: creator keeps the body', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N17b resource purged: creator keeps the body','1','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (9) the same-space clause, isolated: a resource in space B, owned by the
+  --     document's creator, naming the document, opened to bob (not a member
+  --     of B) by a per-user grant. the grant alone would let bob read it, so
+  --     only the same-space condition keeps the body shut. a grant needs an
+  --     active member of the resource's space, so bob joins B for this probe.
+  insert into public.space_memberships (space_id, user_id, status) values (v_b, u_bob, 'active');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Alice forged link in B', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
+  returning id into forged;
+  insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (forged, u_bob, u_alice);
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N18 link from another space grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N18 link from another space grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resource_user_grants where resource_id = forged;
+  delete from public.knowledge_resources where id = forged;
+  delete from public.space_memberships where space_id = v_b and user_id = u_bob;
+
+  -- (10) regression guard: an admin of space B with a space-floor resource of
+  --      her own naming the document still reads nothing of space A
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Mallory forged link', 'space', u_mal, u_mal, jsonb_build_object('doc_id', d_f))
+  returning id into forged;
+
+  begin perform pg_temp.t14_as(u_mal);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N18b cross-space admin with a forged link reads nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N18b cross-space admin with a forged link reads nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
+end
+$fence$;
 
 rollback;
