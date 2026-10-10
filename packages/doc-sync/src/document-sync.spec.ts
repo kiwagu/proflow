@@ -6,6 +6,7 @@ import {
 import { PGlite } from '@electric-sql/pglite';
 import { createDocumentSync } from './document-sync.js';
 import { createPgliteJournal, createPgliteLedger } from './pglite-ledger.js';
+import type { SyncTransport } from './types.js';
 import {
   createReplica,
   DOC_ID,
@@ -378,6 +379,46 @@ describe('document sync', () => {
     expect(c.text()).toContain('from A. ');
     expect(c.text()).toContain('from tab 2. ');
     await local.close();
+  });
+
+  it('misses nothing when a compaction lands between the reads of one pull', async () => {
+    const a = await replica('client-a');
+    const c = await replica('client-c');
+    for (const text of ['one. ', 'two. ', 'three. ']) {
+      await a.edit(text);
+      await a.push();
+    }
+    // Whichever of its two reads this pull makes first, another client
+    // compacts the log and a new row lands before the second one.
+    let between: (() => Promise<void>) | undefined = async () => {
+      await c.pull();
+      expect(await c.proposeCompaction(3)).toBe(true);
+      await a.edit('four. ');
+      await a.push();
+    };
+    const fire = async () => {
+      const run = between;
+      between = undefined;
+      if (run) await run();
+    };
+    const racing: SyncTransport = {
+      ...server,
+      head: async (docId) => {
+        const head = await server.head(docId);
+        await fire();
+        return head;
+      },
+      tail: async (docId, afterSeq) => {
+        const tail = await server.tail(docId, afterSeq);
+        await fire();
+        return tail;
+      },
+    };
+    const b = await createReplica('client-b', racing);
+    replicas.push(b);
+    await b.pull();
+    await b.pull();
+    expect(b.text()).toBe('one. two. three. four. ');
   });
 });
 

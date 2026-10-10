@@ -193,16 +193,21 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     from?: number
   ): Promise<PullResult> {
     const { pushedVv, pulledSeq } = await ledger.read(docId);
+    const start = from ?? pulledSeq;
+    // The tail before the head. A compaction deletes the rows it folds in
+    // the same step as it stores the snapshot holding them: landing before
+    // the tail read, it is in the head read after; landing after it, the
+    // tail still had every row. The other order would miss both — rows the
+    // tail no longer returns, under a head read before they were folded.
+    const rows = await transport.tail(docId, start);
     const head = await transport.head(docId);
     const incoming: Uint8Array[] = [];
-    let floor = from ?? pulledSeq;
-    if (head.snapshot && head.snapshotSeq > floor) {
-      // The snapshot covers everything through snapshotSeq — rows at or
-      // below it may already be compacted away, so the tail floor moves up.
+    let floor = start;
+    if (head.snapshot && head.snapshotSeq > start) {
+      // The snapshot covers everything through snapshotSeq.
       incoming.push(head.snapshot);
       floor = head.snapshotSeq;
     }
-    const rows = await transport.tail(docId, floor);
     const foreign = rows.filter((r) => r.writer !== writer);
     incoming.push(...foreign.map((r) => r.bytes));
     /**
