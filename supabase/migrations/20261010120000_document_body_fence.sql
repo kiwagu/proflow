@@ -41,6 +41,14 @@
  *   compaction is still the only destructive write, now behind the write
  *   side of the fence.
  *
+ * two forms of one predicate
+ *   an INSERT ... RETURNING (what the api sends) makes the new row pass the
+ *   select policy as well, and a function that fetches the row by id cannot
+ *   see a row its own statement is inserting. so the core takes the
+ *   document's own columns (the select policy on crdt_documents passes them
+ *   straight from the row), and a thin wrapper by id serves the satellite
+ *   tables and the compaction rpc, whose document row already exists.
+ *
  * security definer
  *   the predicate reads knowledge_resources on behalf of the caller under
  *   another user's rights (the resource may be hidden from them while a grant
@@ -57,11 +65,13 @@ create index if not exists knowledge_resources_body_doc_idx
   on public.knowledge_resources ((body_ref ->> 'doc_id'));
 
 -- ---------------------------------------------------------------------------
--- the predicate
+-- the predicate: the core takes the document's own columns...
 -- ---------------------------------------------------------------------------
 
-create or replace function private.auth_user_can_access_document(
+create or replace function private.auth_user_can_access_document_row(
   p_doc_id text,
+  p_space_id text,
+  p_created_by uuid,
   p_action text
 )
 returns boolean
@@ -73,34 +83,59 @@ as $$
   select
     case
       when p_action not in ('read', 'update') then false
-      else exists (
-        select 1
-        from public.crdt_documents d
-        where d.id = p_doc_id
-          and public.auth_user_can_access_in_space(d.space_id, 'space.documents.' || p_action)
-          and (
-            d.created_by = (select auth.uid())
-            or exists (
-              select 1
-              from public.knowledge_resources r
-              where r.body_ref ->> 'doc_id' = d.id
-                and r.space_id = d.space_id
-                and r.owner_user_id = d.created_by
-                and private.auth_user_can_access_resource(
-                      r.id, r.space_id, r.owner_user_id, r.visibility,
-                      'space.knowledge.read')
-                and (
-                  p_action = 'read'
-                  or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
-                )
-            )
+      else
+        public.auth_user_can_access_in_space(p_space_id, 'space.documents.' || p_action)
+        and (
+          p_created_by = (select auth.uid())
+          or exists (
+            select 1
+            from public.knowledge_resources r
+            where r.body_ref ->> 'doc_id' = p_doc_id
+              and r.space_id = p_space_id
+              and r.owner_user_id = p_created_by
+              and private.auth_user_can_access_resource(
+                    r.id, r.space_id, r.owner_user_id, r.visibility,
+                    'space.knowledge.read')
+              and (
+                p_action = 'read'
+                or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
+              )
           )
-      )
+        )
     end;
 $$;
 
+comment on function private.auth_user_can_access_document_row(text, text, uuid, text) is
+  'The body fence on a document row''s own columns, so it also holds for a row being inserted: the creator, or the resource that owns the body under the resource''s own read predicate; editing additionally needs the space update verb.';
+
+revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text) from public;
+revoke all on function private.auth_user_can_access_document_row(text, text, uuid, text) from anon;
+grant execute on function private.auth_user_can_access_document_row(text, text, uuid, text) to authenticated;
+
+-- ...and the wrapper by id, for tables and rpcs whose document row exists
+
+create or replace function private.auth_user_can_access_document(
+  p_doc_id text,
+  p_action text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(
+    (
+      select private.auth_user_can_access_document_row(d.id, d.space_id, d.created_by, p_action)
+      from public.crdt_documents d
+      where d.id = p_doc_id
+    ),
+    false
+  );
+$$;
+
 comment on function private.auth_user_can_access_document(text, text) is
-  'The body fence: may the caller read (''read'') or edit (''update'') the document''s body? The creator, or the resource that owns the body under the resource''s own read predicate; editing additionally needs the space update verb.';
+  'The body fence by document id: may the caller read (''read'') or edit (''update'') the document''s body? False for an id that names no document.';
 
 revoke all on function private.auth_user_can_access_document(text, text) from public;
 revoke all on function private.auth_user_can_access_document(text, text) from anon;
@@ -111,17 +146,22 @@ grant execute on function private.auth_user_can_access_document(text, text) to a
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "crdt_documents select for scoped readers" on public.crdt_documents;
+drop policy if exists "crdt_documents select through the body fence" on public.crdt_documents;
 create policy "crdt_documents select through the body fence"
 on public.crdt_documents
 for select
 to authenticated
-using (private.auth_user_can_access_document(crdt_documents.id, 'read'));
+using (
+  private.auth_user_can_access_document_row(
+    crdt_documents.id, crdt_documents.space_id, crdt_documents.created_by, 'read')
+);
 
 -- ---------------------------------------------------------------------------
 -- crdt_updates
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "crdt_updates select mirrors document read" on public.crdt_updates;
+drop policy if exists "crdt_updates select through the body fence" on public.crdt_updates;
 create policy "crdt_updates select through the body fence"
 on public.crdt_updates
 for select
@@ -129,6 +169,7 @@ to authenticated
 using (private.auth_user_can_access_document(crdt_updates.doc_id, 'read'));
 
 drop policy if exists "crdt_updates insert mirrors document update" on public.crdt_updates;
+drop policy if exists "crdt_updates insert through the body fence" on public.crdt_updates;
 create policy "crdt_updates insert through the body fence"
 on public.crdt_updates
 for insert
@@ -143,6 +184,7 @@ with check (
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "crdt_document_versions select mirrors document read" on public.crdt_document_versions;
+drop policy if exists "crdt_document_versions select through the body fence" on public.crdt_document_versions;
 create policy "crdt_document_versions select through the body fence"
 on public.crdt_document_versions
 for select
@@ -150,6 +192,7 @@ to authenticated
 using (private.auth_user_can_access_document(crdt_document_versions.doc_id, 'read'));
 
 drop policy if exists "crdt_document_versions insert mirrors document update" on public.crdt_document_versions;
+drop policy if exists "crdt_document_versions insert through the body fence" on public.crdt_document_versions;
 create policy "crdt_document_versions insert through the body fence"
 on public.crdt_document_versions
 for insert
@@ -160,6 +203,7 @@ with check (
 );
 
 drop policy if exists "crdt_document_versions update mirrors document update" on public.crdt_document_versions;
+drop policy if exists "crdt_document_versions update through the body fence" on public.crdt_document_versions;
 create policy "crdt_document_versions update through the body fence"
 on public.crdt_document_versions
 for update
@@ -168,6 +212,7 @@ using (private.auth_user_can_access_document(crdt_document_versions.doc_id, 'upd
 with check (private.auth_user_can_access_document(crdt_document_versions.doc_id, 'update'));
 
 drop policy if exists "crdt_document_versions delete mirrors document update" on public.crdt_document_versions;
+drop policy if exists "crdt_document_versions delete through the body fence" on public.crdt_document_versions;
 create policy "crdt_document_versions delete through the body fence"
 on public.crdt_document_versions
 for delete
@@ -179,6 +224,7 @@ using (private.auth_user_can_access_document(crdt_document_versions.doc_id, 'upd
 -- ---------------------------------------------------------------------------
 
 drop policy if exists "server_document_chunk select mirrors document read" on public.server_document_chunk;
+drop policy if exists "server_document_chunk select through the body fence" on public.server_document_chunk;
 create policy "server_document_chunk select through the body fence"
 on public.server_document_chunk
 for select
@@ -186,6 +232,7 @@ to authenticated
 using (private.auth_user_can_access_document(server_document_chunk.document_id, 'read'));
 
 drop policy if exists "server_document_index_state select mirrors document read" on public.server_document_index_state;
+drop policy if exists "server_document_index_state select through the body fence" on public.server_document_index_state;
 create policy "server_document_index_state select through the body fence"
 on public.server_document_index_state
 for select

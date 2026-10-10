@@ -671,7 +671,7 @@ $move$;
 do $fence$
 declare
   v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
-  d_f text; d_orphan text; res_f text; ver_f text; forged text;
+  d_f text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
   n int; b boolean;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -917,6 +917,31 @@ begin
   exception when others then perform pg_temp.t14_report('N18b cross-space admin with a forged link reads nothing','0','ERR '||sqlerrm); end;
   reset role;
   delete from public.knowledge_resources where id = forged;
+
+  -- (11) the statements PostgREST really sends. an INSERT ... RETURNING makes
+  --      the new row pass the SELECT policy too, and a policy that fetches
+  --      the row by id cannot see a row its own statement is inserting: the
+  --      creator's first push must work through the policies, not only as the
+  --      table owner.
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into new_doc;
+    perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x07'::bytea, 'inst-alice-3', u_alice) returning seq into n;
+    perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- a second device registering a document that already exists (the upsert
+  -- that ignores duplicates) must not error either
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by) values (d_orphan, v_a, u_adam) on conflict (id) do nothing returning id into forged;
+    perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
 end
 $fence$;
 
