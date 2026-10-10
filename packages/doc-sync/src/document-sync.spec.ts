@@ -291,6 +291,42 @@ describe('document sync', () => {
     }
     expect(first!.text().length).toBeGreaterThan(0);
   });
+
+  it('never folds into a compaction the rows its proposer has not pulled', async () => {
+    const a = await replica('client-a');
+    const b = await createReplica('client-b', server, {
+      compaction: { maxRows: 2 },
+    });
+    replicas.push(b);
+    await a.edit('from A. ');
+    await a.push();
+    // B pushes without having pulled A's row: two rows reach the threshold.
+    await b.edit('from B. ');
+    await b.push();
+
+    const c = await replica('client-c');
+    await c.pull();
+    expect(c.text()).toContain('from A. ');
+    expect(c.text()).toContain('from B. ');
+  });
+
+  it('compacts after a push from a proposer that holds every row before it', async () => {
+    const a = await replica('client-a');
+    const b = await createReplica('client-b', server, {
+      compaction: { maxRows: 2 },
+    });
+    replicas.push(b);
+    await a.edit('from A. ');
+    await a.push();
+    await b.pull();
+    await b.edit('from B. ');
+    expect((await b.push()).compacted).toBe(true);
+    expect(await server.updateCount(DOC_ID)).toBe(0);
+
+    const c = await replica('client-c');
+    await c.pull();
+    expect(c.text()).toBe('from A. from B. ');
+  });
 });
 
 async function waitFor(

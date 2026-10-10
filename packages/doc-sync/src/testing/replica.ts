@@ -84,7 +84,10 @@ export interface Replica {
 export async function createReplica(
   name: string,
   transport: SyncTransport,
-  options: { pollIntervalMs?: number } = {}
+  options: {
+    pollIntervalMs?: number;
+    compaction?: { maxRows?: number; maxBytes?: number };
+  } = {}
 ): Promise<Replica> {
   const local = await PGlite.create();
   await local.exec(LOCAL_SCHEMA);
@@ -98,7 +101,7 @@ export async function createReplica(
     writer: name,
     // Off by default: every compaction in these tests is proposed explicitly,
     // so the threshold never fires behind a scenario's back.
-    compaction: false,
+    compaction: options.compaction ?? false,
     pollIntervalMs: options.pollIntervalMs ?? 25,
   });
 

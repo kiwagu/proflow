@@ -129,6 +129,13 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   const tailByteGauge = new Map<string, number>();
   /** One pull at a time per document; concurrent requests coalesce. */
   const pullChain = new Map<string, Promise<PullResult>>();
+  /**
+   * The server rows, by seq, this engine has put into its document: what
+   * its pulls imported, and its own pushes that came straight after them.
+   * A compaction may fold only these — another writer's row this client
+   * never pulled would be deleted with a snapshot that does not hold it.
+   */
+  const heldThrough = new Map<string, number>();
 
   async function ensureDocument(docId: string, spaceId: string) {
     if (ensured.has(docId)) return;
@@ -173,9 +180,14 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     // the same span next time, and every importer no-ops on it.
     await ledger.recordPush(docId, current);
     tailByteGauge.set(docId, (tailByteGauge.get(docId) ?? 0) + blob.length);
-    // A client that has just pushed provably holds everything through its
-    // own row's seq, which is exactly what a compaction proposal needs.
-    const compacted = await maybeCompact(docId, doc, seq);
+    // Seqs are gap-free per document: when this row comes right after the
+    // ones held, no other writer's row lies between, and it is held too.
+    // Otherwise the rows in between are someone else's and not pulled yet.
+    const held = heldThrough.get(docId) ?? 0;
+    if (seq === held + 1) heldThrough.set(docId, seq);
+    const coversSeq = heldThrough.get(docId) ?? 0;
+    const compacted =
+      coversSeq > 0 ? await maybeCompact(docId, doc, coversSeq) : false;
     return { pushedSeq: seq, compacted };
   }
 
@@ -229,6 +241,9 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       await ledger.recordPull(docId, newSeq);
       if (settledVv) await ledger.recordPush(docId, settledVv);
     }
+    // Everything through newSeq is in the document now: the rows imported
+    // here, and this writer's own, which came from it.
+    heldThrough.set(docId, Math.max(heldThrough.get(docId) ?? 0, newSeq));
     return {
       imported: foreign.length,
       skippedOwn: rows.length - foreign.length,
