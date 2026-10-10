@@ -284,4 +284,96 @@ describe('two tabs over one local database', () => {
     const reopened = (await documentsB.load(id))._unsafeUnwrap();
     expect(textOf(reopened.content!.tree)).toBe('Hello from A\nWorld from B');
   });
+
+  it("does not replace another tab's newer snapshot from a copy that is behind", async () => {
+    const a = tab();
+    const b = tab();
+    const id = await openInBoth(a, b);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    bus.hold();
+    // B saves until its journal snapshots: its rows are folded away.
+    for (let i = 1; i <= 19; i++) {
+      await b.save(
+        id,
+        withParagraph(b.editor.tree!, 1, `World${'?'.repeat(i)}`)
+      );
+    }
+    // A, which never heard of any of it, reaches its own threshold through
+    // a pull.
+    const face = (await a.store.syncable(id))!;
+    const empty = face.exportUpdatesSince(face.versionBytes());
+    await a.store.syncJournal.append(
+      id,
+      Array.from({ length: 19 }, () => empty)
+    );
+    expect(await onDisk(id)).toBe(`Hello\nWorld${'?'.repeat(19)}`);
+    bus.release();
+    await expect
+      .poll(() => textOf(a.editor.tree!))
+      .toBe(`Hello\nWorld${'?'.repeat(19)}`);
+  });
+
+  it('opens a document whole while another tab snapshots it', async () => {
+    const a = tab();
+    const id = (
+      await createPgliteDocumentRepository(
+        db,
+        a.store,
+        SPACE,
+        TEST_USER
+      ).create({ title: 'Shared' })
+    )._unsafeUnwrap().id;
+    await a.save(id, treeOf('Hello\n\nWorld'));
+    await a.save(id, withParagraph(a.editor.tree!, 0, 'Hello again'));
+
+    // Between reading the snapshot and the journal, another tab writes a
+    // snapshot and trims the journal it folded.
+    let interleave: (() => Promise<void>) | undefined = async () => {
+      const full = (await createDocumentCrdtStore(db).syncable(id))!;
+      await db.query(
+        `insert into document_snapshot (document_id, bytes, frontiers, op_count, updated_at)
+         values ($1, $2, '[]', 0, now())
+         on conflict (document_id) do update set bytes = excluded.bytes, updated_at = now()`,
+        [id, full.exportSnapshot()]
+      );
+      await db.query('delete from document_update where document_id = $1', [
+        id,
+      ]);
+    };
+    const watched = new Proxy(db, {
+      get(target, property) {
+        if (property === 'query') {
+          return async (sql: string, params?: unknown[]) => {
+            const result = await target.query(sql, params);
+            if (interleave && /from document_snapshot/.test(sql)) {
+              const run = interleave;
+              interleave = undefined;
+              await run();
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property) as unknown;
+        return typeof value === 'function'
+          ? (value as (...args: unknown[]) => unknown).bind(target)
+          : value;
+      },
+    });
+    const c = createDocumentCrdtStore(watched);
+    expect(textOf((await c.load(id))!)).toBe('Hello again\nWorld');
+  });
+
+  it('takes in what other tabs wrote before handing a document to the sync engine', async () => {
+    const a = tab();
+    const b = tab();
+    const id = await openInBoth(a, b);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    bus.hold();
+    await a.save(id, withParagraph(a.editor.tree!, 0, 'Hello from A'));
+    // B pushes or pulls: it must not do so from a copy that is behind.
+    await b.store.syncable(id);
+    expect(textOf(b.editor.tree!)).toBe('Hello from A\nWorld');
+  });
 });

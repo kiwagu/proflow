@@ -174,14 +174,24 @@ export function createDocumentCrdtStore(
   }
 
   async function readDocument(id: string): Promise<Open> {
-    const snapshot = await db.query<{ bytes: Uint8Array; stamp: string }>(
-      'select bytes, updated_at::text as stamp from document_snapshot where document_id = $1',
-      [id]
-    );
-    const updates = await db.query<{ id: number | string; bytes: Uint8Array }>(
-      'select id, bytes from document_update where document_id = $1 order by id',
-      [id]
-    );
+    // One transaction: another tab replacing the snapshot and trimming the
+    // journal between the two reads would leave neither in this copy.
+    const read = await db.transaction(async (tx) => {
+      const snapshot = await tx.query<{ bytes: Uint8Array; stamp: string }>(
+        'select bytes, updated_at::text as stamp from document_snapshot where document_id = $1',
+        [id]
+      );
+      const updates = await tx.query<{
+        id: number | string;
+        bytes: Uint8Array;
+      }>(
+        'select id, bytes from document_update where document_id = $1 order by id',
+        [id]
+      );
+      return { snapshot, updates };
+    });
+    if (!read) throw new Error(`document ${id} could not be read`);
+    const { snapshot, updates } = read;
     const journal = updates.rows.map((r) => r.bytes);
     const crdt = DocumentCrdt.restore({
       snapshot: snapshot.rows[0]?.bytes,
@@ -216,23 +226,33 @@ export function createDocumentCrdtStore(
    * away, including ones this copy never read.
    */
   async function readJournal(id: string, entry: Open): Promise<JournalRead> {
-    const { rows } = await db.query<{ id: number | string; bytes: Uint8Array }>(
-      'select id, bytes from document_update where document_id = $1 and id > $2 order by id',
-      [id, entry.lastUpdateId]
-    );
-    const stored = await db.query<{ stamp: string }>(
-      'select updated_at::text as stamp from document_snapshot where document_id = $1',
-      [id]
-    );
-    const stamp = stored.rows[0]?.stamp ?? null;
-    const blobs: Uint8Array[] = [];
-    if (stamp !== null && stamp !== entry.snapshotStamp) {
-      const { rows: snap } = await db.query<{ bytes: Uint8Array }>(
-        'select bytes from document_snapshot where document_id = $1',
+    const read = await db.transaction(async (tx) => {
+      const { rows } = await tx.query<{
+        id: number | string;
+        bytes: Uint8Array;
+      }>(
+        'select id, bytes from document_update where document_id = $1 and id > $2 order by id',
+        [id, entry.lastUpdateId]
+      );
+      const stored = await tx.query<{ stamp: string }>(
+        'select updated_at::text as stamp from document_snapshot where document_id = $1',
         [id]
       );
-      if (snap[0]) blobs.push(snap[0].bytes);
-    }
+      const stamp = stored.rows[0]?.stamp ?? null;
+      let snapshotBytes: Uint8Array | undefined;
+      if (stamp !== null && stamp !== entry.snapshotStamp) {
+        const { rows: snap } = await tx.query<{ bytes: Uint8Array }>(
+          'select bytes from document_snapshot where document_id = $1',
+          [id]
+        );
+        snapshotBytes = snap[0]?.bytes;
+      }
+      return { rows, stamp, snapshotBytes };
+    });
+    if (!read) throw new Error(`journal of ${id} could not be read`);
+    const { rows, stamp, snapshotBytes } = read;
+    const blobs: Uint8Array[] = [];
+    if (snapshotBytes) blobs.push(snapshotBytes);
     for (const row of rows) {
       if (!entry.own.has(Number(row.id))) blobs.push(row.bytes);
     }
@@ -278,23 +298,33 @@ export function createDocumentCrdtStore(
 
   async function snapshot(id: string, entry: Open): Promise<void> {
     const bytes = entry.crdt.exportSnapshot();
+    const params = [
+      id,
+      bytes,
+      JSON.stringify(entry.crdt.frontiers()),
+      entry.crdt.opCount(),
+    ];
     const stamp = await db.transaction(async (tx) => {
-      const { rows } = await tx.query<{ stamp: string }>(
-        `insert into document_snapshot (document_id, bytes, frontiers, op_count, updated_at)
-         values ($1, $2, $3, $4, now())
-         on conflict (document_id) do update
-           set bytes = excluded.bytes,
-               frontiers = excluded.frontiers,
-               op_count = excluded.op_count,
-               updated_at = now()
-         returning updated_at::text as stamp`,
-        [
-          id,
-          bytes,
-          JSON.stringify(entry.crdt.frontiers()),
-          entry.crdt.opCount(),
-        ]
-      );
+      // Only over the snapshot this copy holds. Another tab may have
+      // replaced it, folding away journal rows this copy never read: a
+      // copy that is behind writing over that snapshot would lose them.
+      const { rows } =
+        entry.snapshotStamp === null
+          ? await tx.query<{ stamp: string }>(
+              `insert into document_snapshot (document_id, bytes, frontiers, op_count, updated_at)
+               values ($1, $2, $3, $4, now())
+               on conflict (document_id) do nothing
+               returning updated_at::text as stamp`,
+              params
+            )
+          : await tx.query<{ stamp: string }>(
+              `update document_snapshot
+               set bytes = $2, frontiers = $3, op_count = $4, updated_at = now()
+               where document_id = $1 and updated_at::text = $5
+               returning updated_at::text as stamp`,
+              [...params, entry.snapshotStamp]
+            );
+      if (rows.length === 0) return null;
       // Only after the snapshot is stored: the journal is what would rebuild
       // the document if this transaction never landed. And only rows this
       // copy holds: another tab's rows it has not read stay for that tab's
@@ -305,8 +335,13 @@ export function createDocumentCrdtStore(
       );
       return rows[0]?.stamp ?? null;
     });
+    if (stamp === null) {
+      // Someone else's snapshot stands: take it in, and snapshot later.
+      void mergeLocal(id).catch(reportMergeFailure);
+      return;
+    }
     entry.own.clear();
-    entry.snapshotStamp = stamp ?? entry.snapshotStamp;
+    entry.snapshotStamp = stamp;
     entry.journalled = 0;
     options.peers?.announce(id);
   }
@@ -607,10 +642,10 @@ export function createDocumentCrdtStore(
 
     /**
      * The document for the sync engine, or null when this device has no
-     * row for it (not materialized yet). Other tabs' journal rows are NOT
-     * read here: brought in without the fold and the paint that frame every
-     * merge, they would sit under an editor that never saw them. Each tab
-     * pushes what it holds; the others' writes arrive by their announcements.
+     * row for it (not materialized yet). Other tabs' journal rows come in
+     * only through the merge that frames every import — the editor's tree
+     * folded first, the result painted after — never read in raw, where
+     * they would sit under an editor that never saw them.
      *
      * A merge in flight is left alone: a push opening the document between
      * a pull's import and its journal write must not reopen the window in
@@ -622,6 +657,11 @@ export function createDocumentCrdtStore(
       ]);
       if (rows.length === 0) return null;
       const entry = await openDocument(id);
+      // What other tabs wrote comes in first, the proper way — folded and
+      // painted: a push from a copy that is behind would record less than
+      // the device holds, and its snapshot would propose less than the
+      // server should keep.
+      await mergeLocal(id);
       return {
         exportUpdatesSince: (from) => entry.crdt.exportUpdatesSince(from),
         versionBytes: () => entry.crdt.versionBytes(),
