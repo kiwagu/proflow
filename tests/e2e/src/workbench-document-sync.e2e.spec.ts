@@ -440,6 +440,38 @@ test.describe('Workbench document sync across devices', () => {
         );
         expect(squat.error?.code, `registering as ${resourceId}`).toBe('42501');
       }
+      // Nor under a node of the member's own that points at the same
+      // document: he knows its id from the shared node. While that second
+      // pointer exists nobody can register the body; deleting it ends that.
+      const forged = await asMember
+        .from('knowledge_resources')
+        .insert({
+          space_id: org.spaceId,
+          kind: 'text',
+          title: 'A pointer to the same document',
+          visibility: 'private',
+          created_by: member.id,
+          owner_user_id: member.id,
+          body_ref: { doc_id: docId },
+        })
+        .select('id')
+        .single();
+      expect(forged.error).toBeNull();
+      const squatForged = await asMember.from('crdt_documents').upsert(
+        {
+          id: docId,
+          space_id: org.spaceId,
+          created_by: member.id,
+          resource_id: forged.data!.id,
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+      expect(squatForged.error?.code).toBe('42501');
+      const removed = await service
+        .from('knowledge_resources')
+        .delete()
+        .eq('id', forged.data!.id);
+      expect(removed.error).toBeNull();
       const squatted = await service
         .from('crdt_documents')
         .select('id')

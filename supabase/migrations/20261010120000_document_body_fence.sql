@@ -57,9 +57,16 @@
  *   or holds the space update verb. a member who can merely see a shared
  *   resource cannot take its unregistered body first, and a registration
  *   that names nothing is refused rather than left as an unowned body. the
- *   creator repeating a registration of a row that already exists is a
- *   no-op the policy lets through, so a creator whose node later changed
- *   hands is never blocked from pushing.
+ *   resource must also be the only one that points at the document: anyone
+ *   who can see a shared resource knows its document's id, and can make a
+ *   resource of their own that points at the same id and register the body
+ *   under it. a node made together with its document is the only pointer
+ *   there is when the body is first registered, so a second pointer is a
+ *   copy, and while one exists nobody can register the body (the pointer's
+ *   owner, or anyone allowed to delete it, ends that). the creator repeating
+ *   a registration of a row that already exists is a no-op the policy lets
+ *   through, so a creator whose node later changed hands is never blocked
+ *   from pushing.
  *
  * what stays as it is
  *   crdt_documents delete (space delete verb) keeps its policy; the update
@@ -186,6 +193,11 @@ using (
     crdt_documents.resource_id, 'read')
 );
 
+-- registration asks which resources point at a document id
+create index if not exists knowledge_resources_body_doc_id_idx
+  on public.knowledge_resources ((body_ref ->> 'doc_id'))
+  where body_ref ->> 'doc_id' is not null;
+
 create or replace function private.auth_user_can_register_document(
   p_doc_id text,
   p_space_id text,
@@ -219,12 +231,17 @@ as $$
             r.owner_user_id = (select auth.uid())
             or public.auth_user_can_access_in_space(r.space_id, 'space.knowledge.update')
           )
+          and (
+            select count(*)
+            from public.knowledge_resources x
+            where x.body_ref ->> 'doc_id' = p_doc_id
+          ) = 1
       )
     );
 $$;
 
 comment on function private.auth_user_can_register_document(text, text, text) is
-  'Who may register a document body: the creator repeating a registration that already exists (a no-op), or someone who could edit the resource the document names (it exists, lives in the same space, points back, is readable by the caller, and is owned by them or editable through the space update verb).';
+  'Who may register a document body: the creator repeating a registration that already exists (a no-op), or someone who could edit the resource the document names (it exists, lives in the same space, is the only resource pointing at the document, points back, is readable by the caller, and is owned by them or editable through the space update verb).';
 
 revoke all on function private.auth_user_can_register_document(text, text, text) from public;
 revoke all on function private.auth_user_can_register_document(text, text, text) from anon;

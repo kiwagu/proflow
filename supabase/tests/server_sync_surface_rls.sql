@@ -674,7 +674,7 @@ do $fence$
 declare
   v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
   d_f text; d_x text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
-  d_reg text; d_reg2 text; d_own text; res_own text; d_xs text; res_xs text; d_priv text; res_reg text; res_reg2 text; res_priv text; res_bob text;
+  d_reg text; d_reg2 text; d_own text; res_own text; d_xs text; res_xs text; d_sq text; res_sq text; res_sq_bob text; d_priv text; res_reg text; res_reg2 text; res_priv text; res_bob text;
   n int; b boolean;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -1172,6 +1172,43 @@ begin
           when others then perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
   delete from public.crdt_documents where id = d_xs;
+
+  -- the squat the named-node rule alone does not stop: a member who can see
+  -- a shared node knows its document's id, makes a node of his own pointing
+  -- at that same id, and registers the body naming it. one node per
+  -- document is the only owner the server can tell from a copy, so a second
+  -- pointer leaves the document unregistrable by anyone until it is gone.
+  d_sq := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, to be squatted', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_sq))
+  returning id into res_sq;
+  perform pg_temp.t14_as(u_bob);
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob copy of the pointer', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_sq))
+  returning id into res_sq_bob;
+  reset role;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_bob, res_sq_bob);
+    perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_sq;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_alice, res_sq);
+    perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_sq;
+
+  delete from public.knowledge_resources where id = res_sq_bob;
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_alice, res_sq);
+    perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
 end
 $fence$;
 
