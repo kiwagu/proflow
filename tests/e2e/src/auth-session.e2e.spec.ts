@@ -13,10 +13,6 @@ test.describe('platform auth session lifecycle', () => {
     page,
     seededUser,
   }) => {
-    // login + bootstrap + logout redirect + SSR round-trip can be slow
-    // under parallel worker load on the shared dev server.
-    test.setTimeout(90_000);
-
     let bootstrap: E2EPlatformOrgBootstrap | undefined;
     try {
       bootstrap = await bootstrapOrgSpaceAdminForUser(seededUser.id);

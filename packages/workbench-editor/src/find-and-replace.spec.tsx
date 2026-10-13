@@ -1,6 +1,13 @@
 import type { LexicalWrapper } from '@workspace/lexical-react';
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
-import { render, cleanup, fireEvent, screen, act, waitFor } from '@testing-library/react';
+import {
+  render,
+  cleanup,
+  fireEvent,
+  screen,
+  act,
+  waitFor,
+} from '@testing-library/react';
 import { $createParagraphNode, $createTextNode, $getRoot } from 'lexical';
 import { afterEach, describe, expect, it } from 'vitest';
 import { useState } from 'react';

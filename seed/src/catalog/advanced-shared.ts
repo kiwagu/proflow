@@ -8,7 +8,7 @@ import type { SeedScenario } from './types.js';
  * `'shared-by-me'` = the resources I have shared OUT) ship FLAT (a digest). This scenario
  * adds an ADVANCED display mode that renders the SAME RLS-visible shared node-set as
  * the KB containment TREE, gated by the COMMERCIAL `advanced_shared_view` entitlement
- * (a scoped control-plane `runtime_settings` row, resolved global→org→space with
+ * (a scoped operator-configured `runtime_settings` row, resolved global→org→space with
  * org∧space AND-composition). It is VIEW-ONLY: the advanced view shows EXACTLY the
  * flat view's nodes — only the layout differs — so the gate is an ENTITLEMENT, never a
  * security boundary (RLS is untouched; the same node-set renders in both modes, the
@@ -32,9 +32,9 @@ import type { SeedScenario } from './types.js';
  * shared set — which is precisely what makes its child an orphan-at-root.)
  *
  * Everything is born the product's way (runtime, under the owner's own RLS — NEVER a
- * migration seed, which poisons the author identity-sync worker): the folders/docs via
- * `/author/graph/*`, the containment via `contain`, the floor publish via `setFloor`.
- * The COMMERCIAL entitlement rows are control-plane config (a service-role
+ * migration seed, which poisons the identity-sync worker): the folders/docs via the
+ * create-vocabulary, the containment via `contain`, the floor publish via `setFloor`.
+ * The COMMERCIAL entitlement rows are operator configuration (a service-role
  * `runtime_settings` upsert), out of scope for a CONTENT scenario — the consuming e2e
  * sets them via its own `setAdvancedSharedEntitlement` helper; this fixture only builds
  * the RLS-visible shared node-set both display modes render.

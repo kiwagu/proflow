@@ -15,6 +15,7 @@ import {
 import { cn } from '@workspace/ui/lib/utils';
 import {
   ChevronRight,
+  FileDown,
   Folder,
   LoaderCircle,
   MoreHorizontal,
@@ -26,7 +27,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { FileIcon } from './file-icon.js';
-import { defaultFileExplorerLabels, type FileExplorerLabels } from './labels.js';
+import {
+  defaultFileExplorerLabels,
+  type FileExplorerLabels,
+} from './labels.js';
 import { categoryOf } from './file-tree.js';
 
 export interface MoveTarget {
@@ -59,6 +63,8 @@ export interface FileRowProps {
   /** Folders this node could move into (never itself or its descendants). */
   moveTargets?: MoveTarget[];
   onMove?: (parentId: string | null) => void;
+  /** Downloads the row's document as portable markdown; absent when the row is not one. */
+  onExport?: () => void;
   dropTarget?: boolean;
   labels?: FileExplorerLabels;
 }
@@ -210,6 +216,16 @@ export function FileRow(props: FileRowProps) {
                   {props.node.starred ? labels.row.unstar : labels.row.star}
                 </span>
               </DropdownMenuItem>
+              {props.onExport ? (
+                <DropdownMenuItem
+                  className="gap-2"
+                  data-testid="file-export-markdown"
+                  onSelect={() => props.onExport?.()}
+                >
+                  <FileDown className="size-4" />
+                  <span className="text-xs">{labels.row.exportMarkdown}</span>
+                </DropdownMenuItem>
+              ) : null}
               {isArchive && props.onUnpack ? (
                 <DropdownMenuItem
                   className="gap-2"
@@ -219,7 +235,9 @@ export function FileRow(props: FileRowProps) {
                 >
                   <PackageOpen className="size-4" />
                   <span className="text-xs">
-                    {props.unpacked ? labels.row.actionUnpacked : labels.row.unpack}
+                    {props.unpacked
+                      ? labels.row.actionUnpacked
+                      : labels.row.unpack}
                   </span>
                 </DropdownMenuItem>
               ) : null}
@@ -240,7 +258,9 @@ export function FileRow(props: FileRowProps) {
                     data-testid="file-move"
                   >
                     <Folder className="size-4" />
-                    <span className="flex-1 truncate text-xs">{labels.row.moveTo}</span>
+                    <span className="flex-1 truncate text-xs">
+                      {labels.row.moveTo}
+                    </span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuGroup>

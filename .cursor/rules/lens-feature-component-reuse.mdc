@@ -1,6 +1,6 @@
 ---
 description: Reuse the parameterizable lens / feature component — parameterize, don't fork
-globs: apps/author/src/app/graph/views/**
+globs: apps/workbench/src/**
 alwaysApply: false
 ---
 

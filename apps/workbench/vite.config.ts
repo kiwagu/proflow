@@ -2,6 +2,7 @@ import tailwind from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import wasm from 'vite-plugin-wasm';
+import { offlineShell } from './offline-shell.plugin';
 
 /**
  * Restores bare query flags on dev requests that came through the gateway.
@@ -39,7 +40,7 @@ function bareQueryFlags(): Plugin {
 const BASE_PATH = normalizeBase(process.env.WORKBENCH_BASE_PATH ?? '/author');
 
 /**
- * The port the gateway's author upstream points at (`AUTHOR_DEV_PORT` on
+ * The port the gateway's workbench upstream points at (`WORKBENCH_DEV_PORT` on
  * the gateway side); the two must agree for `/author/*` to reach this app.
  */
 const DEV_PORT = Number(process.env.WORKBENCH_DEV_PORT ?? 3002);
@@ -67,6 +68,17 @@ export default defineConfig({
     // The CRDT ships as WebAssembly and imports it as an ES module, which
     // Vite does not resolve on its own.
     wasm(),
+    // Build only: emits the service worker and the web app manifest at
+    // the mount, after the file list they describe exists.
+    offlineShell({
+      base: BASE_PATH,
+      name: 'ProFlow Workbench',
+      shortName: 'Workbench',
+      description:
+        'Local-first documents, files and knowledge — everything stays on your device.',
+      themeColor: '#ffffff',
+      backgroundColor: '#ffffff',
+    }),
   ],
   // The gateway (apps/web) proxies the mount prefix here in development and
   // forwards the browser's Host; Vite refuses any Host it was not told about,
@@ -88,6 +100,17 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
+    rolldownOptions: {
+      output: {
+        // The syntax highlighter's grammars are CommonJS files that reach
+        // for a `Prism` global its core sets up, without requiring it — so
+        // the bundler sees no edge between them and is free to run the
+        // grammars first, which throws `Prism is not defined` before the
+        // app's first render. Declaration order is the only thing that
+        // expresses that dependency, so the output has to honour it.
+        strictExecutionOrder: true,
+      },
+    },
   },
   // ES-format workers are required by the database and embedding workers.
   worker: {
@@ -97,11 +120,12 @@ export default defineConfig({
   // PGlite must not be pre-bundled: its worker + WASM asset resolution relies
   // on import.meta.url staying intact.
   optimizeDeps: {
+    // Worker entry points are reached through new Worker(new URL(...)), not
+    // ordinary imports. Scan them up front: discovering their dependencies
+    // after the editor opens can change shared chunks and force a page reload,
+    // discarding the current chat. Keep the page entry in the same scan.
+    entries: ['index.html', '../../packages/*/src/**/*.worker.ts'],
     exclude: ['@electric-sql/pglite', '@electric-sql/pglite-pgvector'],
-    // Dependency pre-bundling has its own target, and it defaults to browsers
-    // old enough to reject top-level await — which is how the CRDT's WASM
-    // loader initialises itself. `build.target` does not cover this step.
-    esbuildOptions: { target: 'esnext' },
   },
   resolve: {
     dedupe: ['react', 'react-dom', 'lexical'],

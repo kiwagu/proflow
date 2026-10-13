@@ -11,14 +11,12 @@ import {
   type MaterializedScenario,
 } from './catalog/index.js';
 import {
-  actorCookieHeader,
   addActor,
   bootstrapEphemeralTenant,
-  fetchFetcher,
   makeSeedClient,
   provisionDemoTenant,
   resetSpaceContent,
-  resolveBaseUrl,
+  resolveSupabaseUrl,
   teardownTenant,
   DEMO_ADMIN_EMAIL,
   DEMO_VIEWER_EMAIL,
@@ -88,8 +86,8 @@ function printList(): void {
 }
 
 /** Disable TLS verification for local self-signed hosts (dev/demo only). */
-function relaxLocalTls(baseUrl: string): void {
-  const host = new URL(baseUrl).hostname;
+function relaxLocalTls(): void {
+  const host = new URL(resolveSupabaseUrl()).hostname;
   if (host.endsWith('.local') || process.env.SEED_INSECURE_TLS === '1') {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     console.warn(`! TLS verification disabled for local host ${host}`);
@@ -126,8 +124,8 @@ async function run(): Promise<void> {
     return;
   }
 
-  const baseUrl = resolveBaseUrl();
-  relaxLocalTls(baseUrl);
+  const baseUrl = resolveSupabaseUrl();
+  relaxLocalTls();
 
   // --reset: zero the demo space's content (no re-seed) and exit.
   if (flags.reset) {
@@ -166,9 +164,7 @@ async function run(): Promise<void> {
   }
 
   const clientFor = async (actor: SeedActor) =>
-    makeSeedClient(
-      fetchFetcher({ baseUrl, cookie: await actorCookieHeader(actor) })
-    );
+    makeSeedClient({ service: tenant.service, actor });
 
   const materialized: MaterializedScenario[] = [];
   try {

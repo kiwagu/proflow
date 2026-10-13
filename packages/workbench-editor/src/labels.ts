@@ -1,5 +1,7 @@
+import type { DocumentVersion } from '@workspace/domain';
 import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
 import type { NodeTransformType } from '@workspace/lexical-react';
+import type { VersionAge } from './history.js';
 
 /**
  * Labels for the format toolbar. The package is i18n-free by convention —
@@ -127,6 +129,49 @@ export const defaultFindReplaceLabels: FindReplaceLabels = {
   matchStatus: (current, total) => `${current} of ${total}`,
 };
 
+/** Labels for the document history panel. */
+export type HistoryLabels = {
+  /** The panel's own heading. */
+  title: string;
+  /** Accessible name of the panel region and of the control that toggles it. */
+  ariaLabel: string;
+  /** Shown instead of the list when the document has no marked version yet. */
+  empty: string;
+  /** The control that returns the document to the previewed version. */
+  restore: string;
+  /** Why a version's preview is not on screen — the version is unreadable. */
+  previewUnavailable: string;
+  /** How the version came to be marked, shown as a badge on its row. */
+  kind: Record<DocumentVersion['kind'], string>;
+  /** How long ago a version was marked, in words. */
+  age: (age: VersionAge) => string;
+};
+
+export const defaultHistoryLabels: HistoryLabels = {
+  title: 'History',
+  ariaLabel: 'Document history',
+  empty: 'No versions yet. They are marked as you write.',
+  restore: 'Restore this version',
+  previewUnavailable: 'This version cannot be previewed.',
+  kind: {
+    manual: 'Saved',
+    idle: 'Auto',
+    'pre-ai-edit': 'Before assistant',
+  },
+  age: (age) => {
+    switch (age.unit) {
+      case 'now':
+        return 'Just now';
+      case 'minutes':
+        return `${age.count} min ago`;
+      case 'hours':
+        return `${age.count} h ago`;
+      case 'days':
+        return `${age.count} d ago`;
+    }
+  },
+};
+
 /**
  * Builds the format toolbar's labels from the workbench catalog: literal
  * `workbench.editor.*` keys, looked up through the app's loaded translator.
@@ -182,6 +227,36 @@ export function buildTableInsertLabels(
 export function buildOutlineLabels(t: WorkbenchTranslator): OutlineLabels {
   return {
     nav: t('workbench.editor.outline.nav'),
+  };
+}
+
+/**
+ * Builds the document history panel's labels from the workbench catalog.
+ */
+export function buildHistoryLabels(t: WorkbenchTranslator): HistoryLabels {
+  return {
+    title: t('workbench.history.title'),
+    ariaLabel: t('workbench.history.ariaLabel'),
+    empty: t('workbench.history.empty'),
+    restore: t('workbench.history.restore'),
+    previewUnavailable: t('workbench.history.previewUnavailable'),
+    kind: {
+      manual: t('workbench.history.kind.manual'),
+      idle: t('workbench.history.kind.idle'),
+      'pre-ai-edit': t('workbench.history.kind.preAiEdit'),
+    },
+    age: (age) => {
+      switch (age.unit) {
+        case 'now':
+          return t('workbench.history.age.now');
+        case 'minutes':
+          return t('workbench.history.age.minutes', { count: age.count });
+        case 'hours':
+          return t('workbench.history.age.hours', { count: age.count });
+        case 'days':
+          return t('workbench.history.age.days', { count: age.count });
+      }
+    },
   };
 }
 

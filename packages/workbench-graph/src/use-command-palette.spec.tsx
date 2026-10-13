@@ -64,6 +64,58 @@ describe('opening the palette', () => {
     });
     expect(view.result.current.open).toBe(false);
   });
+
+  it('keeps out of the way while the user is typing in the editor', async () => {
+    graph = await openTestGraph();
+    const view = mountPalette(graph);
+
+    const editor = document.createElement('div');
+    Object.defineProperty(editor, 'isContentEditable', { value: true });
+    document.body.appendChild(editor);
+    act(() => {
+      editor.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'k',
+          metaKey: true,
+          bubbles: true,
+        })
+      );
+    });
+    editor.remove();
+
+    // The shortcut must not fight text entry — that is the whole reason the
+    // binding goes through the registry rather than its own listener.
+    expect(view.result.current.open).toBe(false);
+  });
+
+  it('dismisses on Escape, and only while it is open', async () => {
+    graph = await openTestGraph();
+    const view = mountPalette(graph);
+
+    const escape = () =>
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+
+    // Closed: the key belongs to whatever is behind the palette.
+    const ignored = escape();
+    act(() => {
+      window.dispatchEvent(ignored);
+    });
+    expect(ignored.defaultPrevented).toBe(false);
+
+    act(() => view.result.current.setOpen(true));
+    act(() => {
+      // From the palette's own search box — the dismiss class works in a field.
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      input.dispatchEvent(escape());
+      input.remove();
+    });
+    expect(view.result.current.open).toBe(false);
+  });
 });
 
 describe('searching from the palette', () => {

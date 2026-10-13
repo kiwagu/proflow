@@ -5,22 +5,29 @@ import {
 } from '@workspace/domain';
 import { PACKAGE_KINDS } from '@workspace/package-kinds';
 import {
+  createBroadcastDocumentPeers,
   createDocumentCrdtStore,
+  createPgliteChatListReader,
+  createPgliteChatMessageRepository,
+  createPgliteChatRepository,
   createPgliteDocumentListReader,
   createPgliteDocumentRepository,
   createPgliteDocumentVersionStore,
-  createPgliteFileRepository,
-  createPgliteFileTreeReader,
+  createGraphFileRepository,
+  createGraphFileTreeReader,
   createPgliteGraphReader,
   createPgliteGraphRepository,
   createPglitePackageReader,
   createPglitePackageRepository,
   createPgliteSettingsStore,
+  createPgliteStorageMaintenance,
   type OpenStage,
   openLocalDatabase,
 } from '@workspace/persistence-pglite';
+import { createLiveDocuments } from '../features/live-documents';
 import { storageNamespace, type WorkbenchSession } from './session';
 import type { AppServices } from './services';
+import type { ReportError } from '../shell/operation-errors';
 
 /**
  * Composition root — the only module in the app allowed to import adapter
@@ -61,9 +68,10 @@ const DB_STAGE_NAMES: Record<OpenStage, string> = {
 };
 
 export async function createAppServices(
-  reportError: (message: string) => void,
+  errors: { report: ReportError; resolve: (key: string) => void },
   session: WorkbenchSession
 ): Promise<AppServices> {
+  const reportError = errors.report;
   const namespace = storageNamespace(session);
   if (!session.spaceId) throw new Error('No active space');
   // The database and the blob store open side by side: bytes live in the
@@ -84,8 +92,20 @@ export async function createAppServices(
 
   // Documents are CRDTs; this store owns the open ones and their persistence.
   // Both the repository and the version store read through it, so they always
-  // agree about what a document currently is.
-  const documentCrdt = createDocumentCrdtStore(db);
+  // agree about what a document currently is. What an open editor holds is
+  // folded into its document before a remote merge, so the store reads the
+  // editors' registry — built here and handed to the app's provider, so
+  // both sides hold the same one.
+  const liveDocuments = createLiveDocuments();
+  const documentCrdt = createDocumentCrdtStore(db, {
+    live: {
+      read: (id) => liveDocuments.read(id),
+      author: { user: session.userId, src: 'human' },
+    },
+    // Other tabs of this browser share the database but hold their own
+    // copies of open documents: each tells the others what it wrote.
+    peers: createBroadcastDocumentPeers(),
+  });
 
   // Everything the user edits in place — creating, renaming, moving,
   // starring, deleting — shows the moment it is asked for. A live query
@@ -100,9 +120,20 @@ export async function createAppServices(
     documentList,
   } = createOptimisticFiles({
     entities: optimistic,
-    files: createPgliteFileRepository(db, blobs, blobs.packages),
-    tree: createPgliteFileTreeReader(db),
-    documents: createPgliteDocumentRepository(db, documentCrdt),
+    files: createGraphFileRepository(
+      db,
+      blobs,
+      session.spaceId,
+      session.userId,
+      blobs.packages
+    ),
+    tree: createGraphFileTreeReader(db, session.spaceId, session.userId),
+    documents: createPgliteDocumentRepository(
+      db,
+      documentCrdt,
+      session.spaceId,
+      session.userId
+    ),
     documentList: createPgliteDocumentListReader(db),
     onError: reportError,
   });
@@ -121,9 +152,18 @@ export async function createAppServices(
     documents,
     documentList,
     documentVersions: createPgliteDocumentVersionStore(db, documentCrdt),
+    documentCrdt,
+    liveDocuments,
+    documentChanges: documentCrdt,
     files,
     fileTree,
     blobs,
+    storageMaintenance: createPgliteStorageMaintenance(
+      db,
+      blobs,
+      blobs.packages,
+      files
+    ),
     packages: createPglitePackageRepository(
       db,
       blobs,
@@ -134,7 +174,11 @@ export async function createAppServices(
     settings: createPgliteSettingsStore(db),
     graph: createPgliteGraphReader(db),
     graphCommands: createPgliteGraphRepository(db),
+    chats: createPgliteChatRepository(db),
+    chatList: createPgliteChatListReader(db),
+    chatMessages: createPgliteChatMessageRepository(db),
     identity: { userId: session.userId, spaceId: session.spaceId },
     reportError,
+    resolveError: errors.resolve,
   };
 }

@@ -3,7 +3,18 @@ import {
   createServerStandIn,
   type ServerStandIn,
 } from './testing/server-stand-in.js';
-import { createReplica, DOC_ID, type Replica } from './testing/replica.js';
+import { PGlite } from '@electric-sql/pglite';
+import { createDocumentSync } from './document-sync.js';
+import { createPgliteJournal, createPgliteLedger } from './pglite-ledger.js';
+import type { SyncTransport } from './types.js';
+import {
+  createReplica,
+  DOC_ID,
+  LOCAL_SCHEMA,
+  type Replica,
+  SPACE_ID,
+  TextDocument,
+} from './testing/replica.js';
 
 /**
  * The sync protocol end to end: real Loro documents, real PGlite on both
@@ -290,6 +301,124 @@ describe('document sync', () => {
       expect(r.versionHex()).toBe(first!.versionHex());
     }
     expect(first!.text().length).toBeGreaterThan(0);
+  });
+
+  it('never folds into a compaction the rows its proposer has not pulled', async () => {
+    const a = await replica('client-a');
+    const b = await createReplica('client-b', server, {
+      compaction: { maxRows: 2 },
+    });
+    replicas.push(b);
+    await a.edit('from A. ');
+    await a.push();
+    // B pushes without having pulled A's row: two rows reach the threshold.
+    await b.edit('from B. ');
+    await b.push();
+
+    const c = await replica('client-c');
+    await c.pull();
+    expect(c.text()).toContain('from A. ');
+    expect(c.text()).toContain('from B. ');
+  });
+
+  it('compacts after a push from a proposer that holds every row before it', async () => {
+    const a = await replica('client-a');
+    const b = await createReplica('client-b', server, {
+      compaction: { maxRows: 2 },
+    });
+    replicas.push(b);
+    await a.edit('from A. ');
+    await a.push();
+    await b.pull();
+    await b.edit('from B. ');
+    expect((await b.push()).compacted).toBe(true);
+    expect(await server.updateCount(DOC_ID)).toBe(0);
+
+    const c = await replica('client-c');
+    await c.pull();
+    expect(c.text()).toBe('from A. from B. ');
+  });
+
+  it('never folds a row another tab pulled into a copy that has not taken it in', async () => {
+    // Two tabs of one device: one local database (one ledger, one journal),
+    // two copies of the document, two engines.
+    const a = await replica('client-a');
+    await a.edit('from A. ');
+    await a.push();
+
+    const local = await PGlite.create();
+    await local.exec(LOCAL_SCHEMA);
+    const ledger = createPgliteLedger(local);
+    const journal = createPgliteJournal(local);
+    const tab1 = new TextDocument();
+    const tab2 = new TextDocument();
+    const engine1 = createDocumentSync({
+      transport: server,
+      ledger,
+      journal,
+      writer: 'tab-1',
+      compaction: false,
+    });
+    const engine2 = createDocumentSync({
+      transport: server,
+      ledger,
+      journal,
+      writer: 'tab-2',
+      compaction: { maxRows: 2 },
+    });
+    // Tab 1 pulls A's row and records it in the shared ledger; tab 2's copy
+    // has not taken it in.
+    await engine1.pull(DOC_ID, tab1);
+    await engine2.pull(DOC_ID, tab2);
+    tab2.doc.getText('body').insert(0, 'from tab 2. ');
+    tab2.doc.commit();
+    await engine2.push(DOC_ID, tab2, SPACE_ID);
+
+    const c = await replica('client-c');
+    await c.pull();
+    expect(c.text()).toContain('from A. ');
+    expect(c.text()).toContain('from tab 2. ');
+    await local.close();
+  });
+
+  it('misses nothing when a compaction lands between the reads of one pull', async () => {
+    const a = await replica('client-a');
+    const c = await replica('client-c');
+    for (const text of ['one. ', 'two. ', 'three. ']) {
+      await a.edit(text);
+      await a.push();
+    }
+    // Whichever of its two reads this pull makes first, another client
+    // compacts the log and a new row lands before the second one.
+    let between: (() => Promise<void>) | undefined = async () => {
+      await c.pull();
+      expect(await c.proposeCompaction(3)).toBe(true);
+      await a.edit('four. ');
+      await a.push();
+    };
+    const fire = async () => {
+      const run = between;
+      between = undefined;
+      if (run) await run();
+    };
+    const racing: SyncTransport = {
+      ...server,
+      head: async (docId) => {
+        const head = await server.head(docId);
+        await fire();
+        return head;
+      },
+      tail: async (docId, afterSeq) => {
+        const tail = await server.tail(docId, afterSeq);
+        await fire();
+        return tail;
+      },
+    };
+    const b = await createReplica('client-b', racing);
+    replicas.push(b);
+    await b.pull();
+    await b.pull();
+    expect(b.text()).toBe('one. two. three. four. ');
   });
 });
 

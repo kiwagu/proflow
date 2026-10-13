@@ -2,6 +2,7 @@
 
 import { useGraphNodes } from '@workspace/persistence-pglite/react';
 import type { GraphNode } from '@workspace/persistence-pglite';
+import { useHotkey } from '@workspace/ui/hooks/use-hotkey';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGraphReader, useSpaceId } from './graph-services.js';
 
@@ -21,6 +22,14 @@ import { useGraphReader, useSpaceId } from './graph-services.js';
 
 /** Below this many characters a term matches too much to be useful. */
 const MIN_TERM_LENGTH = 2;
+
+/**
+ * The keystroke that opens the palette, exported so the surface that ADVERTISES
+ * it renders from the same description the binding is registered with — a hint
+ * and its shortcut cannot then drift apart. Render it with `hotkeyLabel`, which
+ * is where the platform question is answered.
+ */
+export const COMMAND_PALETTE_HOTKEY = { key: 'k', mod: true } as const;
 
 export function useCommandPalette() {
   const reader = useGraphReader();
@@ -54,21 +63,10 @@ export function useCommandPalette() {
    */
   const liveNodes = useGraphNodes(reader, spaceId, 'live');
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // ⌘K (mac) / Ctrl+K (win/linux) — `metaKey || ctrlKey` covers both
-      // without sniffing the platform.
-      if (
-        event.key?.toLowerCase() === 'k' &&
-        (event.metaKey || event.ctrlKey)
-      ) {
-        event.preventDefault();
-        setOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // ⌘K / Ctrl+K toggles the palette, through the app's one shortcut registry —
+  // so it stays out of the way while the user is typing in the editor, and an
+  // overlay's own binding can outrank it.
+  useHotkey(COMMAND_PALETTE_HOTKEY, () => setOpen((prev) => !prev));
 
   const trimmed = term.trim();
   const tooShort = trimmed.length < MIN_TERM_LENGTH;
@@ -101,6 +99,25 @@ export function useCommandPalette() {
     setOpen(next);
     setTerm('');
   }, []);
+
+  /**
+   * Escape dismisses an OPEN palette, registered only while it is open so the
+   * key stays free for whatever is behind it otherwise. `whileTyping` because
+   * the focus sits in the palette's own search box when the user reaches for
+   * it — this is the dismiss class the registry's typing guard exempts.
+   *
+   * The dialog's own Escape handling would also close it; going through the
+   * registry is what makes the close identical to every other one (the term is
+   * reset, so re-opening is a fresh box) instead of a second path with its own
+   * behaviour.
+   */
+  useHotkey(
+    { key: 'Escape', whileTyping: true },
+    () => handleOpenChange(false),
+    {
+      enabled: open,
+    }
+  );
 
   // An answer counts only while it answers the term in the box.
   const current = searching && answer?.term === trimmed ? answer : null;

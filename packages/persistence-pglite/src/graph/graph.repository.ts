@@ -1,7 +1,7 @@
 import { newId } from '@workspace/domain';
 import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import { err, ok, type Result } from 'neverthrow';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { AppDb } from '../db/db.js';
 import {
   GRAPH_NODE_COLUMNS,
@@ -24,10 +24,10 @@ import type { GraphNode, ResourceFloor } from './graph.types.js';
  * drops that op and every journaled op touching the same node and re-pulls
  * those rows — the pull IS the rollback, so there is no local undo log here.
  *
- * Every op is idempotent by construction (upsert by client-minted id, column
- * patch keyed by id, edge upsert on the natural key, timestamp write, delete
- * by id), which is what makes at-least-once replay safe without dedup
- * machinery.
+ * Journal replay is idempotent at the server transport (upsert by
+ * client-minted id, column patch, edge upsert, timestamp write, delete by id).
+ * A new local create is not a replay: a duplicate id must report a conflict
+ * rather than claim an existing node was just created.
  */
 
 /** The op vocabulary the journal carries, one entry per structural command. */
@@ -61,6 +61,8 @@ export type GraphOpKind = (typeof GRAPH_OPS)[keyof typeof GRAPH_OPS];
  */
 export type MoveNodeInput = z.input<typeof moveKnowledgeResourceInputSchema>;
 
+const localBodyRefSchema = z.record(z.string(), z.unknown()).nullable();
+
 export type CreateNodeInput = {
   spaceId: string;
   kind: string;
@@ -71,6 +73,8 @@ export type CreateNodeInput = {
   status?: string;
   visibility?: ResourceFloor;
   ownerUserId?: string | null;
+  /** Opaque body pointer; replication of the document bytes is independent. */
+  body_ref?: z.infer<typeof localBodyRefSchema>;
   /** Optional container: creates the `contains` edge in the same transaction. */
   parentId?: string | null;
   position?: number;
@@ -222,7 +226,9 @@ async function journal(
   );
 }
 
-export function createPgliteGraphRepository(db: AppDb): GraphRepository {
+export function createPgliteGraphRepository(
+  db: Pick<AppDb, 'query' | 'transaction'>
+): GraphRepository {
   /**
    * Run a command's local write and its journal append as one unit. The two
    * must not come apart: a replica row without its journal entry is a change
@@ -274,13 +280,13 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
       const id = input.id ?? newId('knowledgeResource');
       const edgeId = input.parentId ? newId('knowledgeEdge') : null;
       try {
-        await db.transaction(async (raw) => {
+        const node = await db.transaction(async (raw) => {
           const tx = raw as unknown as Tx;
-          await tx.query(
+          const { rows } = await tx.query(
             `insert into knowledge_resources
-               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)
-             on conflict (id) do nothing`,
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id, body_ref)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+             returning ${GRAPH_NODE_COLUMNS}`,
             [
               id,
               input.spaceId,
@@ -290,8 +296,15 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
               input.visibility ?? 'private',
               input.createdBy,
               input.ownerUserId ?? input.createdBy,
+              JSON.stringify(localBodyRefSchema.parse(input.body_ref ?? null)),
             ]
           );
+          if (rows.length !== 1) {
+            throw new Error(
+              `knowledge_resources INSERT RETURNING expected 1 row, received ${rows.length} for id ${id}`
+            );
+          }
+          const inserted = toGraphNode(rows[0] as GraphNodeRow);
           if (input.parentId && edgeId) {
             await tx.query(
               `insert into knowledge_edges
@@ -320,23 +333,26 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
               status: input.status ?? 'draft',
               visibility: input.visibility ?? 'private',
               ownerUserId: input.ownerUserId ?? input.createdBy,
+              ...(input.body_ref !== undefined
+                ? { body_ref: localBodyRefSchema.parse(input.body_ref) }
+                : {}),
               parentId: input.parentId ?? null,
               position: input.position ?? 0,
               edgeId,
             },
             input.parentId ? [id, input.parentId] : [id]
           );
+          // Capture the result before sync can evict the row after commit.
+          return inserted;
         });
+        return node
+          ? ok(node)
+          : err(
+              `graph.createNode: transaction returned no result for id ${id}`
+            );
       } catch (e) {
         return err(`graph.createNode failed: ${String(e)}`);
       }
-      const { rows } = await db.query<GraphNodeRow>(
-        `select ${GRAPH_NODE_COLUMNS} from knowledge_resources where id = $1`,
-        [id]
-      );
-      return rows[0]
-        ? ok(toGraphNode(rows[0]))
-        : err('graph.createNode: insert returned no row');
     },
 
     renameNode(nodeId, title) {

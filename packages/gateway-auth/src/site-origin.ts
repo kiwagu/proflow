@@ -1,6 +1,6 @@
 import { getGatewayPlatformPath } from './gateway-paths';
 
-/** Default dev gateway entry (apps/web); author runs on `AUTHOR_DEV_PORT` (3002) in isolation. */
+/** Default dev gateway entry (apps/web); the workbench runs on `WORKBENCH_DEV_PORT` (3002) in isolation. */
 const DEFAULT_DEV_GATEWAY_ORIGIN = 'http://localhost:3000';
 
 /**
@@ -32,10 +32,10 @@ export function inferSiteOrigin(headers: Headers): string {
 }
 
 /**
- * When author is opened directly on its dev port (e.g. :3002), `Host` is wrong for platform sign-in:
- * `/platform` is mounted on the gateway (e.g. :3000), not on author. Map to the default dev gateway.
+ * When the workbench is opened directly on its dev port (e.g. :3002), `Host` is wrong for platform sign-in:
+ * `/platform` is mounted on the gateway (e.g. :3000), not on the workbench. Map to the default dev gateway.
  */
-function devGatewayOriginWhenAuthorDevPort(
+function devGatewayOriginWhenWorkbenchDevPort(
   inferredOrigin: string
 ): string | null {
   if (process.env.NODE_ENV !== 'development') {
@@ -43,8 +43,8 @@ function devGatewayOriginWhenAuthorDevPort(
   }
   try {
     const u = new URL(inferredOrigin);
-    const authorPort = process.env.AUTHOR_DEV_PORT ?? '3002';
-    if (u.hostname === 'localhost' && u.port === authorPort) {
+    const workbenchPort = process.env.WORKBENCH_DEV_PORT ?? '3002';
+    if (u.hostname === 'localhost' && u.port === workbenchPort) {
       return DEFAULT_DEV_GATEWAY_ORIGIN;
     }
   } catch {
@@ -65,7 +65,7 @@ export function resolvePublicSiteOrigin(headers: Headers): string {
     return explicit;
   }
   const inferred = inferSiteOrigin(headers);
-  return devGatewayOriginWhenAuthorDevPort(inferred) ?? inferred;
+  return devGatewayOriginWhenWorkbenchDevPort(inferred) ?? inferred;
 }
 
 /**

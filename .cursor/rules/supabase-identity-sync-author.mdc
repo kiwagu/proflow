@@ -20,12 +20,10 @@ alwaysApply: false
 ## Descend To
 
 - User-ownership boundary: `/.cursor/rules/platform-centralized-user-management.mdc`
-- Payload mirror workflow: `/.agents/skills/platform-centralized-user-management/SKILL.md`
+- Mirror workflow: `/.agents/skills/platform-centralized-user-management/SKILL.md`
 - Continue within this file for transport, delivery, and idempotency details.
 
-**Scope:** `auth.users` changes are fanned out as canonical lifecycle events (`user.created` | `user.updated` | `user.deleted`). **Any** application that keeps a mirror of Supabase user identifiers (Payload `users`, CRM rows, support DBs, future shells) should **subscribe via JetStream** using **`@workspace/domain-events`** — not a bespoke HTTP push.
-
-**Reference consumer in this repo:** Author (`apps/author`) runs a JetStream worker next to Next dev; the pattern applies equally to new gateway-mounted apps or services that need the same mirror.
+**Scope:** `auth.users` changes are fanned out as canonical lifecycle events (`user.created` | `user.updated` | `user.deleted`). **Any** application that keeps a mirror of Supabase user identifiers (CMS user tables, CRM rows, support DBs, future shells) should **subscribe via JetStream** using **`@workspace/domain-events`** — not a bespoke HTTP push.
 
 Studio and Auth admin API mutate `auth.users`. **Delete**, **update**, and **Studio/Admin create** use Postgres triggers → Edge **`identity_lifecycle_fanout`** **internal ingest** (header `X-Identity-Internal-Secret` = DB `identity_sync.outbound_config.internal_secret`). **Public signup** also invokes GoTrue **`after-user-created`** (signed hook; URI + `whsec` in `infra/dev/supabase/docker-compose.yml`). `make db-push` syncs DB `internal_secret` from **`DEV_IDENTITY_INTERNAL_INGEST_SECRET`** in the root `Makefile` (must match compose `IDENTITY_INTERNAL_INGEST_SECRET`). **`user.created`** is safe if both trigger and hook fire (idempotent handlers).
 
@@ -39,10 +37,9 @@ Wire format: **`@workspace/domain-events`** (Zod v4 envelopes + NATS subject hel
 - **`@workspace/domain-events` in Edge:** workers resolve imports under the function directory. Compose bind-mounts **`packages/domain-events/dist`** → `identity_lifecycle_fanout/domain_events_dist`; `deno.json` maps `@workspace/domain-events` → **`./domain_events_dist/index.js`**. Run **`bun run build --filter=@workspace/domain-events`** (or rely on **`turbo` `dev` → `dependsOn: ["^build"]`** where the mirror app pulls that package) so **`dist/`** exists before Edge starts or after contract changes.
 - **`@workspace/logger` in Edge:** bind-mount **`packages/logger/dist`** → **`logger_dist`**; `deno.json` maps **`@workspace/logger`** → **`../logger_dist/index.js`** (and **`pino`** → **`npm:pino@…`**). Build with **`bun run build --filter=@workspace/logger`**. Use **`withLogContext({ requestId })`** so **`requestId`** is mixed into every log line; **`LOG_LEVEL`** / **`LOG_FORMAT`** env on the `functions` service.
 
-## Mirror consumers (Author and beyond)
+## Mirror consumers
 
 - Each mirror app needs a **process** (or task) that consumes the stream: durable consumer, `NATS_URL` reachable from that host (e.g. `nats://127.0.0.1:4222` published from compose), optional `IDENTITY_NATS_STREAM` / `IDENTITY_NATS_CONSUMER` / `filter_subject` when multiple apps share the stream.
-- **Author (example):** `bun run dev` runs Next + `identity:jetstream` worker concurrently; **`bun run identity:jetstream`** runs the worker alone.
 - Consumers must be **idempotent**:
   - treat `user.created` as safe to apply more than once
   - use stable identifiers (`auth.users.id` / `user_id` and `profiles.entity_id`) as the mirror key

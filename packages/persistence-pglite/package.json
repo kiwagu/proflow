@@ -41,6 +41,7 @@
     "@workspace/domain": "workspace:*",
     "@workspace/embedding": "workspace:*",
     "@workspace/knowledge-contracts": "workspace:*",
+    "@workspace/lexical-nodes": "workspace:*",
     "neverthrow": "catalog:",
     "zod": "catalog:"
   },
@@ -50,6 +51,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/react": "catalog:",
+    "@workspace/doc-sync": "workspace:*",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
     "eslint": "catalog:",

@@ -29,8 +29,7 @@ export function getDomFactory<N extends LexicalNode>(
   nodeClass: Klass<N>
 ): DomFactory<N> | undefined {
   return factories.get(nodeClass as Klass<LexicalNode>) as
-    | DomFactory<N>
-    | undefined;
+    DomFactory<N> | undefined;
 }
 
 export function clearDomFactories(): void {

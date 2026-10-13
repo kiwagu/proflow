@@ -207,9 +207,8 @@ export class ResourceMentionNode extends DecoratorNode<
   }
 
   decorate(): DecoratorComponent<ResourceMentionDecoratorProps> | undefined {
-    const decorator = getDecorator<ResourceMentionDecoratorProps>(
-      ResourceMentionNode
-    );
+    const decorator =
+      getDecorator<ResourceMentionDecoratorProps>(ResourceMentionNode);
     if (!decorator) return undefined;
     const props = { ...this.getInfo(), key: this.__key };
     return () => decorator(props);

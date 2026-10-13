@@ -47,8 +47,8 @@ function nodeTypes(markdown: string): string[] {
     },
     { discrete: true }
   );
-  // Element transformers append into the block they matched in, so the node
-  // we care about is generally not a direct child of the root.
+  // The whole tree, not just the root's children: a tag inside a table cell
+  // or a list item sits deeper.
   return instance.getEditorState().read(() => {
     const types: string[] = [];
     const visit = (node: ReturnType<typeof $getRoot>) => {

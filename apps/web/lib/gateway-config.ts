@@ -42,9 +42,9 @@ export const GATEWAY_UPSTREAMS = [
     entry: platformPrefix,
   },
   {
-    name: 'author',
+    name: 'workbench',
     prefix: authorPrefix satisfies GatewayRoutePrefix,
-    port: Number(process.env.AUTHOR_DEV_PORT ?? 3002),
+    port: Number(process.env.WORKBENCH_DEV_PORT ?? 3002),
     // The workbench SPA (apps/workbench) lives under `<mount>/`: its dev
     // server answers nothing at the bare mount, so the gateway sends the
     // bare-mount visit to the slash form where its index is.

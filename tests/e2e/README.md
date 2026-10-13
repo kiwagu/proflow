@@ -57,6 +57,13 @@ The `seededUser` fixture creates and removes a temporary Supabase auth user
 for each consuming test. Global teardown sweeps residual E2E fixtures.
 Specs consume this user via a typed Playwright fixture: `seededUser`.
 
+**Cold Workbench startup (`@full`):** `src/workbench-cold-start.e2e.spec.ts`
+starts the real Vite config on a temporary loopback port with an empty optimizer
+cache for every test. Login and backend requests still use the shared gateway.
+It asserts that worker dependencies load and the chat replies without an HMR
+full reload or extra page navigation. No cache warmup, clock mocking, or product
+timer overrides are used; the temporary server/cache are removed after the case.
+
 ## Run tests
 
 - `bun run test:e2e:smoke` (from repo root, PR checks)

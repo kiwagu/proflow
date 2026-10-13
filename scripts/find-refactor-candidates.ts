@@ -25,7 +25,7 @@
  *
  * Usage (from repo root):
  *   bun run scripts/find-refactor-candidates.ts                 # whole repo
- *   bun run scripts/find-refactor-candidates.ts apps/author     # scope to a path
+ *   bun run scripts/find-refactor-candidates.ts apps/workbench  # scope to a path
  *   bun run scripts/find-refactor-candidates.ts --json          # agent mode
  *   bun run scripts/find-refactor-candidates.ts --limit 400     # set refactor gate
  *   bun run scripts/find-refactor-candidates.ts --warn 200 --critical 1000

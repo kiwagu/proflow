@@ -131,18 +131,6 @@
       "vite-plugin-wasm": "^3.5.0",
       "vitest": "^4.1.10",
       "zod": "^4.4.3"
-    },
-    "catalogs": {
-      "payload": {
-        "payload": "3.86.0",
-        "@payloadcms/db-mongodb": "3.86.0",
-        "@payloadcms/next": "3.86.0",
-        "@payloadcms/plugin-multi-tenant": "3.86.0",
-        "@payloadcms/richtext-lexical": "3.86.0",
-        "@payloadcms/storage-s3": "3.86.0",
-        "@payloadcms/translations": "3.86.0",
-        "@payloadcms/ui": "3.86.0"
-      }
     }
   },
   "dependencies": {

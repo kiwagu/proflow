@@ -1,0 +1,13 @@
+{
+  "extends": "@workspace/typescript-config/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noUncheckedIndexedAccess": false,
+    "lib": ["es2022", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/service-worker.ts"],
+  "exclude": ["node_modules", "dist"]
+}

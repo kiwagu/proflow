@@ -1,13 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
-import type { SeedClient } from '../engine/http.js';
+import type { SeedClient } from '../engine/rows.js';
 import type { SeedActor, SeedTenant } from '../engine/types.js';
 import type { BodylessNode, SeedNode, SeedScenario } from './types.js';
 
 /**
- * Caller-supplied wiring: how to build an HTTP client for an actor (CLI → fetch;
- * e2e → Playwright) and how to mint a fresh/stable actor with a system role.
+ * Caller-supplied wiring: how to build a row-writing client for an actor, and
+ * how to mint a fresh/stable actor with a system role.
  */
 export type MaterializeDeps = {
   tenant: SeedTenant;
@@ -27,8 +27,7 @@ export type MaterializedScenario = {
 };
 
 /**
- * Walk one scenario through the `/author/graph/*` endpoints (and the owner's RLS
- * client for the few writes no endpoint exposes), returning every `ref → id`.
+ * Walk one scenario through the create-vocabulary, returning every `ref → id`.
  * This is the single interpreter both the demo seed and the e2e specs run.
  */
 export async function materializeScenario(
@@ -153,8 +152,9 @@ export async function materializeScenario(
       node.kind === 'text' && (node.status || node.workflowKey);
 
     if (hasWorkflow) {
-      // Status/workflow fields are not exposed by the create endpoints — author
-      // the node directly under the owner's RLS client (as the e2e seeders do).
+      // The board demo's workflow pair (`status` + `workflow_key`) is not part of the
+      // create-vocabulary — it is a demo of a second status machine, so the node is
+      // written here directly, as the e2e seeders do.
       const { data, error } = await db(ownerRef)
         .from('knowledge_resources')
         .insert({
@@ -197,10 +197,9 @@ export async function materializeScenario(
         parentFolderId
       );
       // A `file`/`video` node with a byte payload becomes REAL through the SAME
-      // upload transport the product drives: authorize the upload under
-      // the OWNER's RLS (server-decided path only), upload the bytes to the private
-      // `kb-media` bucket at that path under the owner's storage client, then confirm
-      // the `kb.resource_media_meta` satellite — NEVER a service-role/direct-SQL insert.
+      // upload transport the product drives: reserve the byte record, upload the
+      // bytes to the private `kb-media` bucket at the server-decided path under the
+      // owner's own storage session, then point the node at the blob.
       if ((node.kind === 'file' || node.kind === 'video') && node.media) {
         await uploadNodeMedia(
           scenario.id,
@@ -211,9 +210,8 @@ export async function materializeScenario(
           db(ownerRef)
         );
       }
-      // A `link` node with a URL becomes REAL through the same attributes route
-      // the product uses (slice-10 §2.4) — the `kb.resource_link` satellite under
-      // the owner's RLS, never a direct-SQL insert.
+      // A `link` node with a URL becomes REAL through the same satellite the product
+      // writes — `kb.resource_link`, stamped with the owner's identity.
       if (node.kind === 'link' && node.url) {
         await c.setLink(spaceId, nodeId, node.url);
       }
@@ -243,13 +241,10 @@ export async function materializeScenario(
       await c.grantUser(nodeId, actor(granteeRef).userId);
     }
     // Workflow-LIFECYCLE status (B1) — drive the declared state through the product's OWN
-    // route (`PATCH /author/graph/status`) under the OWNER's RLS, exactly as the panel's
-    // transition control does (never a direct column write). Always written when declared:
-    // the create-time default differs by kind (a text doc is born `active` via the
-    // text-resource fan-out; a bodyless node defaults `draft`), so an idempotent set makes
-    // the declared status authoritative regardless. The `hasWorkflow` branch above is a
-    // DIFFERENT status axis (the board demo); the validator forbids combining them, so a
-    // node here reached this via the normal create path.
+    // status write as the OWNER, exactly as the panel's transition control does. A node is
+    // born `draft`, so the declared state is always written when present. The `hasWorkflow`
+    // branch above is a DIFFERENT status axis (the board demo); the validator forbids
+    // combining them, so a node here reached this via the normal create path.
     if (node.lifecycleStatus) {
       await c.setStatus(spaceId, nodeId, node.lifecycleStatus);
     }
@@ -338,20 +333,17 @@ export async function materializeScenario(
 }
 
 /**
- * Drive a `file`/`video` node's byte payload through the REAL media transport
- * (resumable/TUS switch), exactly as the product's create flow does — the seed
- * never inserts a media object or `kmm` row via service-role / direct SQL:
- *   1. authorize the upload (`media?op=upload-url`) under the OWNER's RLS
- *      (`space.knowledge.update`), which returns the SERVER-decided `storagePath` only
- *      (the single-PUT signed-url/token leg was removed with the resumable switch);
- *   2. upload the bytes to the private `kb-media` bucket at that server path under the
- *      OWNER's storage-js client. The PRODUCT uploads via resumable TUS; the seed runs in
- *      Node (no browser `tus-js-client`) with tiny fixtures, so it uses the storage-js
- *      STANDARD `upload(storagePath, bytes, { contentType, upsert:false })` — still fenced
- *      by the SAME `storage.objects` INSERT RLS policy (mirroring node-update), still the
- *      user's own JWT, never service-role;
- *   3. confirm the `kb.resource_media_meta` satellite (`attribute:'media'`) — written
- *      ONLY after a successful upload, so a failure leaves NO row (poc-no-fallbacks).
+ * Drive a `file`/`video` node's byte payload through the REAL media transport, exactly
+ * as the product's create flow does:
+ *   1. reserve the byte record (`uploadMediaUrl`), which decides the storage path and
+ *      mints the blob id the path is addressed by;
+ *   2. upload the bytes to the private `kb-media` bucket at that path under the OWNER's
+ *      storage-js client. The PRODUCT uploads via resumable TUS; the seed runs in Node
+ *      (no browser `tus-js-client`) with tiny fixtures, so it uses the storage-js
+ *      STANDARD `upload(storagePath, bytes, { contentType, upsert:false })` — still
+ *      fenced by the SAME `storage.objects` INSERT policy, still the user's own JWT;
+ *   3. point the node at the blob (`setMedia`) — written ONLY after a successful upload,
+ *      so a failure leaves NO row pointing at absent bytes.
  * So both the demo tenant and the e2e fixtures get a genuine object + satellite whose
  * access is fenced by the SAME `storage.objects` / satellite RLS as production.
  */

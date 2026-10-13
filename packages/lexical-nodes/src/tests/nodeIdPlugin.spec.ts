@@ -246,7 +246,10 @@ describe('bulk initialization', () => {
 
     edit(editor, () => {
       $getRoot().clear();
-      $convertFromMarkdownString('# Heading\n\nBody text.', INTERNAL_TRANSFORMERS);
+      $convertFromMarkdownString(
+        '# Heading\n\nBody text.',
+        INTERNAL_TRANSFORMERS
+      );
     });
     edit(editor, () => {
       $updateAllNodeIds(ids);

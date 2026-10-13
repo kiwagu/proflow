@@ -61,27 +61,69 @@ describe('graph repository', () => {
     await db.close();
   });
 
-  it('creates idempotently, so a replayed create writes no second row', async () => {
-    const { db, repo, spaceId } = await open();
+  it('reports the database conflict without journaling a second create', async () => {
+    const { db, repo, ledger, spaceId } = await open();
     const id = 'knr_0000000000000009.0000000000';
-    for (const attempt of ['First', 'Replayed']) {
-      const result = await repo.createNode({
-        spaceId,
-        id,
-        kind: 'text',
-        title: attempt,
-        createdBy: TEST_USER,
-      });
-      expect(result.isOk()).toBe(true);
-    }
-    const { rows } = await db.query<{ count: string }>(
-      'select count(*) as count from knowledge_resources where id = $1',
+    const input = {
+      spaceId,
+      id,
+      kind: 'text' as const,
+      title: 'First',
+      createdBy: TEST_USER,
+    };
+    expect((await repo.createNode(input)).isOk()).toBe(true);
+    const result = await repo.createNode({ ...input, title: 'Conflicting' });
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toContain('duplicate key');
+    expect(result._unsafeUnwrapErr()).toContain('knowledge_resources_pkey');
+    expect(await ledger.pendingCount(spaceId)).toBe(1);
+    const { rows } = await db.query<{ title: string }>(
+      'select title from knowledge_resources where id = $1',
       [id]
     );
-    // `on conflict do nothing`: the row keeps its first title, and there is
-    // exactly one of it.
-    expect(Number(rows[0]?.count)).toBe(1);
+    expect(rows).toEqual([{ title: 'First' }]);
 
+    await db.close();
+  });
+
+  it('reports the database CHECK failure without journaling a create', async () => {
+    const { db, repo, ledger, spaceId } = await open();
+    const result = await repo.createNode({
+      spaceId,
+      id: 'invalid-id',
+      kind: 'text',
+      title: 'Invalid',
+      createdBy: TEST_USER,
+    });
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toContain('check constraint');
+    expect(await ledger.pendingCount(spaceId)).toBe(0);
+    await db.close();
+  });
+
+  it('returns the inserted snapshot even when sync deletes it after commit', async () => {
+    const { db, spaceId } = await open();
+    const id = 'knr_0000000000000009.0000000000';
+    const repo = createPgliteGraphRepository({
+      query: db.query.bind(db),
+      transaction: async (run) => {
+        const result = await db.transaction(run);
+        await db.query('delete from knowledge_resources where id = $1', [id]);
+        return result;
+      },
+    });
+    const result = await repo.createNode({
+      spaceId,
+      id,
+      kind: 'text',
+      title: 'Created',
+      createdBy: TEST_USER,
+    });
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toMatchObject({ id, title: 'Created' });
+    expect((await db.query('select id from knowledge_resources')).rows).toEqual(
+      []
+    );
     await db.close();
   });
 

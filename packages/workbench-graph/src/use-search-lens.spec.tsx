@@ -1,4 +1,10 @@
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GraphServicesProvider } from './graph-services.js';
@@ -271,7 +277,9 @@ describe('resolving a term', () => {
     view.rerender({ term: 'birch' });
 
     await waitFor(() => expect(view.result.current.resolved).toBe(true));
-    expect(view.result.current.error).toBe('Error: Network offline or rejected');
+    expect(view.result.current.error).toBe(
+      'Error: Network offline or rejected'
+    );
     expect(view.result.current.hits).toEqual([]);
     expect(view.result.current.showEmpty).toBe(false);
     expect(view.result.current.loading).toBe(false);
@@ -344,7 +352,7 @@ describe('the lens surface', () => {
           isErr: () => true as const,
           error: 'Index query timeout',
           value: undefined,
-        } as unknown as Awaited<ReturnType<typeof originalSearch.search>>),
+        }) as unknown as Awaited<ReturnType<typeof originalSearch.search>>,
     };
     const Wrapper = wrapperFor(graph);
     render(

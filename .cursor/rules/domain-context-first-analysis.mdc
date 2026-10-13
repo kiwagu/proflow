@@ -38,7 +38,7 @@ alwaysApply: true
 
 - **Domain context** — business language, ownership rules, permissions, lifecycle states, idempotency semantics, events, and invariants.
 - **Application context** — use-case orchestration: request parsing, auth/session-to-domain mapping, transaction boundaries, dedupe wiring, event dispatch, server actions, workers, and route handlers.
-- **Infrastructure context** — concrete delivery and persistence: Postgres tables/RLS/RPC, Supabase Auth, Payload collections, JetStream/NATS, SMTP, storage, Next proxy/routing, and framework config.
+- **Infrastructure context** — concrete delivery and persistence: Postgres tables/RLS/RPC, Supabase Auth, JetStream/NATS, SMTP, storage, Next proxy/routing, and framework config.
 
 ## Interpretation for this project
 
@@ -64,7 +64,7 @@ alwaysApply: true
 ## Anti-patterns
 
 - Starting from a UI component or route handler when the feature is really about a domain rule.
-- Letting database shape, Payload collection shape, or route layout define the business model.
+- Letting database shape or route layout define the business model.
 - Mixing domain policy with transport or framework code in one function.
 - Treating mirrors, caches, or downstream consumers as authoritative writers.
 - Forcing heavy clean-architecture ceremony onto simple CRUD or presentation-only work.

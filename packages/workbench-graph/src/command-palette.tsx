@@ -4,9 +4,12 @@ import type { GraphNode } from '@workspace/persistence-pglite';
 import {
   Command,
   CommandDialog,
+  CommandGroup,
   CommandInput,
+  CommandItem,
   CommandList,
 } from '@workspace/ui/components/command';
+import { Zap } from 'lucide-react';
 import { ResultList } from './result-list.js';
 import {
   commitPaletteSelection,
@@ -38,6 +41,28 @@ export type CommandPaletteLabels = {
   kindLabel: (kind: string) => string;
 };
 
+/**
+ * Something the host can DO from the box, beside what it can find. The host
+ * declares them — which ones exist is its business (an export needs an open
+ * document) — and the palette lists, narrows and dispatches.
+ */
+export type PaletteCommand = {
+  id: string;
+  label: string;
+  run: () => void;
+};
+
+/** The commands the term leaves standing; all of them while it is empty. */
+function commandsFor(
+  commands: readonly PaletteCommand[],
+  term: string
+): PaletteCommand[] {
+  const needle = term.toLowerCase();
+  return commands.filter(
+    (command) => needle === '' || command.label.toLowerCase().includes(needle)
+  );
+}
+
 const rowOf = (node: GraphNode) => ({
   id: node.id,
   kind: node.kind,
@@ -48,11 +73,14 @@ export function CommandPalette({
   labels,
   handlers,
   state,
+  commands = [],
 }: {
   labels: CommandPaletteLabels;
   handlers: CommandPaletteHandlers;
   /** The palette state — hoisted so the host can also open it from a button. */
   state: ReturnType<typeof useCommandPalette>;
+  /** What the host offers to do from here, on top of what it can find. */
+  commands?: readonly PaletteCommand[];
 }) {
   const { open, setOpen, term, setTerm, trimmed, items, loading, tooShort } =
     state;
@@ -61,6 +89,11 @@ export function CommandPalette({
     setOpen(false);
     commitPaletteSelection(node, handlers);
   };
+  const runCommand = (command: PaletteCommand) => {
+    setOpen(false);
+    command.run();
+  };
+  const visibleCommands = commandsFor(commands, trimmed);
 
   return (
     <CommandDialog
@@ -86,6 +119,29 @@ export function CommandPalette({
           className="max-h-[min(60vh,420px)]"
           data-testid="command-palette-results"
         >
+          {visibleCommands.length > 0 ? (
+            <CommandGroup>
+              {visibleCommands.map((command) => (
+                <CommandItem
+                  key={command.id}
+                  // Namespaced: cmdk keys items by value, and a command must
+                  // never collide with a node id below it.
+                  value={`command:${command.id}`}
+                  onSelect={() => runCommand(command)}
+                  data-testid="command-palette-command"
+                  className="gap-3"
+                >
+                  <Zap
+                    className="text-muted-foreground size-4 shrink-0"
+                    aria-hidden
+                  />
+                  <span className="truncate text-sm font-medium">
+                    {command.label}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
           <ResultList
             items={items}
             rowOf={rowOf}

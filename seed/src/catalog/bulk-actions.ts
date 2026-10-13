@@ -18,9 +18,9 @@ import type { SeedScenario } from './types.js';
  *    (the scenario's `trash` list), so the Trash lens opens with a known trashed set for
  *    bulk Restore.
  *
- * Every row is created through the same `/author/graph/*` create-vocabulary the demo
- * seed uses (folders/docs via the live routes, the two trashed via the resource DELETE
- * = soft-trash) — never a migration seed.
+ * Every row is created through the same create-vocabulary the demo
+ * seed uses (folders/docs, the two trashed via `trash` = soft-delete) — never a
+ * migration seed.
  */
 export const BULK_ACTIONS_SCENARIO: SeedScenario = {
   id: 'bulk-actions',

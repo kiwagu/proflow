@@ -66,7 +66,7 @@ export async function isGatewayUpstreamReachable(
 
 const APP_HINT: Record<string, string> = {
   platform: 'apps/platform',
-  author: 'apps/workbench',
+  workbench: 'apps/workbench',
 };
 
 export function gatewayUpstreamStubResponse(

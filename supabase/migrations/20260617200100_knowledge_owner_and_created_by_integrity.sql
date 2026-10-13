@@ -14,11 +14,12 @@
  *   be silently null. Existing rows are backfilled. (Authoring paths that DO set
  *   an explicit owner — e.g. the body fan-out — are unaffected.)
  *
- * finding #5 — mutable created_by transfers body-bridge authority
- * - `rpc_enqueue_body_bridge_job` gates on `knowledge_resources.created_by =
- *   auth.uid()`. The UPDATE policy's WITH CHECK never re-asserts `created_by`, so
- *   an editor with space.knowledge.update can rewrite `created_by` and hijack the
- *   body-bridge creator authority for a node they do not own.
+ * finding #5 — mutable created_by transfers creator authority
+ * - `knowledge_resources.created_by` is a creator-authority anchor: RLS grants
+ *   rights on rows where `created_by = auth.uid()`. The UPDATE policy's WITH
+ *   CHECK never re-asserts `created_by`, so an editor with
+ *   space.knowledge.update can rewrite `created_by` and hijack creator
+ *   authority for a node they do not own.
  * - fix: a BEFORE UPDATE trigger pins `created_by` to its OLD value (any attempt
  *   to change it is rejected). Immutability is enforced at the row level, so it
  *   holds for every update path (RLS policy, RPC, or service-role app code).
@@ -77,7 +78,7 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  -- created_by gates body-bridge creator authority; it must never be reassigned.
+  -- created_by anchors creator authority in RLS; it must never be reassigned.
   if new.created_by is distinct from old.created_by then
     raise exception
       'knowledge_resources.created_by is immutable and cannot be reassigned';
@@ -87,7 +88,7 @@ end;
 $$;
 
 comment on function public.assert_knowledge_resource_created_by_immutable() is
-  'Pins knowledge_resources.created_by to its original value on update so body-bridge creator authority cannot be transferred (review finding #5).';
+  'Pins knowledge_resources.created_by to its original value on update so creator authority cannot be transferred (review finding #5).';
 
 drop trigger if exists knowledge_resources_created_by_immutable
   on public.knowledge_resources;

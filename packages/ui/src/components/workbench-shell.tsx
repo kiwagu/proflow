@@ -24,6 +24,8 @@ import { cn } from '@workspace/ui/lib/utils';
 
 /** Unified left-panel chrome. */
 const PANEL_CHROME = 'bg-sidebar flex flex-col border-r';
+/** The same chrome, mirrored for the right-hand side. */
+const ASIDE_CHROME = 'bg-sidebar flex flex-col border-l';
 /** Internal panel padding (one convention for every tab's panel). */
 const PANEL_PADDING = 'px-3 py-3';
 
@@ -35,9 +37,18 @@ export type WorkbenchPanel = {
   className?: string;
 };
 
+/** The right-hand region. Same descriptor as the left one, mirrored. */
+export type WorkbenchAside = WorkbenchPanel;
+
 export type WorkbenchShellProps = Readonly<{
   /** Optional fixed-width left sidebar in the unified chrome. */
   panel?: WorkbenchPanel;
+  /**
+   * Optional fixed-width right sidebar, the mirror of `panel`. Omitted means
+   * the region is not there at all, so a closed companion surface costs no
+   * layout — which is why open/closed is the caller's state, not a prop here.
+   */
+  aside?: WorkbenchAside;
   /** Optional top toolbar strip (for tabs whose controls live across the top). */
   toolbar?: React.ReactNode;
   /** The main content region (canvas / reader / map). */
@@ -63,8 +74,27 @@ function WorkbenchShellPanel({ panel }: { panel: WorkbenchPanel }) {
   );
 }
 
+/** The right-hand region, in the mirrored chrome. */
+function WorkbenchShellAside({ aside }: { aside: WorkbenchAside }) {
+  return (
+    <aside
+      aria-label={aside['aria-label']}
+      style={{ width: `${aside.width}px` }}
+      className={cn(
+        ASIDE_CHROME,
+        PANEL_PADDING,
+        'min-h-0 shrink-0',
+        aside.className
+      )}
+    >
+      {aside.children}
+    </aside>
+  );
+}
+
 export function WorkbenchShell({
   panel,
+  aside,
   toolbar,
   main,
   className,
@@ -78,6 +108,7 @@ export function WorkbenchShell({
         {toolbar ? <div className="shrink-0">{toolbar}</div> : null}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{main}</div>
       </div>
+      {aside ? <WorkbenchShellAside aside={aside} /> : null}
     </div>
   );
 }

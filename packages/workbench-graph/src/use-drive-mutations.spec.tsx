@@ -42,6 +42,42 @@ function mountDrive(open: TestGraph) {
 }
 
 describe('moving a node on the drive', () => {
+  it('reports a refused move with a way to try it again', async () => {
+    graph = await openTestGraph();
+    const source = await graph.node('Source');
+    const doc = await graph.node('Doc', { kind: 'text', parentId: source });
+    const view = mountDrive(graph);
+    await waitFor(() =>
+      expect(view.result.current.data.containment.parentOf.get(doc)).toBe(
+        source
+      )
+    );
+
+    // A target the move contract refuses (not a node id at all): the store
+    // answers with an error, and the surface reports it.
+    const nowhere = 'not-a-node-id';
+    let accepted = true;
+    await act(async () => {
+      accepted = await view.result.current.mutations.moveNode(doc, nowhere);
+    });
+    expect(accepted).toBe(false);
+    expect(graph.reported).toHaveLength(1);
+    expect(graph.reported[0]?.key).toBe(`move:${doc}`);
+    const retry = graph.reported[0]?.retry;
+    expect(retry).toBeTypeOf('function');
+
+    // Retrying repeats the same move, and a store that still refuses is
+    // reported again rather than silently dropped.
+    let again = true;
+    await act(async () => {
+      again = await retry!();
+    });
+    expect(again).toBe(false);
+    expect(graph.reported).toHaveLength(2);
+    // Under the same key: the host replaces the notice instead of stacking.
+    expect(graph.reported[1]?.key).toBe(`move:${doc}`);
+  });
+
   it('re-parents it, and the canvas follows without a refetch', async () => {
     graph = await openTestGraph();
     const source = await graph.node('Source');

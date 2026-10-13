@@ -37,7 +37,7 @@ alwaysApply: false
 ## Expected Batch Flow
 
 1. Find the batch under `docs/upstream-inbox/pending/<batch>/`.
-2. Read `manifest.md` first, then verify the installed runtime version if the batch targets a versioned framework such as Payload.
+2. Read `manifest.md` first, then verify the installed runtime version if the batch targets a versioned framework.
 3. Inspect `raw/` only as needed.
 4. Map the incoming changes to existing rules or skills.
 5. Rewrite the result in the repository's pyramid format, keeping the repository's installed version as the authority when upstream docs differ.

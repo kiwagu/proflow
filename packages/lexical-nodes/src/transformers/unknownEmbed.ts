@@ -13,22 +13,31 @@ import {
   $isUnknownEmbedNode,
   UnknownEmbedNode,
 } from '../nodes/UnknownEmbedNode';
+import { $placeBlock } from './inline';
 
-/** Any `<x-*>...</x-*>` tag this build does not have a transformer for. */
+/**
+ * Any `<x-*>...</x-*>` tag this build does not have a transformer for, as
+ * the whole line — the same footprint as the tags it stands in for, and for
+ * the same reason (see `xmlMatcher`). A tag inside a sentence is not an
+ * embed; it stays the text it was.
+ */
 export const I_UNKNOWN_EMBED: ElementTransformer = {
   dependencies: [UnknownEmbedNode],
   type: 'element',
-  regExp: /<(x-[a-z0-9-]+)>(.*?)<\/\1>/,
+  regExp: /^(<(x-[a-z0-9-]+)>(.*?)<\/\2>)\s*$/,
   export: (node: LexicalNode) => {
     if (!$isUnknownEmbedNode(node)) return null;
     return node.getRaw();
   },
-  replace: (parent: ElementNode, _children, match: string[]) => {
-    parent.append(
+  replace: (parent: ElementNode, children, match: string[], isImport) => {
+    $placeBlock(
+      parent,
+      children,
       $createUnknownEmbedNode({
-        tag: match[1] ?? 'x-unknown',
-        raw: match[0] ?? '',
-      })
+        tag: match[2] ?? 'x-unknown',
+        raw: match[1] ?? '',
+      }),
+      isImport
     );
   },
 };

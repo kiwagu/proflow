@@ -160,6 +160,7 @@ export type Database = {
           created_at: string
           created_by: string
           format: string
+          head_seq: number
           id: string
           snapshot: string | null
           snapshot_seq: number
@@ -170,6 +171,7 @@ export type Database = {
           created_at?: string
           created_by: string
           format?: string
+          head_seq?: number
           id?: string
           snapshot?: string | null
           snapshot_seq?: number
@@ -180,6 +182,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           format?: string
+          head_seq?: number
           id?: string
           snapshot?: string | null
           snapshot_seq?: number
@@ -210,7 +213,7 @@ export type Database = {
           created_at?: string
           created_by: string
           doc_id: string
-          seq?: never
+          seq?: number
           writer: string
         }
         Update: {
@@ -218,7 +221,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           doc_id?: string
-          seq?: never
+          seq?: number
           writer?: string
         }
         Relationships: [
@@ -1493,6 +1496,15 @@ export type Database = {
       entity_id_encode_ts_10: { Args: { ms: number }; Returns: string }
       entity_id_generate: { Args: { prefix: string }; Returns: string }
       knowledge_user_scope_ids: { Args: never; Returns: string[] }
+      move_knowledge_resource: {
+        Args: {
+          p_node_id: string
+          p_position: number
+          p_space_id: string
+          p_target_parent_id: string
+        }
+        Returns: undefined
+      }
       outbox_queue_name: { Args: { p_channel: string }; Returns: string }
       role_catalog_audit_snapshot: {
         Args: { p_role_id: string }
@@ -1563,10 +1575,6 @@ export type Database = {
         Returns: boolean
       }
       rpc_end_break_glass: { Args: { p_session_id: string }; Returns: Json }
-      rpc_enqueue_body_bridge_job: {
-        Args: { p_idempotency_key: string; p_node_id: string; p_payload: Json }
-        Returns: Json
-      }
       rpc_enqueue_outbox_job: {
         Args: {
           p_aggregate_id: string

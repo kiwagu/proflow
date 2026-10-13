@@ -42,6 +42,7 @@
     "./shell-guest-access": "./src/shell-guest-access.ts",
     "./site-origin": "./src/site-origin.ts",
     "./supabase/browser": "./src/supabase-browser.ts",
+    "./supabase/goaway-retry": "./src/supabase-goaway-retry.ts",
     "./supabase/server": "./src/supabase-server.ts",
     "./active-space.constants": "./src/active-space.constants.ts",
     "./active-space.cookie": "./src/active-space.cookie.ts",

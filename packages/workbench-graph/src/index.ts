@@ -1,6 +1,7 @@
 export {
   CommandPalette,
   type CommandPaletteLabels,
+  type PaletteCommand,
 } from './command-palette.js';
 export {
   buildCommandPaletteLabels,
@@ -45,6 +46,7 @@ export {
 export {
   activationForKind,
   commitPaletteSelection,
+  COMMAND_PALETTE_HOTKEY,
   useCommandPalette,
   type CommandPaletteHandlers,
   type NodeActivation,

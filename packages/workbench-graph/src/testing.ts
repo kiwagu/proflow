@@ -35,6 +35,12 @@ export type TestGraph = {
   document: (title: string, markdown: string) => Promise<string>;
   /** The failures the surface reported to the host during the case. */
   errors: string[];
+  /** The same reports with what came along — a key and a retry, when offered. */
+  reported: Array<{
+    message: string;
+    key?: string;
+    retry?: () => Promise<boolean>;
+  }>;
 };
 
 export async function openTestGraph(
@@ -53,6 +59,7 @@ export async function openTestGraph(
   const commands = createPgliteGraphRepository(db);
   const graph = createPgliteGraphReader(db);
   const errors: string[] = [];
+  const reported: TestGraph['reported'] = [];
   const engine = options.withSearch
     ? createPgliteSemanticSearch(db, createHashEmbedder())
     : null;
@@ -63,7 +70,14 @@ export async function openTestGraph(
     spaceId: TEST_SPACE,
     userId: TEST_USER,
     ...(engine ? { search: localSearchProvider(engine) } : {}),
-    onError: (message) => errors.push(message),
+    onError: (message, options) => {
+      errors.push(message);
+      reported.push({
+        message,
+        ...(options?.key ? { key: options.key } : {}),
+        ...(options?.retry ? { retry: options.retry } : {}),
+      });
+    },
   };
 
   const node = async (
@@ -83,21 +97,17 @@ export async function openTestGraph(
     return result.value.id;
   };
 
-  const document = async (
-    title: string,
-    markdown: string
-  ): Promise<string> => {
+  const document = async (title: string, markdown: string): Promise<string> => {
     if (!engine) {
       throw new Error('openTestGraph({ withSearch: true }) is required');
     }
     const id = newId('document');
     // The engine reads exactly these two tables; seeding them directly keeps
     // the case about the search, not about the CRDT save path.
-    await db.query('insert into document (id, title, preview) values ($1, $2, $3)', [
-      id,
-      title,
-      markdown.slice(0, 120),
-    ]);
+    await db.query(
+      'insert into document (id, title, preview) values ($1, $2, $3)',
+      [id, title, markdown.slice(0, 120)]
+    );
     await db.query(
       `insert into document_content (document_id, lexical_json, markdown)
        values ($1, '{}'::jsonb, $2)`,
@@ -110,7 +120,7 @@ export async function openTestGraph(
     return id;
   };
 
-  return { db, services, node, document, errors };
+  return { db, services, node, document, errors, reported };
 }
 
 /** A syntactically valid node id that is deliberately not in the replica. */

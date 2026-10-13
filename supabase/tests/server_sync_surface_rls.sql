@@ -543,4 +543,107 @@ begin
 end
 $probe$;
 
+-- ---------------------------------------------------------------------------
+-- M. atomic move: one canonical parent, explicit refusal, cycle rollback
+-- ---------------------------------------------------------------------------
+do $move$
+declare
+  v_a text; v_b text; u_alice uuid; u_mal uuid;
+  f1 text; f2 text; leaf text; child_of_leaf text;
+  n int; parent_id text;
+begin
+  select v into v_a from t14_ids where k='space_a';
+  select v into v_b from t14_ids where k='space_b';
+  select v::uuid into u_alice from t14_ids where k='alice';
+  select v::uuid into u_mal   from t14_ids where k='mallory';
+
+  raise notice '=== M. atomic move_knowledge_resource ===';
+
+  -- fixture as owner: two folders, a leaf under f1, a grandchild under leaf.
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M f1', u_alice, u_alice) returning id into f1;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M f2', u_alice, u_alice) returning id into f2;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M leaf', u_alice, u_alice) returning id into leaf;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'text', 'M grandchild', u_alice, u_alice) returning id into child_of_leaf;
+  insert into public.knowledge_edges (space_id, from_id, to_id, relation_type, position, created_by)
+  values (v_a, f1, leaf, 'contains', 0, u_alice),
+         (v_a, leaf, child_of_leaf, 'contains', 0, u_alice);
+
+  -- (a) move into a folder: exactly one incoming contains, from f2
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 3);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M1 move into folder: one parent = target', '1:'||f2, n::text||':'||coalesce(parent_id,'null'));
+  exception when others then perform pg_temp.t14_report('M1 move into folder','1:'||f2,'ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (c) same call again: state unchanged
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 3);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains' and from_id = f2;
+    perform pg_temp.t14_report('M2 redelivered move is a no-op', '1', n::text);
+  exception when others then perform pg_temp.t14_report('M2 redelivered move','1','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (d) two sequential moves: the later one wins, still one parent
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f1, 0);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 0);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M3 later move wins, one parent', '1:'||f2, n::text||':'||coalesce(parent_id,'null'));
+  exception when others then perform pg_temp.t14_report('M3 later move wins','1:'||f2,'ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (b) move to top level: no incoming contains
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, null, 0);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M4 move to top level: zero parents', '0', n::text);
+  exception when others then perform pg_temp.t14_report('M4 move to top level','0','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- re-attach under f1 in its own block: the probes below start from a known parent
+  -- and must not share a subtransaction with a probe that is expected to raise
+  -- (a raise rolls the whole begin..exception block back).
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f1, 0);
+  exception when others then perform pg_temp.t14_report('M5a re-attach under f1','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (e) a direct second contains edge is refused by the index
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.knowledge_edges (space_id, from_id, to_id, relation_type, position, created_by)
+    values (v_a, f2, leaf, 'contains', 0, u_alice);
+    perform pg_temp.t14_report('M5 second contains edge refused by index', 'DENIED', 'ALLOWED');
+  exception when unique_violation then perform pg_temp.t14_report('M5 second contains edge refused by index', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M5 second contains edge','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (f) cross-space caller: explicit refusal, graph untouched
+  begin perform pg_temp.t14_as(u_mal);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 0);
+    perform pg_temp.t14_report('M6 cross-space move refused', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('M6 cross-space move refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M6 cross-space move','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+  perform pg_temp.t14_report('M6b graph unchanged after refusal', f1, coalesce(parent_id,'null'));
+
+  -- (g) cycle: moving leaf under its own grandchild is refused and the old parent survives
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, child_of_leaf, 0);
+    perform pg_temp.t14_report('M7 cycle refused', 'DENIED', 'ALLOWED');
+  exception when raise_exception then perform pg_temp.t14_report('M7 cycle refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M7 cycle','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+  perform pg_temp.t14_report('M7b prior parent kept after cycle rollback', f1, coalesce(parent_id,'null'));
+end
+$move$;
+
 rollback;

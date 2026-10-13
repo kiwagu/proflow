@@ -1,4 +1,5 @@
 import {
+  type AgentPagePorts,
   type AgentWorkerClient,
   createAgentWorkerClient,
 } from '@workspace/ai-agent';
@@ -8,22 +9,27 @@ export type { AgentWorkerClient };
 /**
  * Starts the agent worker and returns the page's client for it.
  *
- * The worker takes the page's `?embedder=` choice as a query on its own URL:
- * a test that loads the page with `?embedder=hash` gets a worker whose
- * search tools run on the deterministic embedder too, and nothing has to
- * be plumbed through the protocol for it.
+ * The literal `new URL('./agent.worker.ts', import.meta.url)` stands as the
+ * DIRECT argument of `new Worker(...)`, and must stay that way: that exact
+ * form is how the bundler recognises a worker. Behind a variable, or wrapped
+ * in a call, it emits no worker chunk — the module is inlined as an
+ * untranspiled `data:` URL that cannot resolve its own imports, and nothing
+ * fails until a built page tries to start the worker.
+ *
+ * Nothing rides on the URL either. A query there is worse than useless: the
+ * dev server picks its loader from the extension it reads off the URL, and a
+ * dot in a query value reads as the start of a new one — so
+ * `?namespace=spc_x.01m2…` stopped the file being TypeScript and it was
+ * parsed as JavaScript, dying on its first `import type`. Entity ids are
+ * dotted by construction, so that dot was a guarantee, not bad luck.
+ *
+ * The worker needs no configuration in any case: it opens no database. Every
+ * port it serves the agent over is a proxy back to `ports` here, because the
+ * local database is exclusive and the page owns the only client.
  */
-export function startAgentWorker(options?: {
-  /** Which embedder the worker should run; defaults to the page's query. */
-  embedder?: string | null;
-}): AgentWorkerClient {
-  const workerUrl = new URL('./agent.worker.ts', import.meta.url);
-  const embedder = options?.embedder ?? embedderFromPage();
-  if (embedder) workerUrl.searchParams.set('embedder', embedder);
-  return createAgentWorkerClient(new Worker(workerUrl, { type: 'module' }));
-}
-
-function embedderFromPage(): string | null {
-  if (typeof window === 'undefined') return null;
-  return new URLSearchParams(window.location.search).get('embedder');
+export function startAgentWorker(ports: AgentPagePorts): AgentWorkerClient {
+  const worker = new Worker(new URL('./agent.worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  return createAgentWorkerClient(worker, ports);
 }

@@ -34,6 +34,7 @@ export {
   type AgentContextValue,
   useAgent,
   useEditorBridge,
+  useMaybeAgent,
 } from './react/agent-context';
 export { useChatSession, type UseChatSession } from './react/use-chat-session';
 export { type AgentWorkerClient, startAgentWorker } from './worker/start';

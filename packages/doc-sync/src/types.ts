@@ -27,13 +27,37 @@ export interface SyncableDocument {
   /**
    * Merges pulled blobs. Operations already present no-op, which is what
    * makes at-least-once delivery safe. Accepts snapshot blobs too.
+   *
+   * Called at most ONCE per pull, with everything the pull brings, and a
+   * call that returns is always followed by `SyncJournal.append` for the
+   * same blobs.
    */
   importUpdates(updates: Uint8Array[]): void;
+  /**
+   * Called once per pull immediately before `importUpdates`, in the same
+   * synchronous step. A document that holds edits not committed yet (an
+   * open editor's tree) commits them here, so they are part of the version
+   * the engine compares against what it has pushed — never mistaken for
+   * part of what it pulled.
+   */
+  prepareImport?(): void;
 }
 
 export interface SyncHead {
   snapshot: Uint8Array | null;
   snapshotSeq: number;
+}
+
+/** One document's place in the space feed: how far its log goes and when it last moved. */
+export interface SyncDocumentHead {
+  docId: string;
+  headSeq: number;
+  updatedAt: Date;
+}
+
+export interface SyncHeadsPage {
+  rows: SyncDocumentHead[];
+  hasMore: boolean;
 }
 
 export interface SyncTailRow {
@@ -73,6 +97,21 @@ export interface SyncTransport {
    * trusted: every nudge triggers the same watermark query a poll would.
    */
   subscribeInserts(docId: string, onNudge: () => void): () => void;
+  /**
+   * Heads of the space's documents changed at or after `since` (null = all
+   * of them), oldest first with the id as tiebreaker, `limit` at a time
+   * from `offset`. At-least-once like everything else here: the caller
+   * re-reads an overlap window below its cursor, and a head it already
+   * holds costs one ledger read.
+   */
+  heads(
+    spaceId: string,
+    since: Date | null,
+    limit: number,
+    offset: number
+  ): Promise<SyncHeadsPage>;
+  /** A nudge that some document of the space moved — the same contract as `subscribeInserts`. */
+  subscribeSpace(spaceId: string, onNudge: () => void): () => void;
 }
 
 /**
@@ -90,6 +129,13 @@ export interface SyncLedger {
   recordPush(documentId: string, pushedVv: Uint8Array): Promise<void>;
   /** Only ever advances — a stale write must not move the watermark back. */
   recordPull(documentId: string, pulledSeq: number): Promise<void>;
+  /**
+   * The space feed cursor, already backed off by the overlap window; null
+   * when the space was never read (a checkout — read every head).
+   */
+  headsCursor(spaceId: string): Promise<Date | null>;
+  /** Only ever advances. */
+  advanceHeadsCursor(spaceId: string, cursor: Date): Promise<void>;
 }
 
 /**

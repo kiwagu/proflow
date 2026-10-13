@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 
 import {
   authenticatedClient,
@@ -211,25 +212,83 @@ export async function addActor(
 }
 
 /**
- * Cascade-delete the org (→ spaces → resources/edges/projections/memberships/
- * user_role) and the actor auth users + profiles. `extraUserIds` cover any actors
- * added after bootstrap. Ephemeral tenants only — never call on the demo tenant.
+ * Destroy an ephemeral tenant completely: the space's content first, then the
+ * space, the organization, and every participant's profile + auth user.
+ *
+ * Order is not cosmetic. Deleting the organization alone cascades into spaces
+ * and on into `knowledge_resources`, whose BEFORE-DELETE audit trigger writes a
+ * tombstone referencing the space — which by then is already gone, so the audit
+ * insert violates its foreign key and the whole delete fails. Removing the
+ * content while its space still exists keeps every tombstone resolvable.
+ *
+ * The participant set is READ FROM THE TENANT, not from the caller: a scenario
+ * mints its own actors as it runs, and a caller-supplied list would silently
+ * miss exactly those. `extraUserIds` remains for participants that never became
+ * members.
+ *
+ * Every delete is error-checked. Unchecked errors are what let this stay broken
+ * silently: the tenant looked torn down while orgs, spaces and resources
+ * accumulated in the database run after run.
+ *
+ * Ephemeral tenants only — never call on the demo tenant.
  */
 export async function teardownTenant(
   tenant: SeedTenant,
   extraUserIds: string[] = []
 ): Promise<void> {
-  const { service, organizationId, granted, ungranted, member } = tenant;
-  await service.from('organizations').delete().eq('id', organizationId);
-  for (const userId of [
+  const { service, organizationId, spaceId, granted, ungranted, member } =
+    tenant;
+
+  // Read the membership BEFORE the organization goes: the memberships cascade
+  // away with it, and with them any record of who took part.
+  const { data: members, error: membersErr } = await service
+    .from('organization_memberships')
+    .select('user_id')
+    .eq('organization_id', organizationId);
+  if (membersErr) {
+    throw new Error(`teardownTenant members: ${membersErr.message}`);
+  }
+
+  await resetSpaceContent(service, spaceId);
+
+  const { error: spaceErr } = await service
+    .from('spaces')
+    .delete()
+    .eq('organization_id', organizationId);
+  if (spaceErr) {
+    throw new Error(`teardownTenant spaces: ${spaceErr.message}`);
+  }
+
+  const { error: orgErr } = await service
+    .from('organizations')
+    .delete()
+    .eq('id', organizationId);
+  if (orgErr) {
+    throw new Error(`teardownTenant organization: ${orgErr.message}`);
+  }
+
+  const userIds = new Set<string>([
     granted.userId,
     ungranted.userId,
     // `member` may be absent on a hand-built tenant; guard the field.
     ...(member ? [member.userId] : []),
+    ...(members ?? []).map((row) => (row as { user_id: string }).user_id),
     ...extraUserIds,
-  ]) {
-    await service.from('profiles').delete().eq('user_id', userId);
-    await service.auth.admin.deleteUser(userId);
+  ]);
+  for (const userId of userIds) {
+    const { error: profileErr } = await service
+      .from('profiles')
+      .delete()
+      .eq('user_id', userId);
+    if (profileErr) {
+      throw new Error(
+        `teardownTenant profile ${userId}: ${profileErr.message}`
+      );
+    }
+    const { error: userErr } = await service.auth.admin.deleteUser(userId);
+    if (userErr) {
+      throw new Error(`teardownTenant user ${userId}: ${userErr.message}`);
+    }
   }
 }
 
@@ -262,8 +321,63 @@ export async function resetSpaceContent(
   await del('knowledge_edges');
   // Now edge-free → the purge guard passes; cascades scope links / activity / satellites.
   await del('knowledge_resources');
+  // Document bodies and blob records are keyed by space. In teardown the space
+  // itself goes and cascades them, but `--reset` keeps the space and rebuilds its
+  // content — without this a demo re-seed would leave every previous body behind,
+  // unreachable and counted.
+  await del('crdt_documents');
+  // The uploaded bytes, though, outlive every row that points at them — an object
+  // in a bucket has no foreign key to cascade, so a teardown that only drops rows
+  // leaves the bytes on disk (measured: nine orphaned objects per run). Remove them
+  // while the blob records still name their paths, then drop the records.
+  await reapSpaceMedia(service, spaceId);
   await del('scopes'); // cascades scope_memberships
   await del('reporting_lines');
+}
+
+/**
+ * Delete a space's uploaded media: the bucket objects first (addressed by the
+ * blob records), then the records. Storage failures are fatal here — this is the
+ * cleanup path whose whole purpose is leaving nothing behind, so a silent failure
+ * would defeat it.
+ */
+async function reapSpaceMedia(
+  service: SupabaseClient,
+  spaceId: string
+): Promise<void> {
+  const kb = service.schema('kb');
+  const { data: blobs, error } = await kb
+    .from('media_blob')
+    .select('storage_bucket, storage_path')
+    .eq('space_id', spaceId);
+  if (error) throw new Error(`resetSpaceContent media_blob: ${error.message}`);
+
+  const byBucket = new Map<string, string[]>();
+  for (const row of (blobs ?? []) as {
+    storage_bucket: string | null;
+    storage_path: string;
+  }[]) {
+    const bucket = row.storage_bucket ?? KB_MEDIA_BUCKET;
+    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), row.storage_path]);
+  }
+  for (const [bucket, paths] of byBucket) {
+    const { error: removeErr } = await service.storage
+      .from(bucket)
+      .remove(paths);
+    if (removeErr) {
+      throw new Error(
+        `resetSpaceContent storage ${bucket}: ${removeErr.message}`
+      );
+    }
+  }
+
+  const { error: blobErr } = await kb
+    .from('media_blob')
+    .delete()
+    .eq('space_id', spaceId);
+  if (blobErr) {
+    throw new Error(`resetSpaceContent media_blob delete: ${blobErr.message}`);
+  }
 }
 
 // ── Demo tenant (the persistent `--demo` fixtures — idempotent) ──────────────

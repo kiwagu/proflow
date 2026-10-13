@@ -10,20 +10,29 @@
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
     "format": "bunx prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",
+    "test:vitest": "bunx vitest run",
+    "test": "bunx vitest run"
   },
   "dependencies": {
+    "@supabase/ssr": "catalog:",
     "@workspace/blob-store": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "@workspace/doc-sync": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/gateway-auth": "workspace:*",
+    "@workspace/graph-sync": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
     "@workspace/package-kinds": "workspace:*",
     "@workspace/persistence-pglite": "workspace:*",
     "@workspace/ui": "workspace:*",
+    "@workspace/workbench-agent": "workspace:*",
     "@workspace/workbench-editor": "workspace:*",
     "@workspace/workbench-files": "workspace:*",
     "@workspace/workbench-graph": "workspace:*",
+    "fast-deep-equal": "catalog:",
     "lexical": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
@@ -31,16 +40,21 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
+    "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
+    "@workspace/ai-agent": "workspace:*",
+    "@workspace/ai-ops": "workspace:*",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:^",
     "eslint": "catalog:",
+    "jsdom": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plugin-wasm": "catalog:"
+    "vite-plugin-wasm": "catalog:",
+    "vitest": "catalog:"
   }
 }

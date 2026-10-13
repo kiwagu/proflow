@@ -12,8 +12,8 @@ import type { SeedScenario } from './types.js';
  * (no admin/curator cross-owner cascade — admins keep EXPLICIT per-node re-share).
  *
  * The worked example — the MINIMAL multi-owner tree that exercises the whole matrix, all
- * in ONE space, every row born the product's way (runtime, under each owner's own RLS via
- * `/author/graph/*` — NEVER a migration seed). Actors:
+ * in ONE space, every row born the product's way (runtime, stamped with each owner's own
+ * identity — NEVER a migration seed). Actors:
  *  - `admin`     — Owner A (the folder owner + sharer; base `admin` role, holds access).
  *  - `grantee`   — the person A shares the folder WITH (plain `member`, read+create).
  *  - `ownerB`    — a SECOND owner whose node A files into A's folder (plain `member`).

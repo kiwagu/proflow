@@ -32,6 +32,7 @@ export type FileExplorerLabels = {
     actionUnpacked: string;
     discardUnpacked: string;
     moveTo: string;
+    exportMarkdown: string;
     delete: string;
   };
   pane: {
@@ -51,6 +52,7 @@ export type FileExplorerLabels = {
     discardUnpacked: (reason: string) => string;
     createFolder: (reason: string) => string;
     import: (name: string, reason: string) => string;
+    importEncoding: (name: string) => string;
   };
 };
 
@@ -78,6 +80,7 @@ export const defaultFileExplorerLabels: FileExplorerLabels = {
     actionUnpacked: 'Unpacked',
     discardUnpacked: 'Delete unpacked files',
     moveTo: 'Move to',
+    exportMarkdown: 'Export as Markdown',
     delete: 'Delete',
   },
   pane: {
@@ -94,9 +97,12 @@ export const defaultFileExplorerLabels: FileExplorerLabels = {
   },
   errors: {
     unpack: (reason) => `Could not unpack: ${reason}`,
-    discardUnpacked: (reason) => `Could not delete the unpacked files: ${reason}`,
+    discardUnpacked: (reason) =>
+      `Could not delete the unpacked files: ${reason}`,
     createFolder: (reason) => `Could not create the folder: ${reason}`,
     import: (name, reason) => `Could not import ${name}: ${reason}`,
+    importEncoding: (name) =>
+      `Could not import ${name}: the file is not UTF-8 text`,
   },
 };
 
@@ -131,6 +137,7 @@ export function buildFileExplorerLabels(
       actionUnpacked: t('workbench.files.action.unpacked'),
       discardUnpacked: t('workbench.files.action.discardUnpacked'),
       moveTo: t('workbench.files.action.moveTo'),
+      exportMarkdown: t('workbench.files.action.exportMarkdown'),
       delete: t('workbench.files.action.delete'),
     },
     pane: {
@@ -154,6 +161,8 @@ export function buildFileExplorerLabels(
         t('workbench.files.error.createFolder', { reason }),
       import: (name, reason) =>
         t('workbench.files.error.import', { name, reason }),
+      importEncoding: (name) =>
+        t('workbench.files.error.importEncoding', { name }),
     },
   };
 }

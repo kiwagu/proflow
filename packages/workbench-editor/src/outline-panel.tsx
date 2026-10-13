@@ -4,7 +4,11 @@ import { useLexicalWrapper } from '@workspace/lexical-react';
 import { ScrollArea } from '@workspace/ui/components/scroll-area';
 import { cn } from '@workspace/ui/lib/utils';
 import { useEffect, useState } from 'react';
-import { getActiveHeadingIndex, shouldShowOutline, useOutlineHeadings } from './outline.js';
+import {
+  getActiveHeadingIndex,
+  shouldShowOutline,
+  useOutlineHeadings,
+} from './outline.js';
 import { defaultOutlineLabels, type OutlineLabels } from './labels.js';
 
 export type OutlineProps = {
@@ -90,7 +94,9 @@ export function Outline({
               <button
                 type="button"
                 aria-label={heading.text}
-                aria-current={activeKey === heading.key ? 'location' : undefined}
+                aria-current={
+                  activeKey === heading.key ? 'location' : undefined
+                }
                 className={cn(
                   'text-muted-foreground hover:bg-accent hover:text-foreground h-7 w-full truncate rounded-md px-2 text-left text-xs',
                   activeKey === heading.key && 'text-foreground font-semibold'

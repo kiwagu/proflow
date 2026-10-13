@@ -5,9 +5,11 @@ import {
 } from '@workspace/domain';
 import { err, ok } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
+import { graphInTransaction } from '../graph/graph.transaction.js';
 import { type ContentCache, createContentCache } from './content-cache.js';
 import type { DocumentCrdtStore } from './document.crdt-store.js';
 import { type DocumentRow, toDocumentMeta } from './document.mapper.js';
+import { AWAITING_SYNC } from './document.materialize.js';
 
 const META_COLUMNS =
   'id, title, kind, preview, starred, created_at, updated_at';
@@ -15,10 +17,27 @@ const META_COLUMNS =
 export function createPgliteDocumentRepository(
   db: AppDb,
   crdt: DocumentCrdtStore,
+  spaceId: string,
+  userId: string,
   cache: ContentCache = createContentCache()
 ): IDocumentRepository {
   // Minted per instance: each tab and each worker is its own writer.
   const writer = newId('writer');
+  // A merge from another device rewrote the document: an entry cached
+  // before it would reopen the old body, and the next save from that body
+  // would revert what the other device wrote.
+  /** Remote merges seen per document: a save that saw one must not overwrite it. */
+  const merges = new Map<string, number>();
+  crdt.onChanged((event) => {
+    if (event.source !== 'remote') return;
+    merges.set(event.id, (merges.get(event.id) ?? 0) + 1);
+    const cached = cache.get(event.id);
+    if (!cached) return;
+    cache.set(event.id, {
+      meta: cached.meta,
+      content: { tree: event.tree, markdown: event.markdown },
+    });
+  });
   return {
     writer,
 
@@ -30,7 +49,7 @@ export function createPgliteDocumentRepository(
     async create(input) {
       try {
         const id = input?.id ?? newId('document');
-        const nodeId = input?.nodeId ?? newId('fileNode');
+        const nodeId = input?.nodeId ?? newId('knowledgeResource');
         // The document and its place in the file tree are one fact.
         const row = await db.transaction(async (tx) => {
           const { rows } = await tx.query<DocumentRow>(
@@ -39,11 +58,16 @@ export function createPgliteDocumentRepository(
              returning ${META_COLUMNS}`,
             [id, input?.title ?? '', input?.kind ?? 'md']
           );
-          await tx.query(
-            `insert into file_node (id, parent_id, kind, name, document_id)
-             values ($1, $2, 'document', $3, $4)`,
-            [nodeId, input?.parentId ?? null, input?.title ?? '', id]
-          );
+          const created = await graphInTransaction(tx).createNode({
+            id: nodeId,
+            spaceId,
+            createdBy: userId,
+            kind: 'text',
+            title: input?.title ?? '',
+            parentId: input?.parentId ?? null,
+            body_ref: { doc_id: id },
+          });
+          if (created.isErr()) throw new Error(created.error);
           return rows[0];
         });
         if (!row) return err('insert returned no row');
@@ -69,16 +93,38 @@ export function createPgliteDocumentRepository(
           DocumentRow & {
             lexical_json: unknown;
             content_markdown: string | null;
+            awaiting_sync: boolean;
           }
         >(
           `select ${META_COLUMNS.replaceAll(/(^|, )/g, '$1d.')},
-                  c.lexical_json, c.markdown as content_markdown
+                  c.lexical_json, c.markdown as content_markdown,
+                  (${AWAITING_SYNC}) as awaiting_sync
            from document d left join document_content c on c.document_id = d.id
            where d.id = $1 and d.deleted_at is null`,
           [id]
         );
         const row = rows[0];
-        if (!row) return err(`document ${id} not found`);
+        if (!row) {
+          // The graph brought the node and the explorer shows it at once;
+          // the document row follows with the materializer. In between, the
+          // body is on its way, not missing.
+          const { rows: nodes } = await db.query<DocumentRow>(
+            `select $1::text as id, r.title, 'md' as kind, '' as preview,
+                    false as starred, r.created_at, r.updated_at
+             from knowledge_resources r
+             where r.kind = 'text' and r.deleted_at is null
+               and r.body_ref ->> 'doc_id' = $1
+             limit 1`,
+            [id]
+          );
+          const node = nodes[0];
+          if (!node) return err(`document ${id} not found`);
+          return ok({
+            meta: toDocumentMeta(node),
+            content: null,
+            awaitingSync: true,
+          });
+        }
 
         let tree =
           row.lexical_json == null
@@ -94,7 +140,11 @@ export function createPgliteDocumentRepository(
           ? { tree, markdown: row.content_markdown ?? '' }
           : null;
         if (content) cache.set(id, { meta, content });
-        return ok({ meta, content });
+        return ok({
+          meta,
+          content,
+          awaitingSync: !content && row.awaiting_sync,
+        });
       } catch (e) {
         return err(`document.load failed: ${String(e)}`);
       }
@@ -102,9 +152,17 @@ export function createPgliteDocumentRepository(
 
     async save(input) {
       try {
+        const mergesBefore = merges.get(input.id) ?? 0;
         const changed = await crdt.save({ ...input, writer });
-        // The save's own payload is the freshest content there is.
-        const cached = cache.get(input.id);
+        // A written save's payload is the freshest content there is. One the
+        // store did not write is either unchanged or refused because a merge
+        // moved the document past it — then its tree must not come back
+        // from the cache, or the next save from it would undo the merge.
+        // A save that merged another writer's changes cached the merge
+        // already; its own payload is older than that.
+        const mergedMeanwhile = (merges.get(input.id) ?? 0) !== mergesBefore;
+        const cached =
+          changed && !mergedMeanwhile ? cache.get(input.id) : undefined;
         if (cached) {
           cache.set(input.id, {
             meta: cached.meta,

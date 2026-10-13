@@ -30,6 +30,11 @@ export type FindAndReplaceProps = {
    * toggle or a keyboard shortcut (Cmd/Ctrl+F handling is the host's). */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Bump to put the keyboard back in the search field while the panel is
+   * already open — the shortcut pressed again from the text, typically.
+   */
+  focusRequest?: number;
   className?: string;
 };
 
@@ -43,6 +48,7 @@ export function FindAndReplace({
   labels = defaultFindReplaceLabels,
   open,
   onOpenChange,
+  focusRequest = 0,
   className,
 }: FindAndReplaceProps) {
   const wrapper = useLexicalWrapper();
@@ -63,7 +69,7 @@ export function FindAndReplace({
   useEffect(() => {
     if (!open) return;
     searchInputRef.current?.focus();
-  }, [open]);
+  }, [open, focusRequest]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,7 +103,9 @@ export function FindAndReplace({
     replaceMatch(editor, match.id, replacement);
     const remaining = matches.filter((_, i) => i !== currentIndex);
     setMatches(remaining);
-    setCurrentIndex(remaining.length > 0 ? currentIndex % remaining.length : -1);
+    setCurrentIndex(
+      remaining.length > 0 ? currentIndex % remaining.length : -1
+    );
   };
 
   const replaceAll = () => {
@@ -133,7 +141,10 @@ export function FindAndReplace({
         className
       )}
     >
-      <SearchIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+      <SearchIcon
+        aria-hidden
+        className="text-muted-foreground size-4 shrink-0"
+      />
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
           <Input

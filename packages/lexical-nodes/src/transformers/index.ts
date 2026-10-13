@@ -31,13 +31,14 @@ import { FILE_LINK, I_FILE } from './file';
 import {
   EMPTY_PARAGRAPH,
   I_RESOURCE_MENTION,
-  I_RESOURCE_MENTION_CARD,
+  I_RESOURCE_MENTION_BLOCK,
   LINE_BREAK,
   RESOURCE_LINK,
+  RESOURCE_LINK_BLOCK,
 } from './inline';
 import { LIST_TRANSFORMERS } from './lists';
 import { I_IMAGE, I_VIDEO, IMAGE_LINK, VIDEO_LINK } from './media';
-import { setTableCellTransformers, TABLE } from './tables';
+import { createTableTransformer } from './tables';
 import { I_UNKNOWN_EMBED } from './unknownEmbed';
 
 /**
@@ -60,10 +61,14 @@ const BASE_ELEMENTS: Transformer[] = [
 /**
  * The lossless internal form: what gets persisted and what the agent is shown.
  * Every own node round-trips through its `<x-*>` tag with no data lost.
+ *
+ * Each list carries its own table transformer, built over the list itself:
+ * a cell's contents are converted with the list the table sits in, so the
+ * form a caller chose holds inside every cell, nested tables included.
  */
 export const INTERNAL_TRANSFORMERS: Transformer[] = [
-  TABLE,
-  I_RESOURCE_MENTION_CARD,
+  createTableTransformer(() => INTERNAL_TRANSFORMERS),
+  I_RESOURCE_MENTION_BLOCK,
   I_FILE,
   I_IMAGE,
   I_VIDEO,
@@ -88,7 +93,8 @@ export const INTERNAL_TRANSFORMERS: Transformer[] = [
  * Lossy by design — an own node degrades to a link or an image.
  */
 export const EXTERNAL_TRANSFORMERS: Transformer[] = [
-  TABLE,
+  createTableTransformer(() => EXTERNAL_TRANSFORMERS),
+  RESOURCE_LINK_BLOCK,
   FILE_LINK,
   IMAGE_LINK,
   VIDEO_LINK,
@@ -109,8 +115,9 @@ export const EXTERNAL_TRANSFORMERS: Transformer[] = [
  * Used on paste and on import, never to export.
  */
 export const ALL_TRANSFORMERS: Transformer[] = [
-  TABLE,
-  I_RESOURCE_MENTION_CARD,
+  createTableTransformer(() => ALL_TRANSFORMERS),
+  I_RESOURCE_MENTION_BLOCK,
+  RESOURCE_LINK_BLOCK,
   I_FILE,
   I_IMAGE,
   I_VIDEO,
@@ -130,12 +137,6 @@ export const ALL_TRANSFORMERS: Transformer[] = [
   LINE_BREAK,
   I_UNKNOWN_EMBED,
 ];
-
-// Close the cycle: table cells are parsed and serialized with the full
-// import-anything list, which necessarily contains the table transformer
-// itself. Doing it here, after both modules have loaded, is what lets a table
-// contain a table without an import-time circular reference.
-setTableCellTransformers(ALL_TRANSFORMERS);
 
 export { isConversionOnlyTransformer, wrapXml, xmlMatcher } from './inline';
 export { LIST_TRANSFORMERS } from './lists';
