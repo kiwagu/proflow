@@ -52,8 +52,11 @@ const NODE_KEYS: Record<GraphSyncTable, readonly string[]> = {
  * itself, and a row two devices both wrote keeps whichever id reached the
  * server last. A pulled row is the truth, so it replaces the local row that
  * holds its key under another id instead of failing the whole batch on the
- * replica's uniqueness. Nothing local refers to these rows by id — journaled
- * ops address edges by their ends and relation, and per-node rows by node.
+ * replica's uniqueness. Journaled ops never name these rows by id — edges
+ * are addressed by their ends and relation, per-node rows by node. The one
+ * local reference by id, a media row's blob_id, cannot be cut by this: a
+ * blob's storage path embeds the blob's own id on the server, so no two
+ * server blobs share a path.
  */
 const NATURAL_KEYS: Record<GraphSyncTable, readonly string[]> = {
   knowledge_resources: [],
