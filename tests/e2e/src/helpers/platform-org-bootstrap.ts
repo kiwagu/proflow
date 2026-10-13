@@ -403,6 +403,15 @@ export async function deleteOrganizationCascade(
   if (spaceIds.length > 0) {
     // Purge content while its space still exists: its audit trigger records
     // a space reference, which cannot be inserted during a parent cascade.
+    // Edges go first: the purge guard counts any living edge as a cross-owner
+    // reference under the service role, which has no user of its own.
+    const { error: deleteEdgesErr } = await supabase
+      .from('knowledge_edges')
+      .delete()
+      .in('space_id', spaceIds);
+    if (deleteEdgesErr) {
+      throw new Error(`deleteOrganizationCascade: ${deleteEdgesErr.message}`);
+    }
     const { error: deleteContentErr } = await supabase
       .from('knowledge_resources')
       .delete()
