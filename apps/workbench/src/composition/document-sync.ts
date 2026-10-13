@@ -123,6 +123,10 @@ export function startDocumentSync(
         deferred.add(id);
         return;
       }
+      // Anything else is a verdict, not a wait: the graph moving on cannot
+      // change it, so it is retried as a failure is (the next edit, the
+      // network returning), never on every graph pass.
+      deferred.delete(id);
       failed.add(id);
       options.onPushFailed?.(id, error);
     }

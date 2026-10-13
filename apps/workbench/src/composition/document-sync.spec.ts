@@ -348,6 +348,43 @@ describe('starting document replication', () => {
     handle.stop();
   });
 
+  it('a document that waited and is then refused leaves the wait: one report, no retries on graph changes', async () => {
+    const { store, change } = stubStore();
+    const onPushFailed = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onPushFailed,
+    });
+    await settled();
+    vi.useFakeTimers();
+    // Not registered yet: it waits for its creator.
+    push.mockRejectedValueOnce(new DocumentNotRegisteredError());
+    change('doc-orphan', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    // Registered meanwhile, and this user may read it but not edit it.
+    push.mockRejectedValueOnce(
+      new Error(
+        'push insert failed: new row violates row-level security policy'
+      )
+    );
+    handle.graphPulled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onPushFailed).toHaveBeenCalledTimes(1);
+
+    // A refusal is no longer waiting for the graph: graph changes do not
+    // send it again (only an edit or the network coming back does).
+    push.mockClear();
+    handle.graphPulled();
+    handle.graphPushed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).not.toHaveBeenCalled();
+    expect(onPushFailed).toHaveBeenCalledTimes(1);
+    handle.stop();
+  });
+
   it('a merge that folded edits made here pushes them once they settle', async () => {
     const { store, change } = stubStore();
     const handle = startDocumentSync({
