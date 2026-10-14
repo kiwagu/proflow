@@ -100,6 +100,12 @@ export function DocumentView({
     onCreateTableRef.current = onCreateTable;
     onWrapperRef.current = onWrapper;
   });
+  // Read-only is the editable refusing input, not only the tools around it
+  // going grey: a reader's keystrokes must never reach the document.
+  const editorRef = useRef<LexicalWrapper['editor'] | null>(null);
+  useEffect(() => {
+    editorRef.current?.setEditable(!readOnly);
+  }, [readOnly]);
 
   const handleWrapper = useCallback((wrapper: LexicalWrapper) => {
     wrapper.plugins
@@ -135,6 +141,8 @@ export function DocumentView({
       wrapper.editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined);
     }
 
+    editorRef.current = wrapper.editor;
+    wrapper.editor.setEditable(!readOnlyRef.current);
     onWrapperRef.current?.(wrapper);
   }, []);
 

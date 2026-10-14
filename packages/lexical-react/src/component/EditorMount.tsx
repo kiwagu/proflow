@@ -10,7 +10,7 @@
 import type { EditorType } from '@workspace/lexical-nodes';
 import type { EditorThemeClasses } from 'lexical';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
   createLexicalWrapper,
   type LexicalWrapper,
@@ -123,12 +123,25 @@ export function EditorMount({
     };
   }, [wrapper, editable]);
 
+  // The page's editable follows the editor's: a read-only editor must not
+  // leave the browser accepting keystrokes into its surface.
+  const subscribeEditable = useCallback(
+    (notify: () => void) =>
+      wrapper.editor.registerEditableListener(() => notify()),
+    [wrapper]
+  );
+  const isEditable = useSyncExternalStore(
+    subscribeEditable,
+    () => wrapper.editor.isEditable(),
+    () => wrapper.editor.isEditable()
+  );
+
   return (
     <LexicalWrapperContext.Provider value={wrapper}>
       <div
         ref={setEditable}
         className={className}
-        contentEditable
+        contentEditable={isEditable}
         suppressContentEditableWarning
         data-lexical-editor
       />

@@ -37,6 +37,7 @@ import { useWorkbenchTranslator } from '../i18n';
 import { Spinner } from '../shell/boot-shell';
 import { useOnline } from '../shell/use-online';
 import { useDocumentChanges } from './document-changes';
+import { useMayWriteDocument } from './document-write';
 import {
   applyRemoteState,
   createAgentSeam,
@@ -73,6 +74,7 @@ export function DocumentEditor({ document }: { document: DocumentMeta }) {
 function OpenDocument({ document }: { document: DocumentMeta }) {
   const { reload } = useDocumentRevision();
   const documents = useDocuments();
+  const readOnly = !useMayWriteDocument(document.id);
   const versions = useDocumentVersions();
   const { identity, reportError, resolveError } = useServices();
   const t = useWorkbenchTranslator();
@@ -423,9 +425,21 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      {readOnly ? (
+        <p
+          role="status"
+          data-testid="document-read-only"
+          className="text-muted-foreground border-b px-3 py-1 text-xs"
+        >
+          {t
+            ? t('workbench.app.readOnly')
+            : 'Read only: you can view this document'}
+        </p>
+      ) : null}
       <DocumentView
         key={document.id}
         namespace={`document:${document.id}`}
+        readOnly={readOnly}
         initialTree={initial.tree}
         initialMarkdown={initial.markdown}
         onWrapper={onWrapper}

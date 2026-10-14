@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { WriteScope } from '@workspace/knowledge-contracts';
+import type { WriteScopeStore } from './write-scope';
 import type { AppServices } from './services';
 
 const Ctx = createContext<AppServices | null>(null);
@@ -30,8 +31,15 @@ export const useDocumentVersions = () => useServices().documentVersions;
 export const useSettings = () => useServices().settings;
 export const useReportError = () => useServices().reportError;
 
+/** A host that wires no scope (a spec, a stand-alone surface) gives no hint. */
+const NO_SCOPE: WriteScopeStore = {
+  current: () => null,
+  subscribe: () => () => {},
+  accept: () => {},
+};
+
 /** The write scope, live: a component re-renders when a session check changes it. */
 export function useWriteScope(): WriteScope | null {
-  const store = useServices().writeScope;
+  const store = useServices().writeScope ?? NO_SCOPE;
   return useSyncExternalStore(store.subscribe, store.current, store.current);
 }
