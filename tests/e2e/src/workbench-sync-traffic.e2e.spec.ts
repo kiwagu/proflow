@@ -58,6 +58,20 @@ function record(pages: Page[]) {
   };
 }
 
+/**
+ * The minute held what idle is supposed to cost, not merely less: the
+ * change probe, the presence beat and the session check each ran.
+ */
+function expectHeartbeat(tally: Tally) {
+  expect(tally.buckets['backend:sync_probe'] ?? 0).toBeGreaterThanOrEqual(1);
+  expect(
+    tally.buckets['backend:sync_presence_beat'] ?? 0
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    tally.buckets['/platform/api/workbench/session'] ?? 0
+  ).toBeGreaterThanOrEqual(1);
+}
+
 async function channelUp(page: Page) {
   await expect
     .poll(
@@ -100,6 +114,7 @@ test.describe('Workbench sync traffic', () => {
         idleOneTab.urls.filter((url) => url.includes('api.proflow.local'))
       ).toEqual([]);
       expect(idleOneTab.total).toBeLessThanOrEqual(10);
+      expectHeartbeat(idleOneTab);
 
       // A second tab of the same browser: it syncs nothing itself.
       const second = await page.context().newPage();
@@ -126,6 +141,7 @@ test.describe('Workbench sync traffic', () => {
         idleTwoTabs.urls.filter((url) => url.includes('api.proflow.local'))
       ).toEqual([]);
       expect(idleTwoTabs.total).toBeLessThanOrEqual(10);
+      expectHeartbeat(idleTwoTabs);
       await second.close();
 
       // Typing: this device writes a document, a second device reads it.
