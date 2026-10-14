@@ -222,6 +222,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       return;
     }
     noteSyncTarget(latest);
+    services.writeScope.accept(latest.writeScope);
     if (
       latest.userId !== session.userId ||
       latest.spaceId !== session.spaceId
@@ -425,6 +426,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       verifiedCookies = authCookieFingerprint();
       noteSyncTarget(next);
       rememberSession(next);
+      services.writeScope.accept(next.writeScope);
       notice.style.display = 'none';
     } catch (error) {
       console.error('session verification failed', error);

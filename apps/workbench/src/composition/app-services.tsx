@@ -1,4 +1,10 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import type { WriteScope } from '@workspace/knowledge-contracts';
 import type { AppServices } from './services';
 
 const Ctx = createContext<AppServices | null>(null);
@@ -23,3 +29,9 @@ export const useDocumentList = () => useServices().documentList;
 export const useDocumentVersions = () => useServices().documentVersions;
 export const useSettings = () => useServices().settings;
 export const useReportError = () => useServices().reportError;
+
+/** The write scope, live: a component re-renders when a session check changes it. */
+export function useWriteScope(): WriteScope | null {
+  const store = useServices().writeScope;
+  return useSyncExternalStore(store.subscribe, store.current, store.current);
+}

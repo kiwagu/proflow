@@ -28,6 +28,7 @@ import { createLiveDocuments } from '../features/live-documents';
 import { storageNamespace, type WorkbenchSession } from './session';
 import type { AppServices } from './services';
 import type { ReportError } from '../shell/operation-errors';
+import { createWriteScopeStore } from './write-scope';
 
 /**
  * Composition root — the only module in the app allowed to import adapter
@@ -147,6 +148,13 @@ export async function createAppServices(
     );
   }
 
+  const settings = createPgliteSettingsStore(db);
+  const writeScope = await createWriteScopeStore({
+    settings,
+    spaceId: session.spaceId,
+  });
+  writeScope.accept(session.writeScope);
+
   return {
     db,
     documents,
@@ -171,7 +179,8 @@ export async function createAppServices(
       PACKAGE_KINDS
     ),
     packageList: createPglitePackageReader(db),
-    settings: createPgliteSettingsStore(db),
+    settings,
+    writeScope,
     graph: createPgliteGraphReader(db),
     graphCommands: createPgliteGraphRepository(db),
     chats: createPgliteChatRepository(db),
