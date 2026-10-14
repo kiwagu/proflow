@@ -1,6 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { Database } from '@workspace/db';
 import type { ISettingsStore } from '@workspace/domain';
+import type { KnowledgeResourceId, SpaceId } from '@workspace/entity-id';
 import {
   createGraphSync,
   createSupabaseGraphRowTransport,
@@ -41,10 +42,16 @@ export interface SyncSettings {
 export interface StartGraphSyncOptions {
   db: AppDb;
   settings: ISettingsStore;
-  /** The server-verified session and the space currently checked out. */
-  identity: { userId: string; spaceId: string };
+  /**
+   * The server-verified session and the space currently checked out. The
+   * user is the auth user UUID, not an entity id.
+   */
+  identity: { userId: string; spaceId: SpaceId };
   /** Fired when the server refused a local change and the replica was re-read. */
-  onReconciled?: (event: { refused: number; nodeIds: string[] }) => void;
+  onReconciled?: (event: {
+    refused: number;
+    nodeIds: KnowledgeResourceId[];
+  }) => void;
   onError?: (error: unknown) => void;
   /**
    * A push completed: whatever was reported failing is now through. Only a

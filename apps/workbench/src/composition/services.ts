@@ -1,3 +1,4 @@
+import type { SpaceId } from '@workspace/entity-id';
 import type {
   IBlobStore,
   IChatListReader,
@@ -54,8 +55,11 @@ export interface AppServices {
   chats: IChatRepository;
   chatList: IChatListReader;
   chatMessages: IChatMessageRepository;
-  /** Server-verified session and checked-out space. */
-  identity: { userId: string; spaceId: string };
+  /**
+   * Server-verified session and checked-out space. The user is the auth
+   * user UUID, not an entity id.
+   */
+  identity: { userId: string; spaceId: SpaceId };
   /** What the person may change in the space, as each session check restates it. */
   writeScope: WriteScopeStore;
   /**

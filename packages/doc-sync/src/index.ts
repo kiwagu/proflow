@@ -14,6 +14,11 @@ export {
   HEADS_OVERLAP_MS,
   type LedgerDb,
 } from './pglite-ledger.js';
+export {
+  MalformedServerRowError,
+  parseDocumentId,
+  parseWriterId,
+} from './server-rows.js';
 export { createSupabaseTransport } from './supabase-transport.js';
 export type {
   PullResult,

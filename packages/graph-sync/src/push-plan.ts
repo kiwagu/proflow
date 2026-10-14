@@ -1,3 +1,4 @@
+import type { SpaceId } from '@workspace/entity-id';
 import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import type { JournaledOp, ServerWrite } from './types.js';
 
@@ -26,7 +27,10 @@ import type { JournaledOp, ServerWrite } from './types.js';
  */
 
 export interface PushIdentity {
-  /** The authenticated user replaying the journal. */
+  /**
+   * The authenticated user replaying the journal. An auth user UUID
+   * (`auth.users.id`), not an entity id, so it stays a plain string.
+   */
   userId: string;
 }
 
@@ -237,7 +241,7 @@ function patchNode(
 }
 
 function containmentEdge(
-  spaceId: string,
+  spaceId: SpaceId,
   from: string,
   to: string,
   position: number,
@@ -252,7 +256,7 @@ function containmentEdge(
 }
 
 function edgeUpsert(
-  spaceId: string,
+  spaceId: SpaceId,
   from: string,
   to: string,
   relationType: string,
@@ -277,7 +281,7 @@ function edgeUpsert(
 }
 
 function userState(
-  spaceId: string,
+  spaceId: SpaceId,
   payload: Record<string, unknown>,
   identity: PushIdentity,
   values: Record<string, unknown>

@@ -1,3 +1,8 @@
+import type {
+  EntityId,
+  KnowledgeResourceId,
+  SpaceId,
+} from '@workspace/entity-id';
 import { planWrites, type PushIdentity } from './push-plan.js';
 import {
   ARRIVAL_ORDER,
@@ -61,7 +66,10 @@ export interface GraphSyncOptions {
   pollIntervalMs?: number;
   pullPageSize?: number;
   /** Fired once per reconciliation, for the non-modal "refreshed from server" notice. */
-  onReconciled?: (event: { refused: number; nodeIds: string[] }) => void;
+  onReconciled?: (event: {
+    refused: number;
+    nodeIds: KnowledgeResourceId[];
+  }) => void;
 }
 
 export function createGraphSync(options: GraphSyncOptions) {
@@ -75,7 +83,7 @@ export function createGraphSync(options: GraphSyncOptions) {
   const pushChain = new Map<string, Promise<PushOutcome>>();
 
   async function pullTable(
-    spaceId: string,
+    spaceId: SpaceId,
     table: GraphSyncTableName
   ): Promise<number> {
     let applied = 0;
@@ -107,7 +115,7 @@ export function createGraphSync(options: GraphSyncOptions) {
   }
 
   async function sweepTable(
-    spaceId: string,
+    spaceId: SpaceId,
     table: GraphSyncTableName,
     force: boolean
   ): Promise<number | null> {
@@ -117,7 +125,7 @@ export function createGraphSync(options: GraphSyncOptions) {
   }
 
   async function pullOnce(
-    spaceId: string,
+    spaceId: SpaceId,
     pass: { sweep?: boolean } = {}
   ): Promise<PullOutcome> {
     let applied = 0;
@@ -145,7 +153,7 @@ export function createGraphSync(options: GraphSyncOptions) {
   }
 
   function pull(
-    spaceId: string,
+    spaceId: SpaceId,
     opts: { sweep?: boolean } = {}
   ): Promise<PullOutcome> {
     const previous = pullChain.get(spaceId) ?? Promise.resolve(null);
@@ -162,13 +170,13 @@ export function createGraphSync(options: GraphSyncOptions) {
    * overwrite it and no `updated_at` to make it show up in a later scan.
    */
   async function reconcileNodes(
-    spaceId: string,
-    nodeIds: string[]
+    spaceId: SpaceId,
+    nodeIds: KnowledgeResourceId[]
   ): Promise<void> {
     if (nodeIds.length === 0) return;
     // The same two orders as a pull pass: everything arrives first, then
     // what the server no longer returns leaves, nodes before their edges.
-    const stale = new Map<GraphSyncTableName, string[]>();
+    const stale = new Map<GraphSyncTableName, EntityId[]>();
     for (const descriptor of ARRIVAL_ORDER) {
       if (descriptor.nodeKey === null) continue;
       const held = await replica.rowIdsForNodes(descriptor.local, nodeIds);
@@ -190,10 +198,10 @@ export function createGraphSync(options: GraphSyncOptions) {
     }
   }
 
-  async function pushOnce(spaceId: string): Promise<PushOutcome> {
+  async function pushOnce(spaceId: SpaceId): Promise<PushOutcome> {
     let accepted = 0;
     let refused = 0;
-    const reconciled = new Set<string>();
+    const reconciled = new Set<KnowledgeResourceId>();
 
     for (;;) {
       const ops = await replica.pendingOps(spaceId, PUSH_BATCH_SIZE);
@@ -245,7 +253,7 @@ export function createGraphSync(options: GraphSyncOptions) {
     return { accepted, refused, reconciled: [...reconciled], stalled: false };
   }
 
-  function push(spaceId: string): Promise<PushOutcome> {
+  function push(spaceId: SpaceId): Promise<PushOutcome> {
     const previous = pushChain.get(spaceId) ?? Promise.resolve(null);
     const next = previous.catch(() => null).then(() => pushOnce(spaceId));
     pushChain.set(spaceId, next as Promise<PushOutcome>);
@@ -260,7 +268,7 @@ export function createGraphSync(options: GraphSyncOptions) {
    * mere existence tells us something a watermark scan cannot.
    */
   function watch(
-    spaceId: string,
+    spaceId: SpaceId,
     hooks: {
       onPull?: (outcome: PullOutcome) => void;
       onPush?: (outcome: PushOutcome) => void;
@@ -308,7 +316,7 @@ export function createGraphSync(options: GraphSyncOptions) {
     push,
     watch,
     /** How many local changes are still waiting — the "unsynced" signal. */
-    pendingCount: (spaceId: string) => replica.pendingCount(spaceId),
+    pendingCount: (spaceId: SpaceId) => replica.pendingCount(spaceId),
   };
 }
 

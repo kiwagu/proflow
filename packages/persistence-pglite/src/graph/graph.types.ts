@@ -1,3 +1,5 @@
+import type { KnowledgeResourceId, SpaceId } from '@workspace/entity-id';
+
 /**
  * The workbench data layer's vocabulary — the local equivalents of the
  * shapes the `/author/graph/*` render surface reads from server routes
@@ -102,9 +104,9 @@ export type UserResourceState = {
  */
 export type GraphOp = {
   id: number;
-  spaceId: string;
+  spaceId: SpaceId;
   op: string;
   payload: Record<string, unknown>;
-  nodeIds: string[];
+  nodeIds: KnowledgeResourceId[];
   createdAt: Date;
 };

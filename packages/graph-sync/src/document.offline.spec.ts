@@ -1,3 +1,4 @@
+import { entityIdRegistry, unsafeBrandEntityId } from '@workspace/entity-id';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   createDocumentCrdtStore,
@@ -23,7 +24,9 @@ afterAll(async () => {
 });
 
 it('keeps an offline-created document openable after push, pull and inventory', async () => {
-  const spaceId = testId('spc');
+  const spaceId = entityIdRegistry.factories.spaceIdFactory.brand(
+    testId('spc')
+  );
   const documents = createPgliteDocumentRepository(
     db,
     createDocumentCrdtStore(db),
@@ -48,7 +51,7 @@ it('keeps an offline-created document openable after push, pull and inventory', 
         created_at: new Date(),
         updated_at: new Date(),
         ...write.row,
-        id: String(write.row['id']),
+        id: unsafeBrandEntityId(String(write.row['id'])),
       });
     },
     async pullSince() {

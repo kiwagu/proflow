@@ -1,5 +1,7 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  authCookieFingerprint,
   CONFIRMATION_GOOD_FOR_MS,
   forgetSession,
   readSession,
@@ -12,7 +14,9 @@ import {
 const SESSION: WorkbenchSession = {
   userId: '11111111-2222-3333-4444-555555555555',
   email: 'user@example.test',
-  spaceId: 'spc_abc.01m2',
+  spaceId: entityIdRegistry.factories.spaceIdFactory.brand(
+    'spc_0000000000000abc.0000000000'
+  ),
   spaceName: 'Space',
 };
 
@@ -63,6 +67,20 @@ describe('the last confirmed identity', () => {
       JSON.stringify({ cookies: 'sb-access-token=one', session: { userId: 7 } })
     );
     expect(recallSession()).toBeNull();
+  });
+
+  it('is refused when the stored space is not a space id', () => {
+    for (const spaceId of ['spc_abc.01m2', 'org_0000000000000abc.0000000000']) {
+      window.localStorage.setItem(
+        'workbench.session',
+        JSON.stringify({
+          cookies: authCookieFingerprint(),
+          confirmedAt: Date.now(),
+          session: { ...SESSION, spaceId },
+        })
+      );
+      expect(recallSession()).toBeNull();
+    }
   });
 
   it('is refused when the stored value is not JSON', () => {
@@ -195,6 +213,26 @@ describe('reading the session', () => {
     'node.star': 'all',
     'body.write': { own: ['owner_user_id'] },
   };
+
+  it('refuses a space that is not a well-formed space id', async () => {
+    for (const spaceId of [
+      'spc_abc.01m2',
+      "spc_' OR 1=1--",
+      'org_0000000000000001.0000000000',
+    ]) {
+      answer({ ...identity, spaceId });
+      await expect(readSession()).rejects.toThrow('Invalid session response');
+    }
+  });
+
+  it('reads the space as a canonical space id, and no space as none', async () => {
+    answer({ ...identity, spaceId: 'spc_000000000000000A.0000000000' });
+    expect((await readSession())?.spaceId).toBe(
+      'spc_000000000000000a.0000000000'
+    );
+    answer({ ...identity, spaceId: null });
+    expect((await readSession())?.spaceId).toBeNull();
+  });
 
   it('carries the write scope the server stated', async () => {
     answer({ ...identity, writeScope: scope });

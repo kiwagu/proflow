@@ -1,3 +1,8 @@
+import type {
+  EntityId,
+  KnowledgeResourceId,
+  SpaceId,
+} from '@workspace/entity-id';
 import type { GraphSyncTableName } from './tables.js';
 
 /**
@@ -17,8 +22,13 @@ import type { GraphSyncTableName } from './tables.js';
  * write is a proposal until it accepts it.
  */
 
-/** A row as the transport decodes it: server column names to values. */
-export type RowRecord = Record<string, unknown> & { id: string };
+/**
+ * A row as the transport decodes it: server column names to values. Its id
+ * columns have been checked against the kinds its table declares, so `id` is
+ * an id of the table's own kind (which kind depends on the table, hence the
+ * general type).
+ */
+export type RowRecord = Record<string, unknown> & { id: EntityId };
 
 /**
  * One write the push planner derives from a journaled op. Three shapes, all
@@ -109,7 +119,7 @@ export interface GraphRowTransport {
    */
   pullSince(
     table: GraphSyncTableName,
-    spaceId: string,
+    spaceId: SpaceId,
     since: Date | null,
     limit: number,
     offset: number
@@ -120,7 +130,7 @@ export interface GraphRowTransport {
    * inventory the disappearance diff compares against. Ids only: it is a
    * sweep, not a fetch.
    */
-  inventory(table: GraphSyncTableName, spaceId: string): Promise<string[]>;
+  inventory(table: GraphSyncTableName, spaceId: SpaceId): Promise<EntityId[]>;
 
   /**
    * Rows tied to specific nodes, whatever their timestamp — the targeted
@@ -129,8 +139,8 @@ export interface GraphRowTransport {
    */
   pullByNodes(
     table: GraphSyncTableName,
-    spaceId: string,
-    nodeIds: string[]
+    spaceId: SpaceId,
+    nodeIds: readonly KnowledgeResourceId[]
   ): Promise<RowRecord[]>;
 
   /**
@@ -148,7 +158,7 @@ export interface GraphRowTransport {
    * out the interval.
    */
   subscribe(
-    spaceId: string,
+    spaceId: SpaceId,
     handlers: { onChange: () => void; onDelete: () => void }
   ): () => void;
 }
@@ -156,10 +166,10 @@ export interface GraphRowTransport {
 /** One journaled structural command, as the engine replays it. */
 export interface JournaledOp {
   id: number;
-  spaceId: string;
+  spaceId: SpaceId;
   op: string;
   payload: Record<string, unknown>;
-  nodeIds: string[];
+  nodeIds: KnowledgeResourceId[];
 }
 
 /**
@@ -169,35 +179,35 @@ export interface JournaledOp {
  * interface here so this package does not depend on it at runtime.
  */
 export interface GraphReplica {
-  cursorFor(spaceId: string, table: GraphSyncTableName): Promise<Date | null>;
+  cursorFor(spaceId: SpaceId, table: GraphSyncTableName): Promise<Date | null>;
   advanceCursor(
-    spaceId: string,
+    spaceId: SpaceId,
     table: GraphSyncTableName,
     cursor: Date
   ): Promise<void>;
   inventoryDue(
-    spaceId: string,
+    spaceId: SpaceId,
     table: GraphSyncTableName,
     now?: Date
   ): Promise<boolean>;
   applyInventory(
-    spaceId: string,
+    spaceId: SpaceId,
     table: GraphSyncTableName,
-    serverIds: string[]
+    serverIds: EntityId[]
   ): Promise<number>;
   applyPullBatch(
     table: GraphSyncTableName,
     rows: RowRecord[]
   ): Promise<Date | null>;
-  deleteRows(table: GraphSyncTableName, ids: string[]): Promise<number>;
+  deleteRows(table: GraphSyncTableName, ids: EntityId[]): Promise<number>;
   rowIdsForNodes(
     table: GraphSyncTableName,
-    nodeIds: string[]
-  ): Promise<string[]>;
-  pendingOps(spaceId: string, limit?: number): Promise<JournaledOp[]>;
+    nodeIds: KnowledgeResourceId[]
+  ): Promise<EntityId[]>;
+  pendingOps(spaceId: SpaceId, limit?: number): Promise<JournaledOp[]>;
   ackOp(opId: number): Promise<void>;
-  rejectOp(opId: number): Promise<string[]>;
-  pendingCount(spaceId: string): Promise<number>;
+  rejectOp(opId: number): Promise<KnowledgeResourceId[]>;
+  pendingCount(spaceId: SpaceId): Promise<number>;
 }
 
 export interface PullOutcome {
@@ -218,7 +228,7 @@ export interface PushOutcome {
    */
   refused: number;
   /** Nodes re-pulled because an op touching them was refused. */
-  reconciled: string[];
+  reconciled: KnowledgeResourceId[];
   /** True when the drain stopped early because the server was unreachable. */
   stalled: boolean;
 }

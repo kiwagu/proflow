@@ -1,10 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
+import type { SpaceId } from '@workspace/entity-id';
+import {
+  parseServerIds,
+  parseServerRow,
+  parseServerRows,
+} from '../server-rows.js';
 import { describeTable, type GraphSyncTableName } from '../tables.js';
 import {
   GraphWriteError,
   type GraphRowTransport,
   type PullPage,
-  type RowRecord,
   type ServerWrite,
 } from '../types.js';
 
@@ -208,6 +213,7 @@ execute function cascade_trash_orphans();
 
 /** Who the caller is, for the visibility fence and for write refusals. */
 export interface ServerSession {
+  /** An auth user UUID (`auth.users.id`), not an entity id. */
   userId: string;
 }
 
@@ -220,7 +226,7 @@ export interface ServerStandIn {
     params?: unknown[]
   ): Promise<T[]>;
   /** Fire a change nudge to every live subscription of a space. */
-  nudge(spaceId: string, kind?: 'change' | 'delete'): void;
+  nudge(spaceId: SpaceId, kind?: 'change' | 'delete'): void;
   /** Nudges delivered so far — the degradation the poll has to cover. */
   nudgeCount(): number;
   /** Stop delivering nudges entirely. */
@@ -523,15 +529,17 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
           where += ` and t.updated_at >= $${params.length}`;
         }
         params.push(limit + 1, offset);
-        const { rows } = await db.query<RowRecord>(
+        const { rows } = await db.query<Record<string, unknown>>(
           `select t.* from ${table} t
             where ${where}
             order by t.updated_at asc, t.id asc
             limit $${params.length - 1} offset $${params.length}`,
           params
         );
+        // Through the same parser as the production adapter: what reaches
+        // the engine has been checked the same way on both.
         const page: PullPage = {
-          rows: rows.slice(0, limit),
+          rows: parseServerRows(table, rows.slice(0, limit)),
           hasMore: rows.length > limit,
         };
         return page;
@@ -539,11 +547,14 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
 
       async inventory(table, spaceId) {
         const fence = visibilityPredicate(table, '$2');
-        const { rows } = await db.query<{ id: string }>(
+        const { rows } = await db.query<{ id: unknown }>(
           `select t.id from ${table} t where t.space_id = $1 and ${fence}`,
           [spaceId, session.userId]
         );
-        return rows.map((row) => row.id);
+        return parseServerIds(
+          table,
+          rows.map((row) => row.id)
+        );
       },
 
       async pullByNodes(table, spaceId, nodeIds) {
@@ -553,12 +564,12 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         const keys = descriptor.nodeKeySecondary
           ? `(t."${descriptor.nodeKey}" = any ($2::text[]) or t."${descriptor.nodeKeySecondary}" = any ($2::text[]))`
           : `t."${descriptor.nodeKey}" = any ($2::text[])`;
-        const { rows } = await db.query<RowRecord>(
+        const { rows } = await db.query<Record<string, unknown>>(
           `select t.* from ${table} t
             where t.space_id = $1 and ${keys} and ${fence}`,
           [spaceId, nodeIds, session.userId]
         );
-        return rows;
+        return rows.map((row) => parseServerRow(table, row));
       },
 
       write: (write) => guardedWrite(session, write),

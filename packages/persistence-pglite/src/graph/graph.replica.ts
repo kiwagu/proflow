@@ -1,3 +1,4 @@
+import { type EntityId, unsafeBrandEntityId } from '@workspace/entity-id';
 import type { AppDb } from '../db/db.js';
 import type { GraphSyncTable } from './graph.sync-ledger.js';
 
@@ -93,7 +94,10 @@ export interface GraphReplicaWriter {
    * what the replica currently holds for them. A table with no node key
    * (the shared media blob record) is not node-scoped and yields nothing.
    */
-  rowIdsForNodes(table: GraphSyncTable, nodeIds: string[]): Promise<string[]>;
+  rowIdsForNodes(
+    table: GraphSyncTable,
+    nodeIds: readonly string[]
+  ): Promise<EntityId[]>;
 }
 
 export function createPgliteGraphReplicaWriter(db: AppDb): GraphReplicaWriter {
@@ -172,7 +176,8 @@ export function createPgliteGraphReplicaWriter(db: AppDb): GraphReplicaWriter {
         `select id from ${table} where ${predicate}`,
         [nodeIds]
       );
-      return rows.map((row) => row.id);
+      // Every replicated table CHECKs its ids against the contract.
+      return rows.map((row) => unsafeBrandEntityId(row.id));
     },
   };
 }

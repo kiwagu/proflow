@@ -1,4 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
+import {
+  entityIdRegistry,
+  type KnowledgeResourceId,
+} from '@workspace/entity-id';
 import { LoroDoc, VersionVector } from 'loro-crdt';
 import { toByteaHex } from '../bytea.js';
 import { createDocumentSync } from '../document-sync.js';
@@ -58,9 +62,16 @@ export class TextDocument implements SyncableDocument {
   }
 }
 
-export const DOC_ID = 'doc_sync_spec_0001';
-export const SPACE_ID = 'spc_sync_spec_0001';
-export const RESOURCE_ID = 'knr_sync_spec_0001';
+const { documentIdFactory, knowledgeResourceIdFactory, spaceIdFactory } =
+  entityIdRegistry.factories;
+
+export const DOC_ID = documentIdFactory.brand(
+  'doc_0000000000000001.0000000000'
+);
+export const SPACE_ID = spaceIdFactory.brand('spc_0000000000000001.0000000000');
+export const RESOURCE_ID = knowledgeResourceIdFactory.brand(
+  'knr_0000000000000001.0000000000'
+);
 
 export interface Replica {
   readonly name: string;
@@ -89,7 +100,7 @@ export async function createReplica(
     pollIntervalMs?: number;
     compaction?: { maxRows?: number; maxBytes?: number };
     /** The resource that owns the document; null when this device has none. */
-    resourceId?: string | null;
+    resourceId?: KnowledgeResourceId | null;
   } = {}
 ): Promise<Replica> {
   const local = await PGlite.create();
@@ -101,7 +112,8 @@ export async function createReplica(
     transport,
     ledger,
     journal,
-    writer: name,
+    // Its own writer id, as every tab and worker mints one.
+    writer: entityIdRegistry.factories.writerIdFactory.create(),
     // Off by default: every compaction in these tests is proposed explicitly,
     // so the threshold never fires behind a scenario's back.
     compaction: options.compaction ?? false,

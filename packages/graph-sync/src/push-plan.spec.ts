@@ -1,10 +1,17 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { describe, expect, it } from 'vitest';
 import { planWrites } from './push-plan.js';
 import type { JournaledOp } from './types.js';
 
-const SPACE = 'spc_0000000000000001.0000000000';
-const NODE = 'knr_0000000000000001.0000000000';
-const TARGET = 'knr_0000000000000002.0000000000';
+const { knowledgeResourceIdFactory, spaceIdFactory } =
+  entityIdRegistry.factories;
+const SPACE = spaceIdFactory.brand('spc_0000000000000001.0000000000');
+const NODE = knowledgeResourceIdFactory.brand(
+  'knr_0000000000000001.0000000000'
+);
+const TARGET = knowledgeResourceIdFactory.brand(
+  'knr_0000000000000002.0000000000'
+);
 const identity = { userId: '00000000-0000-4000-8000-000000000001' };
 
 function moveOp(payload: Record<string, unknown>): JournaledOp {

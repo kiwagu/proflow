@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -114,7 +115,10 @@ import type {
 } from '@workspace/persistence-pglite';
 import { PUSH_DEBOUNCE_MS, startDocumentSync } from './document-sync';
 
-const IDENTITY = { userId: 'user-1', spaceId: 'spc_abc.01m2' };
+const IDENTITY = {
+  userId: 'user-1',
+  spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
+};
 const CONFIGURED = JSON.stringify({
   url: 'https://server.test',
   key: 'publishable-key',

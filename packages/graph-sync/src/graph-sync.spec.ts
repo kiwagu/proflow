@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import {
   OTHER_USER,
   TEST_USER,
@@ -21,7 +22,9 @@ import { createServerStandIn, mintId } from './testing/server-stand-in.js';
  * nothing.
  */
 
-const SPACE = 'spc_0000000000000001.0000000000';
+const SPACE = entityIdRegistry.factories.spaceIdFactory.brand(
+  'spc_0000000000000001.0000000000'
+);
 
 let server: ServerStandIn;
 let alice: Replica;

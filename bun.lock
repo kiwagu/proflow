@@ -87,6 +87,7 @@
         "@workspace/db": "workspace:*",
         "@workspace/doc-sync": "workspace:*",
         "@workspace/domain": "workspace:*",
+        "@workspace/entity-id": "workspace:^",
         "@workspace/gateway-auth": "workspace:*",
         "@workspace/graph-sync": "workspace:*",
         "@workspace/i18n-catalogs": "workspace:*",
@@ -265,6 +266,7 @@
       "dependencies": {
         "@supabase/supabase-js": "catalog:",
         "@workspace/db": "workspace:*",
+        "@workspace/entity-id": "workspace:^",
       },
       "devDependencies": {
         "@electric-sql/pglite": "catalog:",
@@ -388,6 +390,7 @@
       "dependencies": {
         "@supabase/supabase-js": "catalog:",
         "@workspace/db": "workspace:*",
+        "@workspace/entity-id": "workspace:^",
         "@workspace/knowledge-contracts": "workspace:*",
       },
       "devDependencies": {
@@ -596,6 +599,7 @@
         "@workspace/doc-crdt": "workspace:*",
         "@workspace/domain": "workspace:*",
         "@workspace/embedding": "workspace:*",
+        "@workspace/entity-id": "workspace:^",
         "@workspace/knowledge-contracts": "workspace:*",
         "@workspace/lexical-nodes": "workspace:*",
         "neverthrow": "catalog:",

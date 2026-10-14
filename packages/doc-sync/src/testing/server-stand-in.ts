@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
+import type {
+  DocumentId,
+  KnowledgeResourceId,
+  WriterId,
+} from '@workspace/entity-id';
 import { DocumentNotRegisteredError } from '../errors.js';
+import { parseDocumentId, parseWriterId } from '../server-rows.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
 
 /**
@@ -17,11 +23,15 @@ import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
  */
 export interface ServerStandIn extends SyncTransport {
   /** Rows currently in the update log — the compaction gauge under test. */
-  updateCount(docId: string): Promise<number>;
+  updateCount(docId: DocumentId): Promise<number>;
   /** The resource the document was registered with, or null. */
-  resourceIdOf(docId: string): Promise<string | null>;
+  resourceIdOf(docId: DocumentId): Promise<KnowledgeResourceId | null>;
   /** Delivers a blob a second time, as an at-least-once retry would. */
-  resend(docId: string, bytes: Uint8Array, writer: string): Promise<number>;
+  resend(
+    docId: DocumentId,
+    bytes: Uint8Array,
+    writer: WriterId
+  ): Promise<number>;
   /** Number of nudges dispatched to live subscriptions. */
   nudgeCount(): number;
   /** Number of space nudges dispatched to live space subscriptions. */
@@ -32,7 +42,7 @@ export interface ServerStandIn extends SyncTransport {
    * Moves a document's head back in time, as a commit stamped with the
    * start of a long-waiting transaction would land.
    */
-  backdate(docId: string, ms: number): Promise<void>;
+  backdate(docId: DocumentId, ms: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -116,7 +126,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   let spaceNudges = 0;
   let nudgesEnabled = true;
 
-  function nudge(docId: string) {
+  function nudge(docId: DocumentId) {
     if (!nudgesEnabled) return;
     for (const cb of subscribers.get(docId) ?? []) {
       nudges += 1;
@@ -124,7 +134,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     }
   }
 
-  async function nudgeSpaceOf(docId: string) {
+  async function nudgeSpaceOf(docId: DocumentId) {
     if (!nudgesEnabled) return;
     const { rows } = await db.query<{ space_id: string }>(
       'select space_id from crdt_documents where id = $1',
@@ -138,7 +148,11 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     }
   }
 
-  async function insert(docId: string, bytes: Uint8Array, writer: string) {
+  async function insert(
+    docId: DocumentId,
+    bytes: Uint8Array,
+    writer: WriterId
+  ) {
     const { rows } = await db.query<{ seq: string }>(
       `insert into crdt_updates (doc_id, bytes, writer)
        values ($1, $2, $3) returning seq`,
@@ -170,7 +184,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         'select resource_id from crdt_documents where id = $1',
         [docId]
       );
-      return rows[0]?.resource_id ?? null;
+      return (rows[0]?.resource_id ?? null) as KnowledgeResourceId | null;
     },
 
     async head(docId): Promise<SyncHead> {
@@ -196,10 +210,11 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
          where doc_id = $1 and seq > $2 order by seq`,
         [docId, afterSeq]
       );
+      // Through the same parser as the production transport.
       return rows.map((r) => ({
         seq: Number(r.seq),
         bytes: r.bytes,
-        writer: r.writer,
+        writer: parseWriterId(r.writer),
       }));
     },
 
@@ -244,12 +259,14 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
          limit $3 offset $4`,
         [spaceId, since, limit + 1, offset]
       );
-      const all = rows.map((r) => ({
-        docId: r.id,
-        headSeq: Number(r.head_seq),
-        updatedAt: new Date(r.updated_at),
-      }));
-      return { rows: all.slice(0, limit), hasMore: all.length > limit };
+      return {
+        rows: rows.slice(0, limit).map((r) => ({
+          docId: parseDocumentId(r.id),
+          headSeq: Number(r.head_seq),
+          updatedAt: new Date(r.updated_at),
+        })),
+        hasMore: rows.length > limit,
+      };
     },
 
     subscribeSpace(spaceId, onNudge) {

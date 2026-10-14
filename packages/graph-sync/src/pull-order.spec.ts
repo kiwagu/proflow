@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { TEST_USER } from '@workspace/persistence-pglite/testing/graph';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Replica } from './testing/replica.js';
@@ -16,7 +17,9 @@ import type { GraphRowTransport } from './types.js';
  * before nodes, and a node arrives already in its place.
  */
 
-const SPACE = 'spc_0000000000000001.0000000000';
+const SPACE = entityIdRegistry.factories.spaceIdFactory.brand(
+  'spc_0000000000000001.0000000000'
+);
 const FOLDER = 'knr_0000000000000001.0000000000';
 const DOC = 'knr_0000000000000002.0000000000';
 

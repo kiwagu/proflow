@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -56,7 +57,10 @@ import {
   SYNC_SETTINGS_KEY,
 } from './sync';
 
-const IDENTITY = { userId: 'user-1', spaceId: 'spc_abc.01m2' };
+const IDENTITY = {
+  userId: 'user-1',
+  spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
+};
 
 function settingsHolding(value: string | null): ISettingsStore {
   return {

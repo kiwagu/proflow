@@ -308,7 +308,7 @@ describe('a node the server has not accepted yet', () => {
 
     const ledger = createPgliteGraphSyncLedger(db);
     for (const op of await ledger.pendingOps(spaceId))
-      if (op.nodeIds.includes(nodeId)) await ledger.ackOp(op.id);
+      if (op.nodeIds.some((id) => id === nodeId)) await ledger.ackOp(op.id);
     expect(await nodeAwaitsServer(db, nodeId)).toBe(false);
   });
 

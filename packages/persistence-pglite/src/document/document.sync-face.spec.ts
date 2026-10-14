@@ -1,4 +1,5 @@
 import type { SerializedTree } from '@workspace/doc-crdt';
+import { type DocumentId, entityIdRegistry } from '@workspace/entity-id';
 import { createDocumentSync, createPgliteLedger } from '@workspace/doc-sync';
 import {
   createServerStandIn,
@@ -25,9 +26,11 @@ import { createPgliteDocumentRepository } from './document.repository.js';
  * so neither side reverts the other.
  */
 const AUTHOR = { user: 'tester', src: 'human' as const };
-const SPACE = testId('spc');
+const { documentIdFactory, knowledgeResourceIdFactory, spaceIdFactory } =
+  entityIdRegistry.factories;
+const SPACE = spaceIdFactory.brand(testId('spc'));
 /** The node that owns the body: the server takes a registration only with one. */
-const NODE = testId('knr');
+const NODE = knowledgeResourceIdFactory.brand(testId('knr'));
 
 const treeOf = (markdown: string): SerializedTree =>
   markdownToState(markdown).state as unknown as SerializedTree;
@@ -73,7 +76,7 @@ async function device(name: string, server: ServerStandIn): Promise<Device> {
     transport: server,
     ledger: createPgliteLedger(db),
     journal: store.syncJournal,
-    writer: name,
+    writer: entityIdRegistry.factories.writerIdFactory.create(),
     compaction: false,
   });
   const syncable = async (id: string) => {
@@ -94,8 +97,10 @@ async function device(name: string, server: ServerStandIn): Promise<Device> {
         preview: '',
         author: AUTHOR,
       }),
-    push: async (id) => engine.push(id, await syncable(id), SPACE, NODE),
-    pull: async (id) => engine.pull(id, await syncable(id)),
+    push: async (id) =>
+      engine.push(documentIdFactory.brand(id), await syncable(id), SPACE, NODE),
+    pull: async (id) =>
+      engine.pull(documentIdFactory.brand(id), await syncable(id)),
     journalRows: async (id) =>
       (
         await db.query<{ n: number }>(
@@ -123,7 +128,7 @@ describe('a document shared by two devices', () => {
   });
 
   /** A creates it; B receives the node through the graph and materializes the row. */
-  async function sharedDocument(): Promise<string> {
+  async function sharedDocument(): Promise<DocumentId> {
     const documents = createPgliteDocumentRepository(
       a.db,
       a.store,
@@ -145,7 +150,7 @@ describe('a document shared by two devices', () => {
       ]
     );
     await materializeDocuments(b.db, SPACE);
-    return created.id;
+    return documentIdFactory.brand(created.id);
   }
 
   it('opens on the second device as awaiting, then with the body once pulled', async () => {

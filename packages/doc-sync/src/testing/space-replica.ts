@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { type DocumentId, entityIdRegistry } from '@workspace/entity-id';
 import {
   createDocumentSync,
   type DocumentSync,
@@ -21,11 +22,11 @@ import {
  */
 export interface SpaceReplica {
   readonly name: string;
-  has(docId: string): boolean;
+  has(docId: DocumentId): boolean;
   /** The document's text, or '' for one this replica never opened. */
-  text(docId: string): string;
-  edit(docId: string, text: string): Promise<void>;
-  push(docId: string): ReturnType<DocumentSync['push']>;
+  text(docId: DocumentId): string;
+  edit(docId: DocumentId, text: string): Promise<void>;
+  push(docId: DocumentId): ReturnType<DocumentSync['push']>;
   watchSpace(
     hooks?: Omit<SpaceWatchHooks, 'open'>
   ): ReturnType<DocumentSync['watchSpace']>;
@@ -40,7 +41,7 @@ export async function createSpaceReplica(
   options: {
     pollIntervalMs?: number;
     fullPassIntervalMs?: number;
-    blocked?: string[];
+    blocked?: DocumentId[];
   } = {}
 ): Promise<SpaceReplica> {
   const local = await PGlite.create();
@@ -50,19 +51,19 @@ export async function createSpaceReplica(
     transport,
     ledger,
     journal: createPgliteJournal(local),
-    writer: name,
+    writer: entityIdRegistry.factories.writerIdFactory.create(),
     compaction: false,
     pollIntervalMs: options.pollIntervalMs ?? 25,
     fullPassIntervalMs: options.fullPassIntervalMs,
   });
   const docs = new Map<
-    string,
+    DocumentId,
     { document: TextDocument; unsubscribe: () => void }
   >();
   const blocked = new Set(options.blocked ?? []);
   let pending: Array<Promise<unknown>> = [];
 
-  function open(docId: string): TextDocument {
+  function open(docId: DocumentId): TextDocument {
     const held = docs.get(docId);
     if (held) return held.document;
     const document = new TextDocument();

@@ -20,6 +20,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/doc-sync": "workspace:*",
     "@workspace/domain": "workspace:*",
+    "@workspace/entity-id": "workspace:^",
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/graph-sync": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",

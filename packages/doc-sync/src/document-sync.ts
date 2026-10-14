@@ -1,4 +1,10 @@
 import type {
+  DocumentId,
+  KnowledgeResourceId,
+  SpaceId,
+  WriterId,
+} from '@workspace/entity-id';
+import type {
   PullResult,
   PushResult,
   SyncableDocument,
@@ -54,9 +60,9 @@ export interface SpaceWatchHooks {
    * it. A null is not an error, and it does not hold the cursor: whoever
    * creates the row later pulls the document then.
    */
-  open(docId: string): Promise<SyncableDocument | null>;
+  open(docId: DocumentId): Promise<SyncableDocument | null>;
   /** After every pull of the pass that imported at least one foreign blob. */
-  onPulled?: (docId: string, result: PullResult) => void;
+  onPulled?: (docId: DocumentId, result: PullResult) => void;
   /** A pass completed, whether or not anything was pulled. */
   onPass?: (outcome: SpacePassOutcome) => void;
   /** A failed pass; the next nudge or poll simply tries again. */
@@ -84,7 +90,7 @@ export interface DocumentSyncOptions {
    * only for echo suppression on pull; author identity travels inside the
    * CRDT bytes.
    */
-  writer: string;
+  writer: WriterId;
   /** False disables the automatic proposal after push. */
   compaction?: { maxRows?: number; maxBytes?: number } | false;
   pollIntervalMs?: number;
@@ -124,16 +130,16 @@ export function createDocumentSync(options: DocumentSyncOptions) {
 
   /** Server rows this document is known to exist for (ensure is idempotent
    *  but not free — one upsert per process lifetime is enough). */
-  const ensured = new Set<string>();
+  const ensured = new Set<DocumentId>();
   /** Local running total of tail bytes seen since the last compaction. */
-  const tailByteGauge = new Map<string, number>();
+  const tailByteGauge = new Map<DocumentId, number>();
   /** One pull at a time per document; concurrent requests coalesce. */
-  const pullChain = new Map<string, Promise<PullResult>>();
+  const pullChain = new Map<DocumentId, Promise<PullResult>>();
 
   async function ensureDocument(
-    docId: string,
-    spaceId: string,
-    resourceId: string | null
+    docId: DocumentId,
+    spaceId: SpaceId,
+    resourceId: KnowledgeResourceId | null
   ) {
     if (ensured.has(docId)) return;
     await transport.ensureDocument(docId, spaceId, resourceId);
@@ -141,7 +147,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function maybeCompact(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument
   ): Promise<boolean> {
     const rows = await transport.tailCount(docId);
@@ -164,10 +170,10 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function push(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
-    spaceId: string,
-    resourceId: string | null = null
+    spaceId: SpaceId,
+    resourceId: KnowledgeResourceId | null = null
   ): Promise<PushResult> {
     const { pushedVv } = await ledger.read(docId);
     const current = doc.versionBytes();
@@ -193,7 +199,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * in, whatever the ledger says was pulled.
    */
   async function pullOnce(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     from?: number
   ): Promise<PullResult> {
@@ -257,7 +263,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   function pull(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     from?: number
   ): Promise<PullResult> {
@@ -278,7 +284,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * nudge is lost. Returns the stop function.
    */
   function watch(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     hooks: {
       /** After every pull that imported at least one foreign blob. */
@@ -309,7 +315,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function passSpace(
-    spaceId: string,
+    spaceId: SpaceId,
     hooks: SpaceWatchHooks,
     full: boolean
   ): Promise<SpacePassOutcome> {
@@ -348,7 +354,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * subscription on the space, and the same poll `watch` has. Passes never
    * overlap — a nudge during a pass queues one more.
    */
-  function watchSpace(spaceId: string, hooks: SpaceWatchHooks): SpaceWatch {
+  function watchSpace(spaceId: SpaceId, hooks: SpaceWatchHooks): SpaceWatch {
     let stopped = false;
     let running = false;
     let again = false;
@@ -403,7 +409,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
      * through (its own last pushed row, or its pulled watermark).
      */
     async proposeCompaction(
-      docId: string,
+      docId: DocumentId,
       doc: SyncableDocument,
       coversSeq: number
     ): Promise<boolean> {
