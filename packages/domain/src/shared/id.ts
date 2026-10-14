@@ -1,4 +1,8 @@
-import { createEntityIdFor, type EntityKind } from '@workspace/entity-id';
+import {
+  createEntityId,
+  entityIdRegistry,
+  type EntityKind,
+} from '@workspace/entity-id';
 
 export type { EntityKind };
 
@@ -15,7 +19,7 @@ export const LOCAL_USER_ID = 'local-user';
  * where it should not be says what it is.
  */
 export function newId(kind: EntityKind): string {
-  return createEntityIdFor(kind);
+  return createEntityId(entityIdRegistry.prefixFor(kind));
 }
 
 /** Current time. Kept as a function so tests can pass explicit values instead. */

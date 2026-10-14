@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -17,9 +17,9 @@ import { z } from 'zod';
  */
 export const moveKnowledgeResourceInputSchema = z
   .object({
-    spaceId: entityIds.space.prefixSchema,
-    nodeId: entityIds.knowledgeResource.prefixSchema,
-    targetParentId: entityIds.knowledgeResource.prefixSchema.nullable(),
+    spaceId: entityIdSchemas.space.prefixSchema,
+    nodeId: entityIdSchemas.knowledgeResource.prefixSchema,
+    targetParentId: entityIdSchemas.knowledgeResource.prefixSchema.nullable(),
     position: z.number().int().nonnegative(),
   })
   .refine(

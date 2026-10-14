@@ -1,24 +1,24 @@
+import {
+  type BrandedEntityId,
+  defineEntityPrefixes,
+  type EntityId,
+  type EntityIdOf,
+  type EntityIdRegistry,
+  type EntityIdSchema,
+  prefixGatedEntityIdSchema,
+  strictEntityIdSchema,
+  withSchemas,
+} from 'entity-id';
+import type { z } from 'zod';
+
 /**
  * Central catalog of every entity-id prefix in the system — one prefix per
- * kind, each unique and well-formed (`PREFIX_RE`).
+ * kind, each unique and well-formed.
  *
  * Single source of truth for the prefix that goes into `<prefix>_<rand16>.<ts10>`
  * across all three producers: Postgres column defaults
  * (`entity_id_generate('<prefix>')`), the Payload custom-id plugin's `prefixMap`,
- * and app-side `createEntityId('<prefix>')` call sites.
- *
- * Prefixes are declared statically, so their two invariants are asserted once in
- * CI (`registry.test.ts`) rather than re-checked at runtime on every boot:
- *   1. uniqueness — no two kinds share a prefix (an `xxx_…` id must route back to
- *      exactly one kind; the classic hazard is two slugs compressing to the same
- *      short prefix, e.g. `program`/`project` → `pr…`);
- *   2. shape — each matches `PREFIX_RE`.
- * `sql-sync.test.ts` additionally asserts the DB and this catalog never drift:
- * every `entity_id_generate('x')` prefix in a migration is registered here.
- *
- * `derivePrefixFromSlug` / `ensureUniquePrefix` (in `index.ts`) stay for the day a
- * prefix is minted from a slug at runtime rather than hand-picked; only then would
- * a runtime uniqueness guard earn its keep again.
+ * and app-side minting through {@link entityIdRegistry}.
  *
  * The keys are stable semantic entity names (not table names) so renaming a table
  * does not churn this file; the values are the wire prefixes and MUST match the DB.
@@ -90,41 +90,97 @@ export const ENTITY_PREFIXES = {
   writer: 'wrt',
 } as const satisfies Record<string, string>;
 
+/**
+ * The registry, declared once through the published package: it validates the
+ * catalog eagerly (a malformed prefix or two kinds sharing one throws at import
+ * time) and derives one typed factory per kind —
+ * `entityIdRegistry.factories.spaceIdFactory.create()` mints a `SpaceId`.
+ *
+ * Its guards (`factories.*.is` / `assert`, `kindOf`, `assertKnown`) follow the
+ * package's process-wide validation mode, whose default checks only the
+ * `<prefix>_` head. Nothing in the repo sets the mode; where full depth matters,
+ * pass `{ mode: 'full' }` per call or parse with
+ * {@link strictEntityIdSchemaFor}.
+ */
+export const entityIdRegistry: EntityIdRegistry<typeof ENTITY_PREFIXES> =
+  defineEntityPrefixes(ENTITY_PREFIXES);
+
 /** Semantic entity name — a key of {@link ENTITY_PREFIXES}. */
 export type EntityKind = keyof typeof ENTITY_PREFIXES;
 
 /** A registered wire prefix — a value of {@link ENTITY_PREFIXES}. */
 export type EntityPrefix = (typeof ENTITY_PREFIXES)[EntityKind];
 
-/** All registered prefixes, sorted, as a plain string list. */
-export const ALL_ENTITY_PREFIXES: readonly string[] = Object.freeze(
-  Object.values(ENTITY_PREFIXES).sort()
-);
+/**
+ * The package's zod members per kind: `entityIdSchemas.space.prefixSchema` is
+ * the prefix gate the contracts use (a `spc_` head, any suffix — mode
+ * independent). Its `.schema` follows the ambient validation mode; for the
+ * full contract use {@link strictEntityIdSchemaFor}.
+ */
+export const entityIdSchemas = withSchemas(entityIdRegistry);
 
-/** Every registered entity kind (catalog key), in declaration order. */
-export const ENTITY_KINDS: readonly EntityKind[] = Object.freeze(
-  Object.keys(ENTITY_PREFIXES) as EntityKind[]
-);
-
-/** The registered prefix for a known entity. Type-safe: unknown names won't compile. */
-export function prefixFor(kind: EntityKind): EntityPrefix {
-  return ENTITY_PREFIXES[kind];
+/**
+ * Full-depth schema for one kind, whatever the package's validation mode: the
+ * package's always-strict `strictEntityIdSchema` (whole
+ * `<prefix>_<rand16>.<ts10>` contract, trimmed, normalized to lowercase) piped
+ * into the kind's prefix gate. The package has no strict per-kind schema of
+ * its own: its per-kind `schema` checks only the prefix head under the default
+ * mode.
+ */
+export function strictEntityIdSchemaFor<K extends EntityKind>(
+  kind: K
+): EntityIdSchema<K> {
+  // The gate reads the strict schema's canonical output, so it is typed to
+  // accept an `EntityId` rather than the raw string it is declared with.
+  const gate = prefixGatedEntityIdSchema<K>(
+    ENTITY_PREFIXES[kind]
+  ) as unknown as z.ZodType<BrandedEntityId<K>, EntityId>;
+  return strictEntityIdSchema.pipe(gate);
 }
 
-/** Whether a string is a registered entity kind. Narrows to {@link EntityKind}. */
-export function isEntityKind(value: string): value is EntityKind {
-  return Object.prototype.hasOwnProperty.call(ENTITY_PREFIXES, value);
-}
+type Ids = typeof ENTITY_PREFIXES;
 
-/** Whether a prefix string is registered. Narrows to {@link EntityPrefix}. */
-export function isRegisteredPrefix(prefix: string): prefix is EntityPrefix {
-  return (Object.values(ENTITY_PREFIXES) as string[]).includes(prefix);
-}
-
-/** The semantic entity kind that owns a registered prefix, or `undefined`. */
-export function entityKindForPrefix(prefix: string): EntityKind | undefined {
-  for (const kind of ENTITY_KINDS) {
-    if (ENTITY_PREFIXES[kind] === prefix) return kind;
-  }
-  return undefined;
-}
+export type UserId = EntityIdOf<Ids, 'user'>;
+export type OrganizationId = EntityIdOf<Ids, 'organization'>;
+export type SpaceId = EntityIdOf<Ids, 'space'>;
+export type SpaceInviteId = EntityIdOf<Ids, 'spaceInvite'>;
+export type SpaceAdminAuditLogId = EntityIdOf<Ids, 'spaceAdminAuditLog'>;
+export type RoleId = EntityIdOf<Ids, 'role'>;
+export type PermissionId = EntityIdOf<Ids, 'permission'>;
+export type UserRoleId = EntityIdOf<Ids, 'userRole'>;
+export type OperatorCapabilityGrantId = EntityIdOf<
+  Ids,
+  'operatorCapabilityGrant'
+>;
+export type OperatorCapabilitySessionId = EntityIdOf<
+  Ids,
+  'operatorCapabilitySession'
+>;
+export type OperatorCapabilityAuditId = EntityIdOf<
+  Ids,
+  'operatorCapabilityAudit'
+>;
+export type ContentItemId = EntityIdOf<Ids, 'contentItem'>;
+export type ScopeId = EntityIdOf<Ids, 'scope'>;
+export type OutboxJobId = EntityIdOf<Ids, 'outboxJob'>;
+export type RuntimeSettingId = EntityIdOf<Ids, 'runtimeSetting'>;
+export type KnowledgeResourceId = EntityIdOf<Ids, 'knowledgeResource'>;
+export type KnowledgeEdgeId = EntityIdOf<Ids, 'knowledgeEdge'>;
+export type ProjectionId = EntityIdOf<Ids, 'projection'>;
+export type ResourceUserStateId = EntityIdOf<Ids, 'resourceUserState'>;
+export type ReportingLineId = EntityIdOf<Ids, 'reportingLine'>;
+export type KbResourceDescriptionId = EntityIdOf<Ids, 'kbResourceDescription'>;
+export type KbResourceActivityId = EntityIdOf<Ids, 'kbResourceActivity'>;
+export type KbResourceLinkId = EntityIdOf<Ids, 'kbResourceLink'>;
+export type KbMediaBlobId = EntityIdOf<Ids, 'kbMediaBlob'>;
+export type KbResourceMediaMetaId = EntityIdOf<Ids, 'kbResourceMediaMeta'>;
+export type BodyId = EntityIdOf<Ids, 'body'>;
+export type DocumentId = EntityIdOf<Ids, 'document'>;
+export type DocumentVersionId = EntityIdOf<Ids, 'documentVersion'>;
+export type DocumentChunkId = EntityIdOf<Ids, 'documentChunk'>;
+export type FileNodeId = EntityIdOf<Ids, 'fileNode'>;
+export type ChatId = EntityIdOf<Ids, 'chat'>;
+export type ChatMessageId = EntityIdOf<Ids, 'chatMessage'>;
+export type ChatMessagePartId = EntityIdOf<Ids, 'chatMessagePart'>;
+export type ChatStreamId = EntityIdOf<Ids, 'chatStream'>;
+export type WriterId = EntityIdOf<Ids, 'writer'>;

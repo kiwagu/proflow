@@ -19,7 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { DocumentCrdt } from '@workspace/doc-crdt';
 import { fromByteaHex, toByteaHex } from '@workspace/doc-sync';
 import type { SerializedNode, SerializedTree } from '@workspace/domain';
-import { createEntityIdFor } from '@workspace/entity-id';
+import { entityIdRegistry } from '@workspace/entity-id';
 import type { ResourceStatus } from '@workspace/knowledge-contracts';
 import { KB_MEDIA_BUCKET } from '@workspace/knowledge-contracts';
 import { MEDIA_DOWNLOAD_URL_TTL_SECONDS } from '@workspace/knowledge-contracts';
@@ -465,7 +465,7 @@ export function makeSeedClient(deps: SeedClientDeps): SeedClient {
       // The body is a CRDT from birth: the document row carries a full snapshot
       // (never shallow — it is the only copy of the history) and the node points
       // at it. A doc starts as a draft; `publishDoc` is what makes it readable.
-      const docId = createEntityIdFor('document');
+      const docId = entityIdRegistry.factories.documentIdFactory.create();
       const crdt = DocumentCrdt.create();
       if (opts?.lexicalBody) {
         crdt.commitTree(withNodeIds(opts.lexicalBody), {
@@ -823,7 +823,7 @@ export function makeSeedClient(deps: SeedClientDeps): SeedClient {
       // the path is addressed by the blob id, so the id is minted here. The
       // object key is server-chosen — the declared filename is display metadata
       // and only ever contributes a conservative extension.
-      const blobId = createEntityIdFor('kbMediaBlob');
+      const blobId = entityIdRegistry.factories.kbMediaBlobIdFactory.create();
       const storagePath = `spaces/${spaceId}/kb/blobs/${blobId}/${crypto.randomUUID()}${safeExtension(declared.filename)}`;
       const { error } = await kb.from('media_blob').insert({
         id: blobId,

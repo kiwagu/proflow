@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -21,22 +21,22 @@ import { z } from 'zod';
 
 /** Trash a resource (and soft-cascade its containment orphans). */
 export const trashResourceInputSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_… the selected node
+  spaceId: entityIdSchemas.space.prefixSchema,
+  resourceId: entityIdSchemas.knowledgeResource.prefixSchema, // knr_… the selected node
 });
 export type TrashResourceInput = z.infer<typeof trashResourceInputSchema>;
 
 /** Restore a trashed resource (and its trashed-as-a-unit subtree). */
 export const restoreResourceInputSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_… the trashed node
+  spaceId: entityIdSchemas.space.prefixSchema,
+  resourceId: entityIdSchemas.knowledgeResource.prefixSchema, // knr_… the trashed node
 });
 export type RestoreResourceInput = z.infer<typeof restoreResourceInputSchema>;
 
 /** Permanently destroy a trashed resource (manual purge from the Trash lens). */
 export const purgeResourceInputSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  resourceId: entityIds.knowledgeResource.prefixSchema, // knr_… the trashed node (always destroyed)
+  spaceId: entityIdSchemas.space.prefixSchema,
+  resourceId: entityIdSchemas.knowledgeResource.prefixSchema, // knr_… the trashed node (always destroyed)
 });
 export type PurgeResourceInput = z.infer<typeof purgeResourceInputSchema>;
 
@@ -49,9 +49,9 @@ export type PurgeResourceInput = z.infer<typeof purgeResourceInputSchema>;
  * discriminator (vs the single `resourceId`) is what the DELETE route branches on.
  */
 export const purgeResourceBatchInputSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
+  spaceId: entityIdSchemas.space.prefixSchema,
   resourceIds: z
-    .array(entityIds.knowledgeResource.prefixSchema)
+    .array(entityIdSchemas.knowledgeResource.prefixSchema)
     .min(1)
     .max(200), // knr_… the trashed nodes
 });

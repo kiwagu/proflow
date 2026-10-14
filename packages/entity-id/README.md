@@ -1,7 +1,23 @@
 # Entity IDs (`@workspace/entity-id`)
 
-This package defines the **canonical contract** and a reference implementation for
-entity identifiers used across the monorepo (Next.js apps, workers, services).
+The repo's id toolkit is the published
+[`entity-id`](https://www.npmjs.com/package/entity-id) package: wire contract,
+minting, decoding, guards and zod schemas. This workspace package re-exports it
+whole and adds only what is proflow's own (`src/registry.ts`):
+
+- `ENTITY_PREFIXES` and `entityIdRegistry` — the prefix catalog, declared once
+  through the package's `defineEntityPrefixes`, with one factory per kind
+  (`entityIdRegistry.factories.spaceIdFactory.create()`);
+- the id vocabulary as types (`SpaceId`, `DocumentId`, `WriterId`, …);
+- `entityIdSchemas` — the package's `withSchemas(entityIdRegistry)`;
+- `strictEntityIdSchemaFor(kind)` — a full-depth per-kind schema (see below).
+
+**Validation depth is a mode.** The package's default (`mixed`) checks only the
+`<prefix>_` head in `isEntityId`, the factories' `is`/`assert`, `parseEntityId` and
+the per-kind `entityIdSchemas.<kind>.schema`. Nothing in the repo sets the mode. Where
+the full contract matters, use `strictEntityIdSchema` / `strictEntityIdSchemaFor(kind)`
+or pass `{ mode: 'full' }` per call. Contract fields default to the prefix gate
+`entityIdSchemas.<kind>.prefixSchema`, which is mode-independent.
 
 The format is optimized for **operator / developer DX** while staying equivalent
 to a canonical **ULID** payload (time + randomness).
@@ -85,23 +101,23 @@ If you introduce new Payload collections, decide explicitly:
 
 ## API (summary)
 
+See the published package's README for the full API. The common calls:
+
+- `entityIdRegistry.factories.<kind>IdFactory` — `create()`, `is(v, { mode })`,
+  `assert(v, { mode })`, `brand(v)` (trusted casts only)
 - `createEntityId(prefix)` → `<prefix>_<rand>.<ts>`
-- `parseEntityId(value)` → `{ prefix, rand, ts, ulid, timeMs }`
-- `toUlid(entityId)` / `fromUlid(prefix, ulid)`
-- `isEntityId(value)` and `normalizeEntityId(value)`
-- `entityIdToTuple(entityId)` → `[prefix, rand, iso, timeMs]`
-- `entityIdToTimeMs(entityId)` / `entityIdToIso(entityId)` / `entityIdTsToTimeMs(ts)`
-- `derivePrefixFromSlug(slug)` and `ensureUniquePrefix(base, slug, usedSet)` for prefix catalogs
+- `parseEntityId(value, { mode: 'full' })` → `{ prefix, rand, ts, ulid, timeMs, iso }`
+- `isEntityId(value, { mode: 'full' })` and `normalizeEntityId(value)` (always full)
+- `entityIdSchemas.<kind>.prefixSchema`, `strictEntityIdSchemaFor(kind)`,
+  `strictEntityIdSchema`
 
 ## Operator tooling (CLI)
 
-This package includes small helpers for debugging and generating IDs:
+The published package ships a CLI for minting and inspecting ids:
 
 ```bash
-bun run build --filter=@workspace/entity-id
-bun run --cwd packages/entity-id cli gen
-bun run --cwd packages/entity-id cli gen usr
-bun run --cwd packages/entity-id cli inspect "usr_mkg2pqwyacy14bym.01kn21dwmd"
+bunx entity-id new usr
+bunx entity-id inspect "usr_mkg2pqwyacy14bym.01kn21dwmd"
 ```
 
 ## Postgres query/index notes

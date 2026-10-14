@@ -1,17 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  ALL_ENTITY_PREFIXES,
-  assertEntityIdWithPrefix,
-  brandedEntityIdSchema,
-  createEntityIdFor,
+  defineEntityPrefixes,
   ENTITY_PREFIXES,
-  entityIds,
+  entityIdRegistry,
+  entityIdSchemas,
   isEntityId,
-  isEntityIdWithPrefix,
-  isRegisteredPrefix,
   PREFIX_RE,
-  prefixFor,
 } from './index.js';
 
 /**
@@ -32,8 +27,8 @@ const prefixCollisions = (
     .sort();
 };
 
-// The prefixes are static, so their invariants are asserted here (CI) instead
-// of by a runtime guard on every boot.
+// The prefixes are static, so their invariants are asserted here (CI) as well
+// as by the package when the registry is defined.
 describe('ENTITY_PREFIXES catalog', () => {
   test('has no two kinds sharing a prefix', () => {
     // On failure this reads e.g. ["pr: program + project"] — the exact clash.
@@ -47,113 +42,63 @@ describe('ENTITY_PREFIXES catalog', () => {
     ).toEqual(['pr: program + project']);
   });
 
+  test('the published registry refuses a colliding catalog at definition', () => {
+    expect(() =>
+      defineEntityPrefixes({ program: 'pr', project: 'pr' } as const)
+    ).toThrow();
+  });
+
   test('has a well-formed prefix for every kind', () => {
     for (const prefix of Object.values(ENTITY_PREFIXES)) {
       expect(prefix).toMatch(PREFIX_RE);
     }
   });
 
-  test('ALL_ENTITY_PREFIXES is the sorted, complete set', () => {
-    expect(ALL_ENTITY_PREFIXES).toEqual(
+  test('is the catalog the registry was defined from', () => {
+    expect(entityIdRegistry.prefixes).toBe(ENTITY_PREFIXES);
+    expect(entityIdRegistry.kinds as readonly string[]).toEqual(
+      Object.keys(ENTITY_PREFIXES)
+    );
+    expect(entityIdRegistry.allPrefixes).toEqual(
       [...new Set(Object.values(ENTITY_PREFIXES))].sort()
     );
   });
 
-  test('prefixFor / isRegisteredPrefix agree with the catalog', () => {
-    expect(prefixFor('body')).toBe('bod');
-    expect(prefixFor('organization')).toBe('org');
-    expect(isRegisteredPrefix('knr')).toBe(true);
-    expect(isRegisteredPrefix('nope')).toBe(false);
-  });
-
-  test('createEntityIdFor mints a valid id under the registered prefix', () => {
-    const id = createEntityIdFor('space');
-    expect(isEntityId(id)).toBe(true);
-    expect(id.startsWith('spc_')).toBe(true);
+  test('routes a prefix and an id back to their kind', () => {
+    expect(entityIdRegistry.prefixFor('body')).toBe('bod');
+    expect(entityIdRegistry.isRegisteredPrefix('knr')).toBe(true);
+    expect(entityIdRegistry.isRegisteredPrefix('nope')).toBe(false);
+    expect(entityIdRegistry.kindForPrefix('wrt')).toBe('writer');
+    expect(
+      entityIdRegistry.kindOf(
+        entityIdRegistry.factories.writerIdFactory.create()
+      )
+    ).toBe('writer');
   });
 });
 
-describe('per-kind branded toolkit (entityIds)', () => {
-  test('create mints an id under the kind prefix', () => {
-    const id = entityIds.knowledgeResource.create();
-    expect(isEntityId(id)).toBe(true);
-    expect(id.startsWith('knr_')).toBe(true);
-    expect(entityIds.knowledgeResource.prefix).toBe('knr');
-  });
-
-  test('is / assert accept the right prefix and reject others', () => {
-    const spaceId = entityIds.space.create();
-    expect(entityIds.space.is(spaceId)).toBe(true);
-    expect(entityIds.user.is(spaceId)).toBe(false);
-
-    expect(entityIds.space.assert(spaceId)).toBe(spaceId);
-    expect(() => entityIds.user.assert(spaceId)).toThrow();
-  });
-
-  test('schema parses only its own kind', () => {
-    const userId = entityIds.user.create();
-    expect(entityIds.user.schema.parse(userId)).toBe(userId);
-    expect(entityIds.body.schema.safeParse(userId).success).toBe(false);
-  });
-
-  test('prefixSchema gates the prefix but tolerates a non-canonical suffix', () => {
-    // Correct prefix, fake suffix → accepted (fixtures / negative tests).
-    expect(
-      entityIds.knowledgeResource.prefixSchema.safeParse('knr_this_id_x')
-        .success
-    ).toBe(true);
-    // Wrong KIND prefix → rejected at runtime (the swapped-id hazard).
-    expect(entityIds.space.prefixSchema.safeParse('usr_whatever').success).toBe(
-      false
-    );
-    // Missing prefix / empty → rejected.
-    expect(entityIds.space.prefixSchema.safeParse('nope').success).toBe(false);
-    expect(entityIds.space.prefixSchema.safeParse('').success).toBe(false);
-    // A real id of the kind → accepted.
-    expect(
-      entityIds.space.prefixSchema.safeParse(entityIds.space.create()).success
-    ).toBe(true);
-  });
-
-  test('looseSchema brands but only checks non-empty (placeholder ids pass)', () => {
-    // A placeholder that is NOT a full entity-id still parses under looseSchema…
-    expect(
-      String(entityIds.knowledgeResource.looseSchema.parse('knr_placeholder'))
-    ).toBe('knr_placeholder');
-    // …but the strict schema rejects it.
-    expect(
-      entityIds.knowledgeResource.schema.safeParse('knr_placeholder').success
-    ).toBe(false);
-    // Empty string is still rejected by looseSchema.
-    expect(entityIds.knowledgeResource.looseSchema.safeParse('').success).toBe(
-      false
-    );
-  });
-
-  test('every registered kind has a toolkit bound to its prefix', () => {
+describe('one factory and one schema set per kind', () => {
+  test('every registered kind mints a valid id under its own prefix', () => {
     for (const [kind, prefix] of Object.entries(ENTITY_PREFIXES)) {
-      const kit = entityIds[kind as keyof typeof entityIds];
-      expect(kit.prefix).toBe(prefix);
-      expect(kit.is(kit.create())).toBe(true);
+      const factory = (
+        entityIdRegistry.factories as unknown as Record<
+          string,
+          { prefix: string; create: () => string; is: (v: string) => boolean }
+        >
+      )[`${kind}IdFactory`];
+      expect(factory?.prefix).toBe(prefix);
+      const id = factory!.create();
+      expect(isEntityId(id, { mode: 'full' })).toBe(true);
+      expect(id.startsWith(`${prefix}_`)).toBe(true);
+      expect(factory!.is(id)).toBe(true);
     }
   });
-});
 
-describe('branded prefix utilities', () => {
-  test('brandedEntityIdSchema enforces the prefix', () => {
-    const schema = brandedEntityIdSchema<'SpaceId'>('spc');
-    const spaceId = entityIds.space.create();
-    // Compare the underlying strings: the manual 'SpaceId' brand and the
-    // toolkit's 'space' brand are intentionally different tags.
-    expect(String(schema.parse(spaceId))).toBe(String(spaceId));
-    expect(schema.safeParse(entityIds.user.create()).success).toBe(false);
-  });
-
-  test('isEntityIdWithPrefix / assertEntityIdWithPrefix are prefix-aware', () => {
-    const orgId = entityIds.organization.create();
-    expect(isEntityIdWithPrefix(orgId, 'org')).toBe(true);
-    expect(isEntityIdWithPrefix(orgId, 'usr')).toBe(false);
-    expect(assertEntityIdWithPrefix(orgId, 'org')).toBe(orgId);
-    expect(() => assertEntityIdWithPrefix(orgId, 'usr')).toThrow();
+  test('every registered kind has a prefix gate', () => {
+    for (const kind of Object.keys(ENTITY_PREFIXES)) {
+      expect(
+        entityIdSchemas[kind as keyof typeof entityIdSchemas].prefixSchema
+      ).toBeDefined();
+    }
   });
 });

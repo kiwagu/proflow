@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 // one resolved projection node + its traversal context for the view layer
 export const projectionResultItemSchema = z.object({
-  id: entityIds.knowledgeResource.prefixSchema, // knr_…
+  id: entityIdSchemas.knowledgeResource.prefixSchema, // knr_…
   kind: z.string(),
   title: z.string(),
   status: z.string(),
@@ -23,7 +23,7 @@ export const projectionResultItemSchema = z.object({
   body_ref: z.unknown().nullable(),
   // --- traversal context (for course/graph views) ---
   depth: z.number().int().min(0), // distance from the start node
-  via_edge_id: entityIds.knowledgeEdge.prefixSchema.nullable(), // edge we arrived through (null for start nodes)
+  via_edge_id: entityIdSchemas.knowledgeEdge.prefixSchema.nullable(), // edge we arrived through (null for start nodes)
 });
 export type ProjectionResultItem = z.infer<typeof projectionResultItemSchema>;
 
