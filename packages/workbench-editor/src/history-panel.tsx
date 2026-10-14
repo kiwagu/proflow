@@ -29,7 +29,8 @@ export type HistoryPanelProps = {
    */
   onPreview: (version: DocumentVersion) => void;
   /** The previewed version should become the document's current state. */
-  onRestore: (version: DocumentVersion) => void;
+  /** Absent when the person may not write the document: no restore is offered. */
+  onRestore?: (version: DocumentVersion) => void;
   labels?: HistoryLabels;
   /** The moment ages are measured against. A seam for specs. */
   now?: Date;
@@ -108,15 +109,17 @@ export function HistoryPanel({
           className="flex min-h-0 flex-1 flex-col gap-2 border-t pt-2"
           data-testid="history-preview"
         >
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start"
-            data-testid="history-restore"
-            onClick={() => onRestore(selected)}
-          >
-            {labels.restore}
-          </Button>
+          {onRestore ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              data-testid="history-restore"
+              onClick={() => onRestore(selected)}
+            >
+              {labels.restore}
+            </Button>
+          ) : null}
           <div className="min-h-0 flex-1 overflow-hidden">{preview}</div>
         </div>
       ) : null}
