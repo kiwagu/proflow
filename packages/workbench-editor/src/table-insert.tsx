@@ -53,6 +53,11 @@ export function TableInsert({
   const [hover, setHover] = useState<{ rows: number; columns: number } | null>(
     null
   );
+  // A grid left open when the editor stops taking input closes with it.
+  if (disabled && open) {
+    setOpen(false);
+    setHover(null);
+  }
 
   // Serve in-editor picker requests while mounted.
   useEffect(() => {
@@ -67,6 +72,7 @@ export function TableInsert({
   }, [editor]);
 
   const insert = (rows: number, columns: number) => {
+    if (!editor.isEditable()) return;
     editor.dispatchCommand(INSERT_TABLE_COMMAND, {
       rows: String(rows),
       columns: String(columns),

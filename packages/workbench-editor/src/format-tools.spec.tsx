@@ -10,9 +10,11 @@ import {
 import { $isHeadingNode } from '@lexical/rich-text';
 import { TooltipProvider } from '@workspace/ui/components/tooltip';
 import { act } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocumentView } from './document-view.js';
 import { FormatTools } from './format-tools.js';
+import { TableInsert } from './table-insert.js';
 
 afterEach(() => {
   cleanup();
@@ -20,20 +22,32 @@ afterEach(() => {
 
 function renderWithToolbar(props: { readOnly?: boolean } = {}) {
   let wrapper: LexicalWrapper | undefined;
-  const utils = render(
-    <TooltipProvider>
-      <DocumentView
-        {...props}
-        onWrapper={(w) => {
-          wrapper = w;
-        }}
-      >
-        <FormatTools />
-      </DocumentView>
-    </TooltipProvider>
-  );
+  let setReadOnly: (next: boolean) => void = () => {};
+  function Harness() {
+    const [readOnly, setReadOnlyState] = useState(props.readOnly ?? false);
+    setReadOnly = setReadOnlyState;
+    return (
+      <TooltipProvider>
+        <DocumentView
+          readOnly={readOnly}
+          onWrapper={(w) => {
+            wrapper = w;
+          }}
+        >
+          <FormatTools>
+            <TableInsert />
+          </FormatTools>
+        </DocumentView>
+      </TooltipProvider>
+    );
+  }
+  const utils = render(<Harness />);
   if (!wrapper) throw new Error('wrapper not captured');
-  return { wrapper, ...utils };
+  return {
+    wrapper,
+    setReadOnly: (next: boolean) => act(() => setReadOnly(next)),
+    ...utils,
+  };
 }
 
 /** Select all the text in the document, inside an update. */
@@ -132,6 +146,50 @@ describe('FormatTools', () => {
     );
     expect((screen.getByLabelText('Link') as HTMLButtonElement).disabled).toBe(
       true
+    );
+  });
+
+  it('changes nothing once the document turns read-only, with the link and table pickers already open', () => {
+    const { wrapper, setReadOnly } = renderWithToolbar();
+    act(() => {
+      wrapper.editor.update(() => {
+        const paragraph = $createParagraphNode();
+        const text = $createTextNode('plain');
+        paragraph.append(text);
+        $getRoot().clear().append(paragraph);
+        text.select(0, text.getTextContentSize());
+      });
+    });
+    const before = JSON.stringify(wrapper.editor.getEditorState().toJSON());
+
+    fireEvent.click(screen.getByLabelText('Link'));
+    fireEvent.change(screen.getByPlaceholderText(/https/i), {
+      target: { value: 'https://example.com' },
+    });
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy();
+    setReadOnly(true);
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
+
+    setReadOnly(false);
+    fireEvent.click(screen.getByLabelText('Insert table'));
+    expect(screen.getByRole('grid')).toBeTruthy();
+    setReadOnly(true);
+    expect(screen.queryByRole('grid')).toBeNull();
+
+    for (const label of [
+      'Bold',
+      'Italic',
+      'Underline',
+      'Strikethrough',
+      'Inline code',
+      'Highlight',
+    ])
+      expect((screen.getByLabelText(label) as HTMLButtonElement).disabled).toBe(
+        true
+      );
+    fireEvent.pointerDown(screen.getByLabelText('Bold'));
+    expect(JSON.stringify(wrapper.editor.getEditorState().toJSON())).toBe(
+      before
     );
   });
 
