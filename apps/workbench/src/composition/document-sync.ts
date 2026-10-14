@@ -244,7 +244,9 @@ export function startDocumentSync(
           return;
         }
         if (disposed) return;
-        const client = createBrowserClient<Database>(config.url, config.key);
+        const client = createBrowserClient<Database>(config.url, config.key, {
+          cookieOptions: { name: config.cookie },
+        });
         engine = createDocumentSync({
           transport: createSupabaseTransport(client),
           ledger: createPgliteLedger(db),

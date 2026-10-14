@@ -63,6 +63,32 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    # Same-origin backend API: the workbench reaches REST, Realtime and Storage
+    # under this prefix, so none of its requests crosses origins and none needs a
+    # CORS preflight (the preflight cache is keyed by full URL, and every pull URL
+    # carries a new cursor, so cross-origin it never hit). The prefix is stripped
+    # (trailing slash on proxy_pass) before the gateway sees the request; the
+    # api.proflow.local block below stays for server-side callers, tools and
+    # uploads. nginx picks the longest matching prefix, so this wins over `/`.
+    location @BACKEND_PATH@/ {
+        client_max_body_size 5g;
+        proxy_request_buffering off;
+        proxy_pass http://@SUPABASE_UPSTREAM_HOST@:@SUPABASE_UPSTREAM_PORT@/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        # Realtime is a WebSocket: without the upgrade headers the channel never
+        # subscribes and replication silently falls back to its slowest cadence.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # Same origin: the gateway's permissive CORS headers are noise here.
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Access-Control-Allow-Credentials;
+    }
+
     location / {
         # Static proxy_pass (not a variable): nginx resolves host.docker.internal at
         # startup via /etc/hosts, where Docker's host-gateway entry lives on native Linux.

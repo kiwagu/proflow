@@ -34,10 +34,17 @@ import {
 export const SYNC_SETTINGS_KEY = 'sync.supabase';
 
 export interface SyncSettings {
-  /** The server's API origin. */
+  /** Where the server's API is reached: the backend mount on the gateway origin. */
   url: string;
   /** The publishable (anon) key. Public by design — RLS is the boundary. */
   key: string;
+  /**
+   * The name of the cookie that holds the account's session. The browser
+   * client derives a name from the url it is built with; the platform wrote
+   * the session under the name derived from ITS url, so the two differ and
+   * this one is what makes the client find the session.
+   */
+  cookie: string;
 }
 
 export interface StartGraphSyncOptions {
@@ -89,11 +96,17 @@ export function parseSyncSettings(raw: string | null): SyncSettings | null {
     !value.url ||
     !('key' in value) ||
     typeof value.key !== 'string' ||
-    !value.key
+    !value.key ||
+    // No fallback to a derived name: a setting stored by an older build has
+    // none, and the derived one names a cookie that does not exist. It waits
+    // for the next session check to rewrite it.
+    !('cookie' in value) ||
+    typeof value.cookie !== 'string' ||
+    !value.cookie
   ) {
     return null;
   }
-  return { url: value.url, key: value.key };
+  return { url: value.url, key: value.key, cookie: value.cookie };
 }
 
 /**
@@ -141,8 +154,11 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
         if (disposed) return;
         // The browser client reads the account cookies itself: they are set on
         // the gateway origin at the root path, so a page under this mount
-        // carries the same session the server verified.
-        const client = createBrowserClient<Database>(config.url, config.key);
+        // carries the same session the server verified — under the name the
+        // server stated, not the one this url would derive.
+        const client = createBrowserClient<Database>(config.url, config.key, {
+          cookieOptions: { name: config.cookie },
+        });
         const sync = createGraphSync({
           transport: createSupabaseGraphRowTransport(client),
           replica: replicaOver(db),

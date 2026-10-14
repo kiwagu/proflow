@@ -34,7 +34,9 @@ const {
       pendingCount: vi.fn(),
     })),
     createSupabaseGraphRowTransport: vi.fn((_client: unknown) => ({})),
-    createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
+    createBrowserClient: vi.fn(
+      (_url: string, _key: string, _options?: unknown) => ({})
+    ),
   };
 });
 
@@ -52,6 +54,7 @@ import { ok } from 'neverthrow';
 import type { ISettingsStore } from '@workspace/domain';
 import type { AppDb } from '@workspace/persistence-pglite';
 import {
+  parseSyncSettings,
   rememberSyncSettings,
   startGraphSync,
   SYNC_SETTINGS_KEY,
@@ -83,7 +86,24 @@ const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 const CONFIGURED = JSON.stringify({
   url: 'https://server.test',
   key: 'publishable-key',
+  cookie: 'sb-api-auth-token',
 });
+
+/** A store that keeps what is written to it, as the real one does. */
+function settingsStore(initial: Record<string, string>): ISettingsStore {
+  const values = new Map(Object.entries(initial));
+  return {
+    get: vi.fn(async (key: string) => ok(values.get(key) ?? null)),
+    set: vi.fn(async (key: string, value: string) => {
+      values.set(key, value);
+      return ok(undefined);
+    }),
+    remove: vi.fn(async (key: string) => {
+      values.delete(key);
+      return ok(undefined);
+    }),
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -174,9 +194,12 @@ describe('starting graph replication', () => {
     });
     await settled();
     expect(createGraphSync).toHaveBeenCalledTimes(1);
+    // The account's cookie is named after the platform's API host, not
+    // after the url this client is built with.
     expect(createBrowserClient).toHaveBeenCalledWith(
       'https://server.test',
-      'publishable-key'
+      'publishable-key',
+      { cookieOptions: { name: 'sb-api-auth-token' } }
     );
     expect(createGraphSync.mock.calls[0]?.[0]).toMatchObject({
       identity: { userId: 'user-1' },
@@ -286,6 +309,42 @@ describe('starting graph replication', () => {
     stop();
   });
 
+  it('starts only once a setting with a cookie is stored', async () => {
+    // A device upgraded with the setting an older build stored: a url and a
+    // key, no cookie name. Built from it, the client would look for a
+    // cookie that does not exist; it waits for the next session check.
+    const settings = settingsStore({
+      [SYNC_SETTINGS_KEY]: JSON.stringify({
+        url: 'https://api.server.test',
+        key: 'publishable-key',
+      }),
+    });
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings,
+      identity: IDENTITY,
+    });
+    await settled();
+    expect(createBrowserClient).not.toHaveBeenCalled();
+    expect(createGraphSync).not.toHaveBeenCalled();
+
+    await rememberSyncSettings(settings, {
+      url: 'https://proflow.local/backend',
+      key: 'publishable-key',
+      cookie: 'sb-api-auth-token',
+    });
+    window.dispatchEvent(new Event('online'));
+    await settled();
+
+    expect(createBrowserClient).toHaveBeenCalledTimes(1);
+    expect(createBrowserClient).toHaveBeenCalledWith(
+      'https://proflow.local/backend',
+      'publishable-key',
+      { cookieOptions: { name: 'sb-api-auth-token' } }
+    );
+    stop();
+  });
+
   it('retries on the next network event after a failed attempt', async () => {
     // A start that throws must not be the last one this page makes: the
     // journal keeps filling, so a permanently wedged starter is a queue
@@ -317,7 +376,33 @@ describe('remembering the configuration the server sent', () => {
     await rememberSyncSettings(settings, {
       url: 'https://server.test',
       key: 'publishable-key',
+      cookie: 'sb-api-auth-token',
     });
     expect(settings.set).toHaveBeenCalledWith(SYNC_SETTINGS_KEY, CONFIGURED);
+  });
+});
+
+describe('reading the stored configuration', () => {
+  it('takes a url, a key and the cookie name', () => {
+    expect(
+      parseSyncSettings(
+        '{"url":"https://proflow.local/backend","key":"pk","cookie":"sb-api-auth-token"}'
+      )
+    ).toEqual({
+      url: 'https://proflow.local/backend',
+      key: 'pk',
+      cookie: 'sb-api-auth-token',
+    });
+  });
+
+  it('refuses one without the cookie name: there is no fallback to a derived one', () => {
+    expect(
+      parseSyncSettings('{"url":"https://proflow.local/backend","key":"pk"}')
+    ).toBeNull();
+    expect(
+      parseSyncSettings(
+        '{"url":"https://proflow.local/backend","key":"pk","cookie":""}'
+      )
+    ).toBeNull();
   });
 });

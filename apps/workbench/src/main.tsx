@@ -36,7 +36,11 @@ import {
   type ReportOptions,
 } from './shell/operation-errors';
 import { startDocumentSync } from './composition/document-sync';
-import { rememberSyncSettings, startGraphSync } from './composition/sync';
+import {
+  rememberSyncSettings,
+  startGraphSync,
+  type SyncSettings,
+} from './composition/sync';
 import { allowed } from '@workspace/knowledge-contracts';
 import { guardDocumentWrites } from './composition/agent-documents';
 
@@ -127,7 +131,7 @@ function reasonOf(error: unknown): string {
  * the recalled offline session deliberately does not.
  */
 let syncSettings: ISettingsStore | undefined;
-let latestSyncTarget: { url: string; key: string } | undefined;
+let latestSyncTarget: SyncSettings | undefined;
 
 function noteSyncTarget(session: WorkbenchSession | null) {
   if (!session?.sync) return;

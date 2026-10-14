@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The SPA is a static bundle with no per-deployment build, so where its
@@ -44,9 +44,10 @@ const SCOPE: WriteScope = {
   'body.write': { own: ['owner_user_id'] },
 };
 
-function request() {
+function request(headers: Record<string, string> = {}) {
   return {
     cookies: { get: () => undefined },
+    headers: new Headers(headers),
   } as unknown as Parameters<typeof GET>[0];
 }
 
@@ -59,22 +60,65 @@ beforeEach(() => {
   rpc.mockResolvedValue({ data: null, error: null });
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
   delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  // The public origin is configured per case; one inherited from the shell
+  // would decide the url instead of the case.
+  vi.stubEnv('NEXT_PUBLIC_GATEWAY_ORIGIN', '');
+  vi.stubEnv('GATEWAY_ENTRY_ORIGIN', '');
+  vi.stubEnv('NEXT_PUBLIC_GATEWAY_BACKEND_PATH', undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('the workbench session answer', () => {
-  it('states where the replica talks to when the server is configured for it', async () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://server.test';
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'publishable-key';
+  it('states where the replica talks to: the backend mount on the public origin, and the cookie that carries the account', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://api.proflow.local');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'pk');
+    vi.stubEnv('NEXT_PUBLIC_GATEWAY_ORIGIN', 'https://proflow.local');
 
     const body = await (await GET(request())).json();
 
+    // Same origin as the page, so no request needs a preflight; the cookie
+    // is the one the platform's own client writes, named after ITS url.
     expect(body.sync).toEqual({
-      url: 'https://server.test',
-      key: 'publishable-key',
+      url: 'https://proflow.local/backend',
+      key: 'pk',
+      cookie: 'sb-api-auth-token',
     });
   });
 
+  it('mounts the backend where the deployment says', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://api.proflow.local');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'pk');
+    vi.stubEnv('NEXT_PUBLIC_GATEWAY_ORIGIN', 'https://proflow.local');
+    vi.stubEnv('NEXT_PUBLIC_GATEWAY_BACKEND_PATH', '/sync');
+
+    const body = await (await GET(request())).json();
+
+    expect(body.sync.url).toBe('https://proflow.local/sync');
+  });
+
+  it('takes the origin the browser reached the edge on when none is configured', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://api.proflow.local');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'pk');
+
+    const body = await (
+      await GET(
+        request({
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'proflow.local',
+        })
+      )
+    ).json();
+
+    expect(body.sync.url).toBe('https://proflow.local/backend');
+    expect(body.sync.cookie).toBe('sb-api-auth-token');
+  });
+
   it('withholds it when the server is not configured for replication', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'pk');
+    vi.stubEnv('NEXT_PUBLIC_GATEWAY_ORIGIN', 'https://proflow.local');
     const body = await (await GET(request())).json();
 
     expect(body.sync).toBeUndefined();
@@ -95,7 +139,8 @@ describe('the workbench session answer', () => {
   });
 
   it('withholds it when only half the configuration is present', async () => {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://server.test';
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://server.test');
+    vi.stubEnv('NEXT_PUBLIC_GATEWAY_ORIGIN', 'https://proflow.local');
 
     const body = await (await GET(request())).json();
 

@@ -66,7 +66,9 @@ const {
     ),
     createSupabaseTransport: vi.fn((_client: unknown) => ({})),
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
-    createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
+    createBrowserClient: vi.fn(
+      (_url: string, _key: string, _options?: unknown) => ({})
+    ),
     materializeDocuments: vi.fn(async (_db: unknown, _space: string) => 0),
     listAwaitingDocuments: vi.fn(async (_db: unknown): Promise<string[]> => []),
     listUnpushedDocuments: vi.fn(async (_db: unknown): Promise<string[]> => [
@@ -131,6 +133,7 @@ const IDENTITY = {
 const CONFIGURED = JSON.stringify({
   url: 'https://server.test',
   key: 'publishable-key',
+  cookie: 'sb-api-auth-token',
 });
 const db = {} as AppDb;
 
@@ -218,7 +221,8 @@ describe('starting document replication', () => {
     await settled();
     expect(createBrowserClient).toHaveBeenCalledWith(
       'https://server.test',
-      'publishable-key'
+      'publishable-key',
+      { cookieOptions: { name: 'sb-api-auth-token' } }
     );
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
     expect(materializeDocuments).toHaveBeenCalledWith(db, 'spc_abc.01m2');
