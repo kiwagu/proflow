@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import {
   MEDIA_MAX_UPLOAD_DEFAULT_BYTES,
   MEDIA_MAX_UPLOAD_HARD_CAP_BYTES,
@@ -120,11 +120,11 @@ export const KB_MEDIA_BUCKET = 'kb-media' as const;
  * their copy without touching the shared bytes).
  */
 export const resourceMediaMetaSchema = z.object({
-  nodeId: entityIds.knowledgeResource.prefixSchema, // knr_… the owning node
-  spaceId: entityIds.space.prefixSchema,
-  blobId: entityIds.kbMediaBlob.prefixSchema, // kmb_… the shared immutable byte record
+  nodeId: entityIdSchemas.knowledgeResource.prefixSchema, // knr_… the owning node
+  spaceId: entityIdSchemas.space.prefixSchema,
+  blobId: entityIdSchemas.kbMediaBlob.prefixSchema, // kmb_… the shared immutable byte record
   originalFilename: z.string().min(1), // display only; NEVER the storage path
-  createdBy: entityIds.user.prefixSchema,
+  createdBy: entityIdSchemas.user.prefixSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -138,8 +138,8 @@ export type ResourceMediaMeta = z.infer<typeof resourceMediaMetaSchema>;
  * + the bucket `file_size_limit` are the backstop).
  */
 export const mediaUploadAuthorizeRequestSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  nodeId: entityIds.knowledgeResource.prefixSchema,
+  spaceId: entityIdSchemas.space.prefixSchema,
+  nodeId: entityIdSchemas.knowledgeResource.prefixSchema,
   mimeType: z.string().min(1),
   // Hard belt: reject anything over the 5 GB system cap at the boundary. The SOFT
   // per-org limit is enforced in the authorizer against the RESOLVED runtime
@@ -167,7 +167,7 @@ export type MediaUploadAuthorizeRequest = z.infer<
  */
 export const mediaUploadAuthorizeResponseSchema = z.object({
   storagePath: z.string().min(1),
-  blobId: entityIds.kbMediaBlob.prefixSchema,
+  blobId: entityIdSchemas.kbMediaBlob.prefixSchema,
 });
 export type MediaUploadAuthorizeResponse = z.infer<
   typeof mediaUploadAuthorizeResponseSchema
@@ -183,9 +183,9 @@ export type MediaUploadAuthorizeResponse = z.infer<
  * later index, not a backfill.
  */
 export const setResourceMediaRequestSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  nodeId: entityIds.knowledgeResource.prefixSchema,
-  blobId: entityIds.kbMediaBlob.prefixSchema,
+  spaceId: entityIdSchemas.space.prefixSchema,
+  nodeId: entityIdSchemas.knowledgeResource.prefixSchema,
+  blobId: entityIdSchemas.kbMediaBlob.prefixSchema,
   originalFilename: z.string().min(1),
   checksum: z.string().nullable().optional(),
 });

@@ -4,12 +4,12 @@ import type {
   SupabaseClient,
 } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
+import { parseServerIds, parseServerRows } from './server-rows.js';
 import { describeTable, type GraphSyncTableName } from './tables.js';
 import {
   GraphWriteError,
   type GraphRowTransport,
   type PullPage,
-  type RowRecord,
 } from './types.js';
 
 /**
@@ -96,9 +96,11 @@ export function createSupabaseGraphRowTransport(
       if (since) query = query.gte(CURSOR_COLUMN, since.toISOString());
       const { data, error } = await query;
       if (error) throw classify(error);
-      const rows = (data ?? []) as RowRecord[];
+      const rows = (data ?? []) as Record<string, unknown>[];
       const page: PullPage = {
-        rows: rows.slice(0, limit),
+        // The extra row only answers "is there more?" and is never applied,
+        // so it is not checked either: the next page checks it.
+        ...parseServerRows(name, rows.slice(0, limit)),
         hasMore: rows.length > limit,
       };
       return page;
@@ -112,12 +114,15 @@ export function createSupabaseGraphRowTransport(
         .select('id')
         .eq('space_id', spaceId);
       if (error) throw classify(error);
-      return ((data ?? []) as { id: string }[]).map((row) => row.id);
+      return parseServerIds(
+        name,
+        ((data ?? []) as { id: unknown }[]).map((row) => row.id)
+      );
     },
 
     async pullByNodes(name, spaceId, nodeIds) {
       const descriptor = describeTable(name);
-      if (descriptor.nodeKey === null) return [];
+      if (descriptor.nodeKey === null) return { rows: [], refused: [] };
       let query = table(name).select('*').eq('space_id', spaceId);
       query = descriptor.nodeKeySecondary
         ? query.or(
@@ -127,7 +132,7 @@ export function createSupabaseGraphRowTransport(
         : query.in(descriptor.nodeKey, nodeIds);
       const { data, error } = await query;
       if (error) throw classify(error);
-      return (data ?? []) as RowRecord[];
+      return parseServerRows(name, (data ?? []) as Record<string, unknown>[]);
     },
 
     async write(write) {

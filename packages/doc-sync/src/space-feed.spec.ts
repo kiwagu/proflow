@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { LoroDoc } from 'loro-crdt';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SpacePassOutcome } from './document-sync.js';
@@ -19,9 +20,13 @@ import type { SyncTransport } from './types.js';
  * rule under test — a mutant without the trigger (table-global seq) fails
  * the per-document numbering.
  */
-const DOC_A = 'doc_space_spec_000a';
-const DOC_B = 'doc_space_spec_000b';
-const DOC_C = 'doc_space_spec_000c';
+const { documentIdFactory, writerIdFactory } = entityIdRegistry.factories;
+const DOC_A = documentIdFactory.brand('doc_000000000000000a.0000000000');
+const DOC_B = documentIdFactory.brand('doc_000000000000000b.0000000000');
+const DOC_C = documentIdFactory.brand('doc_000000000000000c.0000000000');
+const NO_ROW = documentIdFactory.brand('doc_00000000000000zz.0000000000');
+/** A writer that is no replica of these tests. */
+const W = writerIdFactory.create();
 const blob = (text: string) => new TextEncoder().encode(text);
 /** What a document holding no operations at all reports as its version. */
 const emptyVersion = () => new LoroDoc().version().encode();
@@ -39,9 +44,9 @@ describe('the server assigns seq per document', () => {
   it('numbers each document from 1 with no gaps and tracks the head', async () => {
     await server.ensureDocument(DOC_A, SPACE_ID, RESOURCE_ID);
     await server.ensureDocument(DOC_B, SPACE_ID, RESOURCE_ID);
-    expect(await server.pushUpdate(DOC_A, blob('a1'), 'w')).toBe(1);
-    expect(await server.pushUpdate(DOC_B, blob('b1'), 'w')).toBe(1);
-    expect(await server.pushUpdate(DOC_A, blob('a2'), 'w')).toBe(2);
+    expect(await server.pushUpdate(DOC_A, blob('a1'), W)).toBe(1);
+    expect(await server.pushUpdate(DOC_B, blob('b1'), W)).toBe(1);
+    expect(await server.pushUpdate(DOC_A, blob('a2'), W)).toBe(2);
     const page = await server.heads(SPACE_ID, null, 10, 0);
     expect(page.hasMore).toBe(false);
     expect(page.rows.map((h) => [h.docId, h.headSeq])).toEqual(
@@ -54,25 +59,25 @@ describe('the server assigns seq per document', () => {
 
   it('keeps the head through compaction and continues from it', async () => {
     await server.ensureDocument(DOC_A, SPACE_ID, RESOURCE_ID);
-    await server.pushUpdate(DOC_A, blob('a1'), 'w');
-    await server.pushUpdate(DOC_A, blob('a2'), 'w');
+    await server.pushUpdate(DOC_A, blob('a1'), W);
+    await server.pushUpdate(DOC_A, blob('a2'), W);
     expect(await server.compact(DOC_A, blob('snapshot'), 2)).toBe(true);
     expect(await server.updateCount(DOC_A)).toBe(0);
-    expect(await server.pushUpdate(DOC_A, blob('a3'), 'w')).toBe(3);
+    expect(await server.pushUpdate(DOC_A, blob('a3'), W)).toBe(3);
     const [head] = (await server.heads(SPACE_ID, null, 10, 0)).rows;
     expect(head?.headSeq).toBe(3);
   });
 
   it('refuses an update for a document that has no row', async () => {
-    await expect(
-      server.pushUpdate('doc_space_spec_none', blob('x'), 'w')
-    ).rejects.toThrow(/not found/);
+    await expect(server.pushUpdate(NO_ROW, blob('x'), W)).rejects.toThrow(
+      /not found/
+    );
   });
 
   it('pages heads oldest first and honours the cursor', async () => {
     for (const id of [DOC_A, DOC_B, DOC_C]) {
       await server.ensureDocument(id, SPACE_ID, RESOURCE_ID);
-      await server.pushUpdate(id, blob(id), 'w');
+      await server.pushUpdate(id, blob(id), W);
     }
     const first = await server.heads(SPACE_ID, null, 2, 0);
     expect(first.rows.map((h) => h.docId)).toEqual([DOC_A, DOC_B]);
@@ -147,7 +152,7 @@ describe('the space feed', () => {
     const outcomes: SpacePassOutcome[] = [];
     const watch = b.watchSpace({ onPass: (o) => outcomes.push(o) });
     await expect.poll(() => outcomes.length).toBeGreaterThan(0);
-    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1 });
+    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1, refused: 0 });
     expect(b.text(DOC_A)).toBe('alpha. ');
     expect(b.has(DOC_B)).toBe(false);
     // A head this device has no row for is the materializer's to bring in

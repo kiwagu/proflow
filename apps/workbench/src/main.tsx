@@ -369,6 +369,15 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       );
     },
     onPassSettled: () => resolveError('document-sync'),
+    // The server holds something for a document that cannot be taken in.
+    // The engine says so once per document; the key keeps it to one notice.
+    onRefused: (documentId, error) => {
+      console.error('document refused', documentId, error);
+      errors.report(
+        { kind: 'refused', id: documentId },
+        { key: `refused:document:${documentId}` }
+      );
+    },
     mayWrite: (row) =>
       allowed(
         services.writeScope.current(),
@@ -414,6 +423,17 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     },
     // A node made here is on the server now: its document can be registered.
     onPushed: () => documentSync.graphPushed(),
+    // Rows the server holds under a malformed id were left out, the rest
+    // applied. Each is handed over once; the key keeps it to one notice.
+    onRefused: (rows) => {
+      for (const row of rows) {
+        console.error('server row refused', row.table, row.id, row.error);
+        errors.report(
+          { kind: 'refused', id: row.id },
+          { key: `refused:${row.table}:${row.id}` }
+        );
+      }
+    },
   });
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;

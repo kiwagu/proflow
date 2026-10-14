@@ -22,6 +22,7 @@
   "dependencies": {
     "@supabase/supabase-js": "catalog:",
     "@workspace/db": "workspace:*",
+    "@workspace/entity-id": "workspace:^",
     "@workspace/knowledge-contracts": "workspace:*"
   },
   "devDependencies": {

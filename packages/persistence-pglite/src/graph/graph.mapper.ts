@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import type {
   GraphEdge,
   GraphNode,
@@ -159,16 +160,24 @@ export type GraphOpRow = {
   created_at: Date;
 };
 
+/**
+ * A journal row as the push replays it. Its ids are the ones this app
+ * journaled for its own nodes, so they are typed here without a second
+ * check; what comes from the server is checked at the transport.
+ */
 export function toGraphOp(row: GraphOpRow): GraphOp {
   return {
     id: Number(row.id),
-    spaceId: row.space_id,
+    spaceId: spaceIdFactory.brand(row.space_id),
     op: row.op,
     payload: asRecord(row.payload),
-    nodeIds: row.node_ids,
+    nodeIds: row.node_ids.map((id) => knowledgeResourceIdFactory.brand(id)),
     createdAt: row.created_at,
   };
 }
+
+const { knowledgeResourceIdFactory, spaceIdFactory } =
+  entityIdRegistry.factories;
 
 /** jsonb arrives either parsed or as text depending on the driver path. */
 function asRecord(value: unknown): Record<string, unknown> {

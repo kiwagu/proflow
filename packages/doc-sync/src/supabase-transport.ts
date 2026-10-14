@@ -2,6 +2,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { fromByteaHex, toByteaHex } from './bytea.js';
 import { DocumentNotRegisteredError } from './errors.js';
+import { parseHeadRows, parseWriterId } from './server-rows.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from './types.js';
 
 /**
@@ -65,7 +66,11 @@ export function createSupabaseTransport(
       return (data ?? []).map((row) => {
         const bytes = fromByteaHex(row.bytes);
         if (!bytes) throw new Error(`update seq ${row.seq} has no bytes`);
-        return { seq: Number(row.seq), bytes, writer: row.writer };
+        return {
+          seq: Number(row.seq),
+          bytes,
+          writer: parseWriterId(row.writer),
+        };
       });
     },
 
@@ -143,12 +148,12 @@ export function createSupabaseTransport(
       if (since) query = query.gte('updated_at', since.toISOString());
       const { data, error } = await query;
       if (error) throw new Error(`heads query failed: ${error.message}`);
-      const rows = (data ?? []).map((row) => ({
-        docId: row.id,
-        headSeq: Number(row.head_seq),
-        updatedAt: new Date(row.updated_at),
-      }));
-      return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+      const rows = data ?? [];
+      // The extra row only answers "is there more?"; the next page reads it.
+      return {
+        ...parseHeadRows(rows.slice(0, limit)),
+        hasMore: rows.length > limit,
+      };
     },
 
     subscribeSpace(spaceId, onNudge) {

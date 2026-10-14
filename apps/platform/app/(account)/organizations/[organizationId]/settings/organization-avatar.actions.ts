@@ -1,6 +1,6 @@
 'use server';
 
-import { entityIds } from '@workspace/entity-id';
+import { ENTITY_PREFIXES, entityIdRegistry } from '@workspace/entity-id';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -19,10 +19,12 @@ const organizationAvatarSchema = z
       .string()
       .trim()
       .min(1, 'Organization is required.')
-      .refine((v) => v.startsWith(`${entityIds.organization.prefix}_`), {
+      .refine((v) => v.startsWith(`${ENTITY_PREFIXES.organization}_`), {
         message: 'Organization is required.',
       })
-      .transform((v) => entityIds.organization.brand(v)),
+      .transform((v) =>
+        entityIdRegistry.factories.organizationIdFactory.brand(v)
+      ),
     avatar_url: z
       .string()
       .trim()

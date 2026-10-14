@@ -6,6 +6,7 @@
  * a stale deploy) or a converter that throws must reach the user as one
  * reported error and never as an unhandled rejection behind a `void`.
  */
+import { entityIdRegistry } from '@workspace/entity-id';
 import type {
   IDocumentRepository,
   IFileRepository,
@@ -20,6 +21,8 @@ import {
 } from './document-actions';
 import * as markdown from './document-markdown';
 import { createLiveDocuments } from './live-documents';
+
+const SPACE = entityIdRegistry.factories.spaceIdFactory.brand('space-1');
 
 type Markdown = Awaited<ReturnType<DocumentActionDeps['loadMarkdown']>>;
 type Download = Awaited<ReturnType<DocumentActionDeps['loadDownload']>>;
@@ -36,7 +39,7 @@ function harness(overrides: Partial<DocumentActionDeps> = {}) {
   const services: DocumentActionDeps['services'] = {
     documents: { writer: 'test' } as unknown as IDocumentRepository,
     files: {} as unknown as IFileRepository,
-    identity: { userId: 'user-1', spaceId: 'space-1' },
+    identity: { userId: 'user-1', spaceId: SPACE },
     reportError,
   };
   const actions = createDocumentActions({
@@ -184,7 +187,7 @@ describe('the export snapshot belongs to the moment the user asked', () => {
           }),
       } as unknown as IDocumentRepository,
       files: {} as unknown as IFileRepository,
-      identity: { userId: 'user-1', spaceId: 'space-1' },
+      identity: { userId: 'user-1', spaceId: SPACE },
       reportError,
     };
     const actions = createDocumentActions({

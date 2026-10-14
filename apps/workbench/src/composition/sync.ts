@@ -1,10 +1,12 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { Database } from '@workspace/db';
 import type { ISettingsStore } from '@workspace/domain';
+import type { KnowledgeResourceId, SpaceId } from '@workspace/entity-id';
 import {
   createGraphSync,
   createSupabaseGraphRowTransport,
   type GraphReplica,
+  type RefusedServerRow,
 } from '@workspace/graph-sync';
 import {
   createPgliteGraphReplicaWriter,
@@ -41,10 +43,16 @@ export interface SyncSettings {
 export interface StartGraphSyncOptions {
   db: AppDb;
   settings: ISettingsStore;
-  /** The server-verified session and the space currently checked out. */
-  identity: { userId: string; spaceId: string };
+  /**
+   * The server-verified session and the space currently checked out. The
+   * user is the auth user UUID, not an entity id.
+   */
+  identity: { userId: string; spaceId: SpaceId };
   /** Fired when the server refused a local change and the replica was re-read. */
-  onReconciled?: (event: { refused: number; nodeIds: string[] }) => void;
+  onReconciled?: (event: {
+    refused: number;
+    nodeIds: KnowledgeResourceId[];
+  }) => void;
   onError?: (error: unknown) => void;
   /**
    * A push completed: whatever was reported failing is now through. Only a
@@ -56,6 +64,11 @@ export interface StartGraphSyncOptions {
   onStalled?: () => void;
   /** A pull applied rows: a consumer that derives from them may run now. */
   onPulled?: (outcome: { applied: number }) => void;
+  /**
+   * Rows the server sent that could not be taken in — a malformed id. They
+   * were left out and the rest applied; each is handed over once.
+   */
+  onRefused?: (rows: RefusedServerRow[]) => void;
   /** A push got changes accepted: a consumer that waited for them may run now. */
   onPushed?: (outcome: { accepted: number }) => void;
 }
@@ -142,7 +155,11 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
             else options.onSettled?.();
             if (outcome.accepted > 0) options.onPushed?.(outcome);
           },
-          onPull: (outcome) => options.onPulled?.(outcome),
+          onPull: (outcome) => {
+            if (outcome.refused.length > 0)
+              options.onRefused?.(outcome.refused);
+            options.onPulled?.(outcome);
+          },
           onError: (error: unknown) => options.onError?.(error),
         });
         // Disposal may have landed while the settings read was in flight.

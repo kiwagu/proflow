@@ -4,6 +4,13 @@ export {
   type GraphSyncOptions,
 } from './graph-sync.js';
 export { planWrites, type PushIdentity } from './push-plan.js';
+export {
+  MalformedServerRowError,
+  parseServerIds,
+  parseServerRow,
+  parseServerRows,
+  type RefusedServerRow,
+} from './server-rows.js';
 export { createSupabaseGraphRowTransport } from './supabase-transport.js';
 export {
   describeTable,

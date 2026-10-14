@@ -189,7 +189,7 @@ begin
               actual := true;
             when 'body.write' then
               insert into public.crdt_updates (doc_id, bytes, writer, created_by)
-              values (tgt_doc, '\x01'::bytea, 'ws-probe', me);
+              values (tgt_doc, '\x01'::bytea, 'wrt_0000000000000ws1.0000000000', me);
               actual := true;
           end case;
           raise exception using errcode = 'P0001', message = 'undo';

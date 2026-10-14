@@ -1,4 +1,5 @@
 import type { ISettingsStore } from '@workspace/domain';
+import type { SpaceId } from '@workspace/entity-id';
 import {
   parseWriteScope,
   type WriteScope,
@@ -25,7 +26,7 @@ export const WRITE_SCOPE_SETTINGS_PREFIX = 'write-scope.';
 
 export async function createWriteScopeStore(input: {
   settings: ISettingsStore;
-  spaceId: string;
+  spaceId: SpaceId;
 }): Promise<WriteScopeStore> {
   const key = `${WRITE_SCOPE_SETTINGS_PREFIX}${input.spaceId}`;
   let scope = await recall(input.settings, key);

@@ -1498,6 +1498,12 @@ export type Database = {
       entity_id_encode_rand_16: { Args: { bytes: string }; Returns: string }
       entity_id_encode_ts_10: { Args: { ms: number }; Returns: string }
       entity_id_generate: { Args: { prefix: string }; Returns: string }
+      entity_id_ts_of: { Args: { value: string }; Returns: string }
+      is_entity_id: { Args: { value: string }; Returns: boolean }
+      is_entity_id_with_prefix: {
+        Args: { prefix: string; value: string }
+        Returns: boolean
+      }
       knowledge_user_scope_ids: { Args: never; Returns: string[] }
       move_knowledge_resource: {
         Args: {

@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createServerStandIn,
@@ -130,7 +131,7 @@ describe('document sync', () => {
     // The same blob delivered a second time — what an ack lost in flight
     // produces when the client retries.
     const rows = await server.tail(DOC_ID, 0);
-    await server.resend(DOC_ID, rows[0]!.bytes, 'client-a');
+    await server.resend(DOC_ID, rows[0]!.bytes, rows[0]!.writer);
     await b.pull();
 
     expect(b.text()).toBe(textBefore);
@@ -397,14 +398,14 @@ describe('document sync', () => {
       transport: server,
       ledger,
       journal,
-      writer: 'tab-1',
+      writer: entityIdRegistry.factories.writerIdFactory.create(),
       compaction: false,
     });
     const engine2 = createDocumentSync({
       transport: server,
       ledger,
       journal,
-      writer: 'tab-2',
+      writer: entityIdRegistry.factories.writerIdFactory.create(),
       compaction: { maxRows: 2 },
     });
     // Tab 1 pulls A's row and records it in the shared ledger; tab 2's copy

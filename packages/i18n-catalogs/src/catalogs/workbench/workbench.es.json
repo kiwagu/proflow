@@ -173,5 +173,6 @@
   "workbench.errors.sync": "Los cambios hechos aquí no se pudieron enviar al servidor: {reason}. Se conservan en este dispositivo y se enviarán de nuevo automáticamente.",
   "workbench.errors.push": "No se pudo enviar “{title}” al servidor: {reason}. Se conserva en este dispositivo y se enviará de nuevo automáticamente.",
   "workbench.errors.pull": "No se pudieron obtener los últimos cambios del servidor: {reason}. Se volverá a intentar automáticamente.",
-  "workbench.errors.syncStalled": "Los cambios hechos aquí esperan para enviarse: no se puede contactar con el servidor. Se conservan en este dispositivo y se enviarán automáticamente cuando responda."
+  "workbench.errors.syncStalled": "Los cambios hechos aquí esperan para enviarse: no se puede contactar con el servidor. Se conservan en este dispositivo y se enviarán automáticamente cuando responda.",
+  "workbench.errors.refused": "El servidor contiene “{id}”, que no es un identificador válido, así que aquí se ha omitido. Todo lo demás se sigue sincronizando."
 }

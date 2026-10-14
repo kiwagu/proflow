@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -26,7 +26,7 @@ export type CoarseStatus = z.infer<typeof coarseStatusSchema>;
 
 /** One per-user state row (anchor). `progress` is optional generic %. */
 export const resourceUserStateSchema = z.object({
-  resource_id: entityIds.knowledgeResource.prefixSchema, // knr_…
+  resource_id: entityIdSchemas.knowledgeResource.prefixSchema, // knr_…
   coarse_status: coarseStatusSchema,
   progress: z.number().int().min(0).max(100).nullable().optional(),
   // Per-(user, resource) pin flag. Mirrors the NOT NULL DEFAULT false column:
@@ -46,8 +46,8 @@ export type ResourceUserState = z.infer<typeof resourceUserStateSchema>;
  * the existing per-user-state path (own rows, verb space.knowledge.progress).
  */
 export const starredToggleSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  nodeId: entityIds.knowledgeResource.prefixSchema,
+  spaceId: entityIdSchemas.space.prefixSchema,
+  nodeId: entityIdSchemas.knowledgeResource.prefixSchema,
   starred: z.boolean(),
 });
 export type StarredToggle = z.infer<typeof starredToggleSchema>;
@@ -62,8 +62,8 @@ export function parseStarredToggle(raw: unknown) {
  * from the SESSION (RLS), never the body — so this carries only the targeting keys.
  */
 export const openedRecordSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
-  nodeId: entityIds.knowledgeResource.prefixSchema, // knr_…
+  spaceId: entityIdSchemas.space.prefixSchema,
+  nodeId: entityIdSchemas.knowledgeResource.prefixSchema, // knr_…
 });
 export type OpenedRecord = z.infer<typeof openedRecordSchema>;
 
@@ -81,8 +81,8 @@ export function parseOpenedRecord(raw: unknown) {
  */
 export const knowledgeActivityBodyEventSchema = z.object({
   event_id: z.string().min(1), // JetStream Nats-Msg-Id (UUID), NOT a kra_ entity id
-  node_id: entityIds.knowledgeResource.prefixSchema, // knr_…
-  space_id: entityIds.space.prefixSchema,
+  node_id: entityIdSchemas.knowledgeResource.prefixSchema, // knr_…
+  space_id: entityIdSchemas.space.prefixSchema,
   occurred_at: z.string().datetime(),
 });
 export type KnowledgeActivityBodyEvent = z.infer<

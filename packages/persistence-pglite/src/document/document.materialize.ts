@@ -1,4 +1,9 @@
 import { DocumentCrdt } from '@workspace/doc-crdt';
+import {
+  type DocumentId,
+  entityIdRegistry,
+  type KnowledgeResourceId,
+} from '@workspace/entity-id';
 import type { AppDb } from '../db/db.js';
 import { GRAPH_OPS } from '../graph/graph.repository.js';
 
@@ -9,6 +14,15 @@ import { GRAPH_OPS } from '../graph/graph.repository.js';
  * space feed takes any head of it as due.
  */
 const NEVER_PULLED = -1;
+
+/**
+ * Ids read from the local tables are typed without a second check: the
+ * document and node tables CHECK their ids against the contract, and a
+ * document's recorded resource is the id of the node this app created it
+ * with.
+ */
+const { documentIdFactory, knowledgeResourceIdFactory } =
+  entityIdRegistry.factories;
 
 /**
  * A document this device knows only from the graph: never asked the server
@@ -100,7 +114,7 @@ export async function resourceIdForDocument(
   db: AppDb,
   documentId: string,
   userId: string
-): Promise<string | null> {
+): Promise<KnowledgeResourceId | null> {
   const { rows } = await db.query<{ resource_id: string | null }>(
     `select coalesce(
               d.resource_id,
@@ -111,7 +125,10 @@ export async function resourceIdForDocument(
      from document d where d.id = $1`,
     [documentId, userId]
   );
-  return rows[0]?.resource_id ?? null;
+  const resourceId = rows[0]?.resource_id ?? null;
+  return resourceId === null
+    ? null
+    : knowledgeResourceIdFactory.brand(resourceId);
 }
 
 /**
@@ -155,14 +172,14 @@ export async function nodeOwnerOfDocument(
 }
 
 /** Documents still waiting for their first pull: what a sync start pulls by name. */
-export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
+export async function listAwaitingDocuments(db: AppDb): Promise<DocumentId[]> {
   const { rows } = await db.query<{ id: string }>(
     `select d.id from document d
      where d.deleted_at is null
        and not exists (select 1 from document_content c where c.document_id = d.id)
        and ${AWAITING_SYNC}`
   );
-  return rows.map((r) => r.id);
+  return rows.map((r) => documentIdFactory.brand(r.id));
 }
 
 /**
@@ -175,7 +192,7 @@ export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
  * A document holding bytes but no recorded version (written before versions
  * were kept) is a candidate until it is opened, which records its version.
  */
-export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
+export async function listUnpushedDocuments(db: AppDb): Promise<DocumentId[]> {
   const { rows } = await db.query<{ id: string }>(
     `select d.id from document d
      left join document_sync s on s.document_id = d.id
@@ -190,5 +207,5 @@ export async function listUnpushedDocuments(db: AppDb): Promise<string[]> {
          )
        )`
   );
-  return rows.map((r) => r.id);
+  return rows.map((r) => documentIdFactory.brand(r.id));
 }

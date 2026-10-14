@@ -1,4 +1,4 @@
-import { entityIds } from '@workspace/entity-id';
+import { entityIdSchemas } from '@workspace/entity-id';
 import { z } from 'zod';
 
 /**
@@ -32,7 +32,7 @@ export const SEARCH_MAX_LIMIT = 100;
  * none can express identity/space/permission and none widens access.
  */
 export const searchScopeSchema = z.object({
-  spaceId: entityIds.space.prefixSchema,
+  spaceId: entityIdSchemas.space.prefixSchema,
   // optional kind narrowing (folder/file/text/video/link/…)
   kinds: z.array(z.string()).optional(),
   // optional workflow-status narrowing — NOT an access fence

@@ -187,7 +187,8 @@ describe('graph sync ledger', () => {
 
     const ops = await ledger.pendingOps(SPACE);
     const rename = ops.find(
-      (op) => op.nodeIds.includes(doc.value.id) && op.op === 'rename_node'
+      (op) =>
+        op.nodeIds.some((id) => id === doc.value.id) && op.op === 'rename_node'
     );
 
     const affected = await ledger.rejectOp(rename!.id);

@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -56,7 +57,10 @@ import {
   SYNC_SETTINGS_KEY,
 } from './sync';
 
-const IDENTITY = { userId: 'user-1', spaceId: 'spc_abc.01m2' };
+const IDENTITY = {
+  userId: 'user-1',
+  spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
+};
 
 function settingsHolding(value: string | null): ISettingsStore {
   return {
@@ -102,14 +106,40 @@ describe('starting graph replication', () => {
             applied: number;
             evicted: number;
             swept: string[];
+            refused: unknown[];
           }) => void;
         }
       | undefined;
     expect(hooks?.onPull).toBeTypeOf('function');
-    hooks?.onPull?.({ applied: 2, evicted: 0, swept: [] });
+    hooks?.onPull?.({ applied: 2, evicted: 0, swept: [], refused: [] });
     expect(onPulled).toHaveBeenCalledWith(
       expect.objectContaining({ applied: 2 })
     );
+    stop();
+  });
+
+  it('hands rows the server sent that could not be taken in to the composition, and only those', async () => {
+    const onRefused = vi.fn();
+    const stop = startGraphSync({
+      db: {} as AppDb,
+      settings: settingsHolding(CONFIGURED),
+      identity: IDENTITY,
+      onRefused,
+    });
+    await settled();
+    const hooks = watch.mock.calls[0]?.[1] as {
+      onPull: (outcome: unknown) => void;
+    };
+    hooks.onPull({ applied: 1, evicted: 0, swept: [], refused: [] });
+    expect(onRefused).not.toHaveBeenCalled();
+    const row = {
+      table: 'knowledge_resources',
+      id: 'knr_not-an-id',
+      updatedAt: null,
+      error: new Error('server row refused'),
+    };
+    hooks.onPull({ applied: 0, evicted: 0, swept: [], refused: [row] });
+    expect(onRefused).toHaveBeenCalledWith([row]);
     stop();
   });
 
@@ -178,7 +208,7 @@ describe('starting graph replication', () => {
     // Reads succeed while writes cannot reach the server: that is not
     // recovery, and a pull after a stalled push must not say so.
     hooks?.onPush?.({ stalled: true });
-    hooks?.onPull?.({ pulled: 3 });
+    hooks?.onPull?.({ applied: 3, evicted: 0, swept: [], refused: [] });
     expect(onStalled).toHaveBeenCalledTimes(1);
     expect(onSettled).not.toHaveBeenCalled();
 

@@ -6,9 +6,15 @@ import {
   createSupabaseTransport,
   DocumentNotRegisteredError,
   type DocumentSync,
+  MalformedServerRowError,
   type SpaceWatch,
 } from '@workspace/doc-sync';
-import { type ISettingsStore, newId } from '@workspace/domain';
+import type { ISettingsStore } from '@workspace/domain';
+import {
+  type DocumentId,
+  entityIdRegistry,
+  type SpaceId,
+} from '@workspace/entity-id';
 import {
   type AppDb,
   type DocumentCrdtStore,
@@ -43,19 +49,28 @@ export interface StartDocumentSyncOptions {
   db: AppDb;
   settings: ISettingsStore;
   store: DocumentCrdtStore;
-  /** The server-verified session and the space currently checked out. */
-  identity: { userId: string; spaceId: string };
+  /**
+   * The server-verified session and the space currently checked out. The
+   * user is the auth user UUID, not an entity id.
+   */
+  identity: { userId: string; spaceId: SpaceId };
   /**
    * A document's push did not go through. The journal keeps the bytes;
    * the next change to the document or the network returning tries again.
    */
-  onPushFailed?: (documentId: string, error: unknown) => void;
+  onPushFailed?: (documentId: DocumentId, error: unknown) => void;
   /** A push landed: whatever was reported failing for this document is through. */
-  onPushed?: (documentId: string) => void;
+  onPushed?: (documentId: DocumentId) => void;
   /** A feed pass, a pull or a catch-up failed; the next one retries. */
   onPassFailed?: (error: unknown) => void;
   /** A pass completed. */
   onPassSettled?: () => void;
+  /**
+   * The server holds something for a document that cannot be taken in — a
+   * malformed id or writer. Nothing of it is applied; said once per document.
+   * The id is as the server holds it, so possibly the malformed value.
+   */
+  onRefused?: (documentId: string, error: unknown) => void;
   /**
    * Whether the person may write a document's body, asked with the owner of
    * the node it belongs to. A document they may only read is never pushed:
@@ -83,29 +98,29 @@ export function startDocumentSync(
 ): DocumentSyncHandle {
   const { db, settings, store, identity } = options;
   // Minted per page: each tab is its own writer for echo suppression.
-  const writer = newId('writer');
+  const writer = entityIdRegistry.factories.writerIdFactory.create();
   let disposed = false;
   /** Set before the settings read, for the same reason graph sync does. */
   let starting = false;
   let engine: DocumentSync | null = null;
   let space: SpaceWatch | null = null;
   let unsubscribeChanges: (() => void) | null = null;
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const timers = new Map<DocumentId, ReturnType<typeof setTimeout>>();
   /**
    * Pushes that failed in this session. The catch-up query finds changed
    * documents by time, which a change racing a pull can slip past; what
    * failed here is retried by name as well.
    */
-  const failed = new Set<string>();
+  const failed = new Set<DocumentId>();
   /**
    * Documents whose body cannot be registered yet: the node that owns it is
    * not on the server, or this device does not know the owner and the
    * creator has not registered it. Neither is a failure to tell the user
    * about, and neither can end before the graph moves.
    */
-  const deferred = new Set<string>();
+  const deferred = new Set<DocumentId>();
 
-  const pushDocument = async (id: string) => {
+  const pushDocument = async (id: DocumentId) => {
     if (!engine || disposed) return;
     try {
       const doc = await store.syncable(id);
@@ -156,7 +171,7 @@ export function startDocumentSync(
     for (const id of [...deferred]) await pushDocument(id);
   };
 
-  const schedulePush = (id: string) => {
+  const schedulePush = (id: DocumentId) => {
     clearTimeout(timers.get(id));
     timers.set(
       id,
@@ -190,7 +205,15 @@ export function startDocumentSync(
       if (!engine || disposed) return;
       const doc = await store.syncable(id);
       if (!doc) continue;
-      await engine.pull(id, doc);
+      try {
+        await engine.pull(id, doc);
+      } catch (error) {
+        // Refused for this document alone, and already reported: its body
+        // stays on the server unread, so its pane keeps waiting, and the
+        // documents after it still get theirs.
+        if (error instanceof MalformedServerRowError) continue;
+        throw error;
+      }
       // The wait is over, with a body or without one. A body is announced
       // as a merge; an empty answer merges nothing and would leave a pane
       // that opened a moment earlier waiting for ever.
@@ -227,6 +250,8 @@ export function startDocumentSync(
           ledger: createPgliteLedger(db),
           journal: store.syncJournal,
           writer,
+          onRefused: ({ documentId, error }) =>
+            options.onRefused?.(documentId, error),
         });
         await materializeDocuments(db, identity.spaceId);
         if (disposed) return;
@@ -236,8 +261,11 @@ export function startDocumentSync(
           onError: (error) => options.onPassFailed?.(error),
         });
         unsubscribeChanges = store.onChanged((event) => {
+          // The local store's own document ids: its table CHECKs them.
           if (event.source === 'local' || event.localEdits)
-            schedulePush(event.id);
+            schedulePush(
+              entityIdRegistry.factories.documentIdFactory.brand(event.id)
+            );
         });
         await pullAwaiting();
         await catchUp();

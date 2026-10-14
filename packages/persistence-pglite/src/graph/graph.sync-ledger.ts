@@ -1,3 +1,7 @@
+import {
+  entityIdRegistry,
+  type KnowledgeResourceId,
+} from '@workspace/entity-id';
 import type { AppDb } from '../db/db.js';
 import { type GraphOpRow, toGraphOp } from './graph.mapper.js';
 import type { GraphOp } from './graph.types.js';
@@ -95,7 +99,7 @@ export interface GraphSyncLedger {
    * so the caller can re-pull them. Earlier ops are untouched — they were
    * accepted, and the server's rows already reflect them.
    */
-  rejectOp(opId: number): Promise<string[]>;
+  rejectOp(opId: number): Promise<KnowledgeResourceId[]>;
   /** How many ops are still waiting — the "unsynced changes" signal. */
   pendingCount(spaceId: string): Promise<number>;
 }
@@ -206,7 +210,10 @@ export function createPgliteGraphSyncLedger(db: AppDb): GraphSyncLedger {
       );
       const affected = new Set<string>();
       for (const row of rows) for (const id of row.node_ids) affected.add(id);
-      return [...affected];
+      // Node ids this app journaled for its own nodes: typed, not re-checked.
+      return [...affected].map((id) =>
+        entityIdRegistry.factories.knowledgeResourceIdFactory.brand(id)
+      );
     },
 
     async pendingCount(spaceId) {

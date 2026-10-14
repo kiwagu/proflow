@@ -79,9 +79,9 @@ begin
   insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into v_doc_a;
   insert into public.crdt_documents (space_id, created_by) values (v_b, u_mal)   returning id into v_doc_b;
   insert into public.crdt_updates (doc_id, bytes, writer, created_by) values
-    (v_doc_a, '\x01'::bytea, 'inst-alice', u_alice),
-    (v_doc_a, '\x02'::bytea, 'inst-alice', u_alice),
-    (v_doc_b, '\x03'::bytea, 'inst-mal',   u_mal);
+    (v_doc_a, '\x01'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice),
+    (v_doc_a, '\x02'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice),
+    (v_doc_b, '\x03'::bytea, 'wrt_0000000000000ma1.0000000000',   u_mal);
 
   insert into public.workbench_blobs (space_id, hash, size, mime, created_by) values
     (v_a, repeat('a',64), 10, 'text/plain', u_alice),
@@ -179,7 +179,7 @@ begin
   raise notice '=== B. cross-space writes ===';
 
   begin perform pg_temp.t14_as(u_mal);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\xff'::bytea, 'inst-mal', u_mal);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\xff'::bytea, 'wrt_0000000000000ma1.0000000000', u_mal);
     perform pg_temp.t14_report('B1 mallory appends update to alice doc', 'DENIED', 'INSERTED');
   exception when others then perform pg_temp.t14_report('B1 mallory appends update to alice doc','DENIED','DENIED ('||sqlstate||')'); end;
   reset role;
@@ -197,7 +197,7 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\xfe'::bytea, 'inst-x', u_mal);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\xfe'::bytea, 'wrt_000000000000000x.0000000000', u_mal);
     perform pg_temp.t14_report('B4 alice spoofs update created_by', 'DENIED', 'INSERTED');
   exception when others then perform pg_temp.t14_report('B4 alice spoofs update created_by','DENIED','DENIED ('||sqlstate||')'); end;
   reset role;
@@ -500,7 +500,7 @@ begin
   -- forge a row attributed to another user while created_by stays JWT-bound.
   begin perform pg_temp.t14_as(u_alice);
     insert into public.crdt_updates (doc_id, bytes, writer, created_by)
-    values (d_a, '\x05'::bytea, 'inst-of-someone-else', u_alice);
+    values (d_a, '\x05'::bytea, 'wrt_0000000000000e15.0000000000', u_alice);
     select created_by = u_alice into b from public.crdt_updates where doc_id=d_a order by seq desc limit 1;
     perform pg_temp.t14_report('L1 spoofed writer cannot forge created_by', 'true', coalesce(b::text,'null'));
   exception when others then perform pg_temp.t14_report('L1 spoofed writer','true','ERR '||sqlerrm); end;
@@ -509,7 +509,7 @@ begin
   -- compaction must never delete rows that arrived after the covered watermark.
   begin
     perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\x06'::bytea, 'inst-late', u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\x06'::bytea, 'wrt_0000000000001a7e.0000000000', u_alice);
     select max(u.seq) into n from public.crdt_updates u where u.doc_id = d_a;
     -- cover everything EXCEPT the newest row, then prove the newest row survives
     select public.rpc_compact_document(d_a, '\xcafe'::bytea, n - 1) into b;
@@ -529,7 +529,7 @@ begin
   raise notice '=== K. legitimate happy path still works (no over-fencing) ===';
 
   begin perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\x04'::bytea, 'inst-alice', u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_a, '\x04'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice);
     perform pg_temp.t14_report('K1 alice pushes update to own doc', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('K1 alice pushes update','OK','FAILED: '||sqlerrm); end;
   reset role;
@@ -687,8 +687,8 @@ begin
   -- alice's PRIVATE resource owns d_f, the only legitimate link to its body
   insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_f;
   insert into public.crdt_updates (doc_id, bytes, writer, created_by) values
-    (d_f, '\x01'::bytea, 'inst-alice', u_alice),
-    (d_f, '\x02'::bytea, 'inst-alice', u_alice);
+    (d_f, '\x01'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice),
+    (d_f, '\x02'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice);
   insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
   values (v_a, 'text', 'Alice private note', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
   returning id into res_f;
@@ -705,7 +705,7 @@ begin
   -- a body with NO resource row at all (its resource create was refused or has
   -- not been pushed yet): visible to its creator only
   insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_orphan;
-  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x09'::bytea, 'inst-alice', u_alice);
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x09'::bytea, 'wrt_000000000000a1ce.0000000000', u_alice);
 
   raise notice '=== N. body fence (bob: member in A, owns nothing) ===';
 
@@ -717,18 +717,18 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000a1ce.0000000000';
     perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member', '0', n::text);
   exception when others then perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member','0','ERR '||sqlerrm); end;
   reset role;
 
   begin perform pg_temp.t14_as(u_bob);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb0'::bytea, 'inst-bob', u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb0'::bytea, 'wrt_0000000000000b0b.0000000000', u_bob);
     perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'ALLOWED');
   exception when insufficient_privilege then perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
           when others then perform pg_temp.t14_report('N3 private body: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
-  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+  delete from public.crdt_updates where doc_id = d_f and writer = 'wrt_0000000000000b0b.0000000000';
 
   begin perform pg_temp.t14_as(u_bob);
     select count(*) into n from public.server_document_chunk where document_id = d_f;
@@ -760,7 +760,7 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000a1ce.0000000000';
     perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member', '2', n::text);
   exception when others then perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member','2','ERR '||sqlerrm); end;
   reset role;
@@ -768,15 +768,15 @@ begin
   -- ...but writing needs the resource update rule: a member reads a shared
   -- document and does not edit it; an admin does
   begin perform pg_temp.t14_as(u_bob);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb1'::bytea, 'inst-bob', u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb1'::bytea, 'wrt_0000000000000b0b.0000000000', u_bob);
     perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'ALLOWED');
   exception when insufficient_privilege then perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
           when others then perform pg_temp.t14_report('N9 space floor: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
-  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+  delete from public.crdt_updates where doc_id = d_f and writer = 'wrt_0000000000000b0b.0000000000';
 
   begin perform pg_temp.t14_as(u_adam);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'wrt_000000000000adam.0000000000', u_adam);
     perform pg_temp.t14_report('N9b space floor: admin can push an update', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N9b space floor: admin can push an update','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
@@ -787,7 +787,7 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000a1ce.0000000000';
     perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again', '0', n::text);
   exception when others then perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again','0','ERR '||sqlerrm); end;
   reset role;
@@ -805,23 +805,23 @@ begin
   insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (res_f, u_bob, u_alice);
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000a1ce.0000000000';
     perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee', '2', n::text);
   exception when others then perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee','2','ERR '||sqlerrm); end;
   reset role;
 
   begin perform pg_temp.t14_as(u_bob);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb2'::bytea, 'inst-bob', u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb2'::bytea, 'wrt_0000000000000b0b.0000000000', u_bob);
     perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'ALLOWED');
   exception when insufficient_privilege then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'DENIED ('||sqlstate||')');
           when others then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
-  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+  delete from public.crdt_updates where doc_id = d_f and writer = 'wrt_0000000000000b0b.0000000000';
 
   delete from public.knowledge_resource_user_grants where resource_id = res_f and user_id = u_bob;
 
   begin perform pg_temp.t14_as(u_bob);
-    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000a1ce.0000000000';
     perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again', '0', n::text);
   exception when others then perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again','0','ERR '||sqlerrm); end;
   reset role;
@@ -848,7 +848,7 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x0a'::bytea, 'inst-alice-2', u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x0a'::bytea, 'wrt_00000000000a1ce2.0000000000', u_alice);
     perform pg_temp.t14_report('N15b orphan body: creator pushes to it', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N15b orphan body: creator pushes to it','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
@@ -943,7 +943,7 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_alice);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x07'::bytea, 'inst-alice-3', u_alice) returning seq into n;
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x07'::bytea, 'wrt_00000000000a1ce3.0000000000', u_alice) returning seq into n;
     perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
@@ -993,12 +993,12 @@ begin
   reset role;
 
   begin perform pg_temp.t14_as(u_adam);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'wrt_000000000000adam.0000000000', u_adam);
     perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'ALLOWED');
   exception when insufficient_privilege then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'DENIED ('||sqlstate||')');
           when others then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
-  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-adam';
+  delete from public.crdt_updates where doc_id = d_f and writer = 'wrt_000000000000adam.0000000000';
   delete from public.knowledge_resources where id = forged;
 
   -- (13) the link is mutual: a document that names a resource the resource
@@ -1215,12 +1215,12 @@ begin
   --      hands him her shared node, whose body she registered herself.
   update public.knowledge_resources set owner_user_id = u_bob where id = res_reg;
   begin perform pg_temp.t14_as(u_bob);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg, '\x05'::bytea, 'inst-bob', u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg, '\x05'::bytea, 'wrt_0000000000000b0b.0000000000', u_bob);
     perform pg_temp.t14_report('N26a the owner of the node writes its body without the update verb', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N26a the owner of the node writes its body without the update verb','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
   begin perform pg_temp.t14_as(u_bob);
-    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg2, '\x06'::bytea, 'inst-bob', u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg2, '\x06'::bytea, 'wrt_0000000000000b0b.0000000000', u_bob);
     perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused', 'DENIED', 'ALLOWED');
   exception when insufficient_privilege then perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused', 'DENIED', 'DENIED ('||sqlstate||')');
           when others then perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;

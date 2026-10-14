@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { ok } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 import type { ISettingsStore } from '@workspace/domain';
@@ -31,7 +32,9 @@ function memorySettings(seed: Record<string, string> = {}): ISettingsStore & {
   };
 }
 
-const SPACE = 'spc_0000000000000001.0000000000';
+const SPACE = entityIdRegistry.factories.spaceIdFactory.brand(
+  'spc_0000000000000001.0000000000'
+);
 const KEY = `${WRITE_SCOPE_SETTINGS_PREFIX}${SPACE}`;
 const MEMBER: WriteScope = {
   'node.create': 'all',

@@ -19,6 +19,8 @@
  * because no op in the journal vocabulary targets one.
  */
 
+import type { EntityKind } from '@workspace/entity-id';
+
 export type GraphSyncTableName =
   | 'knowledge_resources'
   | 'knowledge_edges'
@@ -45,6 +47,12 @@ export interface GraphSyncTableDescriptor {
    */
   nodeKeySecondary?: string;
   direction: 'both' | 'down';
+  /**
+   * Every column of a row that holds an entity id, with the kind of id it
+   * holds: what a row from the server is checked against before the replica
+   * sees it. `id` and `space_id` are on every table.
+   */
+  idColumns: Readonly<Record<string, EntityKind>>;
 }
 
 /**
@@ -63,6 +71,7 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'knowledge_resources',
       nodeKey: 'id',
       direction: 'both',
+      idColumns: { id: 'knowledgeResource', space_id: 'space' },
     },
     {
       local: 'knowledge_edges',
@@ -71,6 +80,12 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       nodeKey: 'from_id',
       nodeKeySecondary: 'to_id',
       direction: 'both',
+      idColumns: {
+        id: 'knowledgeEdge',
+        space_id: 'space',
+        from_id: 'knowledgeResource',
+        to_id: 'knowledgeResource',
+      },
     },
     {
       local: 'resource_user_state',
@@ -78,6 +93,11 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'resource_user_state',
       nodeKey: 'resource_id',
       direction: 'both',
+      idColumns: {
+        id: 'resourceUserState',
+        space_id: 'space',
+        resource_id: 'knowledgeResource',
+      },
     },
     {
       local: 'kb_resource_description',
@@ -85,6 +105,11 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'resource_description',
       nodeKey: 'node_id',
       direction: 'both',
+      idColumns: {
+        id: 'kbResourceDescription',
+        space_id: 'space',
+        node_id: 'knowledgeResource',
+      },
     },
     {
       local: 'kb_resource_link',
@@ -92,6 +117,11 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'resource_link',
       nodeKey: 'node_id',
       direction: 'down',
+      idColumns: {
+        id: 'kbResourceLink',
+        space_id: 'space',
+        node_id: 'knowledgeResource',
+      },
     },
     {
       local: 'kb_media_blob',
@@ -99,6 +129,7 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'media_blob',
       nodeKey: null,
       direction: 'down',
+      idColumns: { id: 'kbMediaBlob', space_id: 'space' },
     },
     {
       local: 'kb_resource_media_meta',
@@ -106,6 +137,12 @@ export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
       remote: 'resource_media_meta',
       nodeKey: 'node_id',
       direction: 'down',
+      idColumns: {
+        id: 'kbResourceMediaMeta',
+        space_id: 'space',
+        node_id: 'knowledgeResource',
+        blob_id: 'kbMediaBlob',
+      },
     },
   ] as const;
 

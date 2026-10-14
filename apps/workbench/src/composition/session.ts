@@ -1,12 +1,14 @@
+import { type SpaceId, canonicalEntityIdSchemaFor } from '@workspace/entity-id';
 import {
   parseWriteScope,
   type WriteScope,
 } from '@workspace/knowledge-contracts';
 
 export interface WorkbenchSession {
+  /** The auth user UUID (`auth.users.id`) — not an entity id, so a plain string. */
   userId: string;
   email: string;
-  spaceId: string | null;
+  spaceId: SpaceId | null;
   spaceName: string | null;
   /**
    * Where this deployment's replica talks to, as the server states it.
@@ -60,18 +62,17 @@ export async function readSession(): Promise<WorkbenchSession | null> {
   if (!response.ok || response.redirected)
     throw new Error('Could not verify your session. Please retry.');
   const value: unknown = await response.json();
+  const spaceId =
+    value && typeof value === 'object' && 'spaceId' in value
+      ? parseSpaceId(value.spaceId)
+      : undefined;
   if (
     !value ||
     typeof value !== 'object' ||
     !('userId' in value) ||
     typeof value.userId !== 'string' ||
     !/^[0-9a-f-]{36}$/i.test(value.userId) ||
-    !('spaceId' in value) ||
-    !(
-      value.spaceId === null ||
-      (typeof value.spaceId === 'string' &&
-        /^[a-zA-Z0-9_.-]+$/.test(value.spaceId))
-    ) ||
+    spaceId === undefined ||
     !('email' in value) ||
     typeof value.email !== 'string' ||
     !('spaceName' in value) ||
@@ -82,11 +83,24 @@ export async function readSession(): Promise<WorkbenchSession | null> {
   }
   // The scope is a hint: one this build cannot read is dropped rather than
   // trusted, and it never fails the session it rides on.
-  const { writeScope, ...session } = value as WorkbenchSession & {
+  const { writeScope, ...rest } = value as WorkbenchSession & {
     writeScope?: unknown;
   };
+  const session = { ...rest, spaceId };
   const scope = parseWriteScope(writeScope);
   return scope ? { ...session, writeScope: scope } : session;
+}
+
+/**
+ * The space a session names, checked where it enters: null for no space, the
+ * space id exactly as the server holds it when that is a canonical space id,
+ * undefined for anything else — which fails the session it came with rather
+ * than open storage or address the server under a key it does not hold.
+ */
+function parseSpaceId(value: unknown): SpaceId | null | undefined {
+  if (value === null) return null;
+  const parsed = canonicalEntityIdSchemaFor('space').safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function isSyncTarget(value: unknown): value is { url: string; key: string } {
@@ -250,6 +264,10 @@ export function recallSession(): WorkbenchSession | null {
     return null;
   }
   const session = value.session;
+  const spaceId =
+    session && typeof session === 'object' && 'spaceId' in session
+      ? parseSpaceId(session.spaceId)
+      : undefined;
   if (
     !session ||
     typeof session !== 'object' ||
@@ -257,12 +275,11 @@ export function recallSession(): WorkbenchSession | null {
     typeof session.userId !== 'string' ||
     !('email' in session) ||
     typeof session.email !== 'string' ||
-    !('spaceId' in session) ||
-    !(session.spaceId === null || typeof session.spaceId === 'string') ||
+    spaceId === undefined ||
     !('spaceName' in session) ||
     !(session.spaceName === null || typeof session.spaceName === 'string')
   ) {
     return null;
   }
-  return session as WorkbenchSession;
+  return { ...(session as WorkbenchSession), spaceId };
 }

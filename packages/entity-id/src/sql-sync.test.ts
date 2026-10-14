@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'bun:test';
 
-import { ENTITY_PREFIXES, isRegisteredPrefix } from './index.js';
+import { ENTITY_PREFIXES, entityIdRegistry } from './index.js';
 
 /**
  * Keep the DB and the TS registry from drifting: every prefix minted in a
@@ -46,7 +46,7 @@ describe('TS registry ↔ SQL migrations sync', () => {
 
   test('every prefix minted in SQL is registered in ENTITY_PREFIXES', () => {
     const unregistered = [...prefixes.entries()]
-      .filter(([prefix]) => !isRegisteredPrefix(prefix))
+      .filter(([prefix]) => !entityIdRegistry.isRegisteredPrefix(prefix))
       .map(([prefix, file]) => `${prefix} (first in ${file})`)
       .sort();
     // On failure this NAMES the offending prefix + migration, e.g.
@@ -56,7 +56,7 @@ describe('TS registry ↔ SQL migrations sync', () => {
 
   test('the sync check would catch an unregistered SQL prefix', () => {
     // Sanity: proves the assertion above has teeth.
-    expect(isRegisteredPrefix('zzq')).toBe(false);
+    expect(entityIdRegistry.isRegisteredPrefix('zzq')).toBe(false);
     expect(Object.values(ENTITY_PREFIXES)).toContain('knr');
   });
 });

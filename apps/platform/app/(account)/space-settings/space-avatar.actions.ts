@@ -1,6 +1,6 @@
 'use server';
 
-import { entityIds } from '@workspace/entity-id';
+import { ENTITY_PREFIXES, entityIdRegistry } from '@workspace/entity-id';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -20,10 +20,10 @@ const spaceAvatarSchema = z
       .string()
       .trim()
       .min(1, 'Space is required.')
-      .refine((v) => v.startsWith(`${entityIds.space.prefix}_`), {
+      .refine((v) => v.startsWith(`${ENTITY_PREFIXES.space}_`), {
         message: 'Space is required.',
       })
-      .transform((v) => entityIds.space.brand(v)),
+      .transform((v) => entityIdRegistry.factories.spaceIdFactory.brand(v)),
     avatar_url: z
       .string()
       .trim()

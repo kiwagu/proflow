@@ -1,3 +1,11 @@
+import type {
+  DocumentId,
+  KnowledgeResourceId,
+  SpaceId,
+  WriterId,
+} from '@workspace/entity-id';
+import type { RefusedHead } from './server-rows.js';
+
 /**
  * The seams of the sync layer, as interfaces.
  *
@@ -50,13 +58,15 @@ export interface SyncHead {
 
 /** One document's place in the space feed: how far its log goes and when it last moved. */
 export interface SyncDocumentHead {
-  docId: string;
+  docId: DocumentId;
   headSeq: number;
   updatedAt: Date;
 }
 
 export interface SyncHeadsPage {
   rows: SyncDocumentHead[];
+  /** Heads of the page that were refused, each on its own. */
+  refused: RefusedHead[];
   hasMore: boolean;
 }
 
@@ -64,7 +74,7 @@ export interface SyncTailRow {
   seq: number;
   bytes: Uint8Array;
   /** Client instance id of whoever pushed the row — echo suppression only. */
-  writer: string;
+  writer: WriterId;
 }
 
 /**
@@ -81,25 +91,29 @@ export interface SyncTransport {
    * the call rejects with `DocumentNotRegisteredError`.
    */
   ensureDocument(
-    docId: string,
-    spaceId: string,
-    resourceId?: string | null
+    docId: DocumentId,
+    spaceId: SpaceId,
+    resourceId?: KnowledgeResourceId | null
   ): Promise<void>;
   /** The latest server snapshot and the watermark folded into it. */
-  head(docId: string): Promise<SyncHead>;
+  head(docId: DocumentId): Promise<SyncHead>;
   /** Update rows with seq > afterSeq, in seq order — the catch-up tail. */
-  tail(docId: string, afterSeq: number): Promise<SyncTailRow[]>;
+  tail(docId: DocumentId, afterSeq: number): Promise<SyncTailRow[]>;
   /** Appends one consolidated update blob; resolves to its server seq. */
-  pushUpdate(docId: string, bytes: Uint8Array, writer: string): Promise<number>;
+  pushUpdate(
+    docId: DocumentId,
+    bytes: Uint8Array,
+    writer: WriterId
+  ): Promise<number>;
   /** How many update rows the document currently has (compaction gauge). */
-  tailCount(docId: string): Promise<number>;
+  tailCount(docId: DocumentId): Promise<number>;
   /**
    * Proposes folding the log through coversSeq into the given full snapshot.
    * False means a concurrent compaction already covered more (a no-op, not
    * an error).
    */
   compact(
-    docId: string,
+    docId: DocumentId,
     snapshot: Uint8Array,
     coversSeq: number
   ): Promise<boolean>;
@@ -107,7 +121,7 @@ export interface SyncTransport {
    * A nudge — nothing more — that new rows may exist. Delivery is not
    * trusted: every nudge triggers the same watermark query a poll would.
    */
-  subscribeInserts(docId: string, onNudge: () => void): () => void;
+  subscribeInserts(docId: DocumentId, onNudge: () => void): () => void;
   /**
    * Heads of the space's documents changed at or after `since` (null = all
    * of them), oldest first with the id as tiebreaker, `limit` at a time
@@ -116,13 +130,13 @@ export interface SyncTransport {
    * holds costs one ledger read.
    */
   heads(
-    spaceId: string,
+    spaceId: SpaceId,
     since: Date | null,
     limit: number,
     offset: number
   ): Promise<SyncHeadsPage>;
   /** A nudge that some document of the space moved — the same contract as `subscribeInserts`. */
-  subscribeSpace(spaceId: string, onNudge: () => void): () => void;
+  subscribeSpace(spaceId: SpaceId, onNudge: () => void): () => void;
 }
 
 /**
@@ -135,18 +149,18 @@ export interface SyncTransport {
  */
 export interface SyncLedger {
   read(
-    documentId: string
+    documentId: DocumentId
   ): Promise<{ pushedVv: Uint8Array | null; pulledSeq: number }>;
-  recordPush(documentId: string, pushedVv: Uint8Array): Promise<void>;
+  recordPush(documentId: DocumentId, pushedVv: Uint8Array): Promise<void>;
   /** Only ever advances — a stale write must not move the watermark back. */
-  recordPull(documentId: string, pulledSeq: number): Promise<void>;
+  recordPull(documentId: DocumentId, pulledSeq: number): Promise<void>;
   /**
    * The space feed cursor, already backed off by the overlap window; null
    * when the space was never read (a checkout — read every head).
    */
-  headsCursor(spaceId: string): Promise<Date | null>;
+  headsCursor(spaceId: SpaceId): Promise<Date | null>;
   /** Only ever advances. */
-  advanceHeadsCursor(spaceId: string, cursor: Date): Promise<void>;
+  advanceHeadsCursor(spaceId: SpaceId, cursor: Date): Promise<void>;
 }
 
 /**
@@ -158,7 +172,7 @@ export interface SyncLedger {
  * permanent hole.
  */
 export interface SyncJournal {
-  append(documentId: string, blobs: Uint8Array[]): Promise<void>;
+  append(documentId: DocumentId, blobs: Uint8Array[]): Promise<void>;
 }
 
 export interface PushResult {

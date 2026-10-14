@@ -1,4 +1,11 @@
 import type {
+  DocumentId,
+  KnowledgeResourceId,
+  SpaceId,
+  WriterId,
+} from '@workspace/entity-id';
+import { MalformedServerRowError } from './server-rows.js';
+import type {
   PullResult,
   PushResult,
   SyncableDocument,
@@ -46,6 +53,20 @@ export interface SpacePassOutcome {
   pulled: number;
   /** Heads the hook could not open: no local row for them yet. */
   skipped: number;
+  /** Documents the server sent something for that could not be taken in. */
+  refused: number;
+}
+
+/**
+ * A document the server sent something for that could not be taken in: a
+ * malformed head, or a log row whose writer is not a writer id. Nothing of
+ * it is applied, so its bytes stay on the server, unread, until the row is
+ * corrected — which is why it has to be said, once.
+ */
+export interface DocumentRefusal {
+  /** The document id as the server holds it — possibly the malformed value. */
+  documentId: string;
+  error: MalformedServerRowError;
 }
 
 export interface SpaceWatchHooks {
@@ -54,9 +75,9 @@ export interface SpaceWatchHooks {
    * it. A null is not an error, and it does not hold the cursor: whoever
    * creates the row later pulls the document then.
    */
-  open(docId: string): Promise<SyncableDocument | null>;
+  open(docId: DocumentId): Promise<SyncableDocument | null>;
   /** After every pull of the pass that imported at least one foreign blob. */
-  onPulled?: (docId: string, result: PullResult) => void;
+  onPulled?: (docId: DocumentId, result: PullResult) => void;
   /** A pass completed, whether or not anything was pulled. */
   onPass?: (outcome: SpacePassOutcome) => void;
   /** A failed pass; the next nudge or poll simply tries again. */
@@ -84,12 +105,17 @@ export interface DocumentSyncOptions {
    * only for echo suppression on pull; author identity travels inside the
    * CRDT bytes.
    */
-  writer: string;
+  writer: WriterId;
   /** False disables the automatic proposal after push. */
   compaction?: { maxRows?: number; maxBytes?: number } | false;
   pollIntervalMs?: number;
   /** How often `watchSpace` reads every head instead of those past its cursor. */
   fullPassIntervalMs?: number;
+  /**
+   * A document refused (see `DocumentRefusal`): called the first time this
+   * engine meets it, never again, however many passes meet it after that.
+   */
+  onRefused?: (refusal: DocumentRefusal) => void;
 }
 
 function bytesEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -124,16 +150,24 @@ export function createDocumentSync(options: DocumentSyncOptions) {
 
   /** Server rows this document is known to exist for (ensure is idempotent
    *  but not free — one upsert per process lifetime is enough). */
-  const ensured = new Set<string>();
+  const ensured = new Set<DocumentId>();
   /** Local running total of tail bytes seen since the last compaction. */
-  const tailByteGauge = new Map<string, number>();
+  const tailByteGauge = new Map<DocumentId, number>();
   /** One pull at a time per document; concurrent requests coalesce. */
-  const pullChain = new Map<string, Promise<PullResult>>();
+  const pullChain = new Map<DocumentId, Promise<PullResult>>();
+  /** Documents whose refusal has been reported: once each, not once per pass. */
+  const refusedReported = new Set<string>();
+
+  function refuse(documentId: string, error: MalformedServerRowError) {
+    if (refusedReported.has(documentId)) return;
+    refusedReported.add(documentId);
+    options.onRefused?.({ documentId, error });
+  }
 
   async function ensureDocument(
-    docId: string,
-    spaceId: string,
-    resourceId: string | null
+    docId: DocumentId,
+    spaceId: SpaceId,
+    resourceId: KnowledgeResourceId | null
   ) {
     if (ensured.has(docId)) return;
     await transport.ensureDocument(docId, spaceId, resourceId);
@@ -141,7 +175,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function maybeCompact(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument
   ): Promise<boolean> {
     const rows = await transport.tailCount(docId);
@@ -164,10 +198,10 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function push(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
-    spaceId: string,
-    resourceId: string | null = null
+    spaceId: SpaceId,
+    resourceId: KnowledgeResourceId | null = null
   ): Promise<PushResult> {
     const { pushedVv } = await ledger.read(docId);
     const current = doc.versionBytes();
@@ -193,7 +227,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * in, whatever the ledger says was pulled.
    */
   async function pullOnce(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     from?: number
   ): Promise<PullResult> {
@@ -204,7 +238,12 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     // the tail read, it is in the head read after; landing after it, the
     // tail still had every row. The other order would miss both — rows the
     // tail no longer returns, under a head read before they were folded.
-    const rows = await transport.tail(docId, start);
+    const rows = await transport.tail(docId, start).catch((error: unknown) => {
+      // A row this document cannot take in refuses its whole tail — the rows
+      // after it build on it — and the watermark stays where it is.
+      if (error instanceof MalformedServerRowError) refuse(docId, error);
+      throw error;
+    });
     const head = await transport.head(docId);
     const incoming: Uint8Array[] = [];
     let floor = start;
@@ -257,7 +296,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   function pull(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     from?: number
   ): Promise<PullResult> {
@@ -278,7 +317,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * nudge is lost. Returns the stop function.
    */
   function watch(
-    docId: string,
+    docId: DocumentId,
     doc: SyncableDocument,
     hooks: {
       /** After every pull that imported at least one foreign blob. */
@@ -309,19 +348,27 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   }
 
   async function passSpace(
-    spaceId: string,
+    spaceId: SpaceId,
     hooks: SpaceWatchHooks,
     full: boolean
   ): Promise<SpacePassOutcome> {
     const since = full ? null : await ledger.headsCursor(spaceId);
     let newest: Date | null = null;
     const due: SyncDocumentHead[] = [];
+    let refused = 0;
     for (let offset = 0; ; offset += HEADS_PAGE) {
       const page = await transport.heads(spaceId, since, HEADS_PAGE, offset);
       for (const head of page.rows) {
         if (!newest || head.updatedAt > newest) newest = head.updatedAt;
         const { pulledSeq } = await ledger.read(head.docId);
         if (head.headSeq > pulledSeq) due.push(head);
+      }
+      // A refused head moves the cursor like any other: left behind it, it
+      // would hold the cursor back for every document after it.
+      for (const head of page.refused) {
+        if (!newest || head.updatedAt > newest) newest = head.updatedAt;
+        refuse(head.id, head.error);
+        refused += 1;
       }
       if (!page.hasMore) break;
     }
@@ -333,14 +380,22 @@ export function createDocumentSync(options: DocumentSyncOptions) {
         skipped += 1;
         continue;
       }
-      const result = await pull(head.docId, doc);
+      let result: PullResult;
+      try {
+        result = await pull(head.docId, doc);
+      } catch (error) {
+        // Refused for this document alone: the others in the pass go on.
+        if (!(error instanceof MalformedServerRowError)) throw error;
+        refused += 1;
+        continue;
+      }
       if (result.imported > 0) {
         pulled += 1;
         hooks.onPulled?.(head.docId, result);
       }
     }
     if (newest) await ledger.advanceHeadsCursor(spaceId, newest);
-    return { pulled, skipped };
+    return { pulled, skipped, refused };
   }
 
   /**
@@ -348,7 +403,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * subscription on the space, and the same poll `watch` has. Passes never
    * overlap — a nudge during a pass queues one more.
    */
-  function watchSpace(spaceId: string, hooks: SpaceWatchHooks): SpaceWatch {
+  function watchSpace(spaceId: SpaceId, hooks: SpaceWatchHooks): SpaceWatch {
     let stopped = false;
     let running = false;
     let again = false;
@@ -403,7 +458,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
      * through (its own last pushed row, or its pulled watermark).
      */
     async proposeCompaction(
-      docId: string,
+      docId: DocumentId,
       doc: SyncableDocument,
       coversSeq: number
     ): Promise<boolean> {
