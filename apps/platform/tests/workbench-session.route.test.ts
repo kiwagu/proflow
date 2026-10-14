@@ -8,9 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const getUser = vi.fn();
+const rpc = vi.fn();
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(async () => ({ auth: { getUser } })),
+  createClient: vi.fn(async () => ({ auth: { getUser }, rpc })),
 }));
 
 vi.mock('@/lib/active-space', () => ({
@@ -29,7 +30,19 @@ vi.mock('@workspace/gateway-auth/password-recovery', () => ({
   PASSWORD_RECOVERY_COOKIE: 'sb-recovery',
 }));
 
+import type { WriteScope } from '@workspace/knowledge-contracts';
 import { GET } from '@/app/api/workbench/session/route';
+
+/** What the database states for a member: their own nodes, and stars. */
+const SCOPE: WriteScope = {
+  'node.create': 'all',
+  'node.update': { own: ['owner_user_id'] },
+  'node.move': { own: ['parent_edge_created_by'] },
+  'node.trash': { own: ['owner_user_id'] },
+  'node.purge': 'none',
+  'node.star': 'all',
+  'body.write': { own: ['owner_user_id'] },
+};
 
 function request() {
   return {
@@ -43,6 +56,7 @@ beforeEach(() => {
     data: { user: { id: 'u-1', email: 'user@example.test' } },
     error: null,
   });
+  rpc.mockResolvedValue({ data: null, error: null });
   delete process.env.NEXT_PUBLIC_SUPABASE_URL;
   delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 });
@@ -65,6 +79,19 @@ describe('the workbench session answer', () => {
 
     expect(body.sync).toBeUndefined();
     expect(body.userId).toBe('u-1');
+  });
+
+  it('carries the write scope the database stated for the active space, and none when it stated none', async () => {
+    rpc.mockResolvedValueOnce({ data: SCOPE, error: null });
+    const body = await (await GET(request())).json();
+
+    expect(rpc).toHaveBeenCalledWith('rpc_my_write_scope', {
+      p_space_id: 'spc_one.01m2',
+    });
+    expect(body.writeScope).toEqual(SCOPE);
+
+    const without = await (await GET(request())).json();
+    expect('writeScope' in without).toBe(false);
   });
 
   it('withholds it when only half the configuration is present', async () => {
