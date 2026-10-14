@@ -10,6 +10,7 @@ import {
   listUnpushedDocuments,
   materializeDocuments,
   nodeAwaitsServer,
+  nodeOwnerOfDocument,
   resourceIdForDocument,
 } from './document.materialize.js';
 import { createPgliteDocumentRepository } from './document.repository.js';
@@ -250,6 +251,43 @@ describe('the resource that owns a document', () => {
     await materializeDocuments(db, spaceId);
 
     expect(await resourceIdForDocument(db, docId, TEST_USER)).toBeNull();
+  });
+});
+
+describe('the owner of the node a document belongs to', () => {
+  const ownedBy = async (nodeId: string, owner: string) =>
+    db.query(
+      'update knowledge_resources set owner_user_id = $2 where id = $1',
+      [nodeId, owner]
+    );
+
+  it('is the owner of the one live node that points at the document', async () => {
+    const docId = testId('doc');
+    const owner = randomUUID();
+    await ownedBy(await pulledTextNode({ docId, title: 'Owned' }), owner);
+    expect(await nodeOwnerOfDocument(db, docId)).toBe(owner);
+  });
+
+  it('is nobody when no node points at it, when its only node is trashed, or when two do', async () => {
+    expect(await nodeOwnerOfDocument(db, testId('doc'))).toBeNull();
+
+    const trashedDoc = testId('doc');
+    await ownedBy(
+      await pulledTextNode({ docId: trashedDoc, title: 'Gone', trashed: true }),
+      randomUUID()
+    );
+    expect(await nodeOwnerOfDocument(db, trashedDoc)).toBeNull();
+
+    const twice = testId('doc');
+    await ownedBy(
+      await pulledTextNode({ docId: twice, title: 'One' }),
+      randomUUID()
+    );
+    await ownedBy(
+      await pulledTextNode({ docId: twice, title: 'Two' }),
+      randomUUID()
+    );
+    expect(await nodeOwnerOfDocument(db, twice)).toBeNull();
   });
 });
 

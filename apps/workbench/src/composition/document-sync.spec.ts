@@ -19,6 +19,7 @@ const {
   listUnpushedDocuments,
   resourceIdForDocument,
   nodeAwaitsServer,
+  nodeOwnerOfDocument,
   DocumentNotRegisteredError,
 } = vi.hoisted(() => {
   class DocumentNotRegisteredError extends Error {}
@@ -79,6 +80,11 @@ const {
       async (_db: unknown, node: string): Promise<boolean> =>
         node === 'node-of-doc-new'
     ),
+    // Whose node a document belongs to: `doc-theirs` belongs to someone else.
+    nodeOwnerOfDocument: vi.fn(
+      async (_db: unknown, id: string): Promise<string | null> =>
+        id === 'doc-theirs' ? 'user-2' : 'user-1'
+    ),
     DocumentNotRegisteredError,
   };
 });
@@ -95,6 +101,7 @@ vi.mock('@workspace/persistence-pglite', () => ({
   listAwaitingDocuments,
   listUnpushedDocuments,
   nodeAwaitsServer,
+  nodeOwnerOfDocument,
   resourceIdForDocument,
 }));
 
@@ -382,6 +389,73 @@ describe('starting document replication', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(push).not.toHaveBeenCalled();
     expect(onPushFailed).toHaveBeenCalledTimes(1);
+    handle.stop();
+  });
+
+  it('never pushes a document the person may not write, nor reports it, until the scope allows it', async () => {
+    const { store, change } = stubStore();
+    const onPushFailed = vi.fn();
+    let mine = true;
+    const mayWrite = vi.fn(
+      (row: { owner_user_id: string | null }) =>
+        !mine || row.owner_user_id === 'user-1'
+    );
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onPushFailed,
+      mayWrite,
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+
+    change('doc-theirs', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(mayWrite).toHaveBeenCalledWith({ owner_user_id: 'user-2' });
+    expect(push).not.toHaveBeenCalled();
+    expect(onPushFailed).not.toHaveBeenCalled();
+    // Not a wait for the graph, not a failure: graph changes leave it alone.
+    handle.graphPulled();
+    handle.graphPushed();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push).not.toHaveBeenCalled();
+
+    // The scope changed (the role was raised): the next edit goes out.
+    mine = false;
+    change('doc-theirs', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(push).toHaveBeenCalledWith(
+      'doc-theirs',
+      { id: 'doc-theirs' },
+      'spc_abc.01m2',
+      'node-of-doc-theirs'
+    );
+    handle.stop();
+  });
+
+  it("pushes a document of the person's own as before when a scope is given", async () => {
+    const { store, change } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      mayWrite: (row) => row.owner_user_id === 'user-1',
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+    change('doc-typed', 'local');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(push).toHaveBeenCalledWith(
+      'doc-typed',
+      { id: 'doc-typed' },
+      'spc_abc.01m2',
+      'node-of-doc-typed'
+    );
     handle.stop();
   });
 

@@ -34,6 +34,7 @@ import {
 } from './shell/operation-errors';
 import { startDocumentSync } from './composition/document-sync';
 import { rememberSyncSettings, startGraphSync } from './composition/sync';
+import { allowed } from '@workspace/knowledge-contracts';
 
 const container = requireRoot();
 
@@ -360,6 +361,13 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       );
     },
     onPassSettled: () => resolveError('document-sync'),
+    mayWrite: (row) =>
+      allowed(
+        services.writeScope.current(),
+        'body.write',
+        row,
+        services.identity.userId
+      ),
   });
   startGraphSync({
     db: services.db,

@@ -16,6 +16,7 @@ import {
   listUnpushedDocuments,
   materializeDocuments,
   nodeAwaitsServer,
+  nodeOwnerOfDocument,
   resourceIdForDocument,
 } from '@workspace/persistence-pglite';
 import { parseSyncSettings, SYNC_SETTINGS_KEY } from './sync';
@@ -55,6 +56,12 @@ export interface StartDocumentSyncOptions {
   onPassFailed?: (error: unknown) => void;
   /** A pass completed. */
   onPassSettled?: () => void;
+  /**
+   * Whether the person may write a document's body, asked with the owner of
+   * the node it belongs to. A document they may only read is never pushed:
+   * the server would refuse it. Absent, every document may be pushed.
+   */
+  mayWrite?: (row: { owner_user_id: string | null }) => boolean;
 }
 
 export interface DocumentSyncHandle {
@@ -103,6 +110,18 @@ export function startDocumentSync(
     try {
       const doc = await store.syncable(id);
       if (!doc) return;
+      // Read-only for this person: not a wait and not a failure. The scope
+      // changing (a raised role) lets the next edit through.
+      if (
+        options.mayWrite &&
+        !options.mayWrite({
+          owner_user_id: await nodeOwnerOfDocument(db, id),
+        })
+      ) {
+        deferred.delete(id);
+        failed.delete(id);
+        return;
+      }
       // The server fences a body through the resource that owns it; this
       // device knows which node points at the document, and the server
       // takes the name once, when it first sees the document — from

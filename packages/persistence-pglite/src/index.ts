@@ -21,6 +21,7 @@ export {
   listUnpushedDocuments,
   materializeDocuments,
   nodeAwaitsServer,
+  nodeOwnerOfDocument,
   resourceIdForDocument,
 } from './document/document.materialize.js';
 export { createPgliteDocumentListReader } from './document/document.reader.js';
