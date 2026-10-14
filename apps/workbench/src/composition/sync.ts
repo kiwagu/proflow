@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import type { ISettingsStore } from '@workspace/domain';
 import type { KnowledgeResourceId, SpaceId } from '@workspace/entity-id';
@@ -15,19 +15,16 @@ import {
 } from '@workspace/persistence-pglite';
 
 /**
- * Replication, started only when it can actually run.
+ * Graph replication, as the leader tab of a browser runs it.
  *
- * Where the server lives and which publishable key reaches it are the
- * server's to say, not the bundle's: they arrive with the session and are
- * kept as a local setting. That is what keeps a checkout of this app from
- * being pinned at build time to one deployment — and it is why replication
- * is conditional rather than part of opening the app.
- *
- * Two conditions, both necessary: a configuration has been received at
- * least once, and the device is on the network. Neither being met is a
- * WORKING state, not a failure — the editor is local-first, so an app that
- * has never been online is a complete editor whose changes are waiting in
- * the journal. The moment the network returns, the queue drains.
+ * Where the server lives, which publishable key reaches it and under which
+ * cookie the account's session is kept are the server's to say, not the
+ * bundle's: they arrive with the session and are kept as a local setting
+ * (below). That keeps a checkout of this app from being pinned at build time
+ * to one deployment. Whether and when replication runs at all — a stored
+ * target, the network, the one tab per browser that holds the lock — is
+ * decided by the sync composition, which builds the client and hands it
+ * here.
  */
 
 /** The one setting this holds; the server's answer is written back to it verbatim. */
@@ -49,7 +46,8 @@ export interface SyncSettings {
 
 export interface StartGraphSyncOptions {
   db: AppDb;
-  settings: ISettingsStore;
+  /** The leader's browser client, built from the stored sync target. */
+  client: SupabaseClient<Database>;
   /**
    * The server-verified session and the space currently checked out. The
    * user is the auth user UUID, not an entity id.
@@ -78,6 +76,14 @@ export interface StartGraphSyncOptions {
   onRefused?: (rows: RefusedServerRow[]) => void;
   /** A push got changes accepted: a consumer that waited for them may run now. */
   onPushed?: (outcome: { accepted: number }) => void;
+  /** Whether the nudge channel is subscribed: nudges arrive only while it is. */
+  onChannel?: (up: boolean) => void;
+}
+
+export interface GraphSyncHandle {
+  stop(): void;
+  /** One cycle (push, then pull); `sweep` adds the inventory sweep. */
+  kick(opts?: { sweep?: boolean }): void;
 }
 
 export function parseSyncSettings(raw: string | null): SyncSettings | null {
@@ -122,100 +128,46 @@ export async function rememberSyncSettings(
 }
 
 /**
- * Start replicating the checked-out space, or arrange to start once that
- * becomes possible. Returns the disposer: one page owns one watch, and a
- * change of user or space reloads the page, so there is never a second.
+ * Replicate the checked-out space over the client the leader built. The
+ * engine checks the space out with one sweeping cycle and then runs a cycle
+ * per kick: the composition's cadence, a local write, or a nudge from the
+ * channel opened here — which is only ever a kick, never a delivery.
  */
-export function startGraphSync(options: StartGraphSyncOptions): () => void {
-  const { db, settings, identity } = options;
-  let disposed = false;
-  /**
-   * Set BEFORE the settings read, not after the engine is built: the two
-   * triggers below can fire in the same tick, and a flag set after an await
-   * would let both of them past it. Two engines would drain one journal
-   * twice.
-   */
-  let starting = false;
-  let stopWatch: (() => void) | null = null;
-
-  const begin = () => {
-    if (disposed || starting || !navigator.onLine) return;
-    starting = true;
-    void (async () => {
-      try {
-        const stored = await settings.get(SYNC_SETTINGS_KEY);
-        const config = stored.isOk() ? parseSyncSettings(stored.value) : null;
-        if (!config) {
-          // Never configured (or unreadable): nothing to replicate to. The app
-          // keeps working locally and this is retried when the network changes.
-          starting = false;
-          return;
-        }
-        if (disposed) return;
-        // The browser client reads the account cookies itself: they are set on
-        // the gateway origin at the root path, so a page under this mount
-        // carries the same session the server verified — under the name the
-        // server stated, not the one this url would derive.
-        const client = createBrowserClient<Database>(config.url, config.key, {
-          cookieOptions: { name: config.cookie },
-        });
-        const transport = createSupabaseGraphRowTransport(client);
-        const sync = createGraphSync({
-          transport,
-          replica: replicaOver(db),
-          identity: { userId: identity.userId },
-          onReconciled: options.onReconciled,
-        });
-        const watch = sync.watch(identity.spaceId, {
-          onPush: (outcome) => {
-            if (outcome.stalled) options.onStalled?.();
-            else options.onSettled?.();
-            if (outcome.accepted > 0) options.onPushed?.(outcome);
-          },
-          onPull: (outcome) => {
-            if (outcome.refused.length > 0)
-              options.onRefused?.(outcome.refused);
-            options.onPulled?.(outcome);
-          },
-          onError: (error: unknown) => options.onError?.(error),
-        });
-        // A nudge is only a kick: what changed is read by the pull. A
-        // deletion is worth a sweep now, which a watermark pull cannot do.
-        const unsubscribe = transport.subscribe(identity.spaceId, {
-          onChange: () => watch.kick(),
-          onDelete: () => watch.kick({ sweep: true }),
-        });
-        const stop = () => {
-          unsubscribe();
-          watch.stop();
-        };
-        // Disposal may have landed while the settings read was in flight.
-        if (disposed) {
-          stop();
-          return;
-        }
-        stopWatch = stop;
-      } catch (error) {
-        // Building the engine failed — an unusable stored configuration is
-        // the likely cause. Releasing the flag is the point: without it the
-        // attempt would be the last one this page ever makes, and a local
-        // editor whose queue silently stopped draining is worse than one
-        // that retries when the network next changes.
-        starting = false;
-        options.onError?.(error);
-      }
-    })();
-  };
-
-  const onOnline = () => begin();
-  window.addEventListener('online', onOnline);
-  begin();
-
-  return () => {
-    disposed = true;
-    window.removeEventListener('online', onOnline);
-    stopWatch?.();
-    stopWatch = null;
+export function startGraphSync(
+  options: StartGraphSyncOptions
+): GraphSyncHandle {
+  const { db, client, identity } = options;
+  const transport = createSupabaseGraphRowTransport(client);
+  const sync = createGraphSync({
+    transport,
+    replica: replicaOver(db),
+    identity: { userId: identity.userId },
+    onReconciled: options.onReconciled,
+  });
+  const watch = sync.watch(identity.spaceId, {
+    onPush: (outcome) => {
+      if (outcome.stalled) options.onStalled?.();
+      else options.onSettled?.();
+      if (outcome.accepted > 0) options.onPushed?.(outcome);
+    },
+    onPull: (outcome) => {
+      if (outcome.refused.length > 0) options.onRefused?.(outcome.refused);
+      options.onPulled?.(outcome);
+    },
+    onError: (error: unknown) => options.onError?.(error),
+  });
+  // A deletion is worth a sweep now: a watermark pull cannot see it.
+  const unsubscribe = transport.subscribe(identity.spaceId, {
+    onChange: () => watch.kick(),
+    onDelete: () => watch.kick({ sweep: true }),
+    onStatus: (up) => options.onChannel?.(up),
+  });
+  return {
+    stop() {
+      unsubscribe();
+      watch.stop();
+    },
+    kick: (opts) => watch.kick(opts),
   };
 }
 

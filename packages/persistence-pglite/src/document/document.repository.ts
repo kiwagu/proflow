@@ -5,6 +5,7 @@ import {
 } from '@workspace/domain';
 import { err, ok } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
+import type { GraphRepositoryOptions } from '../graph/graph.repository.js';
 import { graphInTransaction } from '../graph/graph.transaction.js';
 import { type ContentCache, createContentCache } from './content-cache.js';
 import type { DocumentCrdtStore } from './document.crdt-store.js';
@@ -19,7 +20,8 @@ export function createPgliteDocumentRepository(
   crdt: DocumentCrdtStore,
   spaceId: string,
   userId: string,
-  cache: ContentCache = createContentCache()
+  cache: ContentCache = createContentCache(),
+  options: GraphRepositoryOptions = {}
 ): IDocumentRepository {
   // Minted per instance: each tab and each worker is its own writer.
   const writer = newId('writer');
@@ -70,6 +72,8 @@ export function createPgliteDocumentRepository(
           if (created.isErr()) throw new Error(created.error);
           return rows[0];
         });
+        // The node went into the graph journal with the document.
+        options.onJournaled?.();
         if (!row) return err('insert returned no row');
         return ok(toDocumentMeta(row));
       } catch (e) {

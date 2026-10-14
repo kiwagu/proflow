@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import {
   createDocumentSync,
@@ -9,8 +9,8 @@ import {
   MalformedServerRowError,
   type SpaceWatch,
 } from '@workspace/doc-sync';
-import type { ISettingsStore } from '@workspace/domain';
 import {
+  canonicalEntityIdSchemaFor,
   type DocumentId,
   entityIdRegistry,
   type SpaceId,
@@ -18,6 +18,7 @@ import {
 import {
   type AppDb,
   type DocumentCrdtStore,
+  type DocumentPeers,
   listAwaitingDocuments,
   listUnpushedDocuments,
   materializeDocuments,
@@ -25,21 +26,19 @@ import {
   nodeOwnerOfDocument,
   resourceIdForDocument,
 } from '@workspace/persistence-pglite';
-import { parseSyncSettings, SYNC_SETTINGS_KEY } from './sync';
 
 /**
- * Document bodies, replicated beside the graph.
+ * Document bodies, replicated beside the graph, by the leader tab of a
+ * browser over the client it built.
  *
- * Same conditions and the same stored target as graph replication: a
- * configuration received at least once, and the device on the network.
  * The graph carries the nodes; this carries what they point at, so a text
  * node that arrived through the graph gets its local document row here
  * (materialized), its first bytes by name, and every later change through
  * the space feed; a document edited here is pushed once the edit settles.
  *
- * Every tab runs its own engine over the shared local database. Two tabs
- * may push the same span or import the same rows; both are no-ops by the
- * protocol's design.
+ * Only the leader runs this. The other tabs of the browser share the local
+ * database and announce what they write to its journal; the leader pushes
+ * those documents as if they had been edited here.
  */
 
 /** A local change settles for this long before its document is pushed. */
@@ -47,8 +46,14 @@ export const PUSH_DEBOUNCE_MS = 1_000;
 
 export interface StartDocumentSyncOptions {
   db: AppDb;
-  settings: ISettingsStore;
+  /** The leader's browser client, built from the stored sync target. */
+  client: SupabaseClient<Database>;
   store: DocumentCrdtStore;
+  /**
+   * The other tabs of this browser, announcing documents they wrote to the
+   * shared journal. Absent, only this tab's own edits are pushed.
+   */
+  peers?: DocumentPeers;
   /**
    * The server-verified session and the space currently checked out. The
    * user is the auth user UUID, not an entity id.
@@ -77,10 +82,14 @@ export interface StartDocumentSyncOptions {
    * the server would refuse it. Absent, every document may be pushed.
    */
   mayWrite?: (row: { owner_user_id: string | null }) => boolean;
+  /** Whether the space's nudge channel is subscribed. */
+  onChannel?: (up: boolean) => void;
 }
 
 export interface DocumentSyncHandle {
   stop(): void;
+  /** A heads pass now; `full` reads every head instead of those past the cursor. */
+  kick(opts?: { full?: boolean }): void;
   /**
    * The graph brought new rows: documents may need materializing and
    * pulling now rather than at the next start.
@@ -96,7 +105,7 @@ export interface DocumentSyncHandle {
 export function startDocumentSync(
   options: StartDocumentSyncOptions
 ): DocumentSyncHandle {
-  const { db, settings, store, identity } = options;
+  const { db, client, store, identity } = options;
   // Minted per page: each tab is its own writer for echo suppression.
   const writer = entityIdRegistry.factories.writerIdFactory.create();
   let disposed = false;
@@ -106,6 +115,7 @@ export function startDocumentSync(
   let space: SpaceWatch | null = null;
   let unsubscribeChanges: (() => void) | null = null;
   let unsubscribeNudges: (() => void) | null = null;
+  let unsubscribePeers: (() => void) | null = null;
   const timers = new Map<DocumentId, ReturnType<typeof setTimeout>>();
   /**
    * Pushes that failed in this session. The catch-up query finds changed
@@ -236,18 +246,6 @@ export function startDocumentSync(
     starting = true;
     void (async () => {
       try {
-        const stored = await settings.get(SYNC_SETTINGS_KEY);
-        const config = stored.isOk() ? parseSyncSettings(stored.value) : null;
-        if (!config) {
-          // Never configured: nothing to replicate to; retried when the
-          // network changes, exactly as graph replication is.
-          starting = false;
-          return;
-        }
-        if (disposed) return;
-        const client = createBrowserClient<Database>(config.url, config.key, {
-          cookieOptions: { name: config.cookie },
-        });
         const transport = createSupabaseTransport(client);
         engine = createDocumentSync({
           transport,
@@ -265,8 +263,10 @@ export function startDocumentSync(
           onError: (error) => options.onPassFailed?.(error),
         });
         // A nudge is only a kick: what moved is read by the heads pass.
-        unsubscribeNudges = transport.subscribeSpace(identity.spaceId, () =>
-          space?.kick()
+        unsubscribeNudges = transport.subscribeSpace(
+          identity.spaceId,
+          () => space?.kick(),
+          (up) => options.onChannel?.(up)
         );
         unsubscribeChanges = store.onChanged((event) => {
           // The local store's own document ids: its table CHECKs them.
@@ -275,6 +275,16 @@ export function startDocumentSync(
               entityIdRegistry.factories.documentIdFactory.brand(event.id)
             );
         });
+        // Another tab wrote: the shared journal holds it, this tab pushes it.
+        // The channel is shared by every account of the origin, so what is
+        // not a document id is not ours; one this database does not hold is
+        // skipped by the push itself.
+        unsubscribePeers =
+          options.peers?.listen((announced) => {
+            const parsed =
+              canonicalEntityIdSchemaFor('document').safeParse(announced);
+            if (parsed.success) schedulePush(parsed.data);
+          }) ?? null;
         await pullAwaiting();
         await catchUp();
       } catch (error) {
@@ -308,9 +318,13 @@ export function startDocumentSync(
       timers.clear();
       unsubscribeChanges?.();
       unsubscribeNudges?.();
+      unsubscribePeers?.();
       space?.stop();
       space = null;
       engine = null;
+    },
+    kick(opts) {
+      space?.kick(opts);
     },
     graphPulled() {
       if (engine) report(materialize().then(retryDeferred));

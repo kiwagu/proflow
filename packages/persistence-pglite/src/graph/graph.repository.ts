@@ -226,8 +226,18 @@ async function journal(
   );
 }
 
+export interface GraphRepositoryOptions {
+  /**
+   * A command's journal entry is committed. Called once per journaled
+   * command, after its transaction: another tab may be the one that pushes
+   * the journal, and this is how it hears there is something to push.
+   */
+  onJournaled?: () => void;
+}
+
 export function createPgliteGraphRepository(
-  db: Pick<AppDb, 'query' | 'transaction'>
+  db: Pick<AppDb, 'query' | 'transaction'>,
+  options: GraphRepositoryOptions = {}
 ): GraphRepository {
   /**
    * Run a command's local write and its journal append as one unit. The two
@@ -243,10 +253,11 @@ export function createPgliteGraphRepository(
       await db.transaction(async (tx) => {
         await run(tx as unknown as Tx);
       });
-      return ok(undefined);
     } catch (e) {
       return err(`${label} failed: ${String(e)}`);
     }
+    options.onJournaled?.();
+    return ok(undefined);
   }
 
   /**
@@ -345,11 +356,12 @@ export function createPgliteGraphRepository(
           // Capture the result before sync can evict the row after commit.
           return inserted;
         });
-        return node
-          ? ok(node)
-          : err(
-              `graph.createNode: transaction returned no result for id ${id}`
-            );
+        if (!node)
+          return err(
+            `graph.createNode: transaction returned no result for id ${id}`
+          );
+        options.onJournaled?.();
+        return ok(node);
       } catch (e) {
         return err(`graph.createNode failed: ${String(e)}`);
       }

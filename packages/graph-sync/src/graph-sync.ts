@@ -15,6 +15,7 @@ import {
   type GraphReplica,
   type GraphRowTransport,
   type PullOutcome,
+  type PullPage,
   type PushOutcome,
 } from './types.js';
 
@@ -90,22 +91,47 @@ export function createGraphSync(options: GraphSyncOptions) {
     });
   }
 
-  async function pullTable(
+  /**
+   * One page into the replica, and the cursor past it. A refused row moves
+   * the cursor like an applied one: left behind it, it would be read again
+   * on every pass for as long as it stays there.
+   */
+  async function landPage(
     spaceId: SpaceId,
-    table: GraphSyncTableName
+    table: GraphSyncTableName,
+    page: PullPage
+  ): Promise<void> {
+    let watermark =
+      page.rows.length > 0
+        ? await replica.applyPullBatch(table, page.rows)
+        : null;
+    for (const row of page.refused) {
+      if (row.updatedAt && (!watermark || row.updatedAt > watermark))
+        watermark = row.updatedAt;
+    }
+    if (watermark) await replica.advanceCursor(spaceId, table, watermark);
+  }
+
+  /**
+   * Every page of one table changed since its cursor, each handed to `onPage`
+   * as it is read.
+   *
+   * The cursor is read ONCE per pass and pages advance by OFFSET within it:
+   * rows sharing one instant (bulk imports, the trash cascade) are common, so
+   * a cursor-only pager could never get past a page of equal timestamps.
+   * Pages run until the server says there are no more: a checkout of a large
+   * space is many pages, and stopping at the first would leave the cursor
+   * parked mid-history with the rest arriving only by chance.
+   */
+  async function readTable(
+    spaceId: SpaceId,
+    table: GraphSyncTableName,
+    onPage: (page: PullPage) => Promise<void>
   ): Promise<{ applied: number; refused: RefusedServerRow[] }> {
     let applied = 0;
     const refused: RefusedServerRow[] = [];
-    // The cursor is read ONCE per pass and pages advance by OFFSET within
-    // it: rows sharing one instant (bulk imports, the trash cascade) are
-    // common, so a cursor-only pager could never get past a page of equal
-    // timestamps. The watermark still advances per page — a crash mid-pass
-    // resumes from the last landed page, re-reading at most the overlap.
     const since = await replica.cursorFor(spaceId, table);
     let offset = 0;
-    // Pages until the server says there are no more: a checkout of a large
-    // space is many pages, and stopping at the first would leave the cursor
-    // parked mid-history with the rest arriving only by chance.
     for (;;) {
       const page = await transport.pullSince(
         table,
@@ -115,23 +141,22 @@ export function createGraphSync(options: GraphSyncOptions) {
         offset
       );
       const served = page.rows.length + page.refused.length;
-      if (served === 0) return { applied, refused };
-      let watermark =
-        page.rows.length > 0
-          ? await replica.applyPullBatch(table, page.rows)
-          : null;
+      if (served === 0) break;
+      await onPage(page);
       applied += page.rows.length;
-      // A refused row moves the cursor like an applied one: left behind it,
-      // it would be read again on every pass for as long as it stays there.
-      for (const row of page.refused) {
-        if (row.updatedAt && (!watermark || row.updatedAt > watermark))
-          watermark = row.updatedAt;
-      }
       refused.push(...page.refused);
-      if (watermark) await replica.advanceCursor(spaceId, table, watermark);
-      if (!page.hasMore) return { applied, refused };
+      if (!page.hasMore) break;
       offset += served;
     }
+    return { applied, refused };
+  }
+
+  /** One table, landed page by page: a crash mid-pass resumes from the last landed page. */
+  function pullTable(
+    spaceId: SpaceId,
+    table: GraphSyncTableName
+  ): Promise<{ applied: number; refused: RefusedServerRow[] }> {
+    return readTable(spaceId, table, (page) => landPage(spaceId, table, page));
   }
 
   async function sweepTable(
@@ -152,11 +177,33 @@ export function createGraphSync(options: GraphSyncOptions) {
     let evicted = 0;
     const swept: GraphSyncTableName[] = [];
     const refused: RefusedServerRow[] = [];
+    // Nodes are READ before every other table and LANDED after the edges.
+    // A node can become visible to this user through its containment edge
+    // alone (a private node filed into a shared folder): read after the
+    // edges, it could arrive in this pass while its edge — written by the
+    // other device between the two reads — did not, and be drawn at the top
+    // level until the next pass. Read first, a node visible then was placed
+    // then, and the edges read after it carry that place.
+    const nodePages: PullPage[] = [];
+    const nodes = await readTable(
+      spaceId,
+      'knowledge_resources',
+      async (page) => {
+        nodePages.push(page);
+      }
+    );
     // Arrivals first, in the order that keeps a node's place known before
     // the node shows; then departures, in the order that keeps a node gone
     // before its place is. Interleaving the two per table would do one of
     // them in the wrong order.
     for (const descriptor of ARRIVAL_ORDER) {
+      if (descriptor.local === 'knowledge_resources') {
+        for (const page of nodePages)
+          await landPage(spaceId, 'knowledge_resources', page);
+        applied += nodes.applied;
+        refused.push(...nodes.refused);
+        continue;
+      }
       const table = await pullTable(spaceId, descriptor.local);
       applied += table.applied;
       refused.push(...table.refused);

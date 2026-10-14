@@ -140,4 +140,59 @@ describe('the order a pull applies the tables in', () => {
     expect(await frameOf(alice)).toBe('absent');
     expect(frames).not.toContain('top-level');
   });
+
+  it('a node that becomes visible during a pull, through the edge another device just wrote, arrives in its folder or not at all', async () => {
+    // Another device files a document into the shared folder: two writes,
+    // the node and then its containment edge. Here they land between the
+    // first and the second read of one pull. A node read after the edges
+    // would arrive without them and be drawn at the top level until the
+    // next pass; read before them, it either is not there yet or its edge
+    // is read after it.
+    const LATE = 'knr_0000000000000003.0000000000';
+    await server.sql('delete from knowledge_edges where to_id = $1', [DOC]);
+    await server.sql('delete from knowledge_resources where id = $1', [DOC]);
+    const base = server.as(TEST_USER);
+    let reads = 0;
+    const racing: GraphRowTransport = {
+      ...base,
+      async pullSince(...args) {
+        const page = await base.pullSince(...args);
+        reads += 1;
+        if (reads === 1) {
+          await server.sql(
+            `insert into knowledge_resources
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
+             values ($1, $2, 'text', 'Late', 'draft', 'space', $3, $3)`,
+            [LATE, SPACE, TEST_USER]
+          );
+          await server.sql(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, position, created_by)
+             values ($1, $2, $3, $4, 'contains', 0, $5)`,
+            [mintId('knowledge_edges'), SPACE, FOLDER, LATE, TEST_USER]
+          );
+        }
+        return page;
+      },
+    };
+    alice = await createReplica('alice', TEST_USER, racing);
+
+    await alice.sync.pull(SPACE);
+
+    const late = await alice.rows('knowledge_resources', 'id = $1', [LATE]);
+    const placed = await alice.rows<{ from_id: string }>(
+      'knowledge_edges',
+      "to_id = $1 and relation_type = 'contains'",
+      [LATE]
+    );
+    // Never a node without the place the server held it in when it was read.
+    expect(late.length === 0 || placed.some((e) => e.from_id === FOLDER)).toBe(
+      true
+    );
+
+    await alice.sync.pull(SPACE);
+    expect(
+      await alice.rows('knowledge_resources', 'id = $1', [LATE])
+    ).toHaveLength(1);
+  });
 });

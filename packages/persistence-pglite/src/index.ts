@@ -48,6 +48,7 @@ export {
   GRAPH_OPS,
   type GraphOpKind,
   type GraphRepository,
+  type GraphRepositoryOptions,
   type UpsertEdgeInput,
 } from './graph/graph.repository.js';
 export {

@@ -2,33 +2,45 @@ import { entityIdRegistry } from '@workspace/entity-id';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The subject is the DECISION to start replication, not replication itself:
- * whether the engine is built at all, how many times, and from what. The
- * engine and the transport are mocked wholesale — they are covered by their
- * own package's integration suite against a real PGlite on both sides, and
- * re-proving them here would only prove the mocks.
+ * The graph half of replication as the leader tab composes it: what the
+ * engine is built from, what its outcomes are handed to, and how the nudge
+ * channel maps onto kicks. The engine and the transport are mocked
+ * wholesale — they are covered by their own package's suite against a real
+ * PGlite on both sides. When replication starts at all (settings, network,
+ * leadership) is the subject of sync-composition.spec.
  */
 
-/**
- * The mocks carry their real parameter shapes: what the spec asserts is WHAT
- * the composition passed (the space it watches, the identity it builds the
- * engine from), so the recorded arguments have to stay typed rather than
- * collapse to an empty tuple.
- */
 const {
   watch,
+  kick,
+  stopWatch,
   createGraphSync,
   createSupabaseGraphRowTransport,
-  createBrowserClient,
+  subscribe,
 } = vi.hoisted(() => {
+  const kick = vi.fn();
+  const stopWatch = vi.fn();
   const watch = vi.fn(
     (_spaceId: string, _options?: { onError?: (error: unknown) => void }) => ({
-      stop: vi.fn(),
-      kick: vi.fn(),
+      stop: stopWatch,
+      kick,
     })
+  );
+  const subscribe = vi.fn(
+    (
+      _spaceId: string,
+      _handlers: {
+        onChange: () => void;
+        onDelete: () => void;
+        onStatus?: (up: boolean) => void;
+      }
+    ) => vi.fn()
   );
   return {
     watch,
+    kick,
+    stopWatch,
+    subscribe,
     createGraphSync: vi.fn((_options: { identity: { userId: string } }) => ({
       watch,
       pull: vi.fn(),
@@ -36,11 +48,8 @@ const {
       pendingCount: vi.fn(),
     })),
     createSupabaseGraphRowTransport: vi.fn((_client: unknown) => ({
-      subscribe: vi.fn(() => vi.fn()),
+      subscribe,
     })),
-    createBrowserClient: vi.fn(
-      (_url: string, _key: string, _options?: unknown) => ({})
-    ),
   };
 });
 
@@ -48,13 +57,14 @@ vi.mock('@workspace/graph-sync', () => ({
   createGraphSync,
   createSupabaseGraphRowTransport,
 }));
-vi.mock('@supabase/ssr', () => ({ createBrowserClient }));
 vi.mock('@workspace/persistence-pglite', () => ({
   createPgliteGraphReplicaWriter: vi.fn(() => ({})),
   createPgliteGraphSyncLedger: vi.fn(() => ({})),
 }));
 
 import { ok } from 'neverthrow';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@workspace/db';
 import type { ISettingsStore } from '@workspace/domain';
 import type { AppDb } from '@workspace/persistence-pglite';
 import {
@@ -68,6 +78,15 @@ const IDENTITY = {
   userId: 'user-1',
   spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
 };
+const CLIENT = {
+  name: 'the leader client',
+} as unknown as SupabaseClient<Database>;
+
+const CONFIGURED = JSON.stringify({
+  url: 'https://server.test',
+  key: 'publishable-key',
+  cookie: 'sb-api-auth-token',
+});
 
 function settingsHolding(value: string | null): ISettingsStore {
   return {
@@ -77,84 +96,57 @@ function settingsHolding(value: string | null): ISettingsStore {
   };
 }
 
-function setOnline(online: boolean) {
-  Object.defineProperty(window.navigator, 'onLine', {
-    configurable: true,
-    get: () => online,
+type PullOutcome = {
+  applied: number;
+  evicted: number;
+  swept: string[];
+  refused: unknown[];
+};
+type Hooks = {
+  onPull: (outcome: PullOutcome) => void;
+  onPush: (outcome: { stalled: boolean; accepted: number }) => void;
+};
+
+const hooksOf = () => watch.mock.calls[0]?.[1] as unknown as Hooks;
+const start = (options: Partial<Parameters<typeof startGraphSync>[0]> = {}) =>
+  startGraphSync({
+    db: {} as AppDb,
+    client: CLIENT,
+    identity: IDENTITY,
+    ...options,
   });
-}
-
-/** Lets the settings read (a promise chain) land before asserting. */
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-const CONFIGURED = JSON.stringify({
-  url: 'https://server.test',
-  key: 'publishable-key',
-  cookie: 'sb-api-auth-token',
-});
-
-/** A store that keeps what is written to it, as the real one does. */
-function settingsStore(initial: Record<string, string>): ISettingsStore {
-  const values = new Map(Object.entries(initial));
-  return {
-    get: vi.fn(async (key: string) => ok(values.get(key) ?? null)),
-    set: vi.fn(async (key: string, value: string) => {
-      values.set(key, value);
-      return ok(undefined);
-    }),
-    remove: vi.fn(async (key: string) => {
-      values.delete(key);
-      return ok(undefined);
-    }),
-  };
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  setOnline(true);
 });
 
-describe('starting graph replication', () => {
-  it('hands a pull outcome to the composition', async () => {
-    const onPulled = vi.fn();
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-      onPulled,
+describe('graph replication on the leader client', () => {
+  it('builds one engine over the client it is given and watches the checked-out space', () => {
+    const handle = start();
+    expect(createSupabaseGraphRowTransport).toHaveBeenCalledWith(CLIENT);
+    expect(createGraphSync).toHaveBeenCalledTimes(1);
+    expect(createGraphSync.mock.calls[0]?.[0]).toMatchObject({
+      identity: { userId: 'user-1' },
     });
-    await settled();
-    const hooks = watch.mock.calls[0]?.[1] as
-      | {
-          onPull?: (outcome: {
-            applied: number;
-            evicted: number;
-            swept: string[];
-            refused: unknown[];
-          }) => void;
-        }
-      | undefined;
-    expect(hooks?.onPull).toBeTypeOf('function');
-    hooks?.onPull?.({ applied: 2, evicted: 0, swept: [], refused: [] });
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(watch.mock.calls[0]?.[0]).toBe('spc_abc.01m2');
+    handle.stop();
+  });
+
+  it('hands a pull outcome to the composition', () => {
+    const onPulled = vi.fn();
+    const handle = start({ onPulled });
+    hooksOf().onPull({ applied: 2, evicted: 0, swept: [], refused: [] });
     expect(onPulled).toHaveBeenCalledWith(
       expect.objectContaining({ applied: 2 })
     );
-    stop();
+    handle.stop();
   });
 
-  it('hands rows the server sent that could not be taken in to the composition, and only those', async () => {
+  it('hands rows the server sent that could not be taken in to the composition, and only those', () => {
     const onRefused = vi.fn();
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-      onRefused,
-    });
-    await settled();
-    const hooks = watch.mock.calls[0]?.[1] as {
-      onPull: (outcome: unknown) => void;
-    };
-    hooks.onPull({ applied: 1, evicted: 0, swept: [], refused: [] });
+    const handle = start({ onRefused });
+    hooksOf().onPull({ applied: 1, evicted: 0, swept: [], refused: [] });
     expect(onRefused).not.toHaveBeenCalled();
     const row = {
       table: 'knowledge_resources',
@@ -162,215 +154,75 @@ describe('starting graph replication', () => {
       updatedAt: null,
       error: new Error('server row refused'),
     };
-    hooks.onPull({ applied: 0, evicted: 0, swept: [], refused: [row] });
+    hooksOf().onPull({ applied: 0, evicted: 0, swept: [], refused: [row] });
     expect(onRefused).toHaveBeenCalledWith([row]);
-    stop();
+    handle.stop();
   });
 
-  it('does not build an engine when no configuration was ever received', async () => {
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(null),
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-    stop();
-  });
-
-  it('does not build an engine while the device is offline', async () => {
-    setOnline(false);
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-    stop();
-  });
-
-  it('builds one engine and watches the checked-out space when configured and online', async () => {
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createGraphSync).toHaveBeenCalledTimes(1);
-    // The account's cookie is named after the platform's API host, not
-    // after the url this client is built with.
-    expect(createBrowserClient).toHaveBeenCalledWith(
-      'https://server.test',
-      'publishable-key',
-      { cookieOptions: { name: 'sb-api-auth-token' } }
-    );
-    expect(createGraphSync.mock.calls[0]?.[0]).toMatchObject({
-      identity: { userId: 'user-1' },
-    });
-    expect(watch).toHaveBeenCalledTimes(1);
-    expect(watch.mock.calls[0]?.[0]).toBe('spc_abc.01m2');
-    stop();
-  });
-
-  it('tells a stalled push from a completed one, and never takes a pull for recovery', async () => {
+  it('tells a stalled push from a completed one, and never takes a pull for recovery', () => {
     const onSettled = vi.fn();
     const onStalled = vi.fn();
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-      onSettled,
-      onStalled,
-    });
-    await settled();
-    const hooks = watch.mock.calls[0]?.[1] as
-      | {
-          onPush?: (outcome: { stalled: boolean }) => void;
-          onPull?: (outcome: unknown) => void;
-        }
-      | undefined;
-    expect(hooks?.onPush).toBeTypeOf('function');
-
+    const handle = start({ onSettled, onStalled });
     // Reads succeed while writes cannot reach the server: that is not
     // recovery, and a pull after a stalled push must not say so.
-    hooks?.onPush?.({ stalled: true });
-    hooks?.onPull?.({ applied: 3, evicted: 0, swept: [], refused: [] });
+    hooksOf().onPush({ stalled: true, accepted: 0 });
+    hooksOf().onPull({ applied: 3, evicted: 0, swept: [], refused: [] });
     expect(onStalled).toHaveBeenCalledTimes(1);
     expect(onSettled).not.toHaveBeenCalled();
-
-    hooks?.onPush?.({ stalled: false });
+    hooksOf().onPush({ stalled: false, accepted: 0 });
     expect(onSettled).toHaveBeenCalledTimes(1);
-    stop();
+    handle.stop();
   });
 
-  it('says so when a push got changes accepted, and only then', async () => {
+  it('says so when a push got changes accepted, and only then', () => {
     const onPushed = vi.fn();
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-      onPushed,
-    });
-    await settled();
-    const hooks = watch.mock.calls[0]?.[1] as
-      | { onPush?: (outcome: { stalled: boolean; accepted: number }) => void }
-      | undefined;
-
-    hooks?.onPush?.({ stalled: false, accepted: 0 });
-    hooks?.onPush?.({ stalled: true, accepted: 0 });
+    const handle = start({ onPushed });
+    hooksOf().onPush({ stalled: false, accepted: 0 });
+    hooksOf().onPush({ stalled: true, accepted: 0 });
     expect(onPushed).not.toHaveBeenCalled();
-
-    hooks?.onPush?.({ stalled: false, accepted: 2 });
+    hooksOf().onPush({ stalled: false, accepted: 2 });
     expect(onPushed).toHaveBeenCalledWith({ stalled: false, accepted: 2 });
-    stop();
+    handle.stop();
   });
 
-  it('starts once when the network returns, not once per event', async () => {
-    setOnline(false);
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-
-    setOnline(true);
-    window.dispatchEvent(new Event('online'));
-    window.dispatchEvent(new Event('online'));
-    await settled();
-
-    expect(createGraphSync).toHaveBeenCalledTimes(1);
-    stop();
+  it('a nudge kicks the engine; a deletion nudge kicks it with a sweep', () => {
+    const handle = start();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(subscribe.mock.calls[0]?.[0]).toBe('spc_abc.01m2');
+    const handlers = subscribe.mock.calls[0]![1];
+    handlers.onChange();
+    expect(kick).toHaveBeenLastCalledWith();
+    handlers.onDelete();
+    expect(kick).toHaveBeenLastCalledWith({ sweep: true });
+    handle.stop();
   });
 
-  it('stops watching when disposed and never starts afterwards', async () => {
-    const dispose = vi.fn();
-    watch.mockReturnValueOnce({ stop: dispose, kick: vi.fn() });
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-    });
-    await settled();
-    stop();
-    expect(dispose).toHaveBeenCalledTimes(1);
-
-    window.dispatchEvent(new Event('online'));
-    await settled();
-    expect(createGraphSync).toHaveBeenCalledTimes(1);
+  it('says whether its nudge channel is up', () => {
+    const onChannel = vi.fn();
+    const handle = start({ onChannel });
+    const handlers = subscribe.mock.calls[0]![1];
+    handlers.onStatus?.(true);
+    handlers.onStatus?.(false);
+    expect(onChannel.mock.calls).toEqual([[true], [false]]);
+    handle.stop();
   });
 
-  it('ignores a stored configuration that is not usable', async () => {
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding('{"url":"https://server.test"}'),
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-    stop();
+  it('hands kicks to the engine as they come', () => {
+    const handle = start();
+    handle.kick();
+    handle.kick({ sweep: true });
+    expect(kick.mock.calls).toEqual([[undefined], [{ sweep: true }]]);
+    handle.stop();
   });
 
-  it('starts only once a setting with a cookie is stored', async () => {
-    // A device upgraded with the setting an older build stored: a url and a
-    // key, no cookie name. Built from it, the client would look for a
-    // cookie that does not exist; it waits for the next session check.
-    const settings = settingsStore({
-      [SYNC_SETTINGS_KEY]: JSON.stringify({
-        url: 'https://api.server.test',
-        key: 'publishable-key',
-      }),
-    });
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings,
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createBrowserClient).not.toHaveBeenCalled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-
-    await rememberSyncSettings(settings, {
-      url: 'https://proflow.local/backend',
-      key: 'publishable-key',
-      cookie: 'sb-api-auth-token',
-    });
-    window.dispatchEvent(new Event('online'));
-    await settled();
-
-    expect(createBrowserClient).toHaveBeenCalledTimes(1);
-    expect(createBrowserClient).toHaveBeenCalledWith(
-      'https://proflow.local/backend',
-      'publishable-key',
-      { cookieOptions: { name: 'sb-api-auth-token' } }
-    );
-    stop();
-  });
-
-  it('retries on the next network event after a failed attempt', async () => {
-    // A start that throws must not be the last one this page makes: the
-    // journal keeps filling, so a permanently wedged starter is a queue
-    // that silently never drains again.
-    const onError = vi.fn();
-    createBrowserClient.mockImplementationOnce(() => {
-      throw new Error('unusable configuration');
-    });
-    const stop = startGraphSync({
-      db: {} as AppDb,
-      settings: settingsHolding(CONFIGURED),
-      identity: IDENTITY,
-      onError,
-    });
-    await settled();
-    expect(createGraphSync).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledTimes(1);
-
-    window.dispatchEvent(new Event('online'));
-    await settled();
-    expect(createGraphSync).toHaveBeenCalledTimes(1);
-    stop();
+  it('stops the engine and closes the channel when stopped', () => {
+    const handle = start();
+    const unsubscribe = subscribe.mock.results[0]?.value as ReturnType<
+      typeof vi.fn
+    >;
+    handle.stop();
+    expect(stopWatch).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -408,5 +260,7 @@ describe('reading the stored configuration', () => {
         '{"url":"https://proflow.local/backend","key":"pk","cookie":""}'
       )
     ).toBeNull();
+    expect(parseSyncSettings('{"url":"https://server.test"}')).toBeNull();
+    expect(parseSyncSettings('not json')).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import {
 } from '@workspace/entity-id';
 import type { AppDb } from '../db/db.js';
 import { type GraphOpRow, toGraphOp } from './graph.mapper.js';
+import { NODE_KEYS } from './graph.replica.js';
 import type { GraphOp } from './graph.types.js';
 
 /**
@@ -154,13 +155,26 @@ export function createPgliteGraphSyncLedger(db: AppDb): GraphSyncLedger {
     },
 
     async applyInventory(spaceId, table, serverIds) {
+      // What the journal still has to push is not on the server yet: a node
+      // made here, its place, its satellites. Missing from the server's list
+      // is the expected state for those until the push lands — evicting them
+      // would make a node vanish from under the person who just made it.
+      const pending = (NODE_KEYS[table] ?? [])
+        .map(
+          (key) => `exists (
+            select 1 from graph_op_journal j
+             where j.space_id = $1 and t."${key}" = any (j.node_ids)
+          )`
+        )
+        .join(' or ');
       // `= any($2)` takes the id list as ONE array parameter, so an inventory
       // of any size is one statement with one bind — no chunking, and no SQL
       // built by string concatenation.
       const { rows } = await db.query<{ id: string }>(
-        `delete from ${table}
-          where space_id = $1 and not (id = any ($2::text[]))
-          returning id`,
+        `delete from ${table} t
+          where t.space_id = $1 and not (t.id = any ($2::text[]))
+            ${pending ? `and not (${pending})` : ''}
+          returning t.id`,
         [spaceId, serverIds]
       );
       await db.query(

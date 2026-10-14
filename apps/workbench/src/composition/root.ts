@@ -98,15 +98,26 @@ export async function createAppServices(
   // editors' registry — built here and handed to the app's provider, so
   // both sides hold the same one.
   const liveDocuments = createLiveDocuments();
+  // Other tabs of this browser share the database but hold their own copies
+  // of open documents: each tells the others what it wrote. The tab that
+  // syncs listens on the same announcer to push what the others wrote.
+  const documentPeers = createBroadcastDocumentPeers();
   const documentCrdt = createDocumentCrdtStore(db, {
     live: {
       read: (id) => liveDocuments.read(id),
       author: { user: session.userId, src: 'human' },
     },
-    // Other tabs of this browser share the database but hold their own
-    // copies of open documents: each tells the others what it wrote.
-    peers: createBroadcastDocumentPeers(),
+    peers: documentPeers,
   });
+
+  // Every graph write that reaches the journal, through whichever
+  // repository made it: replication pushes on it, here or in another tab.
+  const graphJournaled = new Set<() => void>();
+  const journal = {
+    onJournaled: () => {
+      for (const listener of graphJournaled) listener();
+    },
+  };
 
   // Everything the user edits in place — creating, renaming, moving,
   // starring, deleting — shows the moment it is asked for. A live query
@@ -127,14 +138,17 @@ export async function createAppServices(
       blobs,
       session.spaceId,
       session.userId,
-      blobs.packages
+      blobs.packages,
+      journal
     ),
     tree: createGraphFileTreeReader(db, session.spaceId, session.userId),
     documents: createPgliteDocumentRepository(
       db,
       documentCrdt,
       session.spaceId,
-      session.userId
+      session.userId,
+      undefined,
+      journal
     ),
     documentList: createPgliteDocumentListReader(db),
     onError: reportError,
@@ -183,7 +197,12 @@ export async function createAppServices(
     settings,
     writeScope,
     graph: createPgliteGraphReader(db),
-    graphCommands: createPgliteGraphRepository(db),
+    graphCommands: createPgliteGraphRepository(db, journal),
+    documentPeers,
+    onGraphJournaled(listener) {
+      graphJournaled.add(listener);
+      return () => graphJournaled.delete(listener);
+    },
     chats: createPgliteChatRepository(db),
     chatList: createPgliteChatListReader(db),
     chatMessages: createPgliteChatMessageRepository(db),
