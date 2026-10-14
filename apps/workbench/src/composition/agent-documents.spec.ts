@@ -101,4 +101,37 @@ describe('the documents the assistant writes through', () => {
     scope = { ...MEMBER, 'body.write': 'all' };
     expect((await guarded.save(save('theirs'))).isOk()).toBe(true);
   });
+
+  it('refuses a write whose right is revoked while the owner is still being looked up', async () => {
+    const documents = base();
+    let scope: WriteScope | null = {
+      ...MEMBER,
+      'body.write': 'all',
+      'node.update': 'all',
+      'node.trash': 'all',
+    };
+    const lookups: Array<() => void> = [];
+    const guarded = guardDocumentWrites(documents, {
+      scope: () => scope,
+      userId: 'user-1',
+      ownerOfDocument: (id) =>
+        new Promise((resolve) =>
+          lookups.push(() => resolve(owners[id] ?? null))
+        ),
+    });
+
+    const writes = [
+      guarded.save(save('theirs')),
+      guarded.rename('theirs', 'New name'),
+      guarded.softDelete('theirs'),
+    ];
+    scope = MEMBER;
+    for (const finish of lookups) finish();
+
+    for (const result of await Promise.all(writes))
+      expect(result.isErr()).toBe(true);
+    expect(documents.save).not.toHaveBeenCalled();
+    expect(documents.rename).not.toHaveBeenCalled();
+    expect(documents.softDelete).not.toHaveBeenCalled();
+  });
 });

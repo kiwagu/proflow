@@ -25,13 +25,15 @@ export function guardDocumentWrites(
     ownerOfDocument: (documentId: string) => Promise<string | null>;
   }
 ): IDocumentRepository {
-  const may = async (action: WriteAction, documentId: string) =>
-    allowed(
+  const may = async (action: WriteAction, documentId: string) => {
+    const owner = await rights.ownerOfDocument(documentId);
+    return allowed(
       rights.scope(),
       action,
-      { owner_user_id: await rights.ownerOfDocument(documentId) },
+      { owner_user_id: owner },
       rights.userId
     );
+  };
   const refused = <T>(): Result<T, string> =>
     err('You may not change this document.');
 
