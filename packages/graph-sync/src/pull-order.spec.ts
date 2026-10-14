@@ -4,7 +4,6 @@ import type { Replica } from './testing/replica.js';
 import { createReplica } from './testing/replica.js';
 import type { ServerStandIn } from './testing/server-stand-in.js';
 import { createServerStandIn, mintId } from './testing/server-stand-in.js';
-import type { GraphSyncTableName } from './tables.js';
 import type { GraphRowTransport } from './types.js';
 
 /**
@@ -46,42 +45,96 @@ afterEach(async () => {
   await server.close();
 });
 
-/** What the tree would show for the document: absent, in its folder, or orphaned at the top. */
+/**
+ * What the tree would show for the document: not there, in its folder (the
+ * folder is there and the containment edge points at it), or orphaned at
+ * the top level (the node is there, its place is not).
+ */
 type Frame = 'absent' | 'in-folder' | 'top-level';
 
 async function frameOf(replica: Replica): Promise<Frame> {
   const nodes = await replica.rows<{ id: string }>(
     'knowledge_resources',
-    'id = $1',
+    'id = $1 and deleted_at is null',
     [DOC]
   );
   if (nodes.length === 0) return 'absent';
+  const folders = await replica.rows<{ id: string }>(
+    'knowledge_resources',
+    'id = $1 and deleted_at is null',
+    [FOLDER]
+  );
   const edges = await replica.rows<{ from_id: string }>(
     'knowledge_edges',
     "to_id = $1 and relation_type = 'contains'",
     [DOC]
   );
-  return edges.length > 0 ? 'in-folder' : 'top-level';
+  return folders.length > 0 && edges.some((e) => e.from_id === FOLDER)
+    ? 'in-folder'
+    : 'top-level';
+}
+
+/**
+ * A transport that looks at the replica right before every call that
+ * changes it — before each table's pull and before each table's inventory
+ * sweep — which is exactly when a live query re-renders in between.
+ */
+function observing(
+  base: GraphRowTransport,
+  target: () => Replica | null,
+  frames: Frame[]
+): GraphRowTransport {
+  const look = async () => {
+    const replica = target();
+    if (replica) frames.push(await frameOf(replica));
+  };
+  return {
+    ...base,
+    async pullSince(...args) {
+      await look();
+      return base.pullSince(...args);
+    },
+    async inventory(...args) {
+      await look();
+      return base.inventory(...args);
+    },
+  };
 }
 
 describe('the order a pull applies the tables in', () => {
   it('never lets the tree see a node without the folder the server holds it in', async () => {
-    const base = server.as(TEST_USER);
-    const frames: Array<{ before: GraphSyncTableName; frame: Frame }> = [];
-    // Between two tables is exactly when a live query re-renders: look at the
-    // replica right before each table's pull, as the tree would.
-    const observed: GraphRowTransport = {
-      ...base,
-      async pullSince(table, ...rest) {
-        if (alice) frames.push({ before: table, frame: await frameOf(alice) });
-        return base.pullSince(table, ...rest);
-      },
-    };
-    alice = await createReplica('alice', TEST_USER, observed);
+    const frames: Frame[] = [];
+    alice = await createReplica(
+      'alice',
+      TEST_USER,
+      observing(server.as(TEST_USER), () => alice, frames)
+    );
 
     await alice.sync.pull(SPACE);
 
     expect(await frameOf(alice)).toBe('in-folder');
-    expect(frames.map((f) => f.frame)).not.toContain('top-level');
+    expect(frames).not.toContain('top-level');
+  });
+
+  it('never lets the tree see a node outside its folder while both are leaving', async () => {
+    const frames: Frame[] = [];
+    alice = await createReplica(
+      'alice',
+      TEST_USER,
+      observing(server.as(TEST_USER), () => alice, frames)
+    );
+    await alice.sync.pull(SPACE);
+    expect(await frameOf(alice)).toBe('in-folder');
+
+    // The document and its place are gone from the server: nothing a
+    // watermark scan would report, only the inventory sweep notices.
+    await server.sql('delete from knowledge_edges where to_id = $1', [DOC]);
+    await server.sql('delete from knowledge_resources where id = $1', [DOC]);
+    frames.length = 0;
+
+    await alice.sync.pull(SPACE, { sweep: true });
+
+    expect(await frameOf(alice)).toBe('absent');
+    expect(frames).not.toContain('top-level');
   });
 });
