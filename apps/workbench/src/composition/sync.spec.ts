@@ -10,6 +10,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * leadership) is the subject of sync-composition.spec.
  */
 
+const TABLES = vi.hoisted(() => [
+  'knowledge_resources',
+  'knowledge_edges',
+  'resource_user_state',
+  'kb_resource_description',
+  'kb_resource_link',
+  'kb_media_blob',
+  'kb_resource_media_meta',
+]);
+
 const {
   watch,
   kick,
@@ -56,6 +66,7 @@ const {
 vi.mock('@workspace/graph-sync', () => ({
   createGraphSync,
   createSupabaseGraphRowTransport,
+  GRAPH_SYNC_TABLE_DESCRIPTORS: TABLES.map((local) => ({ local })),
 }));
 vi.mock('@workspace/persistence-pglite', () => ({
   createPgliteGraphReplicaWriter: vi.fn(() => ({})),
@@ -105,6 +116,7 @@ type PullOutcome = {
 type Hooks = {
   onPull: (outcome: PullOutcome) => void;
   onPush: (outcome: { stalled: boolean; accepted: number }) => void;
+  onError: (error: unknown) => void;
 };
 
 const hooksOf = () => watch.mock.calls[0]?.[1] as unknown as Hooks;
@@ -182,6 +194,32 @@ describe('graph replication on the leader client', () => {
     expect(onPushed).not.toHaveBeenCalled();
     hooksOf().onPush({ stalled: false, accepted: 2 });
     expect(onPushed).toHaveBeenCalledWith({ stalled: false, accepted: 2 });
+    handle.stop();
+  });
+
+  it('says how each cycle ended: through only when the push was not stalled and the pull went through, swept only when every table was', () => {
+    const onCycle = vi.fn();
+    const handle = start({ onCycle });
+    const pulled = (swept: string[]) => ({
+      applied: 0,
+      evicted: 0,
+      swept,
+      refused: [],
+    });
+    hooksOf().onPush({ stalled: false, accepted: 0 });
+    hooksOf().onPull(pulled(TABLES));
+    hooksOf().onPush({ stalled: false, accepted: 0 });
+    hooksOf().onPull(pulled(['knowledge_resources']));
+    // Writes waiting for the server: the reads went through, the cycle did not.
+    hooksOf().onPush({ stalled: true, accepted: 0 });
+    hooksOf().onPull(pulled([]));
+    hooksOf().onError(new Error('pull failed: 503'));
+    expect(onCycle.mock.calls).toEqual([
+      [{ ok: true, swept: true }],
+      [{ ok: true, swept: false }],
+      [{ ok: false, swept: false }],
+      [{ ok: false, swept: false }],
+    ]);
     handle.stop();
   });
 

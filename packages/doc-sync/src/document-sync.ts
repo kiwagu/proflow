@@ -36,6 +36,8 @@ export interface SpacePassOutcome {
   skipped: number;
   /** Documents the server sent something for that could not be taken in. */
   refused: number;
+  /** Whether the pass read every head rather than those past the cursor. */
+  full: boolean;
 }
 
 /**
@@ -340,7 +342,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       }
     }
     if (newest) await ledger.advanceHeadsCursor(spaceId, newest);
-    return { pulled, skipped, refused };
+    return { pulled, skipped, refused, full };
   }
 
   /**

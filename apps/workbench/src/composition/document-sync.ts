@@ -90,6 +90,11 @@ export interface StartDocumentSyncOptions {
    * tabs of the browser wait on their own stores and have to be told too.
    */
   onSettled?: (documentId: DocumentId) => void;
+  /**
+   * How each heads pass ended, for whoever runs a failed one again, and
+   * whether it read every head.
+   */
+  onPass?: (pass: { ok: boolean; full: boolean }) => void;
 }
 
 export interface DocumentSyncHandle {
@@ -266,8 +271,14 @@ export function startDocumentSync(
         if (disposed) return;
         space = engine.watchSpace(identity.spaceId, {
           open: (id) => store.syncable(id),
-          onPass: () => options.onPassSettled?.(),
-          onError: (error) => options.onPassFailed?.(error),
+          onPass: (outcome) => {
+            options.onPassSettled?.();
+            options.onPass?.({ ok: true, full: outcome.full });
+          },
+          onError: (error) => {
+            options.onPassFailed?.(error);
+            options.onPass?.({ ok: false, full: false });
+          },
         });
         // A nudge is only a kick: what moved is read by the heads pass.
         unsubscribeNudges = transport.subscribeSpace(

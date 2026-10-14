@@ -658,6 +658,32 @@ describe('starting document replication', () => {
     handle.stop();
   });
 
+  it('says how each heads pass ended, and whether it read every head', async () => {
+    const { store } = stubStore();
+    const onPass = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      client: CLIENT,
+      store,
+      identity: IDENTITY,
+      onPass,
+    });
+    await settled();
+    const hooks = watchSpace.mock.calls[0]?.[1] as {
+      onError: (error: unknown) => void;
+      onPass: (outcome: unknown) => void;
+    };
+    hooks.onPass({ pulled: 0, skipped: 0, refused: 0, full: true });
+    hooks.onPass({ pulled: 1, skipped: 0, refused: 0, full: false });
+    hooks.onError(new Error('heads query failed: 503'));
+    expect(onPass.mock.calls).toEqual([
+      [{ ok: true, full: true }],
+      [{ ok: true, full: false }],
+      [{ ok: false, full: false }],
+    ]);
+    handle.stop();
+  });
+
   it('hands kicks to the heads pass as they come, a full one included', async () => {
     const { store } = stubStore();
     const handle = startDocumentSync({

@@ -9,12 +9,10 @@ import type {
   DocumentPeers,
 } from '@workspace/persistence-pglite';
 import {
-  type DocumentSyncHandle,
   startDocumentSync,
   type StartDocumentSyncOptions,
 } from './document-sync';
 import {
-  type GraphSyncHandle,
   parseSyncSettings,
   startGraphSync,
   type StartGraphSyncOptions,
@@ -93,8 +91,7 @@ export interface SyncHandle {
 }
 
 interface Running {
-  graph: GraphSyncHandle;
-  documents: DocumentSyncHandle;
+  kickGraph(opts?: { sweep?: boolean }): void;
   cadence: SyncCadence;
   catchUp(): void;
   stop(): void;
@@ -136,6 +133,17 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     };
     root.dataset.syncChannel = 'down';
 
+    /**
+     * What each engine still owes. A pass is owed from the moment it is
+     * asked for until a pass of that engine goes through — a failed one
+     * leaves it owed, and every heartbeat runs what is owed whatever the
+     * probe says: the probe has already moved past the change the failed
+     * pass was for, and would not ask again before the full pass. A sweep
+     * or a full read stays owed until one of its kind goes through. The
+     * engines' own first passes (a sweep, a full read) start owed.
+     */
+    const owed = { graph: true, sweep: true, documents: true, full: true };
+
     const documents = startDocumentSync({
       ...options.documents,
       db: options.db,
@@ -147,6 +155,15 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       onSettled: (id) => {
         options.documents?.onSettled?.(id);
         peers.announceSettled(id);
+      },
+      onPass: (pass) => {
+        options.documents?.onPass?.(pass);
+        if (!pass.ok) {
+          owed.documents = true;
+          return;
+        }
+        owed.documents = false;
+        if (pass.full) owed.full = false;
       },
     });
     const graph = startGraphSync({
@@ -165,11 +182,34 @@ export function startSync(options: StartSyncOptions): SyncHandle {
         documents.graphPushed();
       },
       onChannel: (up) => setChannel('graph', up),
+      onCycle: (cycle) => {
+        options.graph?.onCycle?.(cycle);
+        if (!cycle.ok) {
+          owed.graph = true;
+          return;
+        }
+        owed.graph = false;
+        if (cycle.swept) owed.sweep = false;
+      },
     });
 
+    const kickGraph = (opts: { sweep?: boolean } = {}) => {
+      owed.graph = true;
+      if (opts.sweep) {
+        owed.sweep = true;
+        graph.kick({ sweep: true });
+      } else graph.kick();
+    };
+    const kickDocuments = (opts: { full?: boolean } = {}) => {
+      owed.documents = true;
+      if (opts.full) {
+        owed.full = true;
+        documents.kick({ full: true });
+      } else documents.kick();
+    };
     const catchUp = () => {
-      graph.kick();
-      documents.kick();
+      kickGraph();
+      kickDocuments();
     };
     const probe = createChangeProbe({
       probe: async (spaceId) => {
@@ -203,13 +243,17 @@ export function startSync(options: StartSyncOptions): SyncHandle {
             const changed = await probe.heartbeat(identity.spaceId, {
               visible,
             });
-            if (changed.graphDelete) graph.kick({ sweep: true });
-            else if (changed.graph) graph.kick();
-            if (changed.documents) documents.kick();
-            // Recovered: one cycle of each, whose push outcome is what
-            // withdraws the notice the failure left.
-            if (failed) catchUp();
+            // Recovered from a failed look: one pass of each is owed, and
+            // its push outcome is what withdraws the notice the failure left.
+            if (failed) {
+              owed.graph = true;
+              owed.documents = true;
+            }
             failed = false;
+            if (changed.graphDelete || owed.sweep) kickGraph({ sweep: true });
+            else if (changed.graph || owed.graph) kickGraph();
+            if (owed.full) kickDocuments({ full: true });
+            else if (changed.documents || owed.documents) kickDocuments();
           } catch (error) {
             failed = true;
             options.onHeartbeatFailed?.(error);
@@ -217,8 +261,8 @@ export function startSync(options: StartSyncOptions): SyncHandle {
           }
         },
         fullPass: () => {
-          graph.kick({ sweep: true });
-          documents.kick({ full: true });
+          kickGraph({ sweep: true });
+          kickDocuments({ full: true });
         },
         catchUp,
       },
@@ -227,8 +271,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     cadence.start();
     const started = cadence;
     return {
-      graph,
-      documents,
+      kickGraph,
       cadence: started,
       catchUp,
       stop() {
@@ -287,7 +330,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
 
   // A graph write here: the leader pushes it, whichever tab that is.
   const offJournal = options.onGraphJournaled(() => {
-    if (running) running.graph.kick();
+    if (running) running.kickGraph();
     else if (!leader) peers.announceGraphJournal();
   });
   const offPeers = peers.on((message) => {
@@ -298,7 +341,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       return;
     }
     if (!running) return;
-    if (message.type === 'graph-journal') running.graph.kick();
+    if (message.type === 'graph-journal') running.kickGraph();
     else if (message.type === 'visible') running.cadence.peerVisible();
     else running.catchUp();
   });

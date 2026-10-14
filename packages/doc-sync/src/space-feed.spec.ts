@@ -152,7 +152,12 @@ describe('the space feed', () => {
     const outcomes: SpacePassOutcome[] = [];
     const watch = b.watchSpace({ onPass: (o) => outcomes.push(o) });
     await expect.poll(() => outcomes.length).toBeGreaterThan(0);
-    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1, refused: 0 });
+    expect(outcomes[0]).toEqual({
+      pulled: 1,
+      skipped: 1,
+      refused: 0,
+      full: true,
+    });
     expect(b.text(DOC_A)).toBe('alpha. ');
     expect(b.has(DOC_B)).toBe(false);
     // A head this device has no row for is the materializer's to bring in
@@ -219,14 +224,20 @@ describe('the space feed', () => {
     watch.stop();
   });
 
-  it('a kick reads from the cursor; a full kick reads every head', async () => {
+  it('a kick reads from the cursor; a full kick reads every head; each pass says which it was', async () => {
     const spy = recorded();
     const a = await replica('client-a');
     const b = await replica('client-b', {}, spy.transport);
     await a.edit(DOC_A, 'alpha. ');
     await a.push(DOC_A);
     let passes = 0;
-    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    const fulls: boolean[] = [];
+    const watch = b.watchSpace({
+      onPass: (outcome) => {
+        passes += 1;
+        fulls.push(outcome.full);
+      },
+    });
     await expect.poll(() => passes).toBe(1);
     // The first pass of every watch reads every head.
     expect(spy.heads.mock.calls[0]?.[1]).toBeNull();
@@ -243,6 +254,7 @@ describe('the space feed', () => {
     watch.kick({ full: true });
     await expect.poll(() => passes).toBe(3);
     expect(spy.heads.mock.calls[0]?.[1]).toBeNull();
+    expect(fulls).toEqual([true, false, true]);
     watch.stop();
   });
 
