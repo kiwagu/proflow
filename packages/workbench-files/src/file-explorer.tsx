@@ -101,6 +101,22 @@ export function FileExplorer({
   const reportError = useReportError();
   const { openFileId, setOpenFileId } = useFileSelection();
   const nodes = useFileNodes();
+  // Trashing a folder trashes what it holds, so it is offered only when
+  // every node in it that this person can see may be trashed by them too:
+  // one walk up from each node they may not trash marks every folder above it.
+  const holdsUntrashable = new Set<string>();
+  const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]));
+  for (const n of nodes) {
+    if (may('node.trash', n)) continue;
+    for (
+      let up = parentOf.get(n.id) ?? null;
+      up !== null && !holdsUntrashable.has(up);
+      up = parentOf.get(up) ?? null
+    )
+      holdsUntrashable.add(up);
+  }
+  const mayTrash = (node: FileNode) =>
+    may('node.trash', node) && !holdsUntrashable.has(node.id);
   const unpackedHashes = useUnpackedHashes();
 
   // Hovering a document row warms the client cache: by the time the click
@@ -403,7 +419,7 @@ export function FileExplorer({
                 : undefined
             }
             onDelete={
-              may('node.trash', node)
+              mayTrash(node)
                 ? () => {
                     if (openFileId === node.id) setOpenFileId(undefined);
                     void files.softDelete(node.id);
@@ -549,7 +565,7 @@ export function FileExplorer({
                     : undefined
                 }
                 onDelete={
-                  may('node.trash', node)
+                  mayTrash(node)
                     ? () => {
                         if (openFileId === node.id) setOpenFileId(undefined);
                         void files.softDelete(node.id);

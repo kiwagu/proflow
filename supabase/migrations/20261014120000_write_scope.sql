@@ -18,16 +18,23 @@
  *     {"own": [cols]}  rows where one of the named columns is the person;
  *                      the names are the row's own server columns, plus
  *                      parent_edge_created_by for the creator of the
- *                      containment edge that places a node
+ *                      containment edge that places a node. it may also
+ *                      carry "orUnset": [cols], rows where one of those
+ *                      columns is empty: there is nothing to take away
  *     "none"           nothing
  *   actions and the rules they mirror:
  *     node.create  node and edge inserts: the create verb
  *     node.update  node update: owner, or the update verb
  *     node.move    the move rpc removes the current containment edge (its
  *                  creator, or the delete verb) and inserts one (the create
- *                  verb)
+ *                  verb); a node with no place yet has no edge to remove, so
+ *                  placing it needs the create verb alone
  *     node.trash   trash and restore: the update rule and the trash guard
- *                  (owner, or the delete verb)
+ *                  (owner, or the delete verb). trashing a folder trashes
+ *                  what it holds, and someone else's node in it needs the
+ *                  delete verb; the answer is per row, so the client also
+ *                  checks every node of the folder it can see, and a node it
+ *                  cannot see is left to the server's refusal
  *     node.purge   node delete: owner, or the delete verb. the in-use guard
  *                  also refuses an owner without the verb whose node another
  *                  owner's folder still holds; that per-row condition is
@@ -65,7 +72,9 @@ as $$
       to_jsonb('all'::text) as v_all,
       to_jsonb('none'::text) as v_none,
       jsonb_build_object('own', jsonb_build_array('owner_user_id')) as v_own_node,
-      jsonb_build_object('own', jsonb_build_array('parent_edge_created_by')) as v_own_edge
+      jsonb_build_object(
+        'own', jsonb_build_array('parent_edge_created_by'),
+        'orUnset', jsonb_build_array('parent_edge_created_by')) as v_own_edge
   )
   select case
     when not k_read then jsonb_build_object(

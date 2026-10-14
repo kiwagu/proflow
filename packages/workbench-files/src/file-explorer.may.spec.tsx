@@ -77,6 +77,35 @@ describe('a tree the person may not change everywhere', () => {
     expect(screen.queryByTestId('file-delete')).toBeNull();
   });
 
+  it("offers no trash for a folder of one's own that holds someone else's node", async () => {
+    const mine = testNode({
+      id: 'mine',
+      kind: 'folder',
+      name: 'My folder',
+      mime: null,
+      size: null,
+      blobHash: null,
+      ownerUserId: 'me',
+    });
+    const theirs = testNode({
+      id: 'theirs',
+      name: 'Filed by someone else.md',
+      parentId: 'mine',
+      ownerUserId: 'other',
+    });
+    const { services } = fakeServices([mine, theirs]);
+    mount({
+      ...services,
+      may: (action, node) =>
+        action === 'node.create' || node?.ownerUserId === 'me',
+    });
+    await openMenu('My folder');
+    // Trashing a folder trashes what it holds, and the server refuses to
+    // trash someone else's node for a person without the delete right.
+    expect(screen.queryByTestId('file-delete')).toBeNull();
+    expect(menuItems().join('|')).toMatch(/rename/i);
+  });
+
   it('does not start renaming on a double click the host says no to', async () => {
     const { services } = fakeServices([doc]);
     mount({ ...services, may: () => false });

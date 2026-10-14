@@ -57,6 +57,26 @@ describe('the write scope', () => {
     ).toBe(false);
   });
 
+  it('orUnset lets through a row whose column is empty, but not one that lacks it', () => {
+    const moving = parseWriteScope({
+      ...raw,
+      'node.move': {
+        own: ['parent_edge_created_by'],
+        orUnset: ['parent_edge_created_by'],
+      },
+    })!;
+    expect(
+      allowed(moving, 'node.move', { parent_edge_created_by: null }, 'u1')
+    ).toBe(true);
+    expect(allowed(moving, 'node.move', {}, 'u1')).toBe(false);
+    expect(
+      allowed(moving, 'node.move', { parent_edge_created_by: 'u2' }, 'u1')
+    ).toBe(false);
+    expect(
+      allowed(moving, 'node.move', { parent_edge_created_by: 'u1' }, 'u1')
+    ).toBe(true);
+  });
+
   it('parsing drops a scope with an action missing or a verdict malformed, without throwing', () => {
     expect(parseWriteScope({ 'node.create': 'all' })).toBeNull();
     expect(parseWriteScope({ ...raw, 'node.star': { own: [] } })).toBeNull();

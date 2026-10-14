@@ -31,7 +31,12 @@ export type WriteAction = z.infer<typeof writeActionSchema>;
 export const writeVerdictSchema = z.union([
   z.literal('all'),
   z.literal('none'),
-  z.object({ own: z.array(z.string().min(1)).min(1) }).strict(),
+  z
+    .object({
+      own: z.array(z.string().min(1)).min(1),
+      orUnset: z.array(z.string().min(1)).min(1).optional(),
+    })
+    .strict(),
 ]);
 export type WriteVerdict = z.infer<typeof writeVerdictSchema>;
 
@@ -69,5 +74,8 @@ export function allowed(
   const verdict = scope[action];
   if (verdict === 'all') return true;
   if (verdict === 'none') return false;
-  return verdict.own.some((column) => row[column] === me);
+  if (verdict.own.some((column) => row[column] === me)) return true;
+  // Empty is not the same as missing: a row that carries the column with no
+  // value has nothing there to take away; a row that lacks it says nothing.
+  return (verdict.orUnset ?? []).some((column) => row[column] === null);
 }

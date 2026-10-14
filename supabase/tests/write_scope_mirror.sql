@@ -82,6 +82,15 @@ begin
     insert into ws_ids values ('node:' || u, n), ('doc:' || u, d), ('top:' || u, t);
   end loop;
 
+  -- a folder of the member's that the admin filed a node of their own into
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_s, 'folder', 'Member folder', 'space', u_m, u_m) returning id into n;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_s, 'text', 'Admin note in it', 'space', u_d, u_d) returning id into t;
+  insert into public.knowledge_edges (space_id, from_id, to_id, relation_type, position, created_by)
+  values (v_s, n, t, 'contains', 0, u_d);
+  insert into ws_ids values ('mixed_folder', n);
+
   insert into ws_ids values ('space', v_s), ('f1', f1), ('f2', f2),
     ('member', u_m::text), ('author', u_a::text), ('admin', u_d::text), ('stranger', u_x::text);
 end
@@ -102,7 +111,8 @@ begin
 end $$;
 
 -- The client's rule, restated: all -> yes, none -> no, own -> one of the
--- named columns of the row is me.
+-- named columns of the row is me, or one of the orUnset columns is empty
+-- (nothing there to take away: a node with no place yet).
 create or replace function pg_temp.ws_allowed(p_scope jsonb, p_action text, p_owner uuid, p_edge_creator uuid, p_me uuid) returns boolean language sql as $$
   select case
     when p_scope -> p_action = to_jsonb('all'::text) then true
@@ -111,6 +121,10 @@ create or replace function pg_temp.ws_allowed(p_scope jsonb, p_action text, p_ow
       select 1 from jsonb_array_elements_text(p_scope -> p_action -> 'own') as c(col)
       where (c.col = 'owner_user_id' and p_owner = p_me)
          or (c.col = 'parent_edge_created_by' and p_edge_creator = p_me)
+    ) or exists (
+      select 1 from jsonb_array_elements_text(coalesce(p_scope -> p_action -> 'orUnset', '[]'::jsonb)) as c(col)
+      where (c.col = 'parent_edge_created_by' and p_edge_creator is null)
+         or (c.col = 'owner_user_id' and p_owner is null)
     )
   end
 $$;
@@ -187,7 +201,51 @@ begin
         perform pg_temp.ws_report(role_name || ' / ' || target || ' / ' || action, verdict, actual, detail);
       end loop;
     end loop;
+    -- a node with no place yet: moving it takes nothing away, so the move
+    -- needs only the create verb, whoever owns the node.
+    foreach target in array array['own', 'other'] loop
+      tgt_owner := case when target = 'own' then me else other end;
+      select v into tgt_top from ws_ids where k = 'top:' || tgt_owner;
+      verdict := pg_temp.ws_allowed(scope, 'node.move', tgt_owner, null, me);
+      actual := false; detail := null;
+      begin
+        perform pg_temp.ws_as(me);
+        perform public.move_knowledge_resource(v_s, tgt_top, f2, 0);
+        actual := exists (select 1 from public.knowledge_edges where to_id = tgt_top and from_id = f2 and relation_type = 'contains');
+        raise exception using errcode = 'P0001', message = 'undo';
+      exception
+        when sqlstate 'P0001' then null;
+        when others then actual := false; detail := '(' || sqlstate || ')';
+      end;
+      reset role;
+      perform pg_temp.ws_report(role_name || ' / ' || target || ' top level / node.move', verdict, actual, detail);
+    end loop;
   end loop;
+
+
+  -- documented exception: the snapshot answers per row, and for the member
+  -- their own folder is theirs to trash; trashing it trashes what it holds,
+  -- and the server refuses to trash someone else's node without the delete
+  -- verb. the client checks the part of the subtree it can see; this line
+  -- asserts the server behaviour that check mirrors.
+  declare mixed text; m uuid;
+  begin
+    select v into mixed from ws_ids where k = 'mixed_folder';
+    select v::uuid into m from ws_ids where k = 'member';
+    actual := false; detail := null;
+    begin
+      perform pg_temp.ws_as(m);
+      update public.knowledge_resources set deleted_at = now(), trashed_by = m where id = mixed;
+      get diagnostics n = row_count; actual := n > 0;
+      raise exception using errcode = 'P0001', message = 'undo';
+    exception
+      when sqlstate 'P0001' then null;
+      when others then actual := false; detail := '(' || sqlstate || ')';
+    end;
+    reset role;
+    raise notice '% | member / own folder holding the admin''s node / node.trash refused by the cascade | actual=% %',
+      case when not actual then 'PASS' else '*** FAIL ***' end, actual, coalesce(detail, '');
+  end;
 
   -- someone who is not a member of the space: nothing at all.
   select v::uuid into me from ws_ids where k = 'stranger';
