@@ -17,7 +17,7 @@ export interface WorkbenchSession {
    * and reads it from there, so a recalled offline session deliberately
    * has none. Absent when the server is not configured for replication.
    */
-  sync?: { url: string; key: string };
+  sync?: { url: string; key: string; cookie: string };
   /**
    * What the person may change in the space, as the server derives it from
    * the role verbs its write policies use. A hint for the interface; absent
@@ -103,7 +103,9 @@ function parseSpaceId(value: unknown): SpaceId | null | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-function isSyncTarget(value: unknown): value is { url: string; key: string } {
+function isSyncTarget(
+  value: unknown
+): value is { url: string; key: string; cookie: string } {
   return (
     !!value &&
     typeof value === 'object' &&
@@ -112,7 +114,10 @@ function isSyncTarget(value: unknown): value is { url: string; key: string } {
     value.url.length > 0 &&
     'key' in value &&
     typeof value.key === 'string' &&
-    value.key.length > 0
+    value.key.length > 0 &&
+    'cookie' in value &&
+    typeof value.cookie === 'string' &&
+    value.cookie.length > 0
   );
 }
 

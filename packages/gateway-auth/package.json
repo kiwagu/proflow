@@ -41,6 +41,7 @@
     "./safe-next-path": "./src/safe-next-path.ts",
     "./shell-guest-access": "./src/shell-guest-access.ts",
     "./site-origin": "./src/site-origin.ts",
+    "./supabase/auth-storage-key": "./src/supabase-auth-storage-key.ts",
     "./supabase/browser": "./src/supabase-browser.ts",
     "./supabase/goaway-retry": "./src/supabase-goaway-retry.ts",
     "./supabase/server": "./src/supabase-server.ts",

@@ -44,6 +44,8 @@ services:
       # Kong upstream for api.proflow.local passthrough
       PROFLOW_SUPABASE_UPSTREAM_HOST: ${PROFLOW_SUPABASE_UPSTREAM_HOST:-host.docker.internal}
       PROFLOW_SUPABASE_UPSTREAM_PORT: ${PROFLOW_SUPABASE_UPSTREAM_PORT:-8000}
+      # Same-origin backend mount on proflow.local (NEXT_PUBLIC_GATEWAY_BACKEND_PATH)
+      PROFLOW_BACKEND_PATH: ${PROFLOW_BACKEND_PATH:-/backend}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     volumes:

@@ -34,9 +34,11 @@ const TABLE_NAMES = new Set<string>([
  * Which columns tie each table's rows to a graph node. Reconciliation after a
  * refused op works per node, so it needs to ask every table "what do you hold
  * for these nodes?" — an edge answers from both ends, the shared media blob
- * record answers nothing (it is per-bytes, not per-node).
+ * record answers nothing (it is per-bytes, not per-node). An inventory sweep
+ * asks the same question of the journal: rows of a node with ops still to
+ * push are not on the server yet, and stay.
  */
-const NODE_KEYS: Record<GraphSyncTable, readonly string[]> = {
+export const NODE_KEYS: Record<GraphSyncTable, readonly string[]> = {
   knowledge_resources: ['id'],
   knowledge_edges: ['from_id', 'to_id'],
   resource_user_state: ['resource_id'],

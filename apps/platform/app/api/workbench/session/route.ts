@@ -6,7 +6,10 @@ import {
   resolveActiveSpaceIdForAccessibleSpaces,
 } from '@/lib/active-space';
 import { setCanonicalActiveSpaceCookie } from '@workspace/gateway-auth/active-space.cookie';
+import { getGatewayBackendPath } from '@workspace/gateway-auth/gateway-paths';
 import { PASSWORD_RECOVERY_COOKIE } from '@workspace/gateway-auth/password-recovery';
+import { resolvePublicSiteOrigin } from '@workspace/gateway-auth/site-origin';
+import { supabaseAuthStorageKey } from '@workspace/gateway-auth/supabase/auth-storage-key';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
     spaces,
     readActiveSpaceIdFromCookies(request.cookies)
   );
-  const sync = syncTarget();
+  const sync = syncTarget(request);
   // What the person may change there, so the workbench offers no control
   // the server would refuse. Derived by the database from the same verbs its
   // write policies use; a failed call only leaves it out.
@@ -62,7 +65,8 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Where the SPA's replica talks to, and with which publishable key.
+ * Where the SPA's replica talks to, with which publishable key, and under
+ * which cookie the account's session is kept.
  *
  * The SPA is a static bundle served from the gateway, so it has no build of
  * its own per deployment: pinning an origin and a key into it would make
@@ -71,9 +75,23 @@ export async function GET(request: NextRequest) {
  * level security, not secrecy, is what decides access. Absent when the
  * server is not configured for it, in which case the SPA simply does not
  * replicate.
+ *
+ * The url is the backend mount on the origin the browser is already on, so
+ * no request of the replica crosses origins (no preflight, no CORS). The
+ * cookie name is the one the platform's own client writes, derived from ITS
+ * url: a browser client built with the same-origin url would otherwise look
+ * for a cookie named after the gateway host, which does not exist.
  */
-function syncTarget(): { url: string; key: string } | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+function syncTarget(
+  request: NextRequest
+): { url: string; key: string; cookie: string } | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  return url && key ? { url, key } : null;
+  if (!supabaseUrl || !key) return null;
+  const backendPath = getGatewayBackendPath();
+  return {
+    url: `${resolvePublicSiteOrigin(request.headers)}${backendPath === '/' ? '' : backendPath}`,
+    key,
+    cookie: supabaseAuthStorageKey(supabaseUrl),
+  };
 }

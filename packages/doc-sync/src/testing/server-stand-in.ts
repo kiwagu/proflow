@@ -32,11 +32,9 @@ export interface ServerStandIn extends SyncTransport {
     bytes: Uint8Array,
     writer: WriterId
   ): Promise<number>;
-  /** Number of nudges dispatched to live subscriptions. */
-  nudgeCount(): number;
   /** Number of space nudges dispatched to live space subscriptions. */
   spaceNudgeCount(): number;
-  /** Stops delivering nudges: the degradation the poll has to cover. */
+  /** Stops delivering nudges. */
   dropNudges(): void;
   /**
    * Moves a document's head back in time, as a commit stamped with the
@@ -120,19 +118,9 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
 
-  const subscribers = new Map<string, Set<() => void>>();
   const spaceSubscribers = new Map<string, Set<() => void>>();
-  let nudges = 0;
   let spaceNudges = 0;
   let nudgesEnabled = true;
-
-  function nudge(docId: DocumentId) {
-    if (!nudgesEnabled) return;
-    for (const cb of subscribers.get(docId) ?? []) {
-      nudges += 1;
-      cb();
-    }
-  }
 
   async function nudgeSpaceOf(docId: DocumentId) {
     if (!nudgesEnabled) return;
@@ -159,7 +147,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
       [docId, bytes, writer]
     );
     const seq = Number(rows[0]?.seq);
-    nudge(docId);
     await nudgeSpaceOf(docId);
     return seq;
   }
@@ -265,21 +252,17 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
       };
     },
 
-    subscribeSpace(spaceId, onNudge) {
+    subscribeSpace(spaceId, onNudge, onStatus) {
       const set = spaceSubscribers.get(spaceId) ?? new Set();
       set.add(onNudge);
       spaceSubscribers.set(spaceId, set);
+      // A stand-in channel is subscribed the moment it is opened.
+      queueMicrotask(() => {
+        if (set.has(onNudge)) onStatus?.(true);
+      });
       return () => set.delete(onNudge);
     },
 
-    subscribeInserts(docId, onNudge) {
-      const set = subscribers.get(docId) ?? new Set();
-      set.add(onNudge);
-      subscribers.set(docId, set);
-      return () => set.delete(onNudge);
-    },
-
-    nudgeCount: () => nudges,
     spaceNudgeCount: () => spaceNudges,
     dropNudges: () => {
       nudgesEnabled = false;

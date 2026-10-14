@@ -125,6 +125,53 @@ describe('graph sync ledger', () => {
     await db.close();
   });
 
+  it('keeps what the journal has not pushed yet: a node made here and its place are not on the server until they are', async () => {
+    const { db, ledger, repo } = await open();
+    const folder = (
+      await repo.createNode({
+        spaceId: SPACE,
+        kind: 'folder',
+        title: 'Made here',
+        createdBy: TEST_USER,
+      })
+    )._unsafeUnwrap().id;
+    const doc = (
+      await repo.createNode({
+        spaceId: SPACE,
+        kind: 'text',
+        title: 'Inside',
+        createdBy: TEST_USER,
+        parentId: folder,
+      })
+    )._unsafeUnwrap().id;
+
+    // The sweep ran between the creation and its push: the server's lists
+    // do not have these yet, and a sweep evicting them would make the node
+    // vanish from under the person who just made it.
+    expect(await ledger.applyInventory(SPACE, 'knowledge_resources', [])).toBe(
+      0
+    );
+    expect(await ledger.applyInventory(SPACE, 'knowledge_edges', [])).toBe(0);
+    const nodes = await db.query<{ id: string }>(
+      'select id from knowledge_resources order by id'
+    );
+    expect(nodes.rows.map((row) => row.id).sort()).toEqual(
+      [doc, folder].sort()
+    );
+    expect(
+      (await db.query('select id from knowledge_edges where to_id = $1', [doc]))
+        .rows
+    ).toHaveLength(1);
+
+    // Once the journal is through, the server's lists are the truth again.
+    for (const op of await ledger.pendingOps(SPACE)) await ledger.ackOp(op.id);
+    expect(await ledger.applyInventory(SPACE, 'knowledge_edges', [])).toBe(1);
+    expect(await ledger.applyInventory(SPACE, 'knowledge_resources', [])).toBe(
+      2
+    );
+    await db.close();
+  });
+
   it('reports an inventory sweep as due until it runs, then not before the interval', async () => {
     const { db, ledger } = await open();
     expect(await ledger.inventoryDue(SPACE, 'knowledge_resources')).toBe(true);

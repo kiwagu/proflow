@@ -3,10 +3,11 @@ import {
   OTHER_USER,
   TEST_USER,
 } from '@workspace/persistence-pglite/testing/graph';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Replica } from './testing/replica.js';
 import { createReplica } from './testing/replica.js';
 import type { ServerStandIn } from './testing/server-stand-in.js';
+import type { GraphRowTransport } from './types.js';
 import { createServerStandIn, mintId } from './testing/server-stand-in.js';
 
 /**
@@ -636,41 +637,264 @@ describe('graph row replication — watch', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
   });
 
-  it('converges on the poll alone when every nudge is dropped', async () => {
-    await seedNode(NODE_A, 'Before the watch');
-    const stop = alice.sync.watch(SPACE);
-    await waitFor(async () => (await alice.reader.readNode(NODE_A)) !== null);
-
-    server.dropNudges();
-    await seedNode(NODE_B, 'Arrived with no nudge');
-
-    // Realtime is a nudge and nothing more: correctness may never depend on
-    // it, so the poll has to close this on its own.
-    await waitFor(async () => (await alice.reader.readNode(NODE_B)) !== null);
-    stop();
+  /**
+   * The engine keeps no clock and opens no subscription: whoever composes it
+   * decides when a cycle runs (a heartbeat, a nudge, a local write) and
+   * kicks it. What is pinned here is what a kick does, and that nothing
+   * else ever starts one.
+   */
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('answers a delete nudge with an immediate sweep', async () => {
-    await seedNode(NODE_A, 'Here now');
-    await alice.sync.pull(SPACE, { sweep: true });
+  /** The replica's transport, with every call counted and pulls holdable. */
+  function counted(base: GraphRowTransport) {
+    let gate: Promise<void> | null = null;
+    let inventories = 0;
+    let pulls = 0;
+    /** 1-based call numbers that answer with a server error instead. */
+    const failing = {
+      inventory: new Set<number>(),
+      pullSince: new Set<number>(),
+    };
+    const unavailable = () => new Error('503 Service Unavailable');
+    const transport = {
+      pullSince: vi.fn(
+        async (...args: Parameters<GraphRowTransport['pullSince']>) => {
+          if (gate) await gate;
+          pulls += 1;
+          if (failing.pullSince.has(pulls)) throw unavailable();
+          return base.pullSince(...args);
+        }
+      ),
+      inventory: vi.fn(
+        async (...args: Parameters<GraphRowTransport['inventory']>) => {
+          inventories += 1;
+          if (failing.inventory.has(inventories)) throw unavailable();
+          return base.inventory(...args);
+        }
+      ),
+      pullByNodes: vi.fn(base.pullByNodes),
+      write: vi.fn(base.write),
+      subscribe: vi.fn(base.subscribe),
+    } satisfies GraphRowTransport;
+    return {
+      transport,
+      failing,
+      calls: () => ({ inventories, pulls }),
+      /** Pulls wait until the returned release is called. */
+      hold() {
+        let release!: () => void;
+        gate = new Promise<void>((resolve) => {
+          release = () => {
+            gate = null;
+            resolve();
+          };
+        });
+        return release;
+      },
+    };
+  }
 
+  async function watched() {
+    const spy = counted(server.as(TEST_USER));
+    const replica = await createReplica('watched', TEST_USER, spy.transport);
+    const pulls: { swept: string[] }[] = [];
+    const pushes: number[] = [];
+    const order: string[] = [];
+    const errors: unknown[] = [];
+    const watch = replica.sync.watch(SPACE, {
+      onPush: (outcome) => {
+        pushes.push(outcome.accepted);
+        order.push('push');
+      },
+      onPull: (outcome) => {
+        pulls.push({ swept: outcome.swept });
+        order.push('pull');
+      },
+      onError: (error) => errors.push(error),
+    });
+    /** Every cycle so far has ended, one way or the other. */
+    const ended = (cycles: number) =>
+      waitFor(async () => w.pulls.length + w.errors.length === cycles);
+    const w = { ...spy, replica, watch, pulls, pushes, order, errors, ended };
+    return w;
+  }
+
+  it('a sweep asked for while one runs, that then fails, stays owed though the sweep before it went through', async () => {
+    const w = await watched();
+    await w.ended(1);
+    expect(w.watch.owed()).toBeNull();
+    // Sweep A runs; sweep B is asked for meanwhile and waits behind it.
+    // A's inventory calls are 8–14 (the checkout's were 1–7); B's first
+    // one fails.
+    w.failing.inventory.add(15);
+    w.watch.kick({ sweep: true });
+    w.watch.kick({ sweep: true });
+    await w.ended(3);
+    expect(w.pulls).toHaveLength(2);
+    expect(w.errors).toHaveLength(1);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+
+    // A plain pass going through does not settle it.
+    w.watch.kick();
+    await w.ended(4);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+    // A sweep does.
+    w.watch.kick({ sweep: true });
+    await w.ended(5);
+    expect(w.watch.owed()).toBeNull();
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('a sweep a deletion nudge asked for, failing after the checkout went through, stays owed as a sweep', async () => {
+    const w = await watched();
+    await w.ended(1);
+    w.failing.inventory.add(8);
+    // What the composition does with a deletion nudge.
+    w.watch.kick({ sweep: true });
+    await w.ended(2);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('a plain pass that failed stays owed until a pass goes through; so does a push that found the server away', async () => {
+    const w = await watched();
+    await w.ended(1);
+    const { pulls } = w.calls();
+    w.failing.pullSince.add(pulls + 1);
+    w.watch.kick();
+    await w.ended(2);
+    expect(w.watch.owed()).toEqual({ sweep: false });
+    w.watch.kick();
+    await w.ended(3);
+    expect(w.watch.owed()).toBeNull();
+
+    // Writes waiting while the server is away: the reads go through, the
+    // cycle is still owed.
+    const created = await w.replica.repo.createNode({
+      spaceId: SPACE,
+      kind: 'text',
+      title: 'Waiting',
+      createdBy: TEST_USER,
+    });
+    if (created.isErr()) throw new Error(created.error);
+    server.setOffline(true);
+    w.watch.kick();
+    await w.ended(4);
+    expect(w.watch.owed()).toEqual({ sweep: false });
+    server.setOffline(false);
+    w.watch.kick();
+    await w.ended(5);
+    expect(w.watch.owed()).toBeNull();
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('checks the space out with one sweeping cycle and nothing else', async () => {
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+    expect(w.pulls[0]?.swept.length).toBe(7);
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('does not poll on its own', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+    const pullsAfterCheckout = w.transport.pullSince.mock.calls.length;
+
+    vi.advanceTimersByTime(60_000);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(w.transport.pullSince.mock.calls.length).toBe(pullsAfterCheckout);
+    expect(w.pulls.length).toBe(1);
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('does not subscribe on its own', async () => {
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+    expect(w.transport.subscribe).not.toHaveBeenCalled();
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('a kick pushes first and then pulls; a sweeping kick sweeps', async () => {
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+    const created = await w.replica.repo.createNode({
+      spaceId: SPACE,
+      kind: 'text',
+      title: 'Kicked out',
+      createdBy: TEST_USER,
+    });
+    if (created.isErr()) throw new Error(created.error);
+    w.order.length = 0;
+
+    w.watch.kick();
+    await waitFor(async () => w.pulls.length === 2);
+
+    expect(w.order).toEqual(['push', 'pull']);
+    expect(w.pushes.at(-1)).toBe(1);
+    expect(w.pulls[1]?.swept).toEqual([]);
+    const rows = await server.sql<{ title: string }>(
+      'select title from knowledge_resources where id = $1',
+      [created.value.id]
+    );
+    expect(rows[0]?.title).toBe('Kicked out');
+
+    await seedNode(NODE_A, 'Gone soon');
+    await w.replica.sync.pull(SPACE);
     await server.sql('delete from knowledge_resources where id = $1', [NODE_A]);
-    const stop = alice.sync.watch(SPACE);
-    server.nudge(SPACE, 'delete');
-
-    await waitFor(async () => (await alice.reader.readNode(NODE_A)) === null);
-    stop();
+    w.watch.kick({ sweep: true });
+    await waitFor(async () => w.pulls.length === 3);
+    expect(w.pulls[2]?.swept.length).toBe(7);
+    expect(await w.replica.reader.readNode(NODE_A)).toBeNull();
+    w.watch.stop();
+    await w.replica.close();
   });
 
-  it('stops cleanly: no pull lands after the watch is torn down', async () => {
-    const stop = alice.sync.watch(SPACE);
-    await waitFor(async () => (await alice.rows('graph_row_sync')).length > 0);
-    stop();
+  it('kicks during a cycle run exactly one more, and a sweep asked for is kept', async () => {
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+
+    const release = w.hold();
+    w.watch.kick();
+    await waitFor(async () => w.transport.pullSince.mock.calls.length > 7);
+    // While that cycle waits on the server: a sweeping kick, then a plain one.
+    w.watch.kick({ sweep: true });
+    w.watch.kick();
+    w.watch.kick();
+    release();
+
+    await waitFor(async () => w.pulls.length === 3);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(w.pulls.length).toBe(3);
+    expect(w.pulls[1]?.swept).toEqual([]);
+    expect(w.pulls[2]?.swept.length).toBe(7);
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('stops cleanly: a kick after the stop does nothing, and no pull lands', async () => {
+    const w = await watched();
+    await waitFor(async () => w.pulls.length === 1);
+    w.watch.stop();
+    const calls = w.transport.pullSince.mock.calls.length;
 
     await seedNode(NODE_A, 'After the stop');
+    w.watch.kick();
+    w.watch.kick({ sweep: true });
     await new Promise((resolve) => setTimeout(resolve, 120));
 
-    expect(await alice.reader.readNode(NODE_A)).toBeNull();
+    expect(w.transport.pullSince.mock.calls.length).toBe(calls);
+    expect(await w.replica.reader.readNode(NODE_A)).toBeNull();
+    await w.replica.close();
   });
 });
 

@@ -117,7 +117,7 @@ UNCHANGED from the previously documented baseline:
 - **Write-once checksum is NOT a SECURITY DEFINER RPC.** It is a COLUMN-scoped
   `grant update (checksum) on kb.media_blob to authenticated` + the RLS policy
   `"kb_media_blob update checksum write-once by uploader"` (`using uploaded_by =
-  auth.uid() and checksum is null`). refcount/path/etc. stay immutable to the client
+auth.uid() and checksum is null`). refcount/path/etc. stay immutable to the client
   (no column grant). This deliberately AVOIDS the `0029` lint an
   authenticated-callable SECDEF setter would add — an earlier
   `kb.media_blob_set_checksum` SECDEF was replaced by this column-RLS approach after
@@ -160,3 +160,27 @@ naming them are `unused_index` on indexes that exist for access paths the dev
 stand has never exercised (the stand holds no documents) — expected, not a
 finding, and not a reason to drop an index the query plans need.
 
+## 2026-10-14 — change probe and presence: two Bucket A RPCs
+
+`20261014150000_sync_probe_and_presence.sql` adds the per-space change state a
+device asks once per heartbeat instead of polling every replicated table, and a
+presence counter. `get_advisors({ type: "security" })` afterward returns **21
+lints, ALL `0029`** — the documented set plus two intended public RPCs:
+
+- `sync_probe(text)` — **Bucket A**. It reads `private.space_sync_state`, which
+  no signed-in role can read directly, and answers only an active member of the
+  space (one refusal message for anyone else and for anything that is not a
+  space id). The answer is "something of this kind changed in the space", never
+  what. `STABLE`, read-only. `anon` is revoked.
+- `sync_presence_beat(text)` — **Bucket A**. It counts one beat in
+  `private.sync_presence` for an active member of the space, behind the same
+  check and the same refusal. `anon` is revoked.
+
+Everything else in the migration stays off the REST surface: the mark function
+and the two trigger functions live in `private` with `EXECUTE` revoked from
+`public`/`anon`/`authenticated` (trigger firing never checks the caller's
+`EXECUTE`), `private.sync_active` likewise, and both new tables are in `private`
+with RLS enabled, no grants, and an explicit restrictive "no direct access"
+policy (which also keeps them out of `0008 rls_enabled_no_policy`). No new lint
+kind. Performance advisor: nothing on the new tables (`space_id` is the leading
+primary-key column, so the foreign keys are covered).

@@ -199,7 +199,7 @@ test.describe('Workbench write scope', () => {
         userId: s.member.id,
         role: 'author',
       });
-      // The next session check (every 15 s, or on focus) states the new scope.
+      // The next session check (every minute, or on focus) states the new scope.
       await s.memberPage.evaluate(() =>
         window.dispatchEvent(new Event('focus'))
       );

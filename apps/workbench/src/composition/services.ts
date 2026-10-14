@@ -17,6 +17,7 @@ import type {
 import type {
   AppDb,
   DocumentCrdtStore,
+  DocumentPeers,
   GraphReader,
   GraphRepository,
 } from '@workspace/persistence-pglite';
@@ -51,6 +52,10 @@ export interface AppServices {
   storageMaintenance: IStorageMaintenance;
   graph: GraphReader;
   graphCommands: GraphRepository;
+  /** The other tabs of this browser, announcing documents they wrote. */
+  documentPeers: DocumentPeers;
+  /** Subscribes to graph writes reaching the journal, from any repository here. */
+  onGraphJournaled(listener: () => void): () => void;
   /** The assistant's conversations: the chats, their list, their messages. */
   chats: IChatRepository;
   chatList: IChatListReader;

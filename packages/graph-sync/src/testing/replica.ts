@@ -79,7 +79,6 @@ export async function createReplica(
       transport,
       replica,
       identity: { userId },
-      pollIntervalMs: 25,
       ...options,
     });
 

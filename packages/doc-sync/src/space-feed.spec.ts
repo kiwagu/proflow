@@ -1,6 +1,6 @@
 import { entityIdRegistry } from '@workspace/entity-id';
 import { LoroDoc } from 'loro-crdt';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpacePassOutcome } from './document-sync.js';
 import {
   createServerStandIn,
@@ -152,7 +152,12 @@ describe('the space feed', () => {
     const outcomes: SpacePassOutcome[] = [];
     const watch = b.watchSpace({ onPass: (o) => outcomes.push(o) });
     await expect.poll(() => outcomes.length).toBeGreaterThan(0);
-    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1, refused: 0 });
+    expect(outcomes[0]).toEqual({
+      pulled: 1,
+      skipped: 1,
+      refused: 0,
+      full: true,
+    });
     expect(b.text(DOC_A)).toBe('alpha. ');
     expect(b.has(DOC_B)).toBe(false);
     // A head this device has no row for is the materializer's to bring in
@@ -161,29 +166,197 @@ describe('the space feed', () => {
     watch.stop();
   });
 
-  it('is prompted by a nudge and inevitable without one', async () => {
-    const a = await replica('client-a');
-    const b = await replica('client-b', { pollIntervalMs: 25 });
-    const watch = b.watchSpace();
-    await a.edit(DOC_A, 'one. ');
-    await a.push(DOC_A);
-    await expect.poll(() => b.text(DOC_A)).toBe('one. ');
-    expect(server.spaceNudgeCount()).toBeGreaterThan(0);
+  /** The stand-in, with every heads read recorded and holdable. */
+  function recorded() {
+    let gate: Promise<void> | null = null;
+    let calls = 0;
+    /** 1-based heads calls that answer with a server error instead. */
+    const failing = new Set<number>();
+    const heads = vi.fn(async (...args: Parameters<SyncTransport['heads']>) => {
+      if (gate) await gate;
+      calls += 1;
+      if (failing.has(calls)) throw new Error('503 Service Unavailable');
+      return server.heads(...args);
+    });
+    const subscribeSpace = vi.fn(server.subscribeSpace);
+    const transport: SyncTransport = { ...server, heads, subscribeSpace };
+    return {
+      transport,
+      heads,
+      subscribeSpace,
+      failing,
+      /** Heads reads wait until the returned release is called. */
+      hold() {
+        let release!: () => void;
+        gate = new Promise<void>((resolve) => {
+          release = () => {
+            gate = null;
+            resolve();
+          };
+        });
+        return release;
+      },
+    };
+  }
 
-    server.dropNudges();
-    await a.edit(DOC_A, 'two. ');
-    await a.push(DOC_A);
-    await expect.poll(() => b.text(DOC_A)).toBe('one. two. ');
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps no clock: after its first pass, nothing runs until it is kicked', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let passes = 0;
+    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    await expect.poll(() => passes).toBe(1);
+    const reads = spy.heads.mock.calls.length;
+
+    vi.advanceTimersByTime(10 * 60_000);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(spy.heads.mock.calls.length).toBe(reads);
+    expect(passes).toBe(1);
     watch.stop();
   });
 
-  it('recovers a head stamped below the cursor on its periodic full pass', async () => {
+  it('opens no nudge subscription of its own', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let passes = 0;
+    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    await expect.poll(() => passes).toBe(1);
+    expect(spy.subscribeSpace).not.toHaveBeenCalled();
+    watch.stop();
+  });
+
+  it('a kick reads from the cursor; a full kick reads every head; each pass says which it was', async () => {
+    const spy = recorded();
     const a = await replica('client-a');
-    // No poll: every pass below is one this test starts.
-    const b = await replica('client-b', {
-      pollIntervalMs: 60 * 60_000,
-      fullPassIntervalMs: 500,
+    const b = await replica('client-b', {}, spy.transport);
+    await a.edit(DOC_A, 'alpha. ');
+    await a.push(DOC_A);
+    let passes = 0;
+    const fulls: boolean[] = [];
+    const watch = b.watchSpace({
+      onPass: (outcome) => {
+        passes += 1;
+        fulls.push(outcome.full);
+      },
     });
+    await expect.poll(() => passes).toBe(1);
+    // The first pass of every watch reads every head.
+    expect(spy.heads.mock.calls[0]?.[1]).toBeNull();
+
+    await a.edit(DOC_A, 'beta. ');
+    await a.push(DOC_A);
+    spy.heads.mockClear();
+    watch.kick();
+    await expect.poll(() => passes).toBe(2);
+    expect(spy.heads.mock.calls[0]?.[1]).toBeInstanceOf(Date);
+    expect(b.text(DOC_A)).toBe('alpha. beta. ');
+
+    spy.heads.mockClear();
+    watch.kick({ full: true });
+    await expect.poll(() => passes).toBe(3);
+    expect(spy.heads.mock.calls[0]?.[1]).toBeNull();
+    expect(fulls).toEqual([true, false, true]);
+    watch.stop();
+  });
+
+  it('kicks during a pass run exactly one more, and a full read asked for is kept', async () => {
+    const spy = recorded();
+    const a = await replica('client-a');
+    const b = await replica('client-b', {}, spy.transport);
+    // A space with a head in it, so a plain pass has a cursor to read from.
+    await a.edit(DOC_A, 'alpha. ');
+    await a.push(DOC_A);
+    let passes = 0;
+    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    await expect.poll(() => passes).toBe(1);
+
+    const release = spy.hold();
+    spy.heads.mockClear();
+    watch.kick();
+    await expect.poll(() => spy.heads.mock.calls.length).toBe(1);
+    watch.kick({ full: true });
+    watch.kick();
+    watch.kick();
+    release();
+
+    await expect.poll(() => passes).toBe(3);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(passes).toBe(3);
+    expect(spy.heads.mock.calls.map((call) => call[1] === null)).toEqual([
+      false,
+      true,
+    ]);
+    watch.stop();
+  });
+
+  it('a full read asked for while one runs, that then fails, stays owed though the full read before it went through', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let ended = 0;
+    const watch = b.watchSpace({
+      onPass: () => (ended += 1),
+      onError: () => (ended += 1),
+    });
+    await expect.poll(() => ended).toBe(1);
+    expect(watch.owed()).toBeNull();
+    // Full read A runs (heads call 2); B is asked for meanwhile and its
+    // read (call 3) fails.
+    spy.failing.add(3);
+    watch.kick({ full: true });
+    watch.kick({ full: true });
+    await expect.poll(() => ended).toBe(3);
+    expect(watch.owed()).toEqual({ full: true });
+    // A plain pass going through does not settle it; a full one does.
+    watch.kick();
+    await expect.poll(() => ended).toBe(4);
+    expect(watch.owed()).toEqual({ full: true });
+    watch.kick({ full: true });
+    await expect.poll(() => ended).toBe(5);
+    expect(watch.owed()).toBeNull();
+    watch.stop();
+  });
+
+  it('a plain pass that failed stays owed until a pass goes through', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let ended = 0;
+    const watch = b.watchSpace({
+      onPass: () => (ended += 1),
+      onError: () => (ended += 1),
+    });
+    await expect.poll(() => ended).toBe(1);
+    spy.failing.add(2);
+    watch.kick();
+    await expect.poll(() => ended).toBe(2);
+    expect(watch.owed()).toEqual({ full: false });
+    watch.kick();
+    await expect.poll(() => ended).toBe(3);
+    expect(watch.owed()).toBeNull();
+    watch.stop();
+  });
+
+  it('stops: a kick after the stop reads nothing', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let passes = 0;
+    const watch = b.watchSpace({ onPass: () => (passes += 1) });
+    await expect.poll(() => passes).toBe(1);
+    watch.stop();
+    const reads = spy.heads.mock.calls.length;
+    watch.kick();
+    watch.kick({ full: true });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(spy.heads.mock.calls.length).toBe(reads);
+  });
+
+  it('recovers a head stamped below the cursor on a full kick', async () => {
+    const a = await replica('client-a');
+    const b = await replica('client-b');
     await a.edit(DOC_A, 'alpha. ');
     await a.push(DOC_A);
     let passes = 0;
@@ -193,7 +366,6 @@ describe('the space feed', () => {
 
     // A transaction that waited past the overlap window commits with the
     // time it started at — below the cursor b already holds.
-    server.dropNudges();
     await a.edit(DOC_B, 'late. ');
     await a.push(DOC_B);
     await server.backdate(DOC_B, 60 * 60_000);
@@ -203,14 +375,13 @@ describe('the space feed', () => {
     // An ordinary pass reads from the cursor and cannot see it.
     expect(b.has(DOC_B)).toBe(false);
 
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    watch.kick();
+    watch.kick({ full: true });
     await expect.poll(() => passes).toBe(3);
     expect(b.text(DOC_B)).toBe('late. ');
     watch.stop();
   });
 
-  it('reports a failed pass and succeeds on the next', async () => {
+  it('reports a failed pass and succeeds on the next kick', async () => {
     let failures = 1;
     const flaky: SyncTransport = {
       ...server,
@@ -220,12 +391,14 @@ describe('the space feed', () => {
       },
     };
     const a = await replica('client-a');
-    const b = await replica('client-b', { pollIntervalMs: 25 }, flaky);
+    const b = await replica('client-b', {}, flaky);
     await a.edit(DOC_A, 'alpha. ');
     await a.push(DOC_A);
 
     const errors: unknown[] = [];
     const watch = b.watchSpace({ onError: (e) => errors.push(e) });
+    await expect.poll(() => errors).toHaveLength(1);
+    watch.kick();
     await expect.poll(() => b.text(DOC_A)).toBe('alpha. ');
     expect(errors).toHaveLength(1);
     expect(await b.headsCursor()).not.toBeNull();

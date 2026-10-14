@@ -9,12 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   watchSpace,
   kick,
+  spaceOwed,
   push,
   pull,
   createDocumentSync,
   createSupabaseTransport,
+  subscribeSpace,
   createPgliteLedger,
-  createBrowserClient,
   materializeDocuments,
   listAwaitingDocuments,
   listUnpushedDocuments,
@@ -27,9 +28,11 @@ const {
   class DocumentNotRegisteredError extends Error {}
   class MalformedServerRowError extends Error {}
   const kick = vi.fn();
+  const spaceOwed = vi.fn((): { full: boolean } | null => null);
   const watchSpace = vi.fn((_spaceId: string, _hooks: unknown) => ({
     stop: vi.fn(),
     kick,
+    owed: spaceOwed,
   }));
   const push = vi.fn(
     async (
@@ -42,6 +45,13 @@ const {
       compacted: false,
     })
   );
+  const subscribeSpace = vi.fn(
+    (
+      _spaceId: string,
+      _onNudge: () => void,
+      _onStatus?: (up: boolean) => void
+    ) => vi.fn()
+  );
   const pull = vi.fn(async (_id: string, _doc: unknown) => ({
     imported: 1,
     skippedOwn: 0,
@@ -50,6 +60,7 @@ const {
   return {
     watchSpace,
     kick,
+    spaceOwed,
     push,
     pull,
     createDocumentSync: vi.fn(
@@ -60,13 +71,12 @@ const {
         watchSpace,
         push,
         pull,
-        watch: vi.fn(),
         proposeCompaction: vi.fn(),
       })
     ),
-    createSupabaseTransport: vi.fn((_client: unknown) => ({})),
+    createSupabaseTransport: vi.fn((_client: unknown) => ({ subscribeSpace })),
+    subscribeSpace,
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
-    createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
     materializeDocuments: vi.fn(async (_db: unknown, _space: string) => 0),
     listAwaitingDocuments: vi.fn(async (_db: unknown): Promise<string[]> => []),
     listUnpushedDocuments: vi.fn(async (_db: unknown): Promise<string[]> => [
@@ -105,7 +115,6 @@ vi.mock('@workspace/doc-sync', () => ({
   createSupabaseTransport,
   createPgliteLedger,
 }));
-vi.mock('@supabase/ssr', () => ({ createBrowserClient }));
 vi.mock('@workspace/persistence-pglite', () => ({
   materializeDocuments,
   listAwaitingDocuments,
@@ -115,12 +124,13 @@ vi.mock('@workspace/persistence-pglite', () => ({
   resourceIdForDocument,
 }));
 
-import { ok } from 'neverthrow';
-import type { ISettingsStore } from '@workspace/domain';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@workspace/db';
 import type {
   AppDb,
   DocumentChanged,
   DocumentCrdtStore,
+  DocumentPeers,
 } from '@workspace/persistence-pglite';
 import { PUSH_DEBOUNCE_MS, startDocumentSync } from './document-sync';
 
@@ -128,19 +138,10 @@ const IDENTITY = {
   userId: 'user-1',
   spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
 };
-const CONFIGURED = JSON.stringify({
-  url: 'https://server.test',
-  key: 'publishable-key',
-});
+const CLIENT = {
+  name: 'the leader client',
+} as unknown as SupabaseClient<Database>;
 const db = {} as AppDb;
-
-function settingsHolding(value: string | null): ISettingsStore {
-  return {
-    get: vi.fn(async () => ok(value)),
-    set: vi.fn(async () => ok(undefined)),
-    remove: vi.fn(async () => ok(undefined)),
-  };
-}
 
 function stubStore() {
   let listener: ((event: DocumentChanged) => void) | undefined;
@@ -192,34 +193,19 @@ afterEach(() => {
 });
 
 describe('starting document replication', () => {
-  it('does not build an engine when no configuration was ever received', async () => {
-    const { store } = stubStore();
-    const handle = startDocumentSync({
-      db,
-      settings: settingsHolding(null),
-      store,
-      identity: IDENTITY,
-    });
-    await settled();
-    expect(createDocumentSync).not.toHaveBeenCalled();
-    expect(materializeDocuments).not.toHaveBeenCalled();
-    handle.stop();
-  });
-
   it('materializes, watches the space, pulls what awaits and catches up what changed here', async () => {
     const { store, syncable, waitEnded } = stubStore();
+    const onSettled = vi.fn();
     listAwaitingDocuments.mockResolvedValueOnce(['doc-awaiting']);
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
+      onSettled,
     });
     await settled();
-    expect(createBrowserClient).toHaveBeenCalledWith(
-      'https://server.test',
-      'publishable-key'
-    );
+    expect(createSupabaseTransport).toHaveBeenCalledWith(CLIENT);
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
     expect(materializeDocuments).toHaveBeenCalledWith(db, 'spc_abc.01m2');
     expect(watchSpace).toHaveBeenCalledWith(
@@ -229,8 +215,9 @@ describe('starting document replication', () => {
     expect(pull).toHaveBeenCalledWith('doc-awaiting', { id: 'doc-awaiting' });
     // The wait is over whether or not the server held a body: a pull that
     // found nothing merges nothing, and the pane showing the wait must be
-    // told to look again.
+    // told to look again — here, and in the other tabs.
     expect(waitEnded).toHaveBeenCalledWith('doc-awaiting');
+    expect(onSettled).toHaveBeenCalledWith('doc-awaiting');
     expect(syncable).toHaveBeenCalledWith('doc-held');
     expect(push).toHaveBeenCalledWith(
       'doc-held',
@@ -245,7 +232,7 @@ describe('starting document replication', () => {
     const { store, change } = stubStore();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
     });
@@ -273,7 +260,7 @@ describe('starting document replication', () => {
     const onPushFailed = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -303,7 +290,7 @@ describe('starting document replication', () => {
     const onPushed = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -343,7 +330,7 @@ describe('starting document replication', () => {
     const onPushFailed = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -373,7 +360,7 @@ describe('starting document replication', () => {
     const onPushFailed = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -415,7 +402,7 @@ describe('starting document replication', () => {
     );
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -453,7 +440,7 @@ describe('starting document replication', () => {
     const { store, change } = stubStore();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       mayWrite: (row) => row.owner_user_id === 'user-1',
@@ -476,7 +463,7 @@ describe('starting document replication', () => {
     const { store, change } = stubStore();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
     });
@@ -500,7 +487,7 @@ describe('starting document replication', () => {
     const onPushed = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPushFailed,
@@ -535,7 +522,7 @@ describe('starting document replication', () => {
     const onRefused = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onRefused,
@@ -559,7 +546,7 @@ describe('starting document replication', () => {
     });
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPassFailed,
@@ -579,7 +566,7 @@ describe('starting document replication', () => {
     const onPassSettled = vi.fn();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
       onPassFailed,
@@ -601,7 +588,7 @@ describe('starting document replication', () => {
     const { store } = stubStore();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
     });
@@ -621,7 +608,7 @@ describe('starting document replication', () => {
     const { store, change } = stubStore();
     const handle = startDocumentSync({
       db,
-      settings: settingsHolding(CONFIGURED),
+      client: CLIENT,
       store,
       identity: IDENTITY,
     });
@@ -650,5 +637,100 @@ describe('starting document replication', () => {
     );
     expect(createDocumentSync).toHaveBeenCalledTimes(1);
     handle.stop();
+  });
+
+  it('a nudge on the space channel runs a heads pass, and the channel says whether it is up', async () => {
+    const { store } = stubStore();
+    const onChannel = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      client: CLIENT,
+      store,
+      identity: IDENTITY,
+      onChannel,
+    });
+    await settled();
+    expect(subscribeSpace).toHaveBeenCalledTimes(1);
+    const [space, onNudge, onStatus] = subscribeSpace.mock.calls[0]!;
+    expect(space).toBe('spc_abc.01m2');
+    kick.mockClear();
+    onNudge();
+    expect(kick).toHaveBeenCalledTimes(1);
+    onStatus?.(true);
+    onStatus?.(false);
+    expect(onChannel.mock.calls).toEqual([[true], [false]]);
+    handle.stop();
+  });
+
+  it('hands on what the heads passes still owe, and nothing before they run', async () => {
+    const { store } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      client: CLIENT,
+      store,
+      identity: IDENTITY,
+    });
+    expect(handle.owed()).toBeNull();
+    await settled();
+    spaceOwed.mockReturnValueOnce({ full: true });
+    expect(handle.owed()).toEqual({ full: true });
+    handle.stop();
+  });
+
+  it('hands kicks to the heads pass as they come, a full one included', async () => {
+    const { store } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      client: CLIENT,
+      store,
+      identity: IDENTITY,
+    });
+    await settled();
+    kick.mockClear();
+    handle.kick();
+    handle.kick({ full: true });
+    expect(kick.mock.calls).toEqual([[undefined], [{ full: true }]]);
+    handle.stop();
+  });
+
+  it('pushes a document another tab of this browser wrote, once the writes settle', async () => {
+    // The tab that wrote holds no engine: it announces the document, and
+    // this tab — the one that does — pushes what the shared journal holds.
+    const listeners = new Set<(id: string) => void>();
+    const peers: DocumentPeers = {
+      announce: vi.fn(),
+      listen: (onAnnounce) => {
+        listeners.add(onAnnounce);
+        return () => listeners.delete(onAnnounce);
+      },
+    };
+    const otherTab = (id: string) => {
+      for (const listener of listeners) listener(id);
+    };
+    const { store } = stubStore();
+    const handle = startDocumentSync({
+      db,
+      client: CLIENT,
+      store,
+      identity: IDENTITY,
+      peers,
+    });
+    await settled();
+    push.mockClear();
+    vi.useFakeTimers();
+    otherTab('doc_000000000000000t.0000000000');
+    otherTab('doc_000000000000000t.0000000000');
+    // Not a document id: some other account's tab on the same channel.
+    otherTab('not-a-document');
+    await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith(
+      'doc_000000000000000t.0000000000',
+      { id: 'doc_000000000000000t.0000000000' },
+      'spc_abc.01m2',
+      'node-of-doc_000000000000000t.0000000000'
+    );
+    handle.stop();
+    expect(listeners.size).toBe(0);
   });
 });

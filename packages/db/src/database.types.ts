@@ -1794,6 +1794,17 @@ export type Database = {
         Args: { p_space_id: string; p_target_user_id: string }
         Returns: Json
       }
+      sync_presence_beat: { Args: { p_space_id: string }; Returns: undefined }
+      sync_probe: {
+        Args: { p_space_id: string }
+        Returns: {
+          documents_changed_at: string
+          epoch: number
+          graph_changed_at: string
+          graph_deleted_at: string
+          probed_at: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

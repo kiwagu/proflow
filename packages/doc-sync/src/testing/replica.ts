@@ -81,9 +81,6 @@ export interface Replica {
   edit(text: string): Promise<void>;
   push(): ReturnType<ReturnType<typeof createDocumentSync>['push']>;
   pull(): ReturnType<ReturnType<typeof createDocumentSync>['pull']>;
-  watch(
-    hooks?: Parameters<ReturnType<typeof createDocumentSync>['watch']>[2]
-  ): () => void;
   proposeCompaction(coversSeq: number): Promise<boolean>;
   snapshotLocally(): Promise<void>;
   /** Throws the in-memory document away and rebuilds it from local storage. */
@@ -97,7 +94,6 @@ export async function createReplica(
   name: string,
   transport: SyncTransport,
   options: {
-    pollIntervalMs?: number;
     compaction?: { maxRows?: number; maxBytes?: number };
     /** The resource that owns the document; null when this device has none. */
     resourceId?: KnowledgeResourceId | null;
@@ -117,7 +113,6 @@ export async function createReplica(
     // Off by default: every compaction in these tests is proposed explicitly,
     // so the threshold never fires behind a scenario's back.
     compaction: options.compaction ?? false,
-    pollIntervalMs: options.pollIntervalMs ?? 25,
   });
 
   let document = new TextDocument();
@@ -165,7 +160,6 @@ export async function createReplica(
         options.resourceId === undefined ? RESOURCE_ID : options.resourceId
       ),
     pull: () => sync.pull(DOC_ID, document),
-    watch: (hooks) => sync.watch(DOC_ID, document, hooks),
     proposeCompaction: (coversSeq) =>
       sync.proposeCompaction(DOC_ID, document, coversSeq),
 

@@ -26,27 +26,8 @@ import type {
 const COMPACTION_MAX_ROWS = 200;
 const COMPACTION_MAX_BYTES = 1024 * 1024;
 
-/**
- * How often the watermark is polled while a document is watched. Polling is
- * always on: the realtime subscription is only a nudge and is allowed to
- * drop or lapse silently, so correctness never depends on it. A nudge makes
- * catch-up prompt; the poll makes it inevitable.
- */
-const POLL_INTERVAL_MS = 15_000;
-
 /** Heads per page — one request for a space of ordinary size. */
 const HEADS_PAGE = 500;
-
-/**
- * How often a watched space is read from the start instead of from its
- * cursor. A head's time is when its transaction STARTED: one that waited
- * longer than the overlap window commits below a cursor a faster pass has
- * already taken, and no cursor-based pass sees it again. Reading every
- * head now and then is what makes such an update arrive anyway; the first
- * pass of every watch is one, so nothing missed in an earlier session
- * waits for the interval.
- */
-const FULL_PASS_INTERVAL_MS = 5 * 60_000;
 
 export interface SpacePassOutcome {
   /** Documents that imported at least one foreign blob in this pass. */
@@ -55,6 +36,8 @@ export interface SpacePassOutcome {
   skipped: number;
   /** Documents the server sent something for that could not be taken in. */
   refused: number;
+  /** Whether the pass read every head rather than those past the cursor. */
+  full: boolean;
 }
 
 /**
@@ -80,14 +63,25 @@ export interface SpaceWatchHooks {
   onPulled?: (docId: DocumentId, result: PullResult) => void;
   /** A pass completed, whether or not anything was pulled. */
   onPass?: (outcome: SpacePassOutcome) => void;
-  /** A failed pass; the next nudge or poll simply tries again. */
+  /** A failed pass; the next kick simply tries again. */
   onError?: (error: unknown) => void;
 }
 
 export interface SpaceWatch {
   stop(): void;
-  /** Run a pass now. */
-  kick(): void;
+  /**
+   * Run a pass now, or once more after the one running. `full` reads every
+   * head instead of those past the cursor: a head's time is when its
+   * transaction STARTED, so one that waited longer than the overlap window
+   * commits below a cursor a faster pass has already taken, and only a
+   * full read sees it again.
+   */
+  kick(opts?: { full?: boolean }): void;
+  /**
+   * What failed passes still owe — a pass, or a full one — or null. Settled
+   * only by a pass that goes through (a full read only by a full one).
+   */
+  owed(): { full: boolean } | null;
 }
 
 export interface DocumentSyncOptions {
@@ -108,9 +102,6 @@ export interface DocumentSyncOptions {
   writer: WriterId;
   /** False disables the automatic proposal after push. */
   compaction?: { maxRows?: number; maxBytes?: number } | false;
-  pollIntervalMs?: number;
-  /** How often `watchSpace` reads every head instead of those past its cursor. */
-  fullPassIntervalMs?: number;
   /**
    * A document refused (see `DocumentRefusal`): called the first time this
    * engine meets it, never again, however many passes meet it after that.
@@ -127,7 +118,7 @@ function bytesEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
 
 /**
  * The sync engine: push and pull for one client instance, plus a watch that
- * keeps an open document converged.
+ * keeps the documents of a space converged one pass per kick.
  *
  * The protocol has no conflict branch anywhere — the CRDT converges, the
  * server orders rows, and every delivery is at-least-once because importing
@@ -144,9 +135,6 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     compaction === false
       ? Infinity
       : (compaction.maxBytes ?? COMPACTION_MAX_BYTES);
-  const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
-  const fullPassIntervalMs =
-    options.fullPassIntervalMs ?? FULL_PASS_INTERVAL_MS;
 
   /** Server rows this document is known to exist for (ensure is idempotent
    *  but not free — one upsert per process lifetime is enough). */
@@ -311,42 +299,6 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     return next;
   }
 
-  /**
-   * Keeps an open document converged: an immediate catch-up, a realtime
-   * nudge subscription, and a poll that makes progress even when every
-   * nudge is lost. Returns the stop function.
-   */
-  function watch(
-    docId: DocumentId,
-    doc: SyncableDocument,
-    hooks: {
-      /** After every pull that imported at least one foreign blob. */
-      onChange?: (result: PullResult) => void;
-      /** A failed pull; the next nudge or poll simply tries again. */
-      onError?: (error: unknown) => void;
-    } = {}
-  ): () => void {
-    let stopped = false;
-    const kick = () => {
-      if (stopped) return;
-      pull(docId, doc)
-        .then((result) => {
-          if (!stopped && result.imported > 0) hooks.onChange?.(result);
-        })
-        .catch((error: unknown) => {
-          if (!stopped) hooks.onError?.(error);
-        });
-    };
-    const unsubscribe = transport.subscribeInserts(docId, kick);
-    const timer = setInterval(kick, pollIntervalMs);
-    kick();
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-      unsubscribe();
-    };
-  }
-
   async function passSpace(
     spaceId: SpaceId,
     hooks: SpaceWatchHooks,
@@ -395,62 +347,70 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       }
     }
     if (newest) await ledger.advanceHeadsCursor(spaceId, newest);
-    return { pulled, skipped, refused };
+    return { pulled, skipped, refused, full };
   }
 
   /**
-   * Keeps every document of a space converged: an immediate pass, a nudge
-   * subscription on the space, and the same poll `watch` has. Passes never
-   * overlap — a nudge during a pass queues one more.
+   * Keeps every document of a space converged, one pass per kick. The
+   * engine keeps no clock and listens to nothing: whoever composes it
+   * decides when a pass is worth running and kicks. The first pass of every
+   * watch reads every head, so nothing missed in an earlier session waits
+   * for a full kick. Passes never overlap: a kick during a pass queues
+   * exactly one more, and a full read any of them asked for is kept.
+   *
+   * What a pass was asked to do and did not is OWED (`owed()`): a failed
+   * pass owes its whole mode; only a pass that goes through settles it, an
+   * owed full read only a full one. Passes run one after another, so an
+   * earlier success never settles a later request.
    */
   function watchSpace(spaceId: SpaceId, hooks: SpaceWatchHooks): SpaceWatch {
     let stopped = false;
     let running = false;
-    let again = false;
-    /** When the last full pass completed; never, so the first pass is one. */
-    let lastFull = -Infinity;
-    const run = () => {
-      if (stopped) return;
-      if (running) {
-        again = true;
-        return;
-      }
+    /** The pass asked for while one was running; null when none was. */
+    let queued: { full: boolean } | null = null;
+    /** What failed passes still owe; null when nothing is. */
+    let owed: { full: boolean } | null = null;
+    const run = (full: boolean) => {
       running = true;
-      const started = Date.now();
-      const full = started - lastFull >= fullPassIntervalMs;
       passSpace(spaceId, hooks, full)
         .then((outcome) => {
-          if (full) lastFull = started;
+          owed = owed?.full === true && !full ? { full: true } : null;
           if (!stopped) hooks.onPass?.(outcome);
         })
         .catch((error: unknown) => {
+          owed = { full: (owed?.full ?? false) || full };
           if (!stopped) hooks.onError?.(error);
         })
         .finally(() => {
           running = false;
-          if (again) {
-            again = false;
-            run();
-          }
+          const next = queued;
+          queued = null;
+          if (next && !stopped) run(next.full);
         });
     };
-    const unsubscribe = transport.subscribeSpace(spaceId, run);
-    const timer = setInterval(run, pollIntervalMs);
-    run();
+    const kick = (opts: { full?: boolean } = {}) => {
+      if (stopped) return;
+      const full = opts.full === true;
+      if (running) {
+        queued = { full: (queued?.full ?? false) || full };
+        return;
+      }
+      run(full);
+    };
+    kick({ full: true });
     return {
       stop() {
         stopped = true;
-        clearInterval(timer);
-        unsubscribe();
+        queued = null;
       },
-      kick: run,
+      kick,
+      owed: () => owed,
     };
   }
 
   return {
     push,
     pull,
-    watch,
     watchSpace,
     /**
      * Explicit compaction proposal — for callers that decide on their own

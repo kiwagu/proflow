@@ -116,7 +116,11 @@ describe('the last confirmed identity', () => {
   it('keeps no replication target, even when the session carried one', () => {
     rememberSession({
       ...SESSION,
-      sync: { url: 'https://server.test', key: 'publishable-key' },
+      sync: {
+        url: 'https://server.test',
+        key: 'publishable-key',
+        cookie: 'sb-server-auth-token',
+      },
     });
     const stored = window.localStorage.getItem('workbench.session') ?? '';
     expect(stored).not.toContain('publishable-key');
@@ -259,6 +263,31 @@ describe('reading the session', () => {
     const session = await readSession();
     expect(session?.userId).toBe(identity.userId);
     expect(session?.writeScope).toBeUndefined();
+  });
+
+  it('carries the replication target with the cookie that holds the account', async () => {
+    const sync = {
+      url: 'https://proflow.local/backend',
+      key: 'pk',
+      cookie: 'sb-api-auth-token',
+    };
+    answer({ ...identity, sync });
+    expect((await readSession())?.sync).toEqual(sync);
+  });
+
+  it('refuses a replication target that does not name the cookie, as any other bad target', async () => {
+    // A target without the cookie name would build a client that looks for
+    // a session cookie named after the gateway host, which does not exist.
+    answer({
+      ...identity,
+      sync: { url: 'https://proflow.local/backend', key: 'pk' },
+    });
+    await expect(readSession()).rejects.toThrow('Invalid session response');
+    answer({
+      ...identity,
+      sync: { url: 'https://proflow.local/backend', key: 'pk', cookie: '' },
+    });
+    await expect(readSession()).rejects.toThrow('Invalid session response');
   });
 
   it('does not call a bad answer unreachable', async () => {

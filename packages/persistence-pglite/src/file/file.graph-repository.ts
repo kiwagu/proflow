@@ -6,7 +6,10 @@ import {
 } from '@workspace/domain';
 import { err, ok } from 'neverthrow';
 import type { AppDb } from '../db/db.js';
-import { createPgliteGraphRepository } from '../graph/graph.repository.js';
+import {
+  createPgliteGraphRepository,
+  type GraphRepositoryOptions,
+} from '../graph/graph.repository.js';
 import { graphInTransaction } from '../graph/graph.transaction.js';
 import {
   GRAPH_FILE_SELECT,
@@ -20,9 +23,14 @@ export function createGraphFileRepository(
   blobs: IBlobStore,
   spaceId: string,
   userId: string,
-  packages?: IPackageStore
+  packages?: IPackageStore,
+  options: GraphRepositoryOptions = {}
 ): IFileRepository {
-  const graph = createPgliteGraphRepository(db);
+  // Commands that run in this repository's own transactions journal through
+  // a repository joined to that transaction; the signal is theirs to give,
+  // once the transaction is committed.
+  const graph = createPgliteGraphRepository(db, options);
+  const journaled = () => options.onJournaled?.();
   const read = async (predicate: string, value: string) => {
     const { rows } = await db.query<GraphFileRow>(
       `select ${GRAPH_FILE_SELECT} where ${GRAPH_FILE_LIVE} and ${predicate} order by r.created_at limit 1`,
@@ -92,6 +100,7 @@ export function createGraphFileRepository(
           });
           if (result.isErr()) throw new Error(result.error);
         });
+        journaled();
         return repo.get(id);
       } catch (e) {
         return err(`file.importFile failed: ${String(e)}`);
@@ -108,6 +117,7 @@ export function createGraphFileRepository(
             [id, name]
           );
         });
+        journaled();
         return ok(undefined);
       } catch (e) {
         return err(`file.rename failed: ${String(e)}`);
@@ -135,6 +145,7 @@ export function createGraphFileRepository(
           );
           if (result.isErr()) throw new Error(result.error);
         });
+        journaled();
         return ok(undefined);
       } catch (e) {
         return err(`file.move failed: ${String(e)}`);
@@ -163,6 +174,7 @@ export function createGraphFileRepository(
             [id, spaceId]
           );
         });
+        journaled();
         return ok(undefined);
       } catch (e) {
         return err(`file.softDelete failed: ${String(e)}`);

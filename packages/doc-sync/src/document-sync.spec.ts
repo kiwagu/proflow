@@ -154,37 +154,6 @@ describe('document sync', () => {
     expect(a.text()).toContain('yours. ');
   });
 
-  it('converges through a realtime nudge', async () => {
-    const a = await replica('client-a');
-    const b = await replica('client-b');
-
-    // Poll long enough that only a nudge can explain convergence here.
-    const stop = b.watch();
-    await waitFor(() => b.text() === '');
-
-    await a.edit('live line. ');
-    await a.push();
-
-    await waitFor(() => b.text() === 'live line. ');
-    expect(server.nudgeCount()).toBeGreaterThan(0);
-    stop();
-  });
-
-  it('still converges by polling when every nudge is lost', async () => {
-    const a = await replica('client-a');
-    const b = await replica('client-b');
-
-    server.dropNudges();
-    const stop = b.watch();
-
-    await a.edit('polled through. ');
-    await a.push();
-
-    await waitFor(() => b.text() === 'polled through. ');
-    expect(server.nudgeCount()).toBe(0);
-    stop();
-  });
-
   it('catches up from its watermark after an offline restart', async () => {
     const a = await replica('client-a');
     const b = await replica('client-b');
@@ -463,15 +432,3 @@ describe('document sync', () => {
     expect(b.text()).toBe('one. two. three. four. ');
   });
 });
-
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs = 5_000
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('condition not reached before the timeout');
-}

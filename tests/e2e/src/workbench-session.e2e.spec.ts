@@ -98,6 +98,11 @@ test.describe('Workbench session', () => {
             { kind: 'text', title: 'Untitled' },
           ])
         );
+      // The edit typed offline was flushed to the device when the new folder
+      // took the pane; that save is asynchronous and a reload does not wait
+      // for it. The rows above reach the server the moment they are written,
+      // so waiting for them no longer covers that save: let it land.
+      await page.waitForTimeout(1_000);
       for (let reload = 0; reload < 2; reload++) {
         await page.reload();
         const rows = page.getByTestId('files-section').getByTestId('file-row');
@@ -202,7 +207,11 @@ test.describe('Workbench session', () => {
             .then((s) => s.spaceId)
         )
         .toBe(otherSpace.spaceId);
+      // Coming back to the tab: the focus a real tab switch fires is what
+      // makes it check now rather than at the next minute (a headless
+      // bringToFront fires none).
       await page.bringToFront();
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await expect(page.getByTestId('workbench-space')).toHaveText(
         'E2E Second Space',
         { timeout: 120_000 }
@@ -213,6 +222,7 @@ test.describe('Workbench session', () => {
       await platform.bringToFront();
       await platform.goto('/platform/auth/signout');
       await page.bringToFront();
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await expect(page.getByTestId('auth-login-form')).toBeVisible({
         timeout: 30_000,
       });

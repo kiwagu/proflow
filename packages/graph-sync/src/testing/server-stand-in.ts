@@ -574,6 +574,10 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         const set = subscribers.get(spaceId) ?? new Set();
         set.add(handlers);
         subscribers.set(spaceId, set);
+        // A stand-in channel is subscribed the moment it is opened.
+        queueMicrotask(() => {
+          if (set.has(handlers)) handlers.onStatus?.(true);
+        });
         return () => set.delete(handlers);
       },
     };

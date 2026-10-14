@@ -35,8 +35,9 @@ import {
   type FailureText,
   type ReportOptions,
 } from './shell/operation-errors';
-import { startDocumentSync } from './composition/document-sync';
-import { rememberSyncSettings, startGraphSync } from './composition/sync';
+import { rememberSyncSettings, type SyncSettings } from './composition/sync';
+import { HEARTBEAT_UP_MS } from './composition/sync-cadence';
+import { startSync, type SyncHandle } from './composition/sync-composition';
 import { allowed } from '@workspace/knowledge-contracts';
 import { guardDocumentWrites } from './composition/agent-documents';
 
@@ -127,12 +128,19 @@ function reasonOf(error: unknown): string {
  * the recalled offline session deliberately does not.
  */
 let syncSettings: ISettingsStore | undefined;
-let latestSyncTarget: { url: string; key: string } | undefined;
+let latestSyncTarget: SyncSettings | undefined;
+/** Replication, once started: told when the stored target is rewritten. */
+let syncHandle: SyncHandle | undefined;
 
 function noteSyncTarget(session: WorkbenchSession | null) {
   if (!session?.sync) return;
   latestSyncTarget = session.sync;
-  if (syncSettings) void rememberSyncSettings(syncSettings, session.sync);
+  // A device that could not start (a setting an older build stored, with
+  // no cookie name) starts the moment a session check rewrites it.
+  if (syncSettings)
+    void rememberSyncSettings(syncSettings, session.sync).then(() =>
+      syncHandle?.settingsChanged()
+    );
 }
 
 /**
@@ -333,106 +341,112 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
    * put what the server sends and no confirmed space to converge.
    *
    * Nothing is awaited: an app whose start-up waited on the network would
-   * no longer be local-first. Starting is a decision the module makes for
-   * itself and re-makes when the network returns.
+   * no longer be local-first. Whether this tab syncs at all is decided per
+   * browser — one tab holds the lock and runs the engines; the others hand
+   * it their writes — and re-decided when the network returns, when the
+   * stored target is rewritten and when the leading tab closes.
    */
   syncSettings = services.settings;
   if (latestSyncTarget)
     await rememberSyncSettings(services.settings, latestSyncTarget);
-  // Document bodies replicate beside the graph, from the same stored target
-  // and on the same conditions. Their failures are their own notices: a
-  // document's push under its own key, a feed pass under a key of its own —
-  // not the graph's `sync`, which a completed document pass must not
-  // withdraw while graph changes are still waiting.
-  const documentSync = startDocumentSync({
+  syncHandle = startSync({
     db: services.db,
     settings: services.settings,
     store: services.documentCrdt,
-    identity: services.identity,
-    onPushFailed: (documentId, error) => {
-      console.error('document push failed', documentId, error);
-      // Named by title: the notice is for the user, who does not know ids.
-      void services.documents.load(documentId).then((result) => {
-        const title = result.isOk() ? result.value.meta.title : documentId;
-        errors.report(
-          { kind: 'push', title, reason: reasonOf(error) },
-          { key: `push:${documentId}` }
-        );
-      });
-    },
-    onPushed: (documentId) => resolveError(`push:${documentId}`),
-    onPassFailed: (error) => {
-      console.error('document replication pass failed', error);
-      errors.report(
-        { kind: 'pull', reason: reasonOf(error) },
-        { key: 'document-sync' }
-      );
-    },
-    onPassSettled: () => resolveError('document-sync'),
-    // The server holds something for a document that cannot be taken in.
-    // The engine says so once per document; the key keeps it to one notice.
-    onRefused: (documentId, error) => {
-      console.error('document refused', documentId, error);
-      errors.report(
-        { kind: 'refused', id: documentId },
-        { key: `refused:document:${documentId}` }
-      );
-    },
-    mayWrite: (row) =>
-      allowed(
-        services.writeScope.current(),
-        'body.write',
-        row,
-        services.identity.userId
-      ),
-  });
-  startGraphSync({
-    db: services.db,
-    settings: services.settings,
     // The services were built from this session, and building them requires
     // a space — so by here the identity is the one they were opened under.
     identity: services.identity,
-    onReconciled: ({ refused, nodeIds }) => {
-      // The server refused a change made here and the affected items were
-      // re-read from it. Saying so is not an error report: nothing is lost
-      // locally and nothing is required of the user — this is the same
-      // banner, borrowed for a moment.
-      notice.style.inset = 'auto 0 0';
-      notice.textContent = `Refreshed ${nodeIds.length === 1 ? '1 item' : `${nodeIds.length} items`} from the server: ${refused === 1 ? 'a change' : `${refused} changes`} made here could not be applied.`;
-      notice.style.display = 'grid';
-      window.setTimeout(() => {
-        if (notice.textContent?.startsWith('Refreshed'))
-          notice.style.display = 'none';
-      }, 8_000);
-    },
-    onError: (error: unknown) => {
-      // A replication pass that failed is not a failure of the app: the
-      // journal keeps the work and the next pass retries it. The user is
-      // told once — under one key, so the poll replaces rather than stacks —
-      // and the next pass that completes withdraws it.
-      console.error('graph replication pass failed', error);
+    documentPeers: services.documentPeers,
+    onGraphJournaled: services.onGraphJournaled,
+    // A heartbeat that failed is not a failure of the app: the next one
+    // retries. Told once, under the graph's key — replaced, not stacked —
+    // and withdrawn by the next cycle that completes.
+    onHeartbeatFailed: (error) => {
+      console.error('sync heartbeat failed', error);
       errors.report({ kind: 'sync', reason: reasonOf(error) }, { key: 'sync' });
     },
-    // Writes could not reach the server: the journal keeps them and the
-    // next pass retries, but the user is told their changes are waiting.
-    onStalled: () => errors.report({ kind: 'sync-stalled' }, { key: 'sync' }),
-    onSettled: () => resolveError('sync'),
-    // New nodes may point at document bodies this device has no row for.
-    onPulled: (outcome) => {
-      if (outcome.applied > 0) documentSync.graphPulled();
-    },
-    // A node made here is on the server now: its document can be registered.
-    onPushed: () => documentSync.graphPushed(),
-    // Rows the server holds under a malformed id were left out, the rest
-    // applied. Each is handed over once; the key keeps it to one notice.
-    onRefused: (rows) => {
-      for (const row of rows) {
-        console.error('server row refused', row.table, row.id, row.error);
+    // Document bodies' failures are their own notices: a document's push
+    // under its own key, a feed pass under a key of its own — not the
+    // graph's `sync`, which a completed document pass must not withdraw
+    // while graph changes are still waiting.
+    documents: {
+      onPushFailed: (documentId, error) => {
+        console.error('document push failed', documentId, error);
+        // Named by title: the notice is for the user, who does not know ids.
+        void services.documents.load(documentId).then((result) => {
+          const title = result.isOk() ? result.value.meta.title : documentId;
+          errors.report(
+            { kind: 'push', title, reason: reasonOf(error) },
+            { key: `push:${documentId}` }
+          );
+        });
+      },
+      onPushed: (documentId) => resolveError(`push:${documentId}`),
+      onPassFailed: (error) => {
+        console.error('document replication pass failed', error);
         errors.report(
-          { kind: 'refused', id: row.id },
-          { key: `refused:${row.table}:${row.id}` }
+          { kind: 'pull', reason: reasonOf(error) },
+          { key: 'document-sync' }
         );
-      }
+      },
+      onPassSettled: () => resolveError('document-sync'),
+      // The server holds something for a document that cannot be taken in.
+      // The engine says so once per document; the key keeps it to one notice.
+      onRefused: (documentId, error) => {
+        console.error('document refused', documentId, error);
+        errors.report(
+          { kind: 'refused', id: documentId },
+          { key: `refused:document:${documentId}` }
+        );
+      },
+      mayWrite: (row) =>
+        allowed(
+          services.writeScope.current(),
+          'body.write',
+          row,
+          services.identity.userId
+        ),
+    },
+    graph: {
+      onReconciled: ({ refused, nodeIds }) => {
+        // The server refused a change made here and the affected items were
+        // re-read from it. Saying so is not an error report: nothing is lost
+        // locally and nothing is required of the user — this is the same
+        // banner, borrowed for a moment.
+        notice.style.inset = 'auto 0 0';
+        notice.textContent = `Refreshed ${nodeIds.length === 1 ? '1 item' : `${nodeIds.length} items`} from the server: ${refused === 1 ? 'a change' : `${refused} changes`} made here could not be applied.`;
+        notice.style.display = 'grid';
+        window.setTimeout(() => {
+          if (notice.textContent?.startsWith('Refreshed'))
+            notice.style.display = 'none';
+        }, 8_000);
+      },
+      onError: (error: unknown) => {
+        // A replication pass that failed is not a failure of the app: the
+        // journal keeps the work and the next pass retries it. The user is
+        // told once — under one key, so the next pass replaces rather than
+        // stacks — and the next pass that completes withdraws it.
+        console.error('graph replication pass failed', error);
+        errors.report(
+          { kind: 'sync', reason: reasonOf(error) },
+          { key: 'sync' }
+        );
+      },
+      // Writes could not reach the server: the journal keeps them and the
+      // next pass retries, but the user is told their changes are waiting.
+      onStalled: () => errors.report({ kind: 'sync-stalled' }, { key: 'sync' }),
+      onSettled: () => resolveError('sync'),
+      // Rows the server holds under a malformed id were left out, the rest
+      // applied. Each is handed over once; the key keeps it to one notice.
+      onRefused: (rows) => {
+        for (const row of rows) {
+          console.error('server row refused', row.table, row.id, row.error);
+          errors.report(
+            { kind: 'refused', id: row.id },
+            { key: `refused:${row.table}:${row.id}` }
+          );
+        }
+      },
     },
   });
   const check = async () => {
@@ -491,5 +505,11 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     } else void check();
   });
   window.addEventListener('pageshow', () => void check());
-  window.setInterval(() => void check(), 15_000);
+  // The browser saying the network went or came back is worth a check now:
+  // the offline notice and its withdrawal should not wait for the clock.
+  window.addEventListener('offline', () => void check());
+  window.addEventListener('online', () => void check());
+  // Once a minute, with the replication heartbeat: a revoked right reaches
+  // an open pane within a minute, or at once on the next focus.
+  window.setInterval(() => void check(), HEARTBEAT_UP_MS);
 }

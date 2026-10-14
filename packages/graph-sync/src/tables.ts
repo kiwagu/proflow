@@ -165,9 +165,11 @@ export function describeTable(
  * from nodes, while a node whose edge has not arrived has no parent and is
  * drawn at the top level until the edge lands. The replica keeps no foreign
  * key between the two, so either order applies cleanly. This covers what
- * the server already holds together; a node the server itself holds without
- * its edge yet (the creating device writes them one after the other)
- * arrives alone whatever the order here.
+ * the server already holds together. A node that becomes visible only
+ * through its edge (a private node filed into a shared folder) is covered
+ * by reading nodes before every other table and landing them in this
+ * order; a node the server shows on its own before its edge exists (the
+ * creating device writes them one after the other) can still arrive alone.
  */
 export const ARRIVAL_ORDER: readonly GraphSyncTableDescriptor[] = [
   ...GRAPH_SYNC_TABLE_DESCRIPTORS.filter((d) => d.local === 'knowledge_edges'),

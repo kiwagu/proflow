@@ -28,6 +28,18 @@ export function getGatewayAuthorPath(): string {
 }
 
 /**
+ * Same-origin mount of the backend API (REST, Realtime, Storage). Default
+ * `/backend`. The edge strips it before the request reaches the API, so a
+ * browser client built with `<origin><this path>` talks to the API without a
+ * cross-origin hop.
+ */
+export function getGatewayBackendPath(): string {
+  return normalizeGatewayPrefix(
+    process.env.NEXT_PUBLIC_GATEWAY_BACKEND_PATH ?? '/backend'
+  );
+}
+
+/**
  * This Next app's `basePath` (same value as in `next.config`).
  * Prefer `NEXT_PUBLIC_APP_BASE_PATH`; otherwise `fallback` (e.g. `'/platform'` for apps/platform).
  */
