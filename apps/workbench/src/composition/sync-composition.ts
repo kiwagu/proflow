@@ -13,6 +13,7 @@ import {
   type StartDocumentSyncOptions,
 } from './document-sync';
 import {
+  type GraphSyncHandle,
   parseSyncSettings,
   startGraphSync,
   type StartGraphSyncOptions,
@@ -91,7 +92,7 @@ export interface SyncHandle {
 }
 
 interface Running {
-  kickGraph(opts?: { sweep?: boolean }): void;
+  graph: GraphSyncHandle;
   cadence: SyncCadence;
   catchUp(): void;
   stop(): void;
@@ -133,17 +134,6 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     };
     root.dataset.syncChannel = 'down';
 
-    /**
-     * What each engine still owes. A pass is owed from the moment it is
-     * asked for until a pass of that engine goes through — a failed one
-     * leaves it owed, and every heartbeat runs what is owed whatever the
-     * probe says: the probe has already moved past the change the failed
-     * pass was for, and would not ask again before the full pass. A sweep
-     * or a full read stays owed until one of its kind goes through. The
-     * engines' own first passes (a sweep, a full read) start owed.
-     */
-    const owed = { graph: true, sweep: true, documents: true, full: true };
-
     const documents = startDocumentSync({
       ...options.documents,
       db: options.db,
@@ -155,15 +145,6 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       onSettled: (id) => {
         options.documents?.onSettled?.(id);
         peers.announceSettled(id);
-      },
-      onPass: (pass) => {
-        options.documents?.onPass?.(pass);
-        if (!pass.ok) {
-          owed.documents = true;
-          return;
-        }
-        owed.documents = false;
-        if (pass.full) owed.full = false;
       },
     });
     const graph = startGraphSync({
@@ -182,34 +163,11 @@ export function startSync(options: StartSyncOptions): SyncHandle {
         documents.graphPushed();
       },
       onChannel: (up) => setChannel('graph', up),
-      onCycle: (cycle) => {
-        options.graph?.onCycle?.(cycle);
-        if (!cycle.ok) {
-          owed.graph = true;
-          return;
-        }
-        owed.graph = false;
-        if (cycle.swept) owed.sweep = false;
-      },
     });
 
-    const kickGraph = (opts: { sweep?: boolean } = {}) => {
-      owed.graph = true;
-      if (opts.sweep) {
-        owed.sweep = true;
-        graph.kick({ sweep: true });
-      } else graph.kick();
-    };
-    const kickDocuments = (opts: { full?: boolean } = {}) => {
-      owed.documents = true;
-      if (opts.full) {
-        owed.full = true;
-        documents.kick({ full: true });
-      } else documents.kick();
-    };
     const catchUp = () => {
-      kickGraph();
-      kickDocuments();
+      graph.kick();
+      documents.kick();
     };
     const probe = createChangeProbe({
       probe: async (spaceId) => {
@@ -243,17 +201,24 @@ export function startSync(options: StartSyncOptions): SyncHandle {
             const changed = await probe.heartbeat(identity.spaceId, {
               visible,
             });
-            // Recovered from a failed look: one pass of each is owed, and
-            // its push outcome is what withdraws the notice the failure left.
-            if (failed) {
-              owed.graph = true;
-              owed.documents = true;
-            }
+            // Recovered from a failed look: one pass of each, whose push
+            // outcome is what withdraws the notice the failure left.
+            const recovering = failed;
             failed = false;
-            if (changed.graphDelete || owed.sweep) kickGraph({ sweep: true });
-            else if (changed.graph || owed.graph) kickGraph();
-            if (owed.full) kickDocuments({ full: true });
-            else if (changed.documents || owed.documents) kickDocuments();
+            // What a failed pass still owes is asked for again whatever the
+            // probe says: the probe has already moved past the change that
+            // pass was for, and would not ask again before the full pass.
+            // The engines keep the account themselves — whoever asked (this
+            // heartbeat, a nudge, their own first pass) — so a sweep or a
+            // full read stays owed until one of its kind goes through.
+            const graphOwed = graph.owed();
+            const documentsOwed = documents.owed();
+            if (changed.graphDelete || graphOwed?.sweep)
+              graph.kick({ sweep: true });
+            else if (changed.graph || graphOwed || recovering) graph.kick();
+            if (documentsOwed?.full) documents.kick({ full: true });
+            else if (changed.documents || documentsOwed || recovering)
+              documents.kick();
           } catch (error) {
             failed = true;
             options.onHeartbeatFailed?.(error);
@@ -261,8 +226,8 @@ export function startSync(options: StartSyncOptions): SyncHandle {
           }
         },
         fullPass: () => {
-          kickGraph({ sweep: true });
-          kickDocuments({ full: true });
+          graph.kick({ sweep: true });
+          documents.kick({ full: true });
         },
         catchUp,
       },
@@ -271,7 +236,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     cadence.start();
     const started = cadence;
     return {
-      kickGraph,
+      graph,
       cadence: started,
       catchUp,
       stop() {
@@ -330,7 +295,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
 
   // A graph write here: the leader pushes it, whichever tab that is.
   const offJournal = options.onGraphJournaled(() => {
-    if (running) running.kickGraph();
+    if (running) running.graph.kick();
     else if (!leader) peers.announceGraphJournal();
   });
   const offPeers = peers.on((message) => {
@@ -341,7 +306,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       return;
     }
     if (!running) return;
-    if (message.type === 'graph-journal') running.kickGraph();
+    if (message.type === 'graph-journal') running.graph.kick();
     else if (message.type === 'visible') running.cadence.peerVisible();
     // Another tab was turned to: the same catch-up, echo included, as when
     // this one is.

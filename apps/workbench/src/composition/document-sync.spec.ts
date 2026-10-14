@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   watchSpace,
   kick,
+  spaceOwed,
   push,
   pull,
   createDocumentSync,
@@ -27,9 +28,11 @@ const {
   class DocumentNotRegisteredError extends Error {}
   class MalformedServerRowError extends Error {}
   const kick = vi.fn();
+  const spaceOwed = vi.fn((): { full: boolean } | null => null);
   const watchSpace = vi.fn((_spaceId: string, _hooks: unknown) => ({
     stop: vi.fn(),
     kick,
+    owed: spaceOwed,
   }));
   const push = vi.fn(
     async (
@@ -57,6 +60,7 @@ const {
   return {
     watchSpace,
     kick,
+    spaceOwed,
     push,
     pull,
     createDocumentSync: vi.fn(
@@ -658,29 +662,18 @@ describe('starting document replication', () => {
     handle.stop();
   });
 
-  it('says how each heads pass ended, and whether it read every head', async () => {
+  it('hands on what the heads passes still owe, and nothing before they run', async () => {
     const { store } = stubStore();
-    const onPass = vi.fn();
     const handle = startDocumentSync({
       db,
       client: CLIENT,
       store,
       identity: IDENTITY,
-      onPass,
     });
+    expect(handle.owed()).toBeNull();
     await settled();
-    const hooks = watchSpace.mock.calls[0]?.[1] as {
-      onError: (error: unknown) => void;
-      onPass: (outcome: unknown) => void;
-    };
-    hooks.onPass({ pulled: 0, skipped: 0, refused: 0, full: true });
-    hooks.onPass({ pulled: 1, skipped: 0, refused: 0, full: false });
-    hooks.onError(new Error('heads query failed: 503'));
-    expect(onPass.mock.calls).toEqual([
-      [{ ok: true, full: true }],
-      [{ ok: true, full: false }],
-      [{ ok: false, full: false }],
-    ]);
+    spaceOwed.mockReturnValueOnce({ full: true });
+    expect(handle.owed()).toEqual({ full: true });
     handle.stop();
   });
 

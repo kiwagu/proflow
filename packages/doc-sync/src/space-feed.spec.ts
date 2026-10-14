@@ -169,8 +169,13 @@ describe('the space feed', () => {
   /** The stand-in, with every heads read recorded and holdable. */
   function recorded() {
     let gate: Promise<void> | null = null;
+    let calls = 0;
+    /** 1-based heads calls that answer with a server error instead. */
+    const failing = new Set<number>();
     const heads = vi.fn(async (...args: Parameters<SyncTransport['heads']>) => {
       if (gate) await gate;
+      calls += 1;
+      if (failing.has(calls)) throw new Error('503 Service Unavailable');
       return server.heads(...args);
     });
     const subscribeSpace = vi.fn(server.subscribeSpace);
@@ -179,6 +184,7 @@ describe('the space feed', () => {
       transport,
       heads,
       subscribeSpace,
+      failing,
       /** Heads reads wait until the returned release is called. */
       hold() {
         let release!: () => void;
@@ -285,6 +291,52 @@ describe('the space feed', () => {
       false,
       true,
     ]);
+    watch.stop();
+  });
+
+  it('a full read asked for while one runs, that then fails, stays owed though the full read before it went through', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let ended = 0;
+    const watch = b.watchSpace({
+      onPass: () => (ended += 1),
+      onError: () => (ended += 1),
+    });
+    await expect.poll(() => ended).toBe(1);
+    expect(watch.owed()).toBeNull();
+    // Full read A runs (heads call 2); B is asked for meanwhile and its
+    // read (call 3) fails.
+    spy.failing.add(3);
+    watch.kick({ full: true });
+    watch.kick({ full: true });
+    await expect.poll(() => ended).toBe(3);
+    expect(watch.owed()).toEqual({ full: true });
+    // A plain pass going through does not settle it; a full one does.
+    watch.kick();
+    await expect.poll(() => ended).toBe(4);
+    expect(watch.owed()).toEqual({ full: true });
+    watch.kick({ full: true });
+    await expect.poll(() => ended).toBe(5);
+    expect(watch.owed()).toBeNull();
+    watch.stop();
+  });
+
+  it('a plain pass that failed stays owed until a pass goes through', async () => {
+    const spy = recorded();
+    const b = await replica('client-b', {}, spy.transport);
+    let ended = 0;
+    const watch = b.watchSpace({
+      onPass: () => (ended += 1),
+      onError: () => (ended += 1),
+    });
+    await expect.poll(() => ended).toBe(1);
+    spy.failing.add(2);
+    watch.kick();
+    await expect.poll(() => ended).toBe(2);
+    expect(watch.owed()).toEqual({ full: false });
+    watch.kick();
+    await expect.poll(() => ended).toBe(3);
+    expect(watch.owed()).toBeNull();
     watch.stop();
   });
 

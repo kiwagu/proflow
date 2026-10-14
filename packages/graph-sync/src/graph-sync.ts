@@ -343,6 +343,14 @@ export function createGraphSync(options: GraphSyncOptions) {
    *
    * Cycles never overlap. A kick during a cycle queues exactly one more,
    * whatever the number of kicks; a sweep any of them asked for is kept.
+   *
+   * What a cycle was asked to do and did not is OWED (`owed()`), for
+   * whoever composes the engine to ask for again: a cycle that failed owes
+   * its whole mode, a push that found the server away owes a cycle. Only a
+   * cycle that went through settles it, and an owed sweep only a sweeping
+   * one. Because cycles run one after another, a cycle that settles started
+   * after whatever it settles was owed — an earlier success can never
+   * settle a later request.
    */
   function watch(
     spaceId: SpaceId,
@@ -356,21 +364,30 @@ export function createGraphSync(options: GraphSyncOptions) {
     let running = false;
     /** The cycle asked for while one was running; null when none was. */
     let queued: { sweep: boolean } | null = null;
+    /** What failed cycles still owe; null when nothing is. */
+    let owed: { sweep: boolean } | null = null;
 
     const cycle = (sweep: boolean) => {
       running = true;
+      let stalled = false;
       // Push before pull: a local proposal the server accepts comes back in
       // the same catch-up, so the replica lands on the server's version of
       // the change rather than showing its own optimistic one for a beat.
       push(spaceId)
         .then((outcome) => {
+          stalled = outcome.stalled;
           if (!stopped) hooks.onPush?.(outcome);
           return pull(spaceId, { sweep });
         })
         .then((outcome) => {
+          // Through: what was owed is settled, but a sweep only by a sweep,
+          // and writes still waiting keep a cycle owed.
+          const sweepStillOwed = owed?.sweep === true && !sweep;
+          owed = sweepStillOwed || stalled ? { sweep: sweepStillOwed } : null;
           if (!stopped) hooks.onPull?.(outcome);
         })
         .catch((error: unknown) => {
+          owed = { sweep: (owed?.sweep ?? false) || sweep };
           if (!stopped) hooks.onError?.(error);
         })
         .finally(() => {
@@ -399,6 +416,7 @@ export function createGraphSync(options: GraphSyncOptions) {
         queued = null;
       },
       kick,
+      owed: () => owed,
     };
   }
 
@@ -418,4 +436,9 @@ export interface GraphWatch {
   stop(): void;
   /** Run a cycle now, or once more after the one running; `sweep` forces the inventory sweep. */
   kick(opts?: { sweep?: boolean }): void;
+  /**
+   * What failed cycles still owe — a cycle, or a sweeping one — or null.
+   * Settled only by a cycle that goes through (a sweep only by a sweep).
+   */
+  owed(): { sweep: boolean } | null;
 }

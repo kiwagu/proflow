@@ -90,17 +90,14 @@ export interface StartDocumentSyncOptions {
    * tabs of the browser wait on their own stores and have to be told too.
    */
   onSettled?: (documentId: DocumentId) => void;
-  /**
-   * How each heads pass ended, for whoever runs a failed one again, and
-   * whether it read every head.
-   */
-  onPass?: (pass: { ok: boolean; full: boolean }) => void;
 }
 
 export interface DocumentSyncHandle {
   stop(): void;
   /** A heads pass now; `full` reads every head instead of those past the cursor. */
   kick(opts?: { full?: boolean }): void;
+  /** What failed heads passes still owe, whoever asked for them (see the engine's `owed`). */
+  owed(): { full: boolean } | null;
   /**
    * The graph brought new rows: documents may need materializing and
    * pulling now rather than at the next start.
@@ -271,14 +268,8 @@ export function startDocumentSync(
         if (disposed) return;
         space = engine.watchSpace(identity.spaceId, {
           open: (id) => store.syncable(id),
-          onPass: (outcome) => {
-            options.onPassSettled?.();
-            options.onPass?.({ ok: true, full: outcome.full });
-          },
-          onError: (error) => {
-            options.onPassFailed?.(error);
-            options.onPass?.({ ok: false, full: false });
-          },
+          onPass: () => options.onPassSettled?.(),
+          onError: (error) => options.onPassFailed?.(error),
         });
         // A nudge is only a kick: what moved is read by the heads pass.
         unsubscribeNudges = transport.subscribeSpace(
@@ -343,6 +334,9 @@ export function startDocumentSync(
     },
     kick(opts) {
       space?.kick(opts);
+    },
+    owed() {
+      return space?.owed() ?? null;
     },
     graphPulled() {
       if (engine) report(materialize().then(retryDeferred));

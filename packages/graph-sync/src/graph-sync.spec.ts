@@ -650,20 +650,38 @@ describe('graph row replication — watch', () => {
   /** The replica's transport, with every call counted and pulls holdable. */
   function counted(base: GraphRowTransport) {
     let gate: Promise<void> | null = null;
+    let inventories = 0;
+    let pulls = 0;
+    /** 1-based call numbers that answer with a server error instead. */
+    const failing = {
+      inventory: new Set<number>(),
+      pullSince: new Set<number>(),
+    };
+    const unavailable = () => new Error('503 Service Unavailable');
     const transport = {
       pullSince: vi.fn(
         async (...args: Parameters<GraphRowTransport['pullSince']>) => {
           if (gate) await gate;
+          pulls += 1;
+          if (failing.pullSince.has(pulls)) throw unavailable();
           return base.pullSince(...args);
         }
       ),
-      inventory: vi.fn(base.inventory),
+      inventory: vi.fn(
+        async (...args: Parameters<GraphRowTransport['inventory']>) => {
+          inventories += 1;
+          if (failing.inventory.has(inventories)) throw unavailable();
+          return base.inventory(...args);
+        }
+      ),
       pullByNodes: vi.fn(base.pullByNodes),
       write: vi.fn(base.write),
       subscribe: vi.fn(base.subscribe),
     } satisfies GraphRowTransport;
     return {
       transport,
+      failing,
+      calls: () => ({ inventories, pulls }),
       /** Pulls wait until the returned release is called. */
       hold() {
         let release!: () => void;
@@ -684,6 +702,7 @@ describe('graph row replication — watch', () => {
     const pulls: { swept: string[] }[] = [];
     const pushes: number[] = [];
     const order: string[] = [];
+    const errors: unknown[] = [];
     const watch = replica.sync.watch(SPACE, {
       onPush: (outcome) => {
         pushes.push(outcome.accepted);
@@ -693,9 +712,86 @@ describe('graph row replication — watch', () => {
         pulls.push({ swept: outcome.swept });
         order.push('pull');
       },
+      onError: (error) => errors.push(error),
     });
-    return { ...spy, replica, watch, pulls, pushes, order };
+    /** Every cycle so far has ended, one way or the other. */
+    const ended = (cycles: number) =>
+      waitFor(async () => w.pulls.length + w.errors.length === cycles);
+    const w = { ...spy, replica, watch, pulls, pushes, order, errors, ended };
+    return w;
   }
+
+  it('a sweep asked for while one runs, that then fails, stays owed though the sweep before it went through', async () => {
+    const w = await watched();
+    await w.ended(1);
+    expect(w.watch.owed()).toBeNull();
+    // Sweep A runs; sweep B is asked for meanwhile and waits behind it.
+    // A's inventory calls are 8–14 (the checkout's were 1–7); B's first
+    // one fails.
+    w.failing.inventory.add(15);
+    w.watch.kick({ sweep: true });
+    w.watch.kick({ sweep: true });
+    await w.ended(3);
+    expect(w.pulls).toHaveLength(2);
+    expect(w.errors).toHaveLength(1);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+
+    // A plain pass going through does not settle it.
+    w.watch.kick();
+    await w.ended(4);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+    // A sweep does.
+    w.watch.kick({ sweep: true });
+    await w.ended(5);
+    expect(w.watch.owed()).toBeNull();
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('a sweep a deletion nudge asked for, failing after the checkout went through, stays owed as a sweep', async () => {
+    const w = await watched();
+    await w.ended(1);
+    w.failing.inventory.add(8);
+    // What the composition does with a deletion nudge.
+    w.watch.kick({ sweep: true });
+    await w.ended(2);
+    expect(w.watch.owed()).toEqual({ sweep: true });
+    w.watch.stop();
+    await w.replica.close();
+  });
+
+  it('a plain pass that failed stays owed until a pass goes through; so does a push that found the server away', async () => {
+    const w = await watched();
+    await w.ended(1);
+    const { pulls } = w.calls();
+    w.failing.pullSince.add(pulls + 1);
+    w.watch.kick();
+    await w.ended(2);
+    expect(w.watch.owed()).toEqual({ sweep: false });
+    w.watch.kick();
+    await w.ended(3);
+    expect(w.watch.owed()).toBeNull();
+
+    // Writes waiting while the server is away: the reads go through, the
+    // cycle is still owed.
+    const created = await w.replica.repo.createNode({
+      spaceId: SPACE,
+      kind: 'text',
+      title: 'Waiting',
+      createdBy: TEST_USER,
+    });
+    if (created.isErr()) throw new Error(created.error);
+    server.setOffline(true);
+    w.watch.kick();
+    await w.ended(4);
+    expect(w.watch.owed()).toEqual({ sweep: false });
+    server.setOffline(false);
+    w.watch.kick();
+    await w.ended(5);
+    expect(w.watch.owed()).toBeNull();
+    w.watch.stop();
+    await w.replica.close();
+  });
 
   it('checks the space out with one sweeping cycle and nothing else', async () => {
     const w = await watched();

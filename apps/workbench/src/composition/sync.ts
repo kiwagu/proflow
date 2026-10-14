@@ -5,7 +5,6 @@ import type { KnowledgeResourceId, SpaceId } from '@workspace/entity-id';
 import {
   createGraphSync,
   createSupabaseGraphRowTransport,
-  GRAPH_SYNC_TABLE_DESCRIPTORS,
   type GraphReplica,
   type RefusedServerRow,
 } from '@workspace/graph-sync';
@@ -79,18 +78,14 @@ export interface StartGraphSyncOptions {
   onPushed?: (outcome: { accepted: number }) => void;
   /** Whether the nudge channel is subscribed: nudges arrive only while it is. */
   onChannel?: (up: boolean) => void;
-  /**
-   * How each cycle ended, for whoever runs a failed one again: `ok` only
-   * when the push was not stalled and the pull went through, `swept` only
-   * when that pull swept every table.
-   */
-  onCycle?: (cycle: { ok: boolean; swept: boolean }) => void;
 }
 
 export interface GraphSyncHandle {
   stop(): void;
   /** One cycle (push, then pull); `sweep` adds the inventory sweep. */
   kick(opts?: { sweep?: boolean }): void;
+  /** What failed cycles still owe, whoever asked for them (see the engine's `owed`). */
+  owed(): { sweep: boolean } | null;
 }
 
 export function parseSyncSettings(raw: string | null): SyncSettings | null {
@@ -151,11 +146,8 @@ export function startGraphSync(
     identity: { userId: identity.userId },
     onReconciled: options.onReconciled,
   });
-  /** The cycle under way found the server unreachable for its writes. */
-  let stalled = false;
   const watch = sync.watch(identity.spaceId, {
     onPush: (outcome) => {
-      stalled = outcome.stalled;
       if (outcome.stalled) options.onStalled?.();
       else options.onSettled?.();
       if (outcome.accepted > 0) options.onPushed?.(outcome);
@@ -163,15 +155,8 @@ export function startGraphSync(
     onPull: (outcome) => {
       if (outcome.refused.length > 0) options.onRefused?.(outcome.refused);
       options.onPulled?.(outcome);
-      options.onCycle?.({
-        ok: !stalled,
-        swept: outcome.swept.length === GRAPH_SYNC_TABLE_DESCRIPTORS.length,
-      });
     },
-    onError: (error: unknown) => {
-      options.onError?.(error);
-      options.onCycle?.({ ok: false, swept: false });
-    },
+    onError: (error: unknown) => options.onError?.(error),
   });
   // A deletion is worth a sweep now: a watermark pull cannot see it.
   const unsubscribe = transport.subscribe(identity.spaceId, {
@@ -185,6 +170,7 @@ export function startGraphSync(
       watch.stop();
     },
     kick: (opts) => watch.kick(opts),
+    owed: () => watch.owed(),
   };
 }
 

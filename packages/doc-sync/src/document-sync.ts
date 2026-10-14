@@ -77,6 +77,11 @@ export interface SpaceWatch {
    * full read sees it again.
    */
   kick(opts?: { full?: boolean }): void;
+  /**
+   * What failed passes still owe — a pass, or a full one — or null. Settled
+   * only by a pass that goes through (a full read only by a full one).
+   */
+  owed(): { full: boolean } | null;
 }
 
 export interface DocumentSyncOptions {
@@ -352,19 +357,28 @@ export function createDocumentSync(options: DocumentSyncOptions) {
    * watch reads every head, so nothing missed in an earlier session waits
    * for a full kick. Passes never overlap: a kick during a pass queues
    * exactly one more, and a full read any of them asked for is kept.
+   *
+   * What a pass was asked to do and did not is OWED (`owed()`): a failed
+   * pass owes its whole mode; only a pass that goes through settles it, an
+   * owed full read only a full one. Passes run one after another, so an
+   * earlier success never settles a later request.
    */
   function watchSpace(spaceId: SpaceId, hooks: SpaceWatchHooks): SpaceWatch {
     let stopped = false;
     let running = false;
     /** The pass asked for while one was running; null when none was. */
     let queued: { full: boolean } | null = null;
+    /** What failed passes still owe; null when nothing is. */
+    let owed: { full: boolean } | null = null;
     const run = (full: boolean) => {
       running = true;
       passSpace(spaceId, hooks, full)
         .then((outcome) => {
+          owed = owed?.full === true && !full ? { full: true } : null;
           if (!stopped) hooks.onPass?.(outcome);
         })
         .catch((error: unknown) => {
+          owed = { full: (owed?.full ?? false) || full };
           if (!stopped) hooks.onError?.(error);
         })
         .finally(() => {
@@ -390,6 +404,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
         queued = null;
       },
       kick,
+      owed: () => owed,
     };
   }
 

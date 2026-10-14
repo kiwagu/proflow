@@ -20,6 +20,8 @@ const { createBrowserClient, startGraphSync, startDocumentSync, clients } =
       kick: vi.fn(),
       graphPulled: vi.fn(),
       graphPushed: vi.fn(),
+      /** What the engine's failed passes still owe; nothing by default. */
+      owed: vi.fn((): { sweep?: boolean; full?: boolean } | null => null),
     });
     return {
       clients,
@@ -53,7 +55,6 @@ const { createBrowserClient, startGraphSync, startDocumentSync, clients } =
           onChannel?: (up: boolean) => void;
           onPulled?: (outcome: { applied: number }) => void;
           onPushed?: (outcome: { accepted: number }) => void;
-          onCycle?: (cycle: { ok: boolean; swept: boolean }) => void;
         }) => engine()
       ),
       startDocumentSync: vi.fn(
@@ -61,7 +62,6 @@ const { createBrowserClient, startGraphSync, startDocumentSync, clients } =
           client: unknown;
           peers?: unknown;
           onChannel?: (up: boolean) => void;
-          onPass?: (pass: { ok: boolean; full: boolean }) => void;
         }) => engine()
       ),
     };
@@ -356,147 +356,54 @@ describe('what reaches the leader', () => {
 describe('a pass that failed', () => {
   /**
    * The probe answers once per heartbeat with when each kind last changed;
-   * here the marks stay where they are, older than the overlap after the
-   * first look. A pass the probe asked for that then failed must be run
-   * again by the next heartbeat all the same — the probe alone would not
-   * ask again, and the full pass is minutes away.
+   * here nothing new is marked. What an engine says its failed passes still
+   * owe is asked for again by the next heartbeat all the same, in its own
+   * mode — the engines keep that account, whoever asked for the pass.
    */
-  async function leaderAnswering(marks: {
-    graph?: string;
-    graphDeleted?: string;
-    documents?: string;
-  }) {
+  async function quietLeader() {
     const b = browser();
     const leader = b.tab();
     await flush();
-    clients[0]!.rpc.mockImplementation(async (fn) =>
-      fn === 'sync_probe'
-        ? {
-            data: [
-              {
-                epoch: 0,
-                graph_changed_at: marks.graph ?? null,
-                graph_deleted_at: marks.graphDeleted ?? null,
-                documents_changed_at: marks.documents ?? null,
-                probed_at: new Date().toISOString(),
-              },
-            ],
-            error: null,
-          }
-        : { data: null, error: null }
-    );
-    const graph = startGraphSync.mock.calls[0]![0];
-    const documents = startDocumentSync.mock.calls[0]![0];
-    // The checkout passes went through.
-    graph.onCycle?.({ ok: true, swept: true });
-    documents.onPass?.({ ok: true, full: true });
     await vi.advanceTimersByTimeAsync(6 * SECOND);
     graphOf().kick.mockClear();
     documentsOf().kick.mockClear();
-    return { leader, graph, documents };
+    return leader;
   }
 
   /** The channel is down in these cases: a heartbeat every 15 s, from 0. */
   const nextHeartbeat = () => vi.advanceTimersByTimeAsync(15 * SECOND);
 
-  it('a graph pull the probe asked for and that failed runs again on the next heartbeat, whatever the probe says', async () => {
-    const { leader, graph } = await leaderAnswering({
-      graph: new Date(Date.now() - 1 * SECOND).toISOString(),
-    });
+  it('a graph pass owed is asked for again whatever the probe says, a sweep as a sweep', async () => {
+    const leader = await quietLeader();
     await vi.advanceTimersByTimeAsync(9 * SECOND); // the heartbeat at 15 s
+    expect(graphOf().kick).not.toHaveBeenCalled();
+
+    graphOf().owed.mockReturnValue({ sweep: false });
+    await nextHeartbeat();
     expect(graphOf().kick.mock.calls).toEqual([[]]);
-    graph.onCycle?.({ ok: false, swept: false });
 
-    await nextHeartbeat(); // 30 s: same mark, now older than the overlap
-    expect(graphOf().kick.mock.calls).toEqual([[], []]);
-    graph.onCycle?.({ ok: true, swept: false });
+    // A deletion nudge's sweep failed: it is owed as a sweep.
+    graphOf().owed.mockReturnValue({ sweep: true });
+    await nextHeartbeat();
+    expect(graphOf().kick.mock.calls).toEqual([[], [{ sweep: true }]]);
 
-    await nextHeartbeat(); // 45 s: through, nothing more to do
+    graphOf().owed.mockReturnValue(null);
+    await nextHeartbeat();
     expect(graphOf().kick).toHaveBeenCalledTimes(2);
     leader.handle.stop();
   });
 
-  it('a failed sweep is asked for again until a sweep goes through; a plain pass does not end the wait', async () => {
-    const at = new Date(Date.now() - 1 * SECOND).toISOString();
-    const { leader, graph } = await leaderAnswering({
-      graph: at,
-      graphDeleted: at,
-    });
-    await vi.advanceTimersByTimeAsync(9 * SECOND);
-    expect(graphOf().kick.mock.calls).toEqual([[{ sweep: true }]]);
-    graph.onCycle?.({ ok: false, swept: false });
-
-    await nextHeartbeat();
-    expect(graphOf().kick.mock.calls).toEqual([
-      [{ sweep: true }],
-      [{ sweep: true }],
-    ]);
-    // A nudge's plain pass went through meanwhile: the sweep is still owed.
-    graph.onCycle?.({ ok: true, swept: false });
-    await nextHeartbeat();
-    expect(graphOf().kick.mock.calls).toEqual([
-      [{ sweep: true }],
-      [{ sweep: true }],
-      [{ sweep: true }],
-    ]);
-    graph.onCycle?.({ ok: true, swept: true });
-
-    const kicks = graphOf().kick.mock.calls.length;
-    await nextHeartbeat();
-    expect(graphOf().kick).toHaveBeenCalledTimes(kicks);
-    leader.handle.stop();
-  });
-
-  it('a failed documents pass runs again on the next heartbeat, and a full read asked for stays full', async () => {
-    const { leader, documents } = await leaderAnswering({
-      documents: new Date(Date.now() - 1 * SECOND).toISOString(),
-    });
+  it('a documents pass owed is asked for again, a full read as a full read', async () => {
+    const leader = await quietLeader();
+    documentsOf().owed.mockReturnValue({ full: false });
     await vi.advanceTimersByTimeAsync(9 * SECOND);
     expect(documentsOf().kick.mock.calls).toEqual([[]]);
-    documents.onPass?.({ ok: false, full: false });
+    documentsOf().owed.mockReturnValue({ full: true });
     await nextHeartbeat();
-    expect(documentsOf().kick.mock.calls).toEqual([[], []]);
-    documents.onPass?.({ ok: true, full: false });
+    expect(documentsOf().kick.mock.calls).toEqual([[], [{ full: true }]]);
+    documentsOf().owed.mockReturnValue(null);
     await nextHeartbeat();
     expect(documentsOf().kick).toHaveBeenCalledTimes(2);
-
-    // The five-minute full read fails: the next heartbeat asks for a full
-    // one again, and a plain pass going through does not settle it.
-    await vi.advanceTimersByTimeAsync(254 * SECOND); // 45 s → 299 s
-    documentsOf().kick.mockClear();
-    await nextHeartbeat(); // the full pass at 300 s
-    expect(documentsOf().kick.mock.calls).toContainEqual([{ full: true }]);
-    documents.onPass?.({ ok: false, full: false });
-    documentsOf().kick.mockClear();
-    await nextHeartbeat();
-    expect(documentsOf().kick.mock.calls).toEqual([[{ full: true }]]);
-    documents.onPass?.({ ok: true, full: false });
-    await nextHeartbeat();
-    expect(documentsOf().kick.mock.calls).toEqual([
-      [{ full: true }],
-      [{ full: true }],
-    ]);
-    documents.onPass?.({ ok: true, full: true });
-    const kicks = documentsOf().kick.mock.calls.length;
-    await nextHeartbeat();
-    expect(documentsOf().kick).toHaveBeenCalledTimes(kicks);
-    leader.handle.stop();
-  });
-
-  it('the first passes of a checkout that failed are run again as they were, a sweep and a full read', async () => {
-    const b = browser();
-    const leader = b.tab();
-    await flush();
-    const graph = startGraphSync.mock.calls[0]![0];
-    const documents = startDocumentSync.mock.calls[0]![0];
-    graph.onCycle?.({ ok: false, swept: false });
-    documents.onPass?.({ ok: false, full: false });
-    await vi.advanceTimersByTimeAsync(6 * SECOND);
-    graphOf().kick.mockClear();
-    documentsOf().kick.mockClear();
-    await vi.advanceTimersByTimeAsync(9 * SECOND);
-    expect(graphOf().kick.mock.calls).toEqual([[{ sweep: true }]]);
-    expect(documentsOf().kick.mock.calls).toEqual([[{ full: true }]]);
     leader.handle.stop();
   });
 });
@@ -627,9 +534,6 @@ describe('the channel and the cadence', () => {
     const b = browser();
     const leader = b.tab({ onHeartbeatFailed });
     await flush();
-    // The checkout passes went through: nothing is owed but what follows.
-    startGraphSync.mock.calls[0]![0].onCycle?.({ ok: true, swept: true });
-    startDocumentSync.mock.calls[0]![0].onPass?.({ ok: true, full: true });
     const rpc = clients[0]!.rpc;
     rpc.mockImplementation(async () => ({
       data: null,
@@ -674,14 +578,12 @@ describe('the channel and the cadence', () => {
     const leader = b.tab();
     const other = b.tab({ visible: false });
     await flush();
-    // Channel up (heartbeat a minute away), and every pass so far through.
+    // Channel up: the heartbeat is a minute away.
     const graph = startGraphSync.mock.calls[0]![0];
     const documents = startDocumentSync.mock.calls[0]![0];
     graph.onChannel?.(true);
     documents.onChannel?.(true);
     await vi.advanceTimersByTimeAsync(10 * SECOND);
-    graph.onCycle?.({ ok: true, swept: true });
-    documents.onPass?.({ ok: true, full: true });
     graphOf().kick.mockClear();
     documentsOf().kick.mockClear();
     other.setVisible(true);
