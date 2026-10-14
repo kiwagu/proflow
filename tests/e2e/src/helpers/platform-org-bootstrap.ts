@@ -75,7 +75,10 @@ async function requireRoleIds() {
   const { data: roleRows, error: roleErr } = await supabase
     .from('roles')
     .select('id,key')
-    .in('key', ['org_admin', 'space_admin']);
+    .in('key', ['org_admin', 'space_admin', 'admin'])
+    .eq('role_kind', 'system')
+    .is('owner_organization_id', null)
+    .is('archived_at', null);
 
   if (roleErr) {
     throw new Error(
@@ -86,19 +89,20 @@ async function requireRoleIds() {
   const roleByKey = new Map((roleRows ?? []).map((r) => [r.key, r.id]));
   const orgAdminRoleId = roleByKey.get('org_admin');
   const spaceAdminRoleId = roleByKey.get('space_admin');
-  if (!orgAdminRoleId || !spaceAdminRoleId) {
+  const adminRoleId = roleByKey.get('admin');
+  if (!orgAdminRoleId || !spaceAdminRoleId || !adminRoleId) {
     throw new Error(
-      'platform-org-bootstrap: required roles org_admin/space_admin missing'
+      'platform-org-bootstrap: required roles org_admin/space_admin/admin missing'
     );
   }
 
-  return { orgAdminRoleId, spaceAdminRoleId };
+  return { orgAdminRoleId, spaceAdminRoleId, adminRoleId };
 }
 
 /**
- * Creates an organization, org_admin membership, space, and space admin row so the
- * user can open /platform/organizations and manage invites. Caller should delete
- * the organization after tests to cascade cleanup.
+ * Mirrors first-owner bootstrap: org_admin and space_admin administer the
+ * workspace; the separate operational admin role permits content authoring.
+ * Caller should delete the organization after tests to cascade cleanup.
  */
 export async function bootstrapOrgSpaceAdminForUser(
   userId: string
@@ -162,7 +166,8 @@ export async function bootstrapOrgSpaceAdminForUser(
     );
   }
 
-  const { orgAdminRoleId, spaceAdminRoleId } = await requireRoleIds();
+  const { orgAdminRoleId, spaceAdminRoleId, adminRoleId } =
+    await requireRoleIds();
 
   const { error: urErr } = await supabase.from('user_role').insert([
     {
@@ -174,6 +179,11 @@ export async function bootstrapOrgSpaceAdminForUser(
       user_id: userId,
       space_id: space.id,
       role_id: spaceAdminRoleId,
+    },
+    {
+      user_id: userId,
+      space_id: space.id,
+      role_id: adminRoleId,
     },
   ]);
 
@@ -363,6 +373,69 @@ export async function bootstrapAdditionalSpaceAdminForUser(input: {
   return { spaceId: space.id };
 }
 
+/**
+ * Make an existing user an ordinary member of a space: organization and
+ * space membership plus the system `member` role (read, create and document
+ * updates, but not the knowledge update verb). The negative actor for every
+ * "a member must not see this" assertion. `role: 'author'` gives the
+ * system `author` role instead, which also holds the knowledge update verb:
+ * the collaborator who may edit what is shared with them.
+ */
+export async function bootstrapSpaceMemberForUser(input: {
+  organizationId: string;
+  spaceId: string;
+  userId: string;
+  role?: 'member' | 'author';
+}): Promise<void> {
+  const supabase = serviceSupabase();
+  const { organizationId, spaceId, userId, role: roleKey = 'member' } = input;
+
+  const { data: role, error: roleErr } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', roleKey)
+    .is('owner_organization_id', null)
+    .is('archived_at', null)
+    .maybeSingle();
+  if (roleErr || !role?.id) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: ${roleKey} role missing: ${roleErr?.message ?? 'no row'}`
+    );
+  }
+
+  const { error: omErr } = await supabase
+    .from('organization_memberships')
+    .insert({ organization_id: organizationId, user_id: userId });
+  if (omErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed org membership: ${omErr.message}`
+    );
+  }
+
+  const { error: smErr } = await supabase.from('space_memberships').insert({
+    space_id: spaceId,
+    user_id: userId,
+    status: 'active',
+  });
+  if (smErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed space membership: ${smErr.message}`
+    );
+  }
+
+  const { error: urErr } = await supabase.from('user_role').insert({
+    user_id: userId,
+    space_id: spaceId,
+    role_id: role.id,
+  });
+  if (urErr) {
+    throw new Error(
+      `bootstrapSpaceMemberForUser: failed role assignment: ${urErr.message}`
+    );
+  }
+}
+
 export async function deleteOrganizationCascade(
   organizationId: string
 ): Promise<void> {
@@ -391,6 +464,24 @@ export async function deleteOrganizationCascade(
   }
 
   if (spaceIds.length > 0) {
+    // Purge content while its space still exists: its audit trigger records
+    // a space reference, which cannot be inserted during a parent cascade.
+    // Edges go first: the purge guard counts any living edge as a cross-owner
+    // reference under the service role, which has no user of its own.
+    const { error: deleteEdgesErr } = await supabase
+      .from('knowledge_edges')
+      .delete()
+      .in('space_id', spaceIds);
+    if (deleteEdgesErr) {
+      throw new Error(`deleteOrganizationCascade: ${deleteEdgesErr.message}`);
+    }
+    const { error: deleteContentErr } = await supabase
+      .from('knowledge_resources')
+      .delete()
+      .in('space_id', spaceIds);
+    if (deleteContentErr) {
+      throw new Error(`deleteOrganizationCascade: ${deleteContentErr.message}`);
+    }
     const { error: deleteSpaceSettingsErr } = await supabase
       .from('runtime_settings')
       .delete()

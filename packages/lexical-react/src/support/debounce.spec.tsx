@@ -1,11 +1,6 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  debounce,
-  throttle,
-  useDeferredGate,
-  useStickyGate,
-} from './debounce';
+import { debounce, throttle, useDeferredGate, useStickyGate } from './debounce';
 
 // vitest's globals are off in this package, so Testing Library's auto-cleanup
 // never registers itself — unmount explicitly or renders stack up across tests.

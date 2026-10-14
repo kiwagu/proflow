@@ -22,6 +22,13 @@ export type {
   ToWorker,
 } from './worker/protocol';
 export {
+  type AgentPagePorts,
+  type AgentPortName,
+  callAgentPort,
+  toWireValue,
+  type WireResult,
+} from './worker/ports';
+export {
   type PageDocument,
   type ServeAgentDeps,
   serveAgent,

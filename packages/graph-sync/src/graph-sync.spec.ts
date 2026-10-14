@@ -420,6 +420,86 @@ describe('graph row replication — refusal is reconciliation', () => {
   });
 });
 
+describe('graph row replication — atomic move', () => {
+  const NODE_C = 'knr_0000000000000003.0000000000';
+
+  it('replays a local move as one rpc and the server holds exactly one parent', async () => {
+    await seedNode(NODE_A, 'Source', { kind: 'folder' });
+    await seedNode(NODE_B, 'Target', { kind: 'folder' });
+    await seedNode(NODE_C, 'Doc');
+    await seedEdge(NODE_A, NODE_C);
+    await alice.sync.pull(SPACE);
+
+    const moved = await alice.repo.moveNode(
+      { spaceId: SPACE, nodeId: NODE_C, targetParentId: NODE_B, position: 1 },
+      TEST_USER
+    );
+    expect(moved.isOk()).toBe(true);
+    const outcome = await alice.sync.push(SPACE);
+    expect(outcome.refused).toBe(0);
+
+    const parents = await server.sql<{ from_id: string; position: number }>(
+      `select from_id, position from knowledge_edges
+        where to_id = $1 and relation_type = 'contains'`,
+      [NODE_C]
+    );
+    expect(parents).toEqual([{ from_id: NODE_B, position: 1 }]);
+
+    // Lost-ack redelivery: the same journal row arrives again. One RPC, one
+    // parent — the second delivery changes nothing.
+    await alice.journalRaw(
+      SPACE,
+      'move_node',
+      { spaceId: SPACE, nodeId: NODE_C, targetParentId: NODE_B, position: 1 },
+      [NODE_C, NODE_B]
+    );
+    const replay = await alice.sync.push(SPACE);
+    expect(replay.refused).toBe(0);
+    expect(
+      await server.sql(
+        `select id from knowledge_edges where to_id = $1 and relation_type = 'contains'`,
+        [NODE_C]
+      )
+    ).toHaveLength(1);
+  });
+
+  it('refuses a move that would form a cycle and re-pulls the prior parent', async () => {
+    await seedNode(NODE_A, 'Parent', { kind: 'folder' });
+    await seedNode(NODE_B, 'Child', { kind: 'folder' });
+    await seedEdge(NODE_A, NODE_B);
+    const events: { refused: number; nodeIds: string[] }[] = [];
+    const watcher = await createReplica(
+      'watcher',
+      TEST_USER,
+      server.as(TEST_USER),
+      { onReconciled: (event) => events.push(event) }
+    );
+    await watcher.sync.pull(SPACE);
+
+    // Composed on another device, so the local guard never saw it.
+    await watcher.journalRaw(
+      SPACE,
+      'move_node',
+      { spaceId: SPACE, nodeId: NODE_A, targetParentId: NODE_B, position: 0 },
+      [NODE_A, NODE_B]
+    );
+    const outcome = await watcher.sync.push(SPACE);
+
+    expect(outcome.refused).toBe(1);
+    expect(await watcher.replica.pendingOps(SPACE)).toHaveLength(0);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.refused).toBe(1);
+    const edges = await watcher.reader.readEdges(SPACE, 'contains');
+    expect(edges.map((e) => [e.from, e.to])).toEqual([[NODE_A, NODE_B]]);
+    expect(
+      await server.sql(`select id from knowledge_edges where to_id = $1`, [
+        NODE_A,
+      ])
+    ).toHaveLength(0);
+    await watcher.close();
+  });
+});
+
 describe('graph row replication — trash', () => {
   it('mirrors the server cascade instead of reimplementing it locally', async () => {
     await seedNode(NODE_A, 'Folder', { kind: 'folder' });

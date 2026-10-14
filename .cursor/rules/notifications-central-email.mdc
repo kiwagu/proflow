@@ -26,7 +26,7 @@ alwaysApply: false
 
 - **All SMTP email** is sent through **`@workspace/notifications`**: **`createSmtpTransportFromEnv()`** / **`SmtpEmailTransport`** (**nodemailer** lives only in this package), plus **`sendNotification`** with **`EmailTransport`** for templated mail (same path as registration-style messages).
 - **React Email is mandatory** for every outbound message body: add a **`.tsx` template** under **`packages/notifications/src/email/templates/`**, register it in **`renderEmail()`**, add **ICU strings** in **`src/i18n/messages.ts`**, and send only **`renderEmail()`** output (HTML + plain text + subject). **Do not** hand-build HTML strings or bypass **`renderEmail()`** when sending SMTP.
-- **Do not** add **nodemailer** (or other SMTP clients) to **`apps/platform`**, **`apps/author`**, or other shell apps.
+- **Do not** add **nodemailer** (or other SMTP clients) to **`apps/platform`** or other shell apps.
 
 ## Runtime host: `services/notifications`
 

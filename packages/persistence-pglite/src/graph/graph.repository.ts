@@ -1,5 +1,7 @@
 import { newId } from '@workspace/domain';
+import { moveKnowledgeResourceInputSchema } from '@workspace/knowledge-contracts';
 import { err, ok, type Result } from 'neverthrow';
+import { z } from 'zod';
 import type { AppDb } from '../db/db.js';
 import {
   GRAPH_NODE_COLUMNS,
@@ -22,10 +24,10 @@ import type { GraphNode, ResourceFloor } from './graph.types.js';
  * drops that op and every journaled op touching the same node and re-pulls
  * those rows — the pull IS the rollback, so there is no local undo log here.
  *
- * Every op is idempotent by construction (upsert by client-minted id, column
- * patch keyed by id, edge upsert on the natural key, timestamp write, delete
- * by id), which is what makes at-least-once replay safe without dedup
- * machinery.
+ * Journal replay is idempotent at the server transport (upsert by
+ * client-minted id, column patch, edge upsert, timestamp write, delete by id).
+ * A new local create is not a replay: a duplicate id must report a conflict
+ * rather than claim an existing node was just created.
  */
 
 /** The op vocabulary the journal carries, one entry per structural command. */
@@ -40,13 +42,26 @@ export const GRAPH_OPS = {
   upsertEdge: 'upsert_edge',
   removeEdge: 'remove_edge',
   reorderEdge: 'reorder_edge',
+  moveNode: 'move_node',
   trashNode: 'trash_node',
   restoreNode: 'restore_node',
   purgeNode: 'purge_node',
   setDescription: 'set_description',
+  copySubtree: 'copy_subtree',
 } as const;
 
 export type GraphOpKind = (typeof GRAPH_OPS)[keyof typeof GRAPH_OPS];
+
+/**
+ * What a caller hands `moveNode`: the contract's INPUT shape (plain ids, as
+ * replica rows and UI state carry them). The repository is the boundary where
+ * the schema runs, so the branded output type never has to be minted by hand
+ * upstream — a caller that could brand an id itself would be asserting what
+ * only validation may.
+ */
+export type MoveNodeInput = z.input<typeof moveKnowledgeResourceInputSchema>;
+
+const localBodyRefSchema = z.record(z.string(), z.unknown()).nullable();
 
 export type CreateNodeInput = {
   spaceId: string;
@@ -58,6 +73,8 @@ export type CreateNodeInput = {
   status?: string;
   visibility?: ResourceFloor;
   ownerUserId?: string | null;
+  /** Opaque body pointer; replication of the document bytes is independent. */
+  body_ref?: z.infer<typeof localBodyRefSchema>;
   /** Optional container: creates the `contains` edge in the same transaction. */
   parentId?: string | null;
   position?: number;
@@ -71,6 +88,27 @@ export type UpsertEdgeInput = {
   createdBy: string;
   id?: string;
   position?: number;
+};
+
+export type CopySubtreeInput = {
+  spaceId: string;
+  /** Root of the `contains` subtree to duplicate. */
+  sourceId: string;
+  /** Where the root copy lands: a folder id, or null for the top level. */
+  targetFolderId: string | null;
+  createdBy: string;
+  /**
+   * Title for the ROOT copy — the caller builds the localized "(copy)"
+   * suffix. Descendants keep their own titles.
+   */
+  rootTitle?: string;
+};
+
+export type CopySubtreeResult = {
+  /** The new root copy's id. */
+  nodeId: string;
+  /** Source id → copy id, for every node duplicated. */
+  idMap: Record<string, string>;
 };
 
 /** Structural commands over the local replica. Every method journals its op. */
@@ -107,6 +145,19 @@ export interface GraphRepository {
     position: number
   ): Promise<Result<void, string>>;
   /**
+   * Canonical re-parent as ONE command: detach from every current container
+   * and, for a non-null target, attach under it — in one transaction with one
+   * `move_node` journal entry, so the server replays it as one atomic RPC
+   * rather than a delete and an upsert that can be refused half-way.
+   * `targetParentId: null` moves to the top level. The payload is the shared
+   * contract shape, parsed on the way in; the replica holds no cycle guard for
+   * it — the server is the fence, the UI the courtesy.
+   */
+  moveNode(
+    input: MoveNodeInput,
+    createdBy: string
+  ): Promise<Result<void, string>>;
+  /**
    * Trash a node. Only the node's own columns are written locally: the
    * server's cascade trigger over the containment subtree is the authority,
    * and the replica mirrors its outcome after the next pull rather than
@@ -134,6 +185,26 @@ export interface GraphRepository {
     resourceId: string,
     userId: string
   ): Promise<Result<void, string>>;
+
+  /**
+   * Duplicate a node and its `contains` subtree — the drive's copy gesture.
+   *
+   * The nodes and containment edges are written locally so the copy appears
+   * at once, under client-minted ids. The satellites are NOT: link and media
+   * replicate DOWN only (the byte-intrinsic blob row and the refcount are
+   * server-owned), so a locally-composed copy could not reproduce a copied
+   * link's URL or a copied file's bytes without inventing rows the server
+   * would then contradict. The journaled op therefore carries the whole
+   * source→copy id map and the server replays its own copy fan-out against
+   * it, which reproduces bodies and satellites at the ids the local rows
+   * already use — and the next pull fills them in here.
+   *
+   * Idempotent like every other op: the ids are minted before the write, so
+   * a redelivered replay upserts the same rows rather than a second copy.
+   */
+  copySubtree(
+    input: CopySubtreeInput
+  ): Promise<Result<CopySubtreeResult, string>>;
 }
 
 type Tx = {
@@ -155,7 +226,9 @@ async function journal(
   );
 }
 
-export function createPgliteGraphRepository(db: AppDb): GraphRepository {
+export function createPgliteGraphRepository(
+  db: Pick<AppDb, 'query' | 'transaction'>
+): GraphRepository {
   /**
    * Run a command's local write and its journal append as one unit. The two
    * must not come apart: a replica row without its journal entry is a change
@@ -207,13 +280,13 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
       const id = input.id ?? newId('knowledgeResource');
       const edgeId = input.parentId ? newId('knowledgeEdge') : null;
       try {
-        await db.transaction(async (raw) => {
+        const node = await db.transaction(async (raw) => {
           const tx = raw as unknown as Tx;
-          await tx.query(
+          const { rows } = await tx.query(
             `insert into knowledge_resources
-               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8)
-             on conflict (id) do nothing`,
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id, body_ref)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+             returning ${GRAPH_NODE_COLUMNS}`,
             [
               id,
               input.spaceId,
@@ -223,8 +296,15 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
               input.visibility ?? 'private',
               input.createdBy,
               input.ownerUserId ?? input.createdBy,
+              JSON.stringify(localBodyRefSchema.parse(input.body_ref ?? null)),
             ]
           );
+          if (rows.length !== 1) {
+            throw new Error(
+              `knowledge_resources INSERT RETURNING expected 1 row, received ${rows.length} for id ${id}`
+            );
+          }
+          const inserted = toGraphNode(rows[0] as GraphNodeRow);
           if (input.parentId && edgeId) {
             await tx.query(
               `insert into knowledge_edges
@@ -253,23 +333,26 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
               status: input.status ?? 'draft',
               visibility: input.visibility ?? 'private',
               ownerUserId: input.ownerUserId ?? input.createdBy,
+              ...(input.body_ref !== undefined
+                ? { body_ref: localBodyRefSchema.parse(input.body_ref) }
+                : {}),
               parentId: input.parentId ?? null,
               position: input.position ?? 0,
               edgeId,
             },
             input.parentId ? [id, input.parentId] : [id]
           );
+          // Capture the result before sync can evict the row after commit.
+          return inserted;
         });
+        return node
+          ? ok(node)
+          : err(
+              `graph.createNode: transaction returned no result for id ${id}`
+            );
       } catch (e) {
         return err(`graph.createNode failed: ${String(e)}`);
       }
-      const { rows } = await db.query<GraphNodeRow>(
-        `select ${GRAPH_NODE_COLUMNS} from knowledge_resources where id = $1`,
-        [id]
-      );
-      return rows[0]
-        ? ok(toGraphNode(rows[0]))
-        : err('graph.createNode: insert returned no row');
     },
 
     renameNode(nodeId, title) {
@@ -408,6 +491,53 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           GRAPH_OPS.removeEdge,
           { from, to, relationType },
           [from, to]
+        );
+      });
+    },
+
+    moveNode(input, createdBy) {
+      const parsed = moveKnowledgeResourceInputSchema.safeParse(input);
+      if (!parsed.success) {
+        return Promise.resolve(
+          err(`graph.moveNode rejected: ${parsed.error.message}`)
+        );
+      }
+      const { spaceId, nodeId, targetParentId, position } = parsed.data;
+      // The contract is the schema, so the journal carries what it produced —
+      // the four fields, no local extras that a replay could not reproduce.
+      const payload: Record<string, unknown> = {
+        spaceId,
+        nodeId,
+        targetParentId,
+        position,
+      };
+      return command('graph.moveNode', async (tx) => {
+        await tx.query(
+          `delete from knowledge_edges
+            where to_id = $1 and relation_type = 'contains'`,
+          [nodeId]
+        );
+        if (targetParentId !== null) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', $5, $6)`,
+            [
+              newId('knowledgeEdge'),
+              spaceId,
+              targetParentId,
+              nodeId,
+              position,
+              createdBy,
+            ]
+          );
+        }
+        await journal(
+          tx,
+          spaceId,
+          GRAPH_OPS.moveNode,
+          payload,
+          targetParentId === null ? [nodeId] : [nodeId, targetParentId]
         );
       });
     },
@@ -551,6 +681,131 @@ export function createPgliteGraphRepository(db: AppDb): GraphRepository {
           [resourceId]
         );
       });
+    },
+
+    async copySubtree(input) {
+      // Walk the `contains` subtree in the replica first: the copy is a read
+      // of what this user can already see, so the walk is the access story
+      // (the replica holds nothing the server did not show them). Cycle-safe
+      // by the same `seen` guard the reader's traversals use.
+      const { rows: sourceRows } = await db.query<{
+        id: string;
+        kind: string;
+        title: string;
+        status: string;
+      }>(
+        `with recursive down as (
+           select $1::text as id, array[$1::text] as seen
+           union all
+           select e.to_id, down.seen || e.to_id
+             from knowledge_edges e
+             join down on e.from_id = down.id
+            where e.relation_type = 'contains'
+              and not e.to_id = any (down.seen)
+         )
+         select r.id, r.kind, r.title, r.status
+           from down
+           join knowledge_resources r on r.id = down.id
+          where r.space_id = $2 and r.deleted_at is null`,
+        [input.sourceId, input.spaceId]
+      );
+      if (!sourceRows.some((row) => row.id === input.sourceId)) {
+        return err('graph.copySubtree: source not in the local replica');
+      }
+
+      // Mint every id up front so the journal entry names the same ids the
+      // local rows carry — that is what lets the server's replay attach the
+      // copied bodies and satellites to rows the replica already shows.
+      const idMap: Record<string, string> = {};
+      for (const row of sourceRows) {
+        idMap[row.id] = newId('knowledgeResource');
+      }
+      const newRootId = idMap[input.sourceId] as string;
+
+      const { rows: innerEdges } = await db.query<{
+        from_id: string;
+        to_id: string;
+        position: number;
+      }>(
+        `select from_id, to_id, "position"
+           from knowledge_edges
+          where relation_type = 'contains'
+            and from_id = any ($1) and to_id = any ($1)`,
+        [Object.keys(idMap)]
+      );
+
+      const result = await command('graph.copySubtree', async (tx) => {
+        for (const row of sourceRows) {
+          const title =
+            row.id === input.sourceId
+              ? (input.rootTitle ?? row.title)
+              : row.title;
+          await tx.query(
+            `insert into knowledge_resources
+               (id, space_id, kind, title, status, visibility, created_by, owner_user_id)
+             values ($1, $2, $3, $4, $5, 'private', $6, $6)
+             on conflict (id) do nothing`,
+            [
+              idMap[row.id],
+              input.spaceId,
+              row.kind,
+              title,
+              row.status,
+              input.createdBy,
+            ]
+          );
+        }
+        // The copy is the copier's own private content: `visibility` stays at
+        // the private default above rather than inheriting the source's
+        // audience, matching what the server's copy does.
+        for (const edge of innerEdges) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', $5, $6)
+             on conflict (from_id, to_id, relation_type) do update
+               set "position" = excluded."position", updated_at = now()`,
+            [
+              newId('knowledgeEdge'),
+              input.spaceId,
+              idMap[edge.from_id],
+              idMap[edge.to_id],
+              edge.position,
+              input.createdBy,
+            ]
+          );
+        }
+        if (input.targetFolderId) {
+          await tx.query(
+            `insert into knowledge_edges
+               (id, space_id, from_id, to_id, relation_type, "position", created_by)
+             values ($1, $2, $3, $4, 'contains', 0, $5)
+             on conflict (from_id, to_id, relation_type) do nothing`,
+            [
+              newId('knowledgeEdge'),
+              input.spaceId,
+              input.targetFolderId,
+              newRootId,
+              input.createdBy,
+            ]
+          );
+        }
+        await journal(
+          tx,
+          input.spaceId,
+          GRAPH_OPS.copySubtree,
+          {
+            sourceId: input.sourceId,
+            targetFolderId: input.targetFolderId,
+            rootTitle: input.rootTitle ?? null,
+            idMap,
+          },
+          // Both the source and every copy: a refusal has to reconcile the
+          // half-written copy away, and the source's own later ops with it.
+          [...Object.keys(idMap), ...Object.values(idMap), input.sourceId]
+        );
+      });
+      return result.map(() => ({ nodeId: newRootId, idMap }));
     },
   };
 }

@@ -35,8 +35,8 @@ import type { SeedScenario } from './types.js';
  *    the `mech-cohort` cohort and enrols `viewer` into it (the cohort membership write).
  *
  * Everything is born the product's way (runtime, under each actor's own RLS — NEVER a
- * migration seed, which poisons the author identity-sync worker): the per-user grants
- * via the live Share transport (`POST /author/graph/visibility`, grantType:'user') from
+ * migration seed, which poisons the identity-sync worker): the per-user grants
+ * via the share vocabulary (`grantUser`) from
  * the owner; the cohort + membership via the access-manager; the floor publish via the
  * owner's `setFloor`. The annotation itself (`annotateShareMechanism`) is PURE display
  * enrichment over an already-RLS-admitted set — it adds no visibility; this fixture only

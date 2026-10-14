@@ -78,12 +78,19 @@ export function createPgliteDocumentListReader(db: AppDb): IDocumentListReader {
     },
 
     watchRecent(cb) {
+      // A document exists as long as its node in the tree does: the explorer
+      // lists nodes, and trashing one must take the document out of every
+      // other list too, or a phantom stays readable through this port alone.
       return watchQuery<DocumentRow>(
         db,
-        `select id, title, kind, preview, starred, created_at, updated_at
-         from document
-         where deleted_at is null
-         order by updated_at desc
+        `select d.id, d.title, d.kind, d.preview, d.starred, d.created_at, d.updated_at
+         from document d
+         where d.deleted_at is null
+           and exists (
+             select 1 from knowledge_resources r
+             where r.body_ref ->> 'doc_id' = d.id and r.deleted_at is null
+           )
+         order by d.updated_at desc
          limit 200`,
         [],
         (rows) => cb(rows.map(toDocumentMeta))

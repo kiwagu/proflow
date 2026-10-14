@@ -2,13 +2,13 @@
  * @file The accessory rendered for code nodes — a copy button and a syntax
  * highlighting language selector.
  */
-import { $isCodeNode, CodeNode } from '@lexical/code';
 import {
-  $isCustomCodeNode,
-  LanguageDefinitions,
-  normalizedLanguage,
-  type SupportedLanguage,
-} from '@workspace/lexical-nodes';
+  $isCodeNode,
+  CODE_LANGUAGE_FRIENDLY_NAME_MAP,
+  CodeNode,
+  getLanguageFriendlyName,
+  normalizeCodeLanguage,
+} from '@lexical/code';
 import { Button } from '@workspace/ui/components/button';
 import {
   DropdownMenu,
@@ -41,15 +41,48 @@ import { deleteCodeNode } from '../../plugins/code/deleteCodeNode';
 import { useAutoRegister } from '../../plugins/shared/utils';
 import { useIsInBlock, useIsNestedBlock } from '../../support/block';
 import { ENABLE_SVG_PREVIEW } from '../../support/featureFlags';
+import { EXTRA_PICKER_LANGUAGES } from '../../plugins/code/prismLanguages';
+import {
+  type CodeBoxAccessoryLabels,
+  defaultCodeBoxAccessoryLabels,
+} from './codeBoxAccessoryLabels';
 
 type IconComponent = FC<{ className?: string }>;
 
-const LanguageIcons: Record<SupportedLanguage, IconComponent> = {
-  plaintext: FileTextIcon,
-  javascript: FileCodeIcon,
+/**
+ * The picker offers the official code package's language registry, plus the
+ * languages the product has always offered that the highlighter does not carry
+ * itself — those come from the module that also registers their grammars, so
+ * offering one and highlighting it cannot drift apart. A language the
+ * highlighter gains shows up here with the fallback icon and no edit to this
+ * file.
+ */
+const PICKER_LANGUAGES: ReadonlyArray<[key: string, label: string]> = [
+  ...Object.entries(CODE_LANGUAGE_FRIENDLY_NAME_MAP),
+  ...EXTRA_PICKER_LANGUAGES,
+];
+
+const EXTRA_LANGUAGE_NAMES = new Map(EXTRA_PICKER_LANGUAGES);
+
+/**
+ * The display name for a language. `getLanguageFriendlyName` only knows the
+ * highlighter's own registry and echoes the raw key for anything else, which
+ * would label a language the picker offered as "JSON" with a lowercase `json`
+ * everywhere outside the menu row.
+ */
+function languageFriendlyName(language: string): string {
+  return (
+    EXTRA_LANGUAGE_NAMES.get(language) ?? getLanguageFriendlyName(language)
+  );
+}
+
+const FallbackIcon: IconComponent = FileTextIcon;
+
+const LanguageIcons: Record<string, IconComponent> = {
+  plain: FileTextIcon,
+  js: FileCodeIcon,
   typescript: FileTypeIcon,
-  json: BracesIcon,
-  python: FileCode2Icon,
+  py: FileCode2Icon,
   rust: FileCode2Icon,
   java: FileCodeIcon,
   swift: FileCodeIcon,
@@ -60,25 +93,36 @@ const LanguageIcons: Record<SupportedLanguage, IconComponent> = {
   markdown: FileTextIcon,
   powershell: FileCodeIcon,
   sql: FileJson2Icon,
+  xml: FileCodeIcon,
+  json: BracesIcon,
   bash: FileCodeIcon,
   svg: FileCodeIcon,
 };
 
-function StaticLabel({ language }: { language: SupportedLanguage }) {
-  const Icon = LanguageIcons[language];
-  return (
-    <div className="text-xs font-sans font-medium flex items-center gap-1 p-2 text-muted-foreground/50">
-      <Icon className="size-4" />
-      <span className="select-none">{LanguageDefinitions[language].label}</span>
-    </div>
-  );
+/** The highlighter's canonical key for a language, `plain` when unset. */
+function canonicalLanguage(language: string | null | undefined): string {
+  return normalizeCodeLanguage((language ?? 'plain').toLowerCase());
 }
 
-function validLanguage(language: string | null): SupportedLanguage {
-  if (language && language.toLowerCase() in LanguageDefinitions) {
-    return language.toLowerCase() as SupportedLanguage;
-  }
-  return 'plaintext';
+/** The icon for a language, resolved as a component so lookups stay stable. */
+function LanguageIcon({
+  language,
+  className,
+}: {
+  language: string;
+  className?: string;
+}) {
+  const Icon = LanguageIcons[language] ?? FallbackIcon;
+  return <Icon className={className} />;
+}
+
+function StaticLabel({ language }: { language: string }) {
+  return (
+    <div className="text-muted-foreground/50 flex items-center gap-1 p-2 font-sans text-xs font-medium">
+      <LanguageIcon language={language} className="size-4" />
+      <span className="select-none">{languageFriendlyName(language)}</span>
+    </div>
+  );
 }
 
 function CodeLanguageSelector({
@@ -92,8 +136,7 @@ function CodeLanguageSelector({
 }) {
   const [open, setOpen] = useState(false);
   const editable = Boolean(editor && editor.isEditable());
-  const current = validLanguage(language);
-  const CurrentIcon = LanguageIcons[current];
+  const current = canonicalLanguage(language);
 
   if (!editable) return <StaticLabel language={current} />;
 
@@ -106,30 +149,23 @@ function CodeLanguageSelector({
           className="text-muted-foreground/50 p-1.5"
           tabIndex={-1}
         >
-          <CurrentIcon className="size-4" />
-          <span>{LanguageDefinitions[current].label}</span>
+          <LanguageIcon language={current} className="size-4" />
+          <span>{languageFriendlyName(current)}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuGroup>
-          {Object.entries(LanguageDefinitions)
-            .filter(([, info]) => info.show)
-            .map(([key, info]) => {
-              const Icon =
-                LanguageIcons[key as SupportedLanguage] ??
-                LanguageIcons.plaintext;
-              return (
-                <DropdownMenuItem
-                  key={key}
-                  onSelect={() => {
-                    setLanguage(key);
-                  }}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="flex-1 truncate">{info.label}</span>
-                </DropdownMenuItem>
-              );
-            })}
+          {PICKER_LANGUAGES.map(([key, label]) => (
+            <DropdownMenuItem
+              key={key}
+              onSelect={() => {
+                setLanguage(key);
+              }}
+            >
+              <LanguageIcon language={key} className="size-4 shrink-0" />
+              <span className="flex-1 truncate">{label}</span>
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -152,12 +188,12 @@ function PreviewToggle({
     <label className="inline-flex items-center">
       <input
         type="checkbox"
-        className="sr-only peer"
+        className="peer sr-only"
         checked={checked}
         onChange={(e) => onChange(e.currentTarget.checked)}
       />
-      <span className="inline-flex h-4 w-8 shrink-0 items-center rounded-full border-2 border-transparent bg-border transition-colors hover:ring hover:ring-border peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-checked:bg-primary">
-        <span className="block size-3 rounded-full bg-background transition-transform peer-checked:translate-x-4" />
+      <span className="bg-border hover:ring-border peer-focus-visible:ring-ring peer-checked:bg-primary inline-flex h-4 w-8 shrink-0 items-center rounded-full border-2 border-transparent transition-colors peer-focus-visible:ring-2 hover:ring">
+        <span className="bg-background block size-3 rounded-full transition-transform peer-checked:translate-x-4" />
       </span>
     </label>
   );
@@ -176,10 +212,12 @@ export function CodeBoxAccessory({
   floatRef,
   editor,
   nodeKey,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   floatRef: HTMLElement;
   editor: LexicalEditor;
   nodeKey: NodeKey;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const [language, setLanguage] = useState('JavaScript');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -191,7 +229,11 @@ export function CodeBoxAccessory({
   const isNested = inBlock && nestedBlock;
   const glueRef = useGlueToElement(editor, isNested ? null : floatRef);
 
-  useAutoRegister(ENABLE_SVG_PREVIEW ? editor : undefined, (editorInstance) =>
+  // The language selector tracks the node whatever set it (the picker, a
+  // markdown fence, an agent edit), so the listener is always on; the
+  // preview toggle below is component state — the stock code node persists
+  // no preview flag, and the toggle is a viewing aid, not document content.
+  useAutoRegister(editor, (editorInstance) =>
     editorInstance.registerMutationListener(
       CodeNode,
       (mutations) => {
@@ -202,9 +244,6 @@ export function CodeBoxAccessory({
               const node = $getNodeByKey(nodeKey);
               if (!$isCodeNode(node)) return;
               setLanguage(node.getLanguage() ?? 'plain');
-              if ($isCustomCodeNode(node)) {
-                setIsPreviewMode(node.getPreviewEnabled());
-              }
             })
           );
         }
@@ -226,22 +265,13 @@ export function CodeBoxAccessory({
   const setLanguageOnNode = (next: string) => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey);
-      if (!$isCustomCodeNode(node)) return;
+      if (!$isCodeNode(node)) return;
       node.setLanguage(next);
-      setIsPreviewMode(node.getPreviewEnabled());
-    });
-  };
-
-  const setPreviewModeOnNode = (enabled: boolean) => {
-    editor.update(() => {
-      const node = $getNodeByKey(nodeKey);
-      if (!$isCustomCodeNode(node)) return;
-      node.setPreviewEnabled(enabled);
     });
   };
 
   const showPreviewToggle =
-    ENABLE_SVG_PREVIEW && language.toLowerCase() === 'svg';
+    ENABLE_SVG_PREVIEW && canonicalLanguage(language) === 'svg';
 
   useEffect(() => {
     if (isNested) return;
@@ -252,25 +282,24 @@ export function CodeBoxAccessory({
 
   return (
     <div
-      className="fixed pointer-events-none md-code-box-header"
+      className="md-code-box-header pointer-events-none fixed"
       ref={glueRef as React.RefObject<HTMLDivElement>}
     >
-      <div className="w-full flex justify-between content-center items-start p-1 pointer-events-auto text-muted-foreground/50">
+      <div className="text-muted-foreground/50 pointer-events-auto flex w-full content-center items-start justify-between p-1">
         <CodeLanguageSelector
           language={language}
           setLanguage={setLanguageOnNode}
           editor={editor}
         />
-        <div className="flex items-center h-full">
+        <div className="flex h-full items-center">
           {showPreviewToggle && (
-            <div className="flex items-center gap-2 mr-2">
-              <div className="text-xs text-muted-foreground/50">Preview</div>
+            <div className="mr-2 flex items-center gap-2">
+              <div className="text-muted-foreground/50 text-xs">
+                {labels.preview}
+              </div>
               <PreviewToggle
                 checked={isPreviewMode}
-                onChange={(enabled) => {
-                  setIsPreviewMode(enabled);
-                  setPreviewModeOnNode(enabled);
-                }}
+                onChange={setIsPreviewMode}
               />
             </div>
           )}
@@ -279,7 +308,7 @@ export function CodeBoxAccessory({
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground/50 hover:text-destructive h-full"
-              title="Delete Code"
+              title={labels.deleteCode}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -293,7 +322,7 @@ export function CodeBoxAccessory({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground/50 h-full"
-            title="Copy Code"
+            title={labels.copyCode}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -305,7 +334,7 @@ export function CodeBoxAccessory({
         </div>
       </div>
       {isPreviewMode && showPreviewToggle && (
-        <SvgPreview svgContent={readCode()} overlay />
+        <SvgPreview svgContent={readCode()} overlay labels={labels} />
       )}
     </div>
   );
@@ -322,9 +351,11 @@ function sanitizeSvg(content: string): string {
 function SvgPreview({
   svgContent,
   overlay: _overlay,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   svgContent: string;
   overlay?: boolean;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const trimmed = svgContent.trim();
@@ -344,22 +375,22 @@ function SvgPreview({
   }, [svgContent]);
 
   return (
-    <div className="absolute top-12 inset-x-0 bottom-0 z-10 p-2">
+    <div className="absolute inset-x-0 top-12 bottom-0 z-10 p-2">
       {!trimmed && (
-        <div className="flex items-center justify-center h-full text-muted-foreground/50 text-sm">
-          No SVG content
+        <div className="text-muted-foreground/50 flex h-full items-center justify-center text-sm">
+          {labels.svgEmpty}
         </div>
       )}
       {trimmed && !isSvg && (
-        <div className="flex items-center justify-center h-full text-destructive text-sm">
-          Invalid SVG content
+        <div className="text-destructive flex h-full items-center justify-center text-sm">
+          {labels.svgInvalid}
         </div>
       )}
       {trimmed && isSvg && (
         <div className="size-full overflow-hidden p-2">
           <div
             ref={containerRef}
-            className="size-full flex items-center justify-center min-h-0"
+            className="flex size-full min-h-0 items-center justify-center"
             // The content is sanitized above; this mirrors the origin's
             // inline-SVG render path, which has no React-safe equivalent.
             dangerouslySetInnerHTML={{ __html: sanitizeSvg(svgContent) }}
@@ -375,12 +406,14 @@ export function StaticCodeBoxAccessory({
   code,
   isPreviewMode: isPreviewModeProp,
   setIsPreviewMode: setIsPreviewModeProp,
+  labels = defaultCodeBoxAccessoryLabels,
 }: {
   language: string;
   code: string;
   theme?: EditorThemeClasses;
   isPreviewMode?: boolean;
   setIsPreviewMode?: (enabled: boolean) => void;
+  labels?: CodeBoxAccessoryLabels;
 }) {
   const [localPreviewMode, setLocalPreviewMode] = useState(false);
 
@@ -388,23 +421,24 @@ export function StaticCodeBoxAccessory({
   const isPreviewMode = isPreviewModeProp ?? localPreviewMode;
   const setIsPreviewMode = setIsPreviewModeProp ?? setLocalPreviewMode;
 
-  const language = normalizedLanguage(languageProp);
-  const showPreviewToggle =
-    ENABLE_SVG_PREVIEW && language.toLowerCase() === 'svg';
+  const language = canonicalLanguage(languageProp);
+  const showPreviewToggle = ENABLE_SVG_PREVIEW && language === 'svg';
 
   return (
     <>
       <div
         className={cn(
-          'md-code-box-header w-full flex absolute top-0 left-0 justify-between content-center items-center p-1 pointer-events-auto select-none',
+          'md-code-box-header pointer-events-auto absolute top-0 left-0 flex w-full content-center items-center justify-between p-1 select-none',
           'text-muted-foreground/50'
         )}
       >
         <StaticLabel language={language} />
-        <div className="flex gap-2 items-center">
+        <div className="flex items-center gap-2">
           {showPreviewToggle && (
             <div className="flex items-center gap-2">
-              <div className="text-xs text-muted-foreground/50">Preview</div>
+              <div className="text-muted-foreground/50 text-xs">
+                {labels.preview}
+              </div>
               <PreviewToggle
                 checked={isPreviewMode}
                 onChange={setIsPreviewMode}
@@ -415,7 +449,7 @@ export function StaticCodeBoxAccessory({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground/50 h-full"
-            title="Copy Code"
+            title={labels.copyCode}
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();

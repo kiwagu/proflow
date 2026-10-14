@@ -9,13 +9,25 @@ export {
 } from './db/db.js';
 export {
   createDocumentCrdtStore,
+  type DocumentChanged,
   type DocumentCrdtStore,
+  type DocumentPeers,
+  type LiveTree,
+  type SyncableCrdt,
 } from './document/document.crdt-store.js';
+export { createBroadcastDocumentPeers } from './document/document.peers.js';
+export {
+  listAwaitingDocuments,
+  listUnpushedDocuments,
+  materializeDocuments,
+  nodeAwaitsServer,
+  resourceIdForDocument,
+} from './document/document.materialize.js';
 export { createPgliteDocumentListReader } from './document/document.reader.js';
 export { createPgliteDocumentRepository } from './document/document.repository.js';
 export { createPgliteDocumentVersionStore } from './document/document-version.store.js';
-export { createPgliteFileTreeReader } from './file/file.reader.js';
-export { createPgliteFileRepository } from './file/file.repository.js';
+export { createGraphFileTreeReader } from './file/file.graph-reader.js';
+export { createGraphFileRepository } from './file/file.graph-repository.js';
 export { createPgliteBlobSyncLocal } from './file/blob-sync.local.js';
 export {
   createPgliteGraphReader,
@@ -28,6 +40,8 @@ export {
   type PulledRow,
 } from './graph/graph.replica.js';
 export {
+  type CopySubtreeInput,
+  type CopySubtreeResult,
   type CreateNodeInput,
   createPgliteGraphRepository,
   GRAPH_OPS,

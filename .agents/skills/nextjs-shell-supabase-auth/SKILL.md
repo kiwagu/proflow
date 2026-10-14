@@ -17,14 +17,13 @@ description: Use when: scaffolding or wiring a gateway-mounted Next.js App Route
 ## Stop Here If
 
 - Stop after the checklist below if the task stays inside a standard Next shell pattern.
-- Descend only when the task crosses into Payload, blocking-route behavior, or shared gateway/env policy.
+- Descend only when the task crosses into blocking-route behavior or shared gateway/env policy.
 
 ## Descend To
 
 - Shared routing rule: `/.cursor/rules/gateway-shell-routing.mdc`
 - Blocking-route rule: `/.cursor/rules/nextjs-blocking-routes-suspense.mdc`
 - Shared env naming: `/.cursor/rules/monorepo-env-minimalism.mdc`
-- Payload shells: `/.agents/skills/payload-supabase-gateway-auth/SKILL.md`
 
 ## Preconditions
 
@@ -74,10 +73,6 @@ description: Use when: scaffolding or wiring a gateway-mounted Next.js App Route
 
 - After Supabase login, users return via **`?next=`** to the gateway path; ensure the platform login flow supports that (existing pattern).
 
-### 7. Payload-specific shells
-
-- If the app embeds Payload admin, follow [payload-supabase-gateway-auth](../payload-supabase-gateway-auth/SKILL.md) in addition to this checklist.
-
 ## Anti-patterns
 
 - **Guest vs protected** implemented only in React (`redirect()` in pages) for shell entry — use **proxy** **307** to avoid flash and wrong UX.
@@ -90,7 +85,6 @@ description: Use when: scaffolding or wiring a gateway-mounted Next.js App Route
 | App | Notes |
 |-----|--------|
 | `apps/platform` | Recovery flow + `PLATFORM_SHELL_GUEST_ACCESS` |
-| `apps/author` | Same proxy/policy pattern; Payload bridge is extra |
 
 ## Related
 

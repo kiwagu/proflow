@@ -19,7 +19,6 @@ import {
 } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
 import type { ElementName } from '@workspace/lexical-nodes';
-import { CustomCodeNode } from '@workspace/lexical-nodes';
 import type {
   ElementNode,
   Klass,
@@ -45,7 +44,6 @@ export const NodeTransforms: Record<ElementName, () => ElementNode> = {
   heading3: () => $createHeadingNode('h3'),
   quote: () => $createQuoteNode(),
   code: () => $createCodeNode(),
-  'custom-code': () => $createCodeNode(),
   link: () => $createLinkNode(),
   'list-bullet': () => $createListNode('bullet'),
   'list-number': () => $createListNode('number'),
@@ -61,7 +59,6 @@ const dependencies: Record<ElementName, Klass<LexicalNode>> = {
   heading3: HeadingNode,
   quote: QuoteNode,
   code: CodeNode,
-  'custom-code': CustomCodeNode,
   link: LinkNode,
   'list-bullet': ListNode,
   'list-number': ListNode,

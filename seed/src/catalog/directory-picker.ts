@@ -38,10 +38,10 @@ import type { ActorSpec, SeedScenario } from './types.js';
  *
  * Everything is born the product's way (runtime, under RLS): the members are minted
  * as active space members through the materializer's actor path (NEVER a migration
- * seed — that poisons the author identity-sync worker), their `display_name`s are set
+ * seed — that poisons the identity-sync worker), their `display_name`s are set
  * through each actor's OWN-row profile update (exactly as a member would), and the one
- * pre-existing grant is authored through the live Share transport
- * (`POST /author/graph/visibility`, grantType:'user') via the scenario's `userGrants`.
+ * pre-existing grant is authored through the share vocabulary (`grantUser`) via the
+ * scenario's `userGrants`.
  *
  * The Wave-1b picker e2e (the render agent's close-out) draws this >5-member grantable
  * space ENTIRELY from this catalog entry via `materializeFixture`/`seedClientFor` and

@@ -46,6 +46,10 @@
       "types": "./dist/graph/index.d.ts",
       "import": "./dist/graph/index.js"
     },
+    "./workbench": {
+      "types": "./dist/workbench/index.d.ts",
+      "import": "./dist/workbench/index.js"
+    },
     "./notifications": {
       "types": "./dist/notifications/index.d.ts",
       "import": "./dist/notifications/index.js"

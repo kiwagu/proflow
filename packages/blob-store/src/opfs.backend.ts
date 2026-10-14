@@ -26,13 +26,20 @@ const CHUNK = 4 * 1024 * 1024;
  * access handle in fixed chunks and flushed before the write is reported
  * done — a local-first store must not say "saved" before the bytes are.
  */
-export async function createOpfsBackend(): Promise<BlobBackend | null> {
+export async function createOpfsBackend(
+  namespace?: string
+): Promise<BlobBackend | null> {
   if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory)
     return null;
   let dir: FileSystemDirectoryHandle;
   let pkgRoot: FileSystemDirectoryHandle;
   try {
-    const root = await navigator.storage.getDirectory();
+    const originRoot = await navigator.storage.getDirectory();
+    const root = namespace
+      ? await originRoot.getDirectoryHandle(namespace + '-files', {
+          create: true,
+        })
+      : originRoot;
     dir = await root.getDirectoryHandle(DIR, { create: true });
     pkgRoot = await root.getDirectoryHandle(PKG_DIR, { create: true });
     // Probe for sync handles (absent on main threads and old Safari).

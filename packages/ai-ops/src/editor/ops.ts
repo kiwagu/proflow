@@ -45,25 +45,17 @@ export type NodeSpec =
   | { block: 'table'; rows: string[][] } // row 0 is the header
   | { block: 'divider' }
   | {
-      block: 'document-card';
-      documentId: string;
-      documentName: string;
-      blockName: string;
-      blockParams?: Record<string, string>;
-    }
-  | { block: 'html-render'; html: string }
-  | {
       block: 'image';
-      srcType: string;
-      url: string;
+      hash: string;
+      mime?: string;
       alt?: string;
       width?: number;
       height?: number;
     }
   | {
       block: 'video';
-      srcType: string;
-      url: string;
+      hash: string;
+      mime?: string;
       controls?: boolean;
       width?: number;
       height?: number;
@@ -71,28 +63,22 @@ export type NodeSpec =
   | { block: 'equation'; tex: string; inline?: boolean }
   | { inline: 'linebreak' }
   | { inline: 'equation'; tex: string }
-  | { inline: 'date'; date: string; displayFormat?: string }
   | { inline: 'mention'; mention: MentionSpec };
 
 export type ListKind = 'bullet' | 'number' | 'check';
 
-/** Entity-mention specs. Ids are supplied with the edit request, not looked up. */
-export type MentionSpec =
-  | { kind: 'user'; userId: string; email: string }
-  | {
-      kind: 'contact';
-      contactId: string;
-      name: string;
-      emailOrDomain: string;
-      isCompany: boolean;
-    }
-  | { kind: 'group'; groupAlias: string }
-  | {
-      kind: 'document';
-      documentId: string;
-      documentName: string;
-      blockName: string;
-    };
+/**
+ * A reference to a knowledge-base resource. One spec, because the vocabulary
+ * has one mention node: `kind` is an open string, so a new referent kind needs
+ * no change here.
+ */
+export type MentionSpec = {
+  resourceId: string;
+  kind: string;
+  label: string;
+  display?: 'inline' | 'card';
+  params?: Record<string, string>;
+};
 
 /** Block-type targets for `setBlockType`. */
 export type BlockType = 'paragraph' | 'heading' | 'quote' | 'code';
@@ -204,11 +190,9 @@ export type DocumentOp =
   | { kind: 'addColumn'; table: NodeRef; at?: number }
   | { kind: 'removeRow'; table: NodeRef; row: number }
   | { kind: 'removeColumn'; table: NodeRef; col: number }
-  // media / date
+  // media
   | { kind: 'setImageAlt'; node: NodeRef; alt: string }
-  | { kind: 'setImageUrl'; node: NodeRef; url: string }
-  | { kind: 'setVideoUrl'; node: NodeRef; url: string }
-  | { kind: 'setVideoControls'; node: NodeRef; controls: boolean }
-  | { kind: 'setDate'; node: NodeRef; date: string; displayFormat?: string };
+  | { kind: 'setMediaHash'; node: NodeRef; hash: string }
+  | { kind: 'setVideoControls'; node: NodeRef; controls: boolean };
 
 export type DocumentOpKind = DocumentOp['kind'];

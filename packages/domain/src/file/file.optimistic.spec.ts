@@ -137,6 +137,15 @@ describe('file tree helpers', () => {
 });
 
 describe('optimistic files', () => {
+  it('mints graph ids for folders and document tree nodes', async () => {
+    const h = harness();
+    h.deliverTree([]);
+    await h.files.createFolder({ name: 'Folder', parentId: null });
+    await h.documents.create({ title: 'Document' });
+    expect(h.nodes()).toHaveLength(2);
+    expect(h.nodes().every((row) => row.id.startsWith('knr_'))).toBe(true);
+  });
+
   it('shows a new folder before the write lands, with the id it will have', async () => {
     const h = harness();
     h.deliverTree(tree());

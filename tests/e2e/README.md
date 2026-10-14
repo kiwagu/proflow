@@ -1,4 +1,4 @@
-# E2E for platform auth/profile
+# E2E for Platform and Workbench
 
 This workspace provides end-to-end coverage for:
 
@@ -7,7 +7,7 @@ This workspace provides end-to-end coverage for:
 - profile update persistence across reloads
 - profile avatar upload, persisted read, remove, and persisted clear
 - logout and protected-route access after sign-out
-- **Author (`/author`)**: guests redirected to platform sign-in; authenticated users reach Payload admin (`/author/admin`) via the bridge
+- **Workbench (`/author`)**: shared Platform session, guest redirect, editor boot, logout, and local storage isolation between accounts and spaces
 - **Notifications / outbox (`@full`)**: direct email enqueue, GoTrue auth-email enqueue, and platform invite delivery through `public.outbox_jobs` with `pgmq` transport underneath
 
 ## Policy and workflow references
@@ -16,16 +16,16 @@ This workspace provides end-to-end coverage for:
 - Rule (seed data lives in `@workspace/seed`, not inline): `/.cursor/rules/seed-dictionary-coverage.mdc`
 - Skill (agent workflow/playbook): `/.agents/skills/e2e-dx-workflow/SKILL.md`
 
-Knowledge specs draw their trees/actors from the shared dictionary via
-`materializeFixture(scenario, tenant)` + `seedClientFor(actor)` (in
-`src/helpers/knowledge-graph-bootstrap.ts`) — fixtures live in `seed/src/catalog/*`, never
-re-implemented inline. The `seed-curator` agent owns keeping seed ↔ demo ↔ e2e in sync.
+Workbench session specs use the existing Platform user and organization fixtures.
+The obsolete Payload and author graph HTTP suites have been removed; new
+Workbench feature E2E will accompany their integrated user flows.
 
 ## Prerequisites
 
 1. Run local infra and apps:
    - `make stack-up`
-   - `bun run dev`
+   - `bun run build:libs -- --concurrency=2`
+   - `bun run dev:apps -- --exclude author`
 2. Ensure hosts/TLS are configured for:
    - `https://proflow.local`
    - `https://proflow.local/platform`
@@ -35,15 +35,9 @@ re-implemented inline. The `seed-curator` agent owns keeping seed ↔ demo ↔ e
    - `NEXT_PUBLIC_SUPABASE_URL` (usually `https://api.proflow.local`)
    - `SUPABASE_SERVICE_ROLE_KEY`
 
-**Author / Payload:** smoke that opens `/author/admin` expects the author app, MongoDB, and Payload to be running (same as local dev: `make stack-up` + `bun run dev`). If Payload is down, the authenticated author test may fail while platform-only tests still pass.
-
-**Identity sync chain (`@full`):** `src/identity-author-sync.e2e.spec.ts` creates and deletes a Supabase Auth user via the service role and polls Author’s MongoDB (`users.supabaseSub`) to verify `user.created` / `user.deleted` fan-out into Payload. Requires:
-
-- `E2E_AUTHOR_MONGO_URL` (copy `MONGO_URL` from `apps/author/.env`)
-- NATS (Supabase compose) + Author **`apps/author/.env`** with `NATS_URL` (e.g. `nats://127.0.0.1:4222`); **`bun run dev`** starts Next and the JetStream consumer together
-- `identity_sync.outbound_config.internal_secret` populated (e.g. `make db-push` after stack reset)
-
-It is **not** selected by `@smoke`; run `bun run test:e2e:full` with the env above for regression/nightly.
+The gateway mounts the Workbench SPA on port 3002. Platform on port 3001
+provides login and the same-origin `/platform/api/workbench/session` endpoint.
+Do not start the retired Author app on the same port.
 
 **Notifications / outbox (`@full`):** `src/notifications-outbox.e2e.spec.ts` exercises the outbox-ledger plus `pgmq` transport path end-to-end and requires:
 
@@ -59,18 +53,34 @@ Optional overrides:
 
 **Avatar / storage smoke (`@smoke`):** `src/auth-profile.e2e.spec.ts` covers the current storage MVP for profile avatars: browser upload into the `media` bucket, persisted public URL on reload, remove, and persisted clear after save. It uses the same local stack and env as the other platform profile tests; no extra storage-specific env vars are required.
 
-The test suite is autonomous: each test seeds a temporary Supabase auth user
-using Playwright `globalSetup`, then removes it in `globalTeardown`.
+The `seededUser` fixture creates and removes a temporary Supabase auth user
+for each consuming test. Global teardown sweeps residual E2E fixtures.
 Specs consume this user via a typed Playwright fixture: `seededUser`.
+
+**Cold Workbench startup (`@full`):** `src/workbench-cold-start.e2e.spec.ts`
+starts the real Vite config on a temporary loopback port with an empty optimizer
+cache for every test. Login and backend requests still use the shared gateway.
+It asserts that worker dependencies load and the chat replies without an HMR
+full reload or extra page navigation. No cache warmup, clock mocking, or product
+timer overrides are used; the temporary server/cache are removed after the case.
 
 ## Run tests
 
 - `bun run test:e2e:smoke` (from repo root, PR checks)
 - `bun run test:e2e:full` (from repo root, nightly/full regression)
+- `bun run test:e2e:full:ni` (from repo root, non-interactive full regression;
+  continues after failures, with one worker and two retries)
 - `bun --cwd tests/e2e run test:e2e`
 - `bun --cwd tests/e2e run test:e2e:smoke` (for PR checks)
 - `bun --cwd tests/e2e run test:e2e:full` (for nightly/full regression)
 - `bun --cwd tests/e2e run test:e2e:headed`
+
+For a diagnostic pass without retries, run
+`bun run test:e2e:full:ni -- -- --retries=0` from the root. Both separators
+are needed to forward the option through Bun and Turbo to Playwright.
+To stop after the first failure explicitly, pass `-- -- -x` instead.
+A failed shared setup or a failed test in a serial group can still leave its
+dependent tests unexecuted; continuing the run does not bypass those dependencies.
 
 ## How to observe and inspect results
 

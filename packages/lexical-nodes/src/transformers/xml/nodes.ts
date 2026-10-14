@@ -1,260 +1,144 @@
-export type Id = { $?: { id: string } };
+/**
+ * @file Node type to XML element.
+ *
+ * The element names are HTML-ish on purpose: the model already knows what
+ * `<h2>`, `<ol>` and `<blockquote>` mean, so borrowing that vocabulary buys
+ * comprehension for free instead of teaching it a private one.
+ */
+import type { SerializedLexicalNode } from 'lexical';
+import { type Attributes, formatAttributes } from './codecs';
 
-type EleBase = Id & {
-  version: number;
-  direction: string | null;
-  format: string;
-  indent: number;
+/** A serialized node as it actually arrives, with the fields we read. */
+export type XmlNode = SerializedLexicalNode & {
+  children?: XmlNode[];
+  text?: string;
+  format?: number | string;
+  tag?: string;
+  listType?: string;
+  start?: number;
+  url?: string;
+  language?: string;
+  $?: { id?: unknown };
+  [key: string]: unknown;
 };
 
-export type TextNode = Id & {
-  type: 'text';
-  text: string;
-  format: number;
-  detail: number;
-  mode: string;
-  style: string;
-  version: number;
-};
+/** The element name for a node, or `null` to render children transparently. */
+export function elementNameFor(node: XmlNode): string {
+  switch (node.type) {
+    case 'paragraph':
+      return 'p';
+    case 'heading':
+      // heading nodes carry their level as a tag: h1, h2, h3...
+      return typeof node.tag === 'string' ? node.tag : 'h1';
+    case 'quote':
+      return 'blockquote';
+    case 'list':
+      return node.listType === 'number' ? 'ol' : 'ul';
+    case 'listitem':
+      return 'li';
+    case 'link':
+    case 'autolink':
+      return 'a';
+    case 'linebreak':
+      return 'br';
+    case 'text':
+      return 'text';
+    case 'tab':
+      return 'tab';
+    default:
+      // Everything else — including this vocabulary's own nodes — uses its
+      // type string verbatim, so a new node is addressable the day it exists
+      // without touching this file.
+      return node.type;
+  }
+}
 
-export type LineBreakNode = Id & {
-  type: 'linebreak';
-  version: number;
-};
+/** The attributes an element carries beyond its id. */
+export function attributesFor(node: XmlNode): Attributes {
+  const attributes: Attributes = {};
 
-export type ParagraphNode = EleBase & {
-  type: 'paragraph';
-  children: SerNode[];
-  textFormat: number;
-  textStyle: string;
-};
+  switch (node.type) {
+    case 'text':
+      Object.assign(
+        attributes,
+        formatAttributes(typeof node.format === 'number' ? node.format : 0)
+      );
+      break;
+    case 'link':
+    case 'autolink':
+      if (typeof node.url === 'string') attributes.href = node.url;
+      break;
+    case 'list':
+      // Only a list that does not start at 1 needs to say so.
+      if (typeof node.start === 'number' && node.start !== 1) {
+        attributes.start = node.start;
+      }
+      break;
+    case 'code':
+      if (typeof node.language === 'string') {
+        attributes.language = node.language;
+      }
+      break;
+    case 'tablecell': {
+      const colSpan = node.colSpan;
+      const rowSpan = node.rowSpan;
+      const width = node.width;
+      if (typeof colSpan === 'number' && colSpan > 1) {
+        attributes.colspan = colSpan;
+      }
+      if (typeof rowSpan === 'number' && rowSpan > 1) {
+        attributes.rowspan = rowSpan;
+      }
+      if (typeof width === 'number') attributes.width = width;
+      if (node.headerState === 1 || node.headerState === 3) {
+        attributes.header = true;
+      }
+      break;
+    }
+    case 'resource-mention':
+      if (typeof node.resourceId === 'string') {
+        attributes.resource = node.resourceId;
+      }
+      if (typeof node.kind === 'string') attributes.kind = node.kind;
+      if (typeof node.label === 'string') attributes.label = node.label;
+      if (typeof node.display === 'string') attributes.display = node.display;
+      break;
+    case 'image':
+    case 'video':
+    case 'file':
+      if (typeof node.hash === 'string') attributes.hash = node.hash;
+      if (typeof node.alt === 'string') attributes.alt = node.alt;
+      if (typeof node.fileName === 'string') attributes.name = node.fileName;
+      break;
+    case 'equation':
+      if (typeof node.equation === 'string') {
+        attributes.equation = node.equation;
+      }
+      if (node.inline === true) attributes.inline = true;
+      break;
+    case 'unknown-embed':
+      if (typeof node.tag === 'string') attributes.tag = node.tag;
+      break;
+    default:
+      break;
+  }
 
-export type HeadingNode = EleBase & {
-  type: 'heading';
-  children: SerNode[];
-  tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
-};
+  return attributes;
+}
 
-export type QuoteNode = EleBase & {
-  type: 'quote';
-  children: SerNode[];
-};
+/**
+ * Code blocks are stored as a run of highlight tokens, one node per token.
+ * The model wants the source, not the tokenizer's opinion of it, so a code
+ * block flattens its children back to raw text.
+ */
+export function flattensChildren(node: XmlNode): boolean {
+  return node.type === 'code';
+}
 
-export type ListNode = EleBase & {
-  type: 'list';
-  children: SerNode[];
-  listType: 'bullet' | 'number' | 'check';
-  start: number;
-  tag: 'ul' | 'ol';
-};
-
-export type ListItemNode = EleBase & {
-  type: 'listitem';
-  children: SerNode[];
-  value: number;
-  checked?: boolean;
-};
-
-export type TableNode = EleBase & {
-  type: 'table';
-  children: SerNode[];
-  colWidths?: number[];
-  rowStriping?: boolean;
-};
-
-export type TableRowNode = EleBase & {
-  type: 'tablerow';
-  children: SerNode[];
-  height?: number;
-};
-
-export type TableCellNode = EleBase & {
-  type: 'tablecell';
-  children: SerNode[];
-  headerState: number;
-  colSpan: number;
-  rowSpan: number;
-  backgroundColor: string | null;
-};
-
-export type HrNode = Id & {
-  type: 'horizontalrule';
-  version: number;
-};
-
-export type DateMentionNode = Id & {
-  type: 'date-mention';
-  version: number;
-  date: string;
-  displayFormat: string;
-  mentionUuid?: string;
-};
-
-export type LinkNode = EleBase & {
-  type: 'link' | 'autolink';
-  children: SerNode[];
-  url: string;
-  rel?: string | null;
-  target?: string | null;
-  title?: string | null;
-};
-
-export type MarkNode = EleBase & {
-  type: 'mark';
-  children: SerNode[];
-  ids: string[];
-};
-
-export type TabNode = Id & {
-  type: 'tab';
-  version: number;
-};
-
-export type ClassedBlockNode = EleBase & {
-  type: 'classed-block';
-  children: SerNode[];
-  tag: string;
-  classes: string[];
-  attributes?: Record<string, string>;
-};
-
-/** A code block whose children are per-token `code-highlight` leaves (flattened
- *  back into raw source on serialize). `language` comes from the `CodeNode` base. */
-export type CustomCodeNode = EleBase & {
-  type: 'custom-code';
-  children: SerNode[];
-  language: string | null;
-};
-
-export type EquationNode = Id & {
-  type: 'equation';
-  version: number;
-  equation: string;
-  inline: boolean;
-};
-
-export type ImageNode = Id & {
-  type: 'image';
-  version: number;
-  alt: string;
-  url: string;
-};
-
-export type VideoNode = Id & {
-  type: 'video';
-  version: number;
-  url: string;
-  controls: boolean;
-};
-
-export type HtmlRenderNode = Id & {
-  type: 'html-render';
-  version: number;
-  html: string;
-};
-
-export type DocumentCardNode = Id & {
-  type: 'document-card';
-  version: number;
-  documentId: string;
-  documentName: string;
-};
-
-export type UserMentionNode = Id & {
-  type: 'user-mention';
-  version: number;
-  userId: string;
-  email: string;
-  displayName?: string;
-};
-
-export type DocumentMentionNode = Id & {
-  type: 'document-mention';
-  version: number;
-  documentId: string;
-  documentName: string;
-};
-
-export type ContactMentionNode = Id & {
-  type: 'contact-mention';
-  version: number;
-  contactId: string;
-  name: string;
-  emailOrDomain: string;
-  isCompany: boolean;
-};
-
-export type GroupMentionNode = Id & {
-  type: 'group-mention';
-  version: number;
-  groupAlias: string;
-};
-
-export type PullRequestMentionNode = Id & {
-  type: 'pr-mention';
-  version: number;
-  id: string;
-  label: string;
-};
-
-export type ThemeMentionNode = Id & {
-  type: 'theme-mention';
-  version: number;
-  name: string;
-};
-
-export type TagMentionNode = Id & {
-  type: 'tag-mention';
-  version: number;
-  optionId: string;
-  propertyDefinitionId: string;
-  scope: 'user' | 'team';
-  name: string;
-  color?: string;
-};
-
-export type UnknownMentionNode = Id & {
-  type: 'unknown-mention';
-  version: number;
-  name: string;
-};
-
-export type KnownNode =
-  | TextNode
-  | LineBreakNode
-  | ParagraphNode
-  | HeadingNode
-  | QuoteNode
-  | ListNode
-  | ListItemNode
-  | TableNode
-  | TableRowNode
-  | TableCellNode
-  | HrNode
-  | DateMentionNode
-  | LinkNode
-  | MarkNode
-  | TabNode
-  | ClassedBlockNode
-  | CustomCodeNode
-  | EquationNode
-  | ImageNode
-  | VideoNode
-  | HtmlRenderNode
-  | DocumentCardNode
-  | UserMentionNode
-  | DocumentMentionNode
-  | ContactMentionNode
-  | GroupMentionNode
-  | PullRequestMentionNode
-  | TagMentionNode
-  | ThemeMentionNode
-  | UnknownMentionNode;
-
-export type UnknownNode = Id & {
-  type: Exclude<string, KnownNode['type']>;
-  version?: number;
-  children?: SerNode[];
-};
-
-export type SerNode = KnownNode | UnknownNode;
+/** The raw text of a node's subtree, used when flattening. */
+export function textOf(node: XmlNode): string {
+  if (typeof node.text === 'string') return node.text;
+  if (node.type === 'linebreak') return '\n';
+  if (!node.children) return '';
+  return node.children.map(textOf).join('');
+}

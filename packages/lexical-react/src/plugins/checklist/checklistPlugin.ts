@@ -67,7 +67,7 @@ function wrapCheckboxMouseEvent(
  * @return The teardown function.
  */
 function registerMouseEvents(editor: LexicalEditor) {
-  const mouseDownPosition = [0, 0];
+  const mouseDownPosition: [number, number] = [0, 0];
 
   function click(e: PointerEvent) {
     wrapCheckboxMouseEvent(e, editor, (e: MouseEvent) => {

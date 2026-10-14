@@ -6,7 +6,6 @@ export * from './custom-delete';
 export * from './drag-insert';
 export * from './draggable-block';
 export * from './element-event';
-export * from './emojis';
 export * from './find-and-replace';
 export * from './horizontal-rules';
 export * from './insert-text';

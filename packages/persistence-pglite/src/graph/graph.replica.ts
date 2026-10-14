@@ -45,6 +45,29 @@ const NODE_KEYS: Record<GraphSyncTable, readonly string[]> = {
   kb_resource_media_meta: ['node_id'],
 };
 
+/**
+ * Each table's other unique key, mirroring the replica's own unique indexes.
+ * The server can hold a row under another id than the one this device minted
+ * for the same thing: a move is replayed by an RPC that writes the edge
+ * itself, and a row two devices both wrote keeps whichever id reached the
+ * server last. A pulled row is the truth, so it replaces the local row that
+ * holds its key under another id instead of failing the whole batch on the
+ * replica's uniqueness. Journaled ops never name these rows by id — edges
+ * are addressed by their ends and relation, per-node rows by node. The one
+ * local reference by id, a media row's blob_id, cannot be cut by this: a
+ * blob's storage path embeds the blob's own id on the server, so no two
+ * server blobs share a path.
+ */
+const NATURAL_KEYS: Record<GraphSyncTable, readonly string[]> = {
+  knowledge_resources: [],
+  knowledge_edges: ['from_id', 'to_id', 'relation_type'],
+  resource_user_state: ['user_id', 'resource_id'],
+  kb_resource_description: ['node_id'],
+  kb_resource_link: ['node_id'],
+  kb_media_blob: ['storage_path'],
+  kb_resource_media_meta: ['node_id'],
+};
+
 /** Postgres identifier shape — the only column names allowed into the SQL. */
 const COLUMN_NAME = /^[a-z_][a-z0-9_]*$/;
 
@@ -93,6 +116,18 @@ export function createPgliteGraphReplicaWriter(db: AppDb): GraphReplicaWriter {
           const assignments = quoted
             .filter((column) => column !== '"id"')
             .map((column) => `${column} = excluded.${column}`);
+          const naturalKey = NATURAL_KEYS[table];
+          if (
+            naturalKey.length > 0 &&
+            naturalKey.every((column) => row[column] !== undefined)
+          ) {
+            await tx.query(
+              `delete from ${table}
+                where ${naturalKey.map((column, i) => `"${column}" = $${i + 1}`).join(' and ')}
+                  and id <> $${naturalKey.length + 1}`,
+              [...naturalKey.map((column) => row[column]), row.id]
+            );
+          }
           await tx.query(
             `insert into ${table} (${quoted.join(', ')})
              values (${placeholders.join(', ')})

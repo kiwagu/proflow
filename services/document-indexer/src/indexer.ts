@@ -55,7 +55,8 @@ async function readDocumentBytes(
     .select('snapshot, snapshot_seq')
     .eq('id', documentId)
     .maybeSingle();
-  if (docError) throw new Error(`read document ${documentId}: ${docError.message}`);
+  if (docError)
+    throw new Error(`read document ${documentId}: ${docError.message}`);
   if (!doc) return { snapshot: null, updates: [] };
 
   const { data: updates, error: updatesError } = await supabase
@@ -98,7 +99,11 @@ export async function indexDocument(
   embedder: IEmbeddingService,
   row: PlanRow
 ): Promise<number> {
-  const bytes = await readDocumentBytes(supabase, row.document_id, row.watermark);
+  const bytes = await readDocumentBytes(
+    supabase,
+    row.document_id,
+    row.watermark
+  );
   const derived = await deriveDocument(bytes, embedder);
 
   const { error } = await supabase.rpc('rpc_replace_server_document_chunks', {

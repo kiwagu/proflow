@@ -1,3 +1,8 @@
+// Consumed as SOURCE, so the sibling raw.d.ts ambient declaration is not in a
+// consumer's program; the reference pins the `*.md?raw` module shape to this
+// file. See coder.ts for the full rationale.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="../../raw.d.ts" />
 import type { LexicalSession } from '@workspace/ai-ops/ai-toolkit';
 import { numberLines, serializeWithXml } from '@workspace/ai-ops/utils';
 import { hasToolCall, stepCountIs, streamText } from 'ai';

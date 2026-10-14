@@ -28,6 +28,10 @@ export interface FakeTree {
   services: FileServices;
   /** Delivers a new tree to every live subscriber, as the reader would. */
   deliver: (nodes: FileNode[]) => void;
+  /** The tree as last delivered, for a test that re-delivers it with additions. */
+  nodes: () => FileNode[];
+  /** Answers every import held back by `importDeferred`. */
+  finishImports: () => void;
   calls: {
     rename: Array<[string, string]>;
     move: Array<[string, string | null]>;
@@ -53,6 +57,8 @@ export function fakeServices(
     blobs?: Record<string, Blob>;
     unpacked?: string[];
     importFails?: string;
+    /** Deliver each imported node at once but answer only on `finishImports()`. */
+    importDeferred?: boolean;
   } = {}
 ): FakeTree {
   let nodes = initial;
@@ -68,6 +74,7 @@ export function fakeServices(
     errors: [],
   };
 
+  const pendingImports: Array<() => void> = [];
   const deliver = (next: FileNode[]) => {
     nodes = next;
     for (const cb of subscribers) cb(nodes);
@@ -109,8 +116,12 @@ export function fakeServices(
           name,
           parentId,
         });
+        // The node shows up before the answer, as an optimistic tree does.
         deliver([...nodes, node]);
-        return Promise.resolve(ok(node));
+        if (!options.importDeferred) return Promise.resolve(ok(node));
+        return new Promise((resolve) => {
+          pendingImports.push(() => resolve(ok(node)));
+        });
       },
       get: (id) => {
         const found = nodes.find((n) => n.id === id);
@@ -162,5 +173,13 @@ export function fakeServices(
     onError: (message) => calls.errors.push(message),
   };
 
-  return { services, deliver, calls };
+  return {
+    services,
+    deliver,
+    nodes: () => nodes,
+    finishImports: () => {
+      for (const finish of pendingImports.splice(0)) finish();
+    },
+    calls,
+  };
 }

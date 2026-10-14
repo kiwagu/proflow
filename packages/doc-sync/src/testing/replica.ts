@@ -16,7 +16,7 @@ import type { SyncableDocument, SyncTransport } from '../types.js';
  * spelled out here rather than imported so this harness does not depend on
  * that package's bundler-specific migration loading.
  */
-const LOCAL_SCHEMA = `
+export const LOCAL_SCHEMA = `
 create table document_snapshot (
   document_id text primary key,
   bytes       bytea not null
@@ -32,10 +32,15 @@ create table document_sync (
   pulled_seq  bigint not null default 0,
   updated_at  timestamptz not null default now()
 );
+create table document_sync_space (
+  space_id     text primary key,
+  heads_cursor timestamptz,
+  updated_at   timestamptz not null default now()
+);
 `;
 
 /** A plain-text Loro document behind the `SyncableDocument` seam. */
-class TextDocument implements SyncableDocument {
+export class TextDocument implements SyncableDocument {
   doc = new LoroDoc();
 
   exportUpdatesSince(from: Uint8Array | null): Uint8Array {
@@ -55,6 +60,7 @@ class TextDocument implements SyncableDocument {
 
 export const DOC_ID = 'doc_sync_spec_0001';
 export const SPACE_ID = 'spc_sync_spec_0001';
+export const RESOURCE_ID = 'knr_sync_spec_0001';
 
 export interface Replica {
   readonly name: string;
@@ -64,7 +70,9 @@ export interface Replica {
   edit(text: string): Promise<void>;
   push(): ReturnType<ReturnType<typeof createDocumentSync>['push']>;
   pull(): ReturnType<ReturnType<typeof createDocumentSync>['pull']>;
-  watch(hooks?: Parameters<ReturnType<typeof createDocumentSync>['watch']>[2]): () => void;
+  watch(
+    hooks?: Parameters<ReturnType<typeof createDocumentSync>['watch']>[2]
+  ): () => void;
   proposeCompaction(coversSeq: number): Promise<boolean>;
   snapshotLocally(): Promise<void>;
   /** Throws the in-memory document away and rebuilds it from local storage. */
@@ -77,7 +85,12 @@ export interface Replica {
 export async function createReplica(
   name: string,
   transport: SyncTransport,
-  options: { pollIntervalMs?: number } = {}
+  options: {
+    pollIntervalMs?: number;
+    compaction?: { maxRows?: number; maxBytes?: number };
+    /** The resource that owns the document; null when this device has none. */
+    resourceId?: string | null;
+  } = {}
 ): Promise<Replica> {
   const local = await PGlite.create();
   await local.exec(LOCAL_SCHEMA);
@@ -91,7 +104,7 @@ export async function createReplica(
     writer: name,
     // Off by default: every compaction in these tests is proposed explicitly,
     // so the threshold never fires behind a scenario's back.
-    compaction: false,
+    compaction: options.compaction ?? false,
     pollIntervalMs: options.pollIntervalMs ?? 25,
   });
 
@@ -130,7 +143,15 @@ export async function createReplica(
       await settled();
     },
 
-    push: () => sync.push(DOC_ID, document, SPACE_ID),
+    push: () =>
+      sync.push(
+        DOC_ID,
+        document,
+        SPACE_ID,
+        // Not given means the default owner; an explicit null is a device
+        // that does not know one.
+        options.resourceId === undefined ? RESOURCE_ID : options.resourceId
+      ),
     pull: () => sync.pull(DOC_ID, document),
     watch: (hooks) => sync.watch(DOC_ID, document, hooks),
     proposeCompaction: (coversSeq) =>

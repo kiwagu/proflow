@@ -93,7 +93,7 @@ export function CollapsibleSection({
       <div className="relative">
         <CollapsibleTrigger
           className={cn(
-            'flex h-7 w-full min-w-0 items-center justify-start gap-1 rounded-md px-2 text-left text-[13px] font-medium text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground',
+            'text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground flex h-7 w-full min-w-0 items-center justify-start gap-1 rounded-md px-2 text-left text-[13px] font-medium transition-colors',
             headerAction ? 'pr-18' : 'pr-2'
           )}
         >

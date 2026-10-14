@@ -1,110 +1,49 @@
+/**
+ * @file An image in the document, referenced by content hash.
+ */
 import {
   $applyNodeReplacement,
   type DOMConversionMap,
+  type DOMExportOutput,
   type LexicalNode,
   type NodeKey,
-  type SerializedLexicalNode,
   type Spread,
 } from 'lexical';
-import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
+import type { DecoratorComponent } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
 import {
-  createMediaTypeGuard,
-  createSerializedMediaTypeGuard,
+  type MediaDecoratorProps,
+  type MediaDisplay,
   type MediaInfo,
   MediaNode,
+  type SerializedMediaNode,
 } from './MediaNode';
 
-export type SerializedImageNode = Spread<
-  MediaInfo & { alt: string },
-  SerializedLexicalNode
->;
+export type ImageInfo = MediaInfo & MediaDisplay & { alt: string };
 
-export type ImageDecoratorProps = MediaInfo & {
-  key: NodeKey;
-  alt: string;
-};
+export type SerializedImageNode = Spread<{ alt: string }, SerializedMediaNode>;
 
-export class ImageNode extends MediaNode<{ alt: string }> {
+export type ImageDecoratorProps = MediaDecoratorProps & { alt: string };
+
+export class ImageNode extends MediaNode<ImageDecoratorProps> {
   __alt: string;
 
-  constructor(
-    srcType: string,
-    id: string,
-    url: string,
-    alt: string,
-    width: number,
-    height: number,
-    constrainedWidth?: number,
-    constrainedHeight?: number,
-    scale?: number,
-    key?: NodeKey
-  ) {
-    super(
-      srcType,
-      id,
-      url,
-      width,
-      height,
-      constrainedWidth,
-      constrainedHeight,
-      scale,
-      key
-    );
-    this.__alt = alt;
+  constructor(info: ImageInfo, key?: NodeKey) {
+    super(info, key);
+    this.__alt = info.alt;
   }
 
   static getType(): string {
     return 'image';
   }
 
-  getMediaType() {
-    return 'image' as const;
-  }
-
-  protected getExtraProps(): { alt: string } {
-    return {
-      alt: this.__alt,
-    };
-  }
-
-  protected applyExtraPropsFromJSON(json: Partial<{ alt: string }>): void {
-    if (json.alt !== undefined) {
-      this.__alt = json.alt;
-    }
-  }
-
-  getDOMElement(): HTMLElement {
-    const element = document.createElement('img');
-    return element;
-  }
-
-  getAlt() {
-    return this.__alt;
-  }
-
-  setAlt(alt: string, rerender = true) {
-    const writable = this.getWritable();
-    writable.__alt = alt;
-    if (rerender) writable.__componentDirty = true;
-  }
-
   static clone(node: ImageNode): ImageNode {
-    const newNode = new ImageNode(
-      node.__srcType,
-      node.__id,
-      node.__url,
-      node.__alt,
-      node.__width,
-      node.__height,
-      node.__constrainedWidth,
-      node.__constrainedHeight,
-      node.__scale,
-      node.__key
-    );
-    newNode.__componentDirty = node.__componentDirty;
-    newNode.__cachedDecoratorComponent = node.__cachedDecoratorComponent;
-    return newNode;
+    return new ImageNode(node.getImageInfo(), node.__key);
+  }
+
+  afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__alt = prevNode.__alt;
   }
 
   static importJSON(serializedNode: SerializedImageNode): ImageNode {
@@ -114,175 +53,83 @@ export class ImageNode extends MediaNode<{ alt: string }> {
     return node;
   }
 
-  updateFromJSON(serializedNode: SerializedImageNode): this {
-    const self = super.updateFromJSON(serializedNode);
-    self.setAlt(serializedNode.alt ?? '');
-    return self;
-  }
-
   exportJSON(): SerializedImageNode {
     return {
       ...super.exportJSON(),
-      alt: this.__alt,
+      ...this.getImageInfo(),
       type: 'image',
+      version: 1,
     };
-  }
-
-  exportDOM() {
-    const result = super.exportDOM();
-    if (result && result.element) {
-      result.element.querySelector('img')?.setAttribute('alt', this.__alt);
-    }
-    return result;
   }
 
   static importDOM(): DOMConversionMap<HTMLElement> | null {
     return {
       img: (domNode: HTMLElement) => {
-        const src = domNode.getAttribute('src');
-        const alt = domNode.getAttribute('alt');
-        const width = domNode.getAttribute('width');
-        const height = domNode.getAttribute('height');
-        const scale = domNode.getAttribute('data-scale');
-        const srcType = domNode.getAttribute('data-src-type');
-        const id = domNode.getAttribute('data-image-id');
-        const constrainedWidth = domNode.getAttribute('data-constrained-width');
-        const constrainedHeight = domNode.getAttribute(
-          'data-constrained-height'
-        );
-
-        if (src && id && srcType) {
-          return {
-            conversion: () => {
-              const node = $createImageNode({
-                srcType: srcType,
-                id,
-                url: src,
-                alt: alt || '',
-                width: width ? parseInt(width, 10) : 0,
-                height: height ? parseInt(height, 10) : 0,
-                scale: scale ? parseFloat(scale) : 1,
-                constrainedWidth: constrainedWidth
-                  ? parseInt(constrainedWidth, 10)
-                  : undefined,
-                constrainedHeight: constrainedHeight
-                  ? parseInt(constrainedHeight, 10)
-                  : undefined,
-              });
-              return { node };
-            },
-            priority: 1,
-          };
-        }
-        return null;
-      },
-      div: (domNode: HTMLElement) => {
-        const img = domNode.querySelector('img');
-        if (!img) return null;
-
-        const src = img.getAttribute('src');
-        const alt = img.getAttribute('alt');
-        const width = img.getAttribute('width');
-        const height = img.getAttribute('height');
-        const scale = img.getAttribute('data-scale');
-        const srcType = img.getAttribute('data-src-type');
-        const id = img.getAttribute('data-image-id');
-        const constrainedWidth = img.getAttribute('data-constrained-width');
-        const constrainedHeight = img.getAttribute('data-constrained-height');
-
-        if (src && id && srcType) {
-          return {
-            conversion: () => {
-              const node = $createImageNode({
-                srcType: srcType,
-                id,
-                url: src,
-                alt: alt || '',
-                width: width ? parseInt(width, 10) : 0,
-                height: height ? parseInt(height, 10) : 0,
-                scale: scale ? parseFloat(scale) : 1,
-                constrainedWidth: constrainedWidth
-                  ? parseInt(constrainedWidth, 10)
-                  : undefined,
-                constrainedHeight: constrainedHeight
-                  ? parseInt(constrainedHeight, 10)
-                  : undefined,
-              });
-              return { node };
-            },
-            priority: 2, // Higher priority for our wrapped format
-          };
-        }
-        return null;
+        const hash = domNode.getAttribute('data-blob-hash');
+        if (!hash) return null;
+        return {
+          conversion: () => ({
+            node: $createImageNode({
+              hash,
+              mime: domNode.getAttribute('type') ?? 'image/*',
+              width: Number(domNode.getAttribute('width')) || 0,
+              height: Number(domNode.getAttribute('height')) || 0,
+              alt: domNode.getAttribute('alt') ?? '',
+            }),
+          }),
+          priority: 1,
+        };
       },
     };
   }
 
-  decorate(): DecoratorComponent<ImageDecoratorProps> | undefined {
-    if (!this.__componentDirty && this.__cachedDecoratorComponent) {
-      return this.__cachedDecoratorComponent;
-    }
-    const decorator = getDecorator<ImageDecoratorProps>(ImageNode);
-    if (decorator) {
-      const comp = () => decorator(this.exportComponentProps());
-      this.__cachedDecoratorComponent = comp;
-      this.__componentDirty = false;
-      return comp;
-    }
+  exportDOM(): DOMExportOutput {
+    const element = document.createElement('img');
+    element.setAttribute('data-blob-hash', this.__hash);
+    element.setAttribute('alt', this.__alt);
+    element.setAttribute('type', this.__mime);
+    const { width, height } = this.getRenderedDimensions();
+    if (width > 0) element.setAttribute('width', String(width));
+    if (height > 0) element.setAttribute('height', String(height));
+    return { element };
   }
 
-  protected createNodeFromParams(params: {
-    srcType: string;
-    id: string;
-    url: string;
-    alt: string;
-    width: number;
-    height: number;
-  }): LexicalNode {
-    return $createImageNode(params);
+  getImageInfo(): ImageInfo {
+    return { ...this.getMediaInfo(), alt: this.__alt };
   }
 
-  exportComponentProps(): ImageDecoratorProps {
-    return {
-      srcType: this.__srcType,
-      id: this.__id,
-      url: this.__url,
-      width: this.__width,
-      height: this.__height,
-      alt: this.__alt,
-      key: this.__key,
-      scale: this.__scale,
-      constrainedWidth: this.__constrainedWidth,
-      constrainedHeight: this.__constrainedHeight,
-    };
+  getAlt(): string {
+    return this.getLatest().__alt;
   }
+
+  setAlt(alt: string): this {
+    const writable = this.getWritable();
+    writable.__alt = alt;
+    writable.__decorator = null;
+    return writable;
+  }
+
+  getTextContent(): string {
+    return this.__alt;
+  }
+
+  protected decoratorKey() {
+    return ImageNode;
+  }
+
+  protected decoratorProps(): ImageDecoratorProps {
+    return { ...this.getMediaInfo(), alt: this.__alt, key: this.__key };
+  }
+
+  declare decorate: () => DecoratorComponent<ImageDecoratorProps> | undefined;
 }
 
-export function $createImageNode(params: {
-  srcType: string;
-  id?: string;
-  url?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  constrainedWidth?: number;
-  constrainedHeight?: number;
-  scale?: number;
-}) {
-  return $applyNodeReplacement(
-    new ImageNode(
-      params.srcType,
-      params.id ?? '',
-      params.url ?? '',
-      params.alt ?? '',
-      params.width ?? 0,
-      params.height ?? 0,
-      params.constrainedWidth,
-      params.constrainedHeight,
-      params.scale ?? 1
-    )
-  );
+export function $createImageNode(info: ImageInfo): ImageNode {
+  return $applyNodeReplacement(new ImageNode(info));
 }
 
-export const $isImageNode = createMediaTypeGuard(ImageNode);
-export const isSerializedImageNode = createSerializedMediaTypeGuard('image');
+export function $isImageNode(
+  node: LexicalNode | null | undefined
+): node is ImageNode {
+  return node instanceof ImageNode;
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Local-first documents, files and knowledge — everything stays on your device."
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <title>ProFlow Workbench</title>
+  </head>
+  <body>
+    <!--
+      Painted before any script runs and cleared when the app mounts. The
+      app opens its database, workers and storage before its first render,
+      and on a device with a lot stored that takes a moment — a moment that
+      would otherwise be a blank page with nothing to say for itself.
+    -->
+    <div id="root" style="height: 100dvh">
+      <div
+        id="boot-screen"
+        style="
+          display: flex;
+          height: 100%;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 0.75rem;
+          font-family: system-ui, sans-serif;
+          color: #6b6864;
+        "
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="9"
+            stroke="currentColor"
+            stroke-opacity="0.2"
+            stroke-width="2"
+          />
+          <path
+            d="M21 12a9 9 0 0 0-9-9"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              from="0 12 12"
+              to="360 12 12"
+              dur="0.9s"
+              repeatCount="indefinite"
+            />
+          </path>
+        </svg>
+        <p style="font-size: 0.875rem; margin: 0">Starting the workbench…</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

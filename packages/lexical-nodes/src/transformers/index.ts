@@ -1,179 +1,142 @@
-import type { Transformer } from '@lexical/markdown';
-import { I_AWAIT_NODE } from './await';
-import { HTML_BLOCKQUOTE, I_MACRO_QUOTE } from './classedBlock';
-import { CUSTOM_TRANSFORMERS } from './customTransformers';
+/**
+ * @file The three transformer lists.
+ *
+ * ORDER IS BEHAVIOUR HERE, NOT STYLE. Lexical tries transformers in order and
+ * takes the first match, so these constraints are normative:
+ *
+ *  - internal tags that can contain other tags come before the tags they may
+ *    contain;
+ *  - the plain markdown image rule comes AFTER the internal image rule, which
+ *    it is the fallback for;
+ *  - the multiline block-equation rule precedes the block one, which precedes
+ *    the inline one;
+ *  - the unknown-embed fallback is LAST in every list, so it only ever
+ *    catches what nothing else claimed.
+ *
+ * Reordering these lines changes which form wins on import. Do it
+ * deliberately or not at all.
+ */
+import {
+  ELEMENT_TRANSFORMERS,
+  HEADING,
+  LINK,
+  MULTILINE_ELEMENT_TRANSFORMERS,
+  QUOTE,
+  TEXT_FORMAT_TRANSFORMERS,
+  TEXT_MATCH_TRANSFORMERS,
+  type Transformer,
+} from '@lexical/markdown';
+import { EQUATION_BLOCK, EQUATION_INLINE } from './equation';
 import { FILE_LINK, I_FILE } from './file';
-import { I_HTML_RENDER } from './htmlRender';
-import { I_IMAGE_CONSTRAINED, IMAGE } from './image';
 import {
-  E_BLOCK_EQUATION_NODE,
-  E_INLINE_EQUATION_NODE,
-  E_MULTILINE_BLOCK_EQUATION_NODE,
-  I_EQUATION_NODE,
-} from './katex';
-import { I_MAGIC_CHIP } from './magicChip';
-import {
-  E_CONTACT_MENTION,
-  E_DATE_MENTION,
-  E_DOCUMENT_CARD,
-  E_DOCUMENT_MENTION,
-  E_GROUP_MENTION,
-  E_PR_MENTION,
-  E_TAG_MENTION,
-  E_USER_MENTION,
-  I_CONTACT_MENTION,
-  I_DATE_MENTION,
-  I_DOCUMENT_CARD,
-  I_DOCUMENT_MENTION,
-  I_GROUP_MENTION,
-  I_PR_MENTION,
-  I_TAG_MENTION,
-  I_THEME_MENTION,
-  I_USER_MENTION,
-} from './mentions';
-import { E_PASTE_NODE, I_PASTE_NODE } from './paste';
-import { E_SNAPSHOT_NODE, I_SNAPSHOT_NODE } from './snapshot';
-import { E_TABLE_NODE, I_TABLE_NODE } from './tables';
-import {
-  BR_TAG_TO_LINE_BREAK,
-  HR,
-  HTML_ENTITY_TRANSFORMERS,
-  isConversionOnlyTransformer,
-  LINK_XML,
-  MARK_XML,
-  PRESERVE_LINES,
-  SEARCH_MATCH,
-} from './transformers';
-import { UNKNOWN_MENTION } from './unknownMention';
-import { I_VIDEO } from './video';
-import { E_WATERMARK, I_WATERMARK } from './watermark';
-
-export { isConversionOnlyTransformer };
+  EMPTY_PARAGRAPH,
+  I_RESOURCE_MENTION,
+  I_RESOURCE_MENTION_BLOCK,
+  LINE_BREAK,
+  RESOURCE_LINK,
+  RESOURCE_LINK_BLOCK,
+} from './inline';
+import { LIST_TRANSFORMERS } from './lists';
+import { I_IMAGE, I_VIDEO, IMAGE_LINK, VIDEO_LINK } from './media';
+import { createTableTransformer } from './tables';
+import { I_UNKNOWN_EMBED } from './unknownEmbed';
 
 /**
- * Internal transformers for converting markdown between Lexical state and markdown.
- * The internal format uses XML-based syntax to represent nodes that fall outside of
- * standard markdown syntax.
+ * Block structure from the official set, minus the lists we wrap.
+ *
+ * `MULTILINE_ELEMENT_TRANSFORMERS` carries fenced code, which spans lines and
+ * therefore must be tried before the single-line element rules — a fence's
+ * opening line otherwise reads as an ordinary paragraph.
+ */
+const BASE_ELEMENTS: Transformer[] = [
+  ...MULTILINE_ELEMENT_TRANSFORMERS,
+  HEADING,
+  QUOTE,
+  ...LIST_TRANSFORMERS,
+  ...ELEMENT_TRANSFORMERS.filter(
+    (transformer): boolean => transformer !== HEADING && transformer !== QUOTE
+  ),
+];
+
+/**
+ * The lossless internal form: what gets persisted and what the agent is shown.
+ * Every own node round-trips through its `<x-*>` tag with no data lost.
+ *
+ * Each list carries its own table transformer, built over the list itself:
+ * a cell's contents are converted with the list the table sits in, so the
+ * form a caller chose holds inside every cell, nested tables included.
  */
 export const INTERNAL_TRANSFORMERS: Transformer[] = [
-  I_SNAPSHOT_NODE, // Must be before mentions to avoid matching inner tags in snapshot content
-  I_PASTE_NODE, // Must be before mentions to avoid matching inner tags in paste content
-  I_HTML_RENDER,
-  PRESERVE_LINES,
-  LINK_XML, // Prefer internal xml link to handle []() in link text
-  MARK_XML,
-  SEARCH_MATCH,
-  HR,
-  I_VIDEO,
+  createTableTransformer(() => INTERNAL_TRANSFORMERS),
+  I_RESOURCE_MENTION_BLOCK,
   I_FILE,
-  I_IMAGE_CONSTRAINED,
-  IMAGE, // Standard markdown images (fallback)
-  I_USER_MENTION,
-  I_GROUP_MENTION,
-  I_DOCUMENT_MENTION,
-  I_DOCUMENT_CARD,
-  I_PR_MENTION,
-  I_CONTACT_MENTION,
-  I_DATE_MENTION,
-  I_AWAIT_NODE,
-  I_MAGIC_CHIP,
-  I_TABLE_NODE,
-  HTML_BLOCKQUOTE,
-  I_MACRO_QUOTE,
-  I_EQUATION_NODE,
-  I_THEME_MENTION,
-  I_TAG_MENTION,
-  I_WATERMARK,
-  ...CUSTOM_TRANSFORMERS,
-  UNKNOWN_MENTION, // Must be last to act as fallback for unrecognized XML tags
+  I_IMAGE,
+  I_VIDEO,
+  EQUATION_BLOCK,
+  // The plain-markdown image rule is the fallback for the internal one and
+  // must follow it; it lives in the internal list too, so that importing
+  // ordinary markdown into a document produces real image nodes.
+  IMAGE_LINK,
+  ...BASE_ELEMENTS,
+  LINK,
+  I_RESOURCE_MENTION,
+  EQUATION_INLINE,
+  ...TEXT_FORMAT_TRANSFORMERS,
+  ...TEXT_MATCH_TRANSFORMERS,
+  EMPTY_PARAGRAPH,
+  LINE_BREAK,
+  I_UNKNOWN_EMBED,
 ];
 
 /**
- * External transformers for converting Lexical to and from to GitHub Flavored (ish) Markdown.
+ * The portable form: GitHub-flavoured markdown any reader understands.
+ * Lossy by design — an own node degrades to a link or an image.
  */
 export const EXTERNAL_TRANSFORMERS: Transformer[] = [
-  HR,
-  MARK_XML,
-  I_VIDEO,
+  createTableTransformer(() => EXTERNAL_TRANSFORMERS),
+  RESOURCE_LINK_BLOCK,
   FILE_LINK,
-  IMAGE,
-  BR_TAG_TO_LINE_BREAK,
-  E_TABLE_NODE,
-  HTML_BLOCKQUOTE,
-  E_USER_MENTION,
-  E_GROUP_MENTION,
-  E_PASTE_NODE, // export raw pasted text to external markdown
-  I_DOCUMENT_MENTION, // for chat attachments
-  E_DOCUMENT_MENTION,
-  I_DOCUMENT_CARD, // for internal representation
-  E_DOCUMENT_CARD,
-  I_PR_MENTION,
-  E_PR_MENTION,
-  E_CONTACT_MENTION,
-  E_DATE_MENTION,
-  E_TAG_MENTION,
-  // order matters
-  E_MULTILINE_BLOCK_EQUATION_NODE,
-  E_BLOCK_EQUATION_NODE,
-  E_INLINE_EQUATION_NODE,
-  E_WATERMARK,
-  E_SNAPSHOT_NODE,
-  ...HTML_ENTITY_TRANSFORMERS,
-  ...CUSTOM_TRANSFORMERS,
-  UNKNOWN_MENTION, // Must be last to act as fallback for unrecognized XML tags
+  IMAGE_LINK,
+  VIDEO_LINK,
+  EQUATION_BLOCK,
+  ...BASE_ELEMENTS,
+  // Before the stock LINK rule: a `resource://` link is a mention, and LINK
+  // would otherwise claim it as an ordinary link and lose the reference.
+  RESOURCE_LINK,
+  LINK,
+  EQUATION_INLINE,
+  ...TEXT_FORMAT_TRANSFORMERS,
+  ...TEXT_MATCH_TRANSFORMERS,
+  I_UNKNOWN_EMBED,
 ];
 
 /**
- * Complete set of transformers supporting both internal and external markdown operations.
+ * Import-anything: both forms, internal first so it wins where both match.
+ * Used on paste and on import, never to export.
  */
 export const ALL_TRANSFORMERS: Transformer[] = [
-  I_SNAPSHOT_NODE, // Must be before mentions to avoid matching inner tags in snapshot content
-  I_PASTE_NODE, // Must be before mentions to avoid matching inner tags in paste content
-  I_HTML_RENDER,
-  E_PASTE_NODE,
-  PRESERVE_LINES,
-  LINK_XML, // Prefer internal xml link to handle []() in link text
-  MARK_XML,
-  SEARCH_MATCH,
-  HR,
-  I_VIDEO,
+  createTableTransformer(() => ALL_TRANSFORMERS),
+  I_RESOURCE_MENTION_BLOCK,
+  RESOURCE_LINK_BLOCK,
   I_FILE,
+  I_IMAGE,
+  I_VIDEO,
   FILE_LINK,
-  I_IMAGE_CONSTRAINED,
-  IMAGE,
-  BR_TAG_TO_LINE_BREAK,
-  I_TABLE_NODE,
-  E_TABLE_NODE,
-  HTML_BLOCKQUOTE,
-  E_SNAPSHOT_NODE,
-  I_USER_MENTION,
-  E_USER_MENTION,
-  I_GROUP_MENTION,
-  E_GROUP_MENTION,
-  I_DOCUMENT_MENTION,
-  E_DOCUMENT_MENTION,
-  I_DOCUMENT_CARD,
-  E_DOCUMENT_CARD,
-  I_PR_MENTION,
-  E_PR_MENTION,
-  I_CONTACT_MENTION,
-  E_CONTACT_MENTION,
-  I_DATE_MENTION,
-  E_DATE_MENTION,
-  I_AWAIT_NODE,
-  I_MAGIC_CHIP,
-  I_MACRO_QUOTE,
-  I_EQUATION_NODE,
-  I_THEME_MENTION,
-  I_TAG_MENTION,
-  I_WATERMARK,
-  E_WATERMARK,
-  E_TAG_MENTION,
-  // order matters
-  E_MULTILINE_BLOCK_EQUATION_NODE,
-  E_BLOCK_EQUATION_NODE,
-  E_INLINE_EQUATION_NODE,
-  ...HTML_ENTITY_TRANSFORMERS,
-  ...CUSTOM_TRANSFORMERS,
-  UNKNOWN_MENTION, // Must be last to act as fallback for unrecognized XML tags
+  VIDEO_LINK,
+  EQUATION_BLOCK,
+  IMAGE_LINK,
+  ...BASE_ELEMENTS,
+  I_RESOURCE_MENTION,
+  // Before LINK, for the same reason as in the portable list.
+  RESOURCE_LINK,
+  LINK,
+  EQUATION_INLINE,
+  ...TEXT_FORMAT_TRANSFORMERS,
+  ...TEXT_MATCH_TRANSFORMERS,
+  EMPTY_PARAGRAPH,
+  LINE_BREAK,
+  I_UNKNOWN_EMBED,
 ];
+
+export { isConversionOnlyTransformer, wrapXml, xmlMatcher } from './inline';
+export { LIST_TRANSFORMERS } from './lists';

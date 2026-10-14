@@ -34,7 +34,6 @@ Examples of impacted areas:
 - `apps/platform/app/(account)/profile/*`
 - `apps/platform/lib/supabase/proxy.ts`
 - `apps/platform/proxy.ts`
-- `apps/author/**` (Supabase proxy, Payload bridge, guest policy, admin entry)
 - `packages/gateway-auth/*`
 - `tests/e2e/*` (new tests or updates)
 
@@ -57,7 +56,6 @@ At minimum:
 2. Login flow is verified.
 3. Session invalidation after logout is verified.
 4. Profile edit persistence (save + reload) is verified when profile behavior changes.
-5. **Author (`/author`)**: guest redirect to platform sign-in and authenticated entry to admin (Payload bridge) are covered when author auth or proxy behavior changes.
 
 ## Test Pyramid Decision Rule (Integration vs E2E)
 
@@ -112,4 +110,4 @@ A behavior change is **not done** until the e2e that asserts the OLD behavior is
    Never leave the divergence unresolved or unnoticed.
 3. **RUN the reconciled spec(s) green before commit** (`@full` against the live stack for render/flow changes). A behavior change committed with its covering e2e left **red or unrun** is exactly the failure mode this section exists to stop (e.g. a badge inversion shipped while its `…-render` spec still asserted the old icon).
 
-Owners of rendered/observable behavior — `knowledge-render-implementer`, `author-payload-implementer`, `knowledge-base-app`, `kb-*` — apply this on every badge/label/panel/flow change, not only "critical" auth flows.
+Owners of rendered/observable behavior — `knowledge-render-implementer`, `knowledge-base-app`, `kb-*` — apply this on every badge/label/panel/flow change, not only "critical" auth flows.

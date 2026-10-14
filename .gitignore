@@ -55,3 +55,5 @@ CLAUDE.local.md
 .claude/agents/*
 !.claude/agents/dependency-updater.md
 !.claude/agents/seed-curator.md
+# Workbench build staged into the gateway for production (see apps/web/scripts/stage-workbench.ts)
+apps/web/public/author/

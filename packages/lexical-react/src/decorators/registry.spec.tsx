@@ -23,8 +23,8 @@ afterEach(() => {
 const Rule: ReactDecoratorComponent<DecoratorPropsFor<'HorizontalRuleNode'>> = (
   props
 ) => {
-  // `key` comes from the node contract, proving the props type flowed through.
-  return props.key ? null : null;
+  // `nodeKey` comes from the node contract, proving the props type flowed through.
+  return props.nodeKey ? null : null;
 };
 
 describe('react decorator registry', () => {

@@ -49,10 +49,14 @@ export async function searchServerDocuments(args: {
     throw new Error('query embedding produced no vector');
   }
 
-  const supabase = createClient<Database>(args.supabaseUrl, args.supabaseAnonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-    global: { headers: { Authorization: `Bearer ${args.accessToken}` } },
-  });
+  const supabase = createClient<Database>(
+    args.supabaseUrl,
+    args.supabaseAnonKey,
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${args.accessToken}` } },
+    }
+  );
 
   const { data, error } = await supabase.rpc('rpc_search_server_documents', {
     p_query: term,
@@ -71,6 +75,7 @@ export async function searchServerDocuments(args: {
 }
 
 export function clampLimit(limit: number | undefined): number {
-  if (limit === undefined || !Number.isFinite(limit)) return SEARCH_DEFAULT_LIMIT;
+  if (limit === undefined || !Number.isFinite(limit))
+    return SEARCH_DEFAULT_LIMIT;
   return Math.min(Math.max(Math.trunc(limit), 1), SEARCH_MAX_LIMIT);
 }

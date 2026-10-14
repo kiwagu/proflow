@@ -36,10 +36,21 @@ export interface IDocumentRepository {
     id?: string;
     nodeId?: string;
   }): Promise<Result<DocumentMeta, string>>;
-  load(
-    id: string
-  ): Promise<
-    Result<{ meta: DocumentMeta; content: DocumentContent | null }, string>
+  /**
+   * `awaitingSync` is true for a document this device knows only from the
+   * graph: the server holds its body and nothing has been pulled yet, so
+   * `content` is null for now rather than for good. Only a store that
+   * replicates can say so; others leave it out.
+   */
+  load(id: string): Promise<
+    Result<
+      {
+        meta: DocumentMeta;
+        content: DocumentContent | null;
+        awaitingSync?: boolean;
+      },
+      string
+    >
   >;
   /**
    * Records a new state of the document. Every save is attributed, because

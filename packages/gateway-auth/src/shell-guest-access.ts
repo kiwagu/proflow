@@ -21,17 +21,6 @@ export const PLATFORM_SHELL_GUEST_ACCESS: ShellGuestAccessPolicy = {
   allowGuestPrefixes: ['/auth', '/login', '/invite'],
 };
 
-/**
- * Payload CMS exposes REST / GraphQL under `/api` with its own auth strategies (JWT, access-token).
- * Blocking `/api` for Supabase guests would break Payload's built-in auth flow. The bridge routes
- * (`/api/auth/admin-payload-bridge`, `/api/auth/supabase-payload`) also live here and handle their
- * own token validation.
- */
-export const AUTHOR_SHELL_GUEST_ACCESS: ShellGuestAccessPolicy = {
-  allowGuestAtRoot: false,
-  allowGuestPrefixes: ['/api'],
-};
-
 function normalizePathWithinBase(path: string): string {
   if (path === '' || path === '/') {
     return '/';

@@ -38,10 +38,6 @@
       "types": "./dist/projection-result.schema.d.ts",
       "import": "./dist/projection-result.schema.js"
     },
-    "./body-bridge": {
-      "types": "./dist/body-bridge.schema.d.ts",
-      "import": "./dist/body-bridge.schema.js"
-    },
     "./resource-user-state": {
       "types": "./dist/resource-user-state.schema.d.ts",
       "import": "./dist/resource-user-state.schema.js"
@@ -49,6 +45,10 @@
     "./resource-workflow": {
       "types": "./dist/resource-workflow.schema.d.ts",
       "import": "./dist/resource-workflow.schema.js"
+    },
+    "./knowledge-resource-move": {
+      "types": "./dist/knowledge-resource-move.schema.d.ts",
+      "import": "./dist/knowledge-resource-move.schema.js"
     }
   }
 }

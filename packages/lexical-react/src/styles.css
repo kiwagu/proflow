@@ -52,7 +52,7 @@
 }
 
 .md-list.md-bullet > li::before {
-  content: " ";
+  content: ' ';
   width: 0.4em;
   height: 0.4em;
   position: absolute;
@@ -65,7 +65,7 @@
 }
 
 .md-list.md-check > li::before {
-  content: " ";
+  content: ' ';
   width: 0.8em;
   height: 0.8em;
   position: absolute;
@@ -93,7 +93,7 @@
 .md-list.md-check > li.checked::after {
   border-bottom: 2px solid var(--color-surface);
   border-left: 2px solid var(--color-surface);
-  content: " ";
+  content: ' ';
   width: 0.7em;
   height: 0.4em;
   position: absolute;
@@ -133,7 +133,7 @@ ol.static-md.depth-1 > li:not(.list-none) {
 }
 
 ol.static-md.depth-1 > li:not(.list-none)::before {
-  content: counter(static-md-counter-1) ". ";
+  content: counter(static-md-counter-1) '. ';
 }
 
 ol.static-md.depth-2 > li:not(.list-none) {
@@ -141,7 +141,7 @@ ol.static-md.depth-2 > li:not(.list-none) {
 }
 
 ol.static-md.depth-2 > li:not(.list-none)::before {
-  content: counter(static-md-counter-2) ". ";
+  content: counter(static-md-counter-2) '. ';
 }
 
 ol.static-md.depth-3 > li:not(.list-none) {
@@ -149,7 +149,7 @@ ol.static-md.depth-3 > li:not(.list-none) {
 }
 
 ol.static-md.depth-3 > li:not(.list-none)::before {
-  content: counter(static-md-counter-3) ". ";
+  content: counter(static-md-counter-3) '. ';
 }
 
 ol.static-md.depth-4 > li:not(.list-none) {
@@ -157,7 +157,7 @@ ol.static-md.depth-4 > li:not(.list-none) {
 }
 
 ol.static-md.depth-4 > li:not(.list-none)::before {
-  content: counter(static-md-counter-4) ". ";
+  content: counter(static-md-counter-4) '. ';
 }
 
 ol.static-md.depth-5 > li:not(.list-none) {
@@ -165,7 +165,7 @@ ol.static-md.depth-5 > li:not(.list-none) {
 }
 
 ol.static-md.depth-5 > li:not(.list-none)::before {
-  content: counter(static-md-counter-5) ". ";
+  content: counter(static-md-counter-5) '. ';
 }
 
 ol.static-md.depth-6 > li:not(.list-none) {
@@ -173,7 +173,7 @@ ol.static-md.depth-6 > li:not(.list-none) {
 }
 
 ol.static-md.depth-6 > li:not(.list-none)::before {
-  content: counter(static-md-counter-6) ". ";
+  content: counter(static-md-counter-6) '. ';
 }
 
 .md-strike {
@@ -263,7 +263,7 @@ ol.static-md.depth-6 > li:not(.list-none)::before {
 }
 
 .plugin-drop-over::after {
-  content: "";
+  content: '';
   position: absolute;
   left: 0;
   bottom: 0;
@@ -315,7 +315,7 @@ ol.static-md.depth-6 > li:not(.list-none)::before {
 
 .md-table-frozen-row tr:nth-of-type(1) > th:after,
 .md-table-frozen-row tr:nth-of-type(1) > td:after {
-  content: "";
+  content: '';
   position: absolute;
   left: 0;
   bottom: 0;
@@ -335,7 +335,7 @@ ol.static-md.depth-6 > li:not(.list-none)::before {
 }
 
 .md-table-frozen-column tr > :first-child::after {
-  content: "";
+  content: '';
   position: absolute;
   left: 0;
   top: 0;
@@ -411,7 +411,7 @@ in a cell — move the indent inside the box so markers stay visible.
   bottom: 0;
   top: 0;
   background-color: highlight;
-  content: "";
+  content: '';
   pointer-events: none;
 }
 
@@ -428,7 +428,7 @@ in a cell — move the indent inside the box so markers stay visible.
   background-position: center;
   background-repeat: no-repeat;
   display: block;
-  content: " ";
+  content: ' ';
   position: absolute;
   top: 0;
   left: 0;
@@ -454,7 +454,7 @@ in a cell — move the indent inside the box so markers stay visible.
   background-position: center;
   background-repeat: no-repeat;
   display: block;
-  content: " ";
+  content: ' ';
   position: absolute;
   top: 0;
   left: 0;
@@ -573,7 +573,7 @@ mark {
   }
 
   *::before {
-    content: "-";
+    content: '-';
     position: absolute;
     left: -2rem;
   }
@@ -589,7 +589,7 @@ mark {
 }
 
 .md-diff-insert > *::before {
-  content: "+";
+  content: '+';
   position: absolute;
   left: -2rem;
 }

@@ -1,0 +1,8 @@
+[mcp_servers.deepwiki]
+url = "https://mcp.deepwiki.com/mcp"
+
+[mcp_servers.stagehand-docs]
+url = "https://docs.stagehand.dev/mcp"
+
+[mcp_servers.supabase-self-hosted]
+url = "http://localhost:8000/mcp"

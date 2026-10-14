@@ -35,7 +35,7 @@ export async function isGatewayUpstreamReachable(
     return true;
   }
 
-  const url = `http://${GATEWAY_HOST}:${upstream.port}${upstream.prefix}`;
+  const url = `http://${GATEWAY_HOST}:${upstream.port}${upstream.entry}`;
 
   for (let attempt = 0; attempt < PROBE_ATTEMPTS; attempt++) {
     if (attempt > 0) {
@@ -66,7 +66,7 @@ export async function isGatewayUpstreamReachable(
 
 const APP_HINT: Record<string, string> = {
   platform: 'apps/platform',
-  author: 'apps/author',
+  workbench: 'apps/workbench',
 };
 
 export function gatewayUpstreamStubResponse(

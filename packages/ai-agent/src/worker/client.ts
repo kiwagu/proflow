@@ -1,5 +1,6 @@
 import type { ILlmGateway, LlmChatRequest, LlmChunk } from '@workspace/domain';
 import type { SerializedEditorState } from 'lexical';
+import { type AgentPagePorts, callAgentPort, toWireValue } from './ports';
 import type {
   AgentConfig,
   EditOutcome,
@@ -48,8 +49,15 @@ export interface AgentWorkerClient extends ILlmGateway {
  *
  * Messages posted before the worker finishes evaluating its module are lost
  * — it awaits WebAssembly on load — so every send waits for `ready`.
+ *
+ * `ports` is how the agent's tools reach the database: the page serves each
+ * call from the single client it owns. A second client inside the worker
+ * would contend for the same exclusive files and break the page's own boot.
  */
-export function createAgentWorkerClient(worker: Worker): AgentWorkerClient {
+export function createAgentWorkerClient(
+  worker: Worker,
+  ports?: AgentPagePorts
+): AgentWorkerClient {
   const streams = new Map<
     string,
     { push: (chunk: LlmChunk) => void; end: () => void }
@@ -124,6 +132,36 @@ export function createAgentWorkerClient(worker: Worker): AgentWorkerClient {
           );
         }
         send({ type: 'apply-edit-result', id: message.id, applied });
+        break;
+      }
+      case 'port-call': {
+        // The page owns the only database client, so it answers the worker's
+        // port calls from it. A rejection crosses as `error` rather than
+        // being swallowed: a tool that cannot read must say so, not look at
+        // an empty result.
+        if (!ports) {
+          send({
+            type: 'port-result',
+            id: message.id,
+            error: 'the page serves no database ports',
+          });
+          break;
+        }
+        void callAgentPort(ports, message.port, message.method, message.args)
+          .then((value) =>
+            send({
+              type: 'port-result',
+              id: message.id,
+              value: toWireValue(value),
+            })
+          )
+          .catch((error: unknown) =>
+            send({
+              type: 'port-result',
+              id: message.id,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          );
         break;
       }
       default:

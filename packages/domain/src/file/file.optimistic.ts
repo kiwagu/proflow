@@ -103,7 +103,7 @@ export function createOptimisticFiles(deps: {
     ...deps.files,
 
     createFolder(input) {
-      const id = input.id ?? newId('fileNode');
+      const id = input.id ?? newId('knowledgeResource');
       const at = new Date();
       return run(
         [
@@ -197,7 +197,7 @@ export function createOptimisticFiles(deps: {
 
     create(input) {
       const id = input?.id ?? newId('document');
-      const nodeId = input?.nodeId ?? newId('fileNode');
+      const nodeId = input?.nodeId ?? newId('knowledgeResource');
       const at = new Date();
       const title = input?.title ?? '';
       return run(

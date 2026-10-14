@@ -9,15 +9,15 @@ supabase_dev_services_raw="${SUPABASE_DEV_SERVICES:-studio kong auth rest realti
 
 print_help() {
   cat <<'EOF'
-Recreate full local dev stack (Mongo + Maildev + Nginx + Supabase).
+Recreate full local dev stack (Maildev + Nginx + Supabase).
 
 Default mode:
 - restarts containers without deleting volumes or database data
 
 Force-clean mode:
 - resets Supabase containers/volumes and bind-mounted data directories
-- removes Mongo/Maildev containers and volumes
-- starts Mongo + Maildev + Nginx + Supabase again
+- removes Maildev containers and volumes
+- starts Maildev + Nginx + Supabase again
 
 Usage:
   ./infra/dev/recreate-stack.sh [-y] [--force-clean]
@@ -183,10 +183,10 @@ fi
 
 echo ""
 if [ "${force_clean}" = "1" ]; then
-  echo "*** WARNING: force-clean full stack reset (Mongo + Maildev + Nginx + Supabase) ***"
+  echo "*** WARNING: force-clean full stack reset (Maildev + Nginx + Supabase) ***"
   echo "*** This removes containers, volumes, and local DB data. ***"
 else
-  echo "Recreating full local stack (Mongo + Maildev + Nginx + Supabase) without volume cleanup."
+  echo "Recreating full local stack (Maildev + Nginx + Supabase) without volume cleanup."
 fi
 echo ""
 confirm
@@ -202,10 +202,10 @@ if [ "${force_clean}" = "1" ]; then
     fi
   done
 
-  echo "===> Removing Mongo + Maildev + Nginx containers and volumes..."
+  echo "===> Removing Maildev + Nginx containers and volumes..."
   run_compose "${script_dir}" down -v
 else
-  echo "===> Restarting Mongo + Maildev + Nginx stack without volume cleanup..."
+  echo "===> Restarting Maildev + Nginx stack without volume cleanup..."
   run_compose "${script_dir}" down
   ensure_proflow_edge_tls
   run_compose "${script_dir}" up -d
@@ -217,7 +217,7 @@ else
 fi
 
 if [ "${force_clean}" = "1" ]; then
-  echo "===> Starting Mongo + Maildev + Nginx stack..."
+  echo "===> Starting Maildev + Nginx stack..."
   ensure_proflow_edge_tls
   run_compose "${script_dir}" up -d
 
@@ -227,7 +227,7 @@ if [ "${force_clean}" = "1" ]; then
 fi
 
 echo ""
-echo "Done. Full dev stack recreated (Mongo + Maildev + Nginx + Supabase)."
+echo "Done. Full dev stack recreated (Maildev + Nginx + Supabase)."
 echo "Check status:"
 echo "  cd ${script_dir} && docker compose ps"
 echo "  cd ${supabase_dir} && docker compose ps"

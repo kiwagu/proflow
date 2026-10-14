@@ -1,6 +1,5 @@
 export {
   resolveAnonKey,
-  resolveBaseUrl,
   resolveServiceRoleKey,
   resolveSupabaseUrl,
 } from './env.js';
@@ -12,7 +11,6 @@ export {
   serviceSupabase,
   slug,
 } from './actors.js';
-export { actorCookieHeader, actorSsrAuthCookies } from './cookies.js';
 export {
   addActor,
   bootstrapEphemeralTenant,
@@ -26,9 +24,7 @@ export {
   DEMO_VIEWER_EMAIL,
 } from './tenant.js';
 export {
-  fetchFetcher,
   makeSeedClient,
-  type CopyResult,
   type Floor,
   type GrantableMember,
   type GrantableMembersPage,
@@ -36,13 +32,10 @@ export {
   type MediaUploadUrl,
   type NodeKind,
   type PurgeResult,
-  type SearchHit,
-  type SearchHits,
   type SeedClient,
-  type SeedFetcher,
-  type SeedResponse,
+  type SeedClientDeps,
   type TextResourceResult,
   type UserGrant,
   type Visibility,
-} from './http.js';
+} from './rows.js';
 export type { SeedActor, SeedTenant } from './types.js';

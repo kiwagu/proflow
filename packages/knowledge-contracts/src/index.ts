@@ -118,17 +118,6 @@ export {
 } from './resource-trash.schema.js';
 
 export {
-  BODY_BRIDGE_EVENTS,
-  BODY_BRIDGE_SCHEMA_VERSION,
-  bodyBridgeEnvelopeSchema,
-  bodyRefSchema,
-  parseBodyBridgeEnvelope,
-  type BodyBridgeEnvelope,
-  type BodyBridgeEventName,
-  type BodyRef,
-} from './body-bridge.schema.js';
-
-export {
   DANGEROUS_MIME_TYPES,
   DEFAULT_MAX_UPLOAD_BYTES,
   HARD_MAX_UPLOAD_BYTES,
@@ -159,3 +148,9 @@ export {
   setResourceLinkRequestSchema,
   type SetResourceLinkRequest,
 } from './resource-link.schema.js';
+
+export {
+  moveKnowledgeResourceInputSchema,
+  parseMoveKnowledgeResourceInput,
+  type MoveKnowledgeResourceInput,
+} from './knowledge-resource-move.schema.js';

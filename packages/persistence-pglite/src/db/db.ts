@@ -10,6 +10,7 @@ import { migrate } from './migrate.js';
  * same thing in every tab, on every reload, in dev and in a build.
  */
 const DB_ID = 'proflow';
+const namespaces = new WeakMap<object, string>();
 
 /**
  * The app's own single-file OPFS store (see db/pack): sync access handles
@@ -34,13 +35,14 @@ export type OpenStage = 'worker' | 'migration' | 'held';
  */
 const TOMBSTONE_KEY = 'proflow.db.deleteOnBoot';
 
-async function settleTombstone(): Promise<void> {
+async function settleTombstone(namespace: string): Promise<void> {
   // Workers have no localStorage; the main thread settles this before any
   // worker exists, which is exactly the window with no handles held.
   const storage = globalThis.localStorage;
-  if (!storage || storage.getItem(TOMBSTONE_KEY) === null) return;
-  await removeDatabaseStorage();
-  storage.removeItem(TOMBSTONE_KEY);
+  if (!storage || storage.getItem(`${TOMBSTONE_KEY}.${namespace}`) === null)
+    return;
+  await removeDatabaseStorage(namespace);
+  storage.removeItem(`${TOMBSTONE_KEY}.${namespace}`);
 }
 
 /** How long to wait between attempts while another context holds the files. */
@@ -68,12 +70,15 @@ const HELD_RETRY_MS = 1_000;
  * user which tab to close.
  */
 export async function openLocalDatabase(
-  onStage: (stage: OpenStage) => void = () => {}
+  onStage: (stage: OpenStage) => void = () => {},
+  namespace = DB_ID
 ) {
-  await settleTombstone();
+  if (!/^[a-zA-Z0-9_.-]+$/.test(namespace))
+    throw new Error('Invalid database namespace');
+  await settleTombstone(namespace);
   for (;;) {
     try {
-      return await openOnce(onStage);
+      return await openOnce(onStage, namespace);
     } catch (e) {
       if (!(e instanceof WorkerInitFailure) || !e.filesHeld) throw e;
       onStage('held');
@@ -109,7 +114,10 @@ class WorkerInitFailure extends Error {
   }
 }
 
-async function openOnce(onStage: (stage: OpenStage) => void) {
+async function openOnce(
+  onStage: (stage: OpenStage) => void,
+  namespace: string
+) {
   // Two waits with different failure modes: the first includes electing a
   // leader among the open tabs, the second a lock shared with them. A
   // start-up that stalls should say which of the two it is waiting on.
@@ -138,14 +146,15 @@ async function openOnce(onStage: (stage: OpenStage) => void) {
     // leader's database is open: the wait for that happens in `waitReady`,
     // and it is there — not in `create` — that a failed open would hang.
     const db = await PGliteWorker.create(workerInstance, {
-      id: DB_ID,
-      dataDir: DB_DATA_DIR,
+      id: namespace,
+      dataDir: namespace === DB_ID ? DB_DATA_DIR : `opfs-pack://${namespace}`,
       extensions: { live },
     });
     await Promise.race([db.waitReady, initFailed]);
     hardenAgainstLeaderChange(db);
     onStage('migration');
     await migrate(db);
+    namespaces.set(db, namespace);
     return db;
   } catch (e) {
     // Whatever failed, the worker behind it may hold sync access handles
@@ -160,13 +169,8 @@ async function openOnce(onStage: (stage: OpenStage) => void) {
  * Deletes the local database outright — the file the VFS keeps it in, not
  * its contents.
  *
- * The IndexedDB databases are ENUMERATED rather than named. What the
- * IndexedDB VFS calls its database is derived from where it mounts the data
- * directory, which is the driver's business and has changed between
- * versions; a hard-coded name that stops matching would fail silently,
- * leaving behind exactly what the caller asked to be rid of. Every
- * database on this origin belongs to this app, so taking all of them is
- * both correct and proof against that.
+ * Only the selected namespace is removed; other accounts and apps share
+ * this origin and must keep their data.
  *
  * A database another context still holds open cannot be deleted yet: an
  * IndexedDB deletion is left pending, an OPFS removal is refused outright
@@ -175,13 +179,19 @@ async function openOnce(onStage: (stage: OpenStage) => void) {
  * start deletes the storage before any worker has opened a handle. This
  * call resolves regardless; say so to the user rather than waiting.
  */
-export async function deleteLocalDatabase(db: {
-  close(): Promise<void>;
-}): Promise<void> {
+export async function deleteLocalDatabase(
+  db: {
+    close(): Promise<void>;
+  },
+  namespace = namespaces.get(db) ?? DB_ID
+): Promise<void> {
   // Intent first: even a deletion that dies mid-way finishes next boot.
-  globalThis.localStorage?.setItem(TOMBSTONE_KEY, String(Date.now()));
+  globalThis.localStorage?.setItem(
+    `${TOMBSTONE_KEY}.${namespace}`,
+    String(Date.now())
+  );
   await db.close().catch(() => {});
-  await removeDatabaseStorage();
+  await removeDatabaseStorage(namespace);
 }
 
 /**
@@ -191,18 +201,23 @@ export async function deleteLocalDatabase(db: {
  * may still hold handles, and then the next start finishes the deletion
  * before any worker of its own exists.
  */
-export async function deleteLocalDatabaseStorage(): Promise<void> {
-  globalThis.localStorage?.setItem(TOMBSTONE_KEY, String(Date.now()));
-  await removeDatabaseStorage();
+export async function deleteLocalDatabaseStorage(
+  namespace = DB_ID
+): Promise<void> {
+  globalThis.localStorage?.setItem(
+    `${TOMBSTONE_KEY}.${namespace}`,
+    String(Date.now())
+  );
+  await removeDatabaseStorage(namespace);
 }
 
-async function removeDatabaseStorage(): Promise<void> {
+async function removeDatabaseStorage(namespace: string): Promise<void> {
   const listed = await globalThis.indexedDB
     ?.databases?.()
     .catch(() => [] as IDBDatabaseInfo[]);
   const names = (listed ?? [])
     .map((info) => info.name)
-    .filter((name): name is string => Boolean(name));
+    .filter((name): name is string => Boolean(name) && name === namespace);
   await Promise.all(
     names.map(
       (name) =>
@@ -225,7 +240,7 @@ async function removeDatabaseStorage(): Promise<void> {
     if (root) {
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          await root.removeEntry('proflow', { recursive: true });
+          await root.removeEntry(namespace, { recursive: true });
           break;
         } catch (e) {
           // Already gone (never on OPFS, or a previous attempt won).

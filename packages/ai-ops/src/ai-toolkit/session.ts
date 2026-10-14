@@ -1,9 +1,6 @@
 import { registerCodeHighlighting } from '@lexical/code';
 import { $convertFromMarkdownString } from '@lexical/markdown';
-import {
-  NodeReplacements,
-  SupportedNodeTypes,
-} from '@workspace/lexical-nodes/node-list';
+import { SupportedNodeTypes } from '@workspace/lexical-nodes/node-list';
 import {
   $getId,
   $setId,
@@ -32,7 +29,7 @@ export function createEditingSession(): LexicalSession {
     nodeKeyToIdMap: new Map(),
   };
   const editor = createEditor({
-    nodes: [...SupportedNodeTypes, ...NodeReplacements], // code becomes custom code like how we do it on main frontend
+    nodes: [...SupportedNodeTypes],
     onError: (error) => {
       throw error;
     },
@@ -129,7 +126,7 @@ export function $retypeContainer<T extends ElementNode>(
   // Stamp the versioned id BEFORE the walk so `$assertId` adopts it instead of
   // minting a random one.
   if (oldId) $setId(replacement, nextVersionId(oldId));
-  $updateAllNodeIds(session.ids, replacement);
+  $updateAllNodeIds(session.ids);
   const { idToNodeKeyMap } = session.ids;
   const newKey = replacement.getKey();
   for (const [id, key] of idToNodeKeyMap) {

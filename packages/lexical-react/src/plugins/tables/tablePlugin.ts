@@ -71,13 +71,13 @@ function _registerTablePlugin(editor: LexicalEditor, props: TablePluginProps) {
         'list',
         'quote',
         'code',
-        'custom-code',
       ];
       return editor.registerNodeTransform(TableCellNode, (node) => {
         const children = node.getChildren();
 
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
+          if (child === undefined) continue;
           if (!allowedNodesInTableCellNode.includes(child.__type)) {
             child.remove();
           }

@@ -7,7 +7,6 @@ export {
   uploadProgress,
 } from './attachmentStore';
 export {
-  blobUrl,
   INSERT_ATTACHMENT_FILES_COMMAND,
   type InsertionPoint,
   mediaPlugin,

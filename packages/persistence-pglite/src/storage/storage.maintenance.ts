@@ -38,13 +38,14 @@ export function createPgliteStorageMaintenance(
     const { rows } = await db.query<{ hash: string }>(
       `select b.hash from blob b
        where exists (
-         select 1 from file_node f
-         where f.blob_hash = b.hash and f.deleted_at is null
+         select 1 from file_node f join knowledge_resources r on r.id = f.id
+         where f.blob_hash = b.hash
        )
        or exists (
          select 1 from document_content dc
          join document d on d.id = dc.document_id
-         where d.deleted_at is null and position(b.hash in dc.markdown) > 0
+         join knowledge_resources r on r.body_ref ->> 'doc_id' = d.id and r.kind = 'text'
+         where position(b.hash in dc.markdown) > 0
        )`
     );
     return new Set(rows.map((row) => row.hash));
@@ -89,7 +90,7 @@ export function createPgliteStorageMaintenance(
       try {
         const before = await blobs.list();
         const beforePackages = await packages.list();
-        // What the database can see: nodes the user deleted, and the rows
+        // What the database can see: nodes permanently purged, and the rows
         // whose bytes nothing names any more.
         const collected = await files.collectGarbage();
         if (collected.isErr()) return err(collected.error);

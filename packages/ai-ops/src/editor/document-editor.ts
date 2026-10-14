@@ -547,8 +547,8 @@ export class DocumentEditor {
   public insertImage(
     afterId: NodeId,
     img: {
-      srcType: string;
-      url: string;
+      hash: string;
+      mime?: string;
       alt?: string;
       width?: number;
       height?: number;
@@ -560,8 +560,8 @@ export class DocumentEditor {
   public insertVideo(
     afterId: NodeId,
     vid: {
-      srcType: string;
-      url: string;
+      hash: string;
+      mime?: string;
       controls?: boolean;
       width?: number;
       height?: number;
@@ -590,18 +590,6 @@ export class DocumentEditor {
     return this.insertInline(blockId, at, { inline: 'linebreak' });
   }
 
-  public insertDate(
-    blockId: NodeId,
-    at: number,
-    isoDate: string,
-    displayFormat?: string
-  ): Ref {
-    return this.insertInline(blockId, at, {
-      inline: 'date',
-      date: isoDate,
-      displayFormat,
-    });
-  }
   private insertInline(id: NodeId, at: number, spec: NodeSpec): Ref {
     this.requireId(id);
     if (at < 0) throw new EditError(`inline offset must be >= 0, got ${at}`);
@@ -610,45 +598,11 @@ export class DocumentEditor {
     return ref;
   }
 
+  /** Insert a reference to a knowledge-base resource. `kind` is an open
+   *  vocabulary ('document', 'folder', 'file', …), so a new referent kind
+   *  needs no new method here. */
   public insertMention(blockId: NodeId, at: number, mention: MentionSpec): Ref {
     return this.insertInline(blockId, at, { inline: 'mention', mention });
-  }
-
-  public mentionUser(
-    blockId: NodeId,
-    at: number,
-    entity: { userId: string; email: string }
-  ): Ref {
-    return this.insertMention(blockId, at, { kind: 'user', ...entity });
-  }
-
-  public mentionContact(
-    blockId: NodeId,
-    at: number,
-    entity: {
-      contactId: string;
-      name: string;
-      emailOrDomain: string;
-      isCompany: boolean;
-    }
-  ): Ref {
-    return this.insertMention(blockId, at, { kind: 'contact', ...entity });
-  }
-
-  public mentionGroup(
-    blockId: NodeId,
-    at: number,
-    entity: { groupAlias: string }
-  ): Ref {
-    return this.insertMention(blockId, at, { kind: 'group', ...entity });
-  }
-
-  public mentionDocument(
-    blockId: NodeId,
-    at: number,
-    entity: { documentId: string; documentName: string; blockName: string }
-  ): Ref {
-    return this.insertMention(blockId, at, { kind: 'document', ...entity });
   }
 
   public setImageAlt(id: NodeId, alt: string): this {
@@ -656,24 +610,16 @@ export class DocumentEditor {
     return this.push({ kind: 'setImageAlt', node: id, alt });
   }
 
-  public setImageUrl(id: NodeId, url: string): this {
+  /** Repoint a media node at different bytes. The document references media by
+   *  content hash, never by URL. */
+  public setMediaHash(id: NodeId, hash: string): this {
     this.requireId(id);
-    return this.push({ kind: 'setImageUrl', node: id, url });
-  }
-
-  public setVideoUrl(id: NodeId, url: string): this {
-    this.requireId(id);
-    return this.push({ kind: 'setVideoUrl', node: id, url });
+    return this.push({ kind: 'setMediaHash', node: id, hash });
   }
 
   public setVideoControls(id: NodeId, controls: boolean): this {
     this.requireId(id);
     return this.push({ kind: 'setVideoControls', node: id, controls });
-  }
-
-  public setDate(id: NodeId, date: string, displayFormat?: string): this {
-    this.requireId(id);
-    return this.push({ kind: 'setDate', node: id, date, displayFormat });
   }
 }
 

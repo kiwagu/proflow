@@ -19,11 +19,12 @@ export { createBlobStoreOver } from './store.js';
 /**
  * Opens the blob store in its worker. Called once, from a composition root.
  */
-export async function openBlobStore() {
+export async function openBlobStore(namespace?: string) {
   const { createBlobWorkerClient } = await import('./client.js');
-  return createBlobWorkerClient(
-    new Worker(new URL('./blob.worker.ts', import.meta.url), {
-      type: 'module',
-    })
-  );
+  const worker = new Worker(new URL('./blob.worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  const ready = createBlobWorkerClient(worker);
+  worker.postMessage({ type: 'init', namespace });
+  return ready;
 }

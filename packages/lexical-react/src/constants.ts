@@ -1,3 +1,4 @@
+import type { WorkbenchTranslator } from '@workspace/i18n-catalogs/workbench';
 import { isNativeMobilePlatform } from './support/environment';
 
 let layer = 0;
@@ -35,7 +36,20 @@ const MarkdownEditorErrorDescriptions: Record<
 };
 
 export const getErrorDescription = (
-  errorType: MarkdownEditorErrors
+  errorType: MarkdownEditorErrors,
+  t?: WorkbenchTranslator
 ): string => {
-  return MarkdownEditorErrorDescriptions[errorType]();
+  if (!t) return MarkdownEditorErrorDescriptions[errorType]();
+  switch (errorType) {
+    case MarkdownEditorErrors.EMPTY_SOURCE:
+      return t('workbench.editor.load.emptySource');
+    case MarkdownEditorErrors.JSON_PARSE_ERROR:
+      return t('workbench.editor.load.invalidJson');
+    case MarkdownEditorErrors.VERSION_MISMATCH_ERROR:
+      return isNativeMobilePlatform()
+        ? t('workbench.editor.load.newerVersionApp')
+        : t('workbench.editor.load.newerVersionWeb');
+    case MarkdownEditorErrors.STAGING_VERSION_MISMATCH_ERROR:
+      return t('workbench.editor.load.incompatibleVersion');
+  }
 };

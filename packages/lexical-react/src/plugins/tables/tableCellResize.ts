@@ -62,7 +62,7 @@ export function $captureResizeDrag(
     let width: number | undefined;
     for (const mapRow of tableMap) {
       const entry = mapRow[column];
-      if (entry.cell.getColSpan() !== 1) continue;
+      if (entry === undefined || entry.cell.getColSpan() !== 1) continue;
       const rect = editor
         .getElementByKey(entry.cell.getKey())
         ?.getBoundingClientRect();
@@ -88,10 +88,9 @@ export function $applyResizeDrag(
   const tableNode = $getNodeByKey(drag.tableKey);
   if (!$isTableNode(tableNode) || !tableNode.isAttached()) return;
   const widths = [...drag.baseWidths];
-  widths[drag.columnIndex] = Math.max(
-    MIN_COLUMN_WIDTH,
-    drag.baseWidths[drag.columnIndex] + delta
-  );
+  const baseWidth = drag.baseWidths[drag.columnIndex];
+  if (baseWidth === undefined) return;
+  widths[drag.columnIndex] = Math.max(MIN_COLUMN_WIDTH, baseWidth + delta);
   tableNode.setColWidths(widths);
 }
 

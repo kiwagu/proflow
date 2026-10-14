@@ -44,7 +44,7 @@ Use entity-first modular filenames for feature artifacts to keep related files g
 - `profile.form.tsx`
 - `profile.actions.ts`
 - `profile.schema.tsx`
-- `admin.client.tsx` (Payload admin client mount / hydration boundary next to `layout.tsx`)
+- `admin.client.tsx` (client mount / hydration boundary next to `layout.tsx`)
 
 ## Refactoring rule
 

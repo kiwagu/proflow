@@ -35,7 +35,8 @@ export type ToWorker =
       id: string;
       state: SerializedEditorState | null;
     }
-  | { type: 'apply-edit-result'; id: string; applied: boolean };
+  | { type: 'apply-edit-result'; id: string; applied: boolean }
+  | { type: 'port-result'; id: string; value?: unknown; error?: string };
 
 export type FromWorker =
   | { type: 'ready' }
@@ -55,6 +56,19 @@ export type FromWorker =
       result: EditOutcome;
       /** True while the session is still running: more will follow. */
       partial: boolean;
+    }
+  | {
+      /**
+       * A port call the page serves from the one database it owns. The local
+       * database is exclusive — a second opener in this worker would contend
+       * with the page for the same files — so the worker asks instead of
+       * opening, exactly as it already does for the open editor's state.
+       */
+      type: 'port-call';
+      id: string;
+      port: 'documents' | 'search' | 'lists';
+      method: string;
+      args: unknown[];
     };
 
 export type { EditOutcome } from '../editing/run-edit';

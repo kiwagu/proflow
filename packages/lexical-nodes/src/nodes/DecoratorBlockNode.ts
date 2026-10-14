@@ -5,16 +5,24 @@
  * LICENSE file in the root directory of this source tree.
  *
  */
-import type {
-  EditorConfig,
-  ElementFormatType,
-  LexicalNode,
-  NodeKey,
-  SerializedLexicalNode,
-  Spread,
-} from 'lexical';
 
-import { DecoratorNode } from 'lexical';
+/*
+ * Copied from facebook/lexical v0.45.0
+ * (packages/lexical-react/src/LexicalDecoratorBlockNode.ts), MIT.
+ *
+ * One deliberate divergence: this package is headless, so the decorator type
+ * is the registry's framework-free component type instead of `JSX.Element`.
+ * The class is otherwise the upstream text.
+ */
+import {
+  DecoratorNode,
+  type ElementFormatType,
+  type LexicalNode,
+  type LexicalUpdateJSON,
+  type NodeKey,
+  type SerializedLexicalNode,
+  type Spread,
+} from 'lexical';
 
 export type SerializedDecoratorBlockNode = Spread<
   {
@@ -23,7 +31,7 @@ export type SerializedDecoratorBlockNode = Spread<
   SerializedLexicalNode
 >;
 
-export class DecoratorBlockNode<T> extends DecoratorNode<T> {
+export class DecoratorBlockNode<T = unknown> extends DecoratorNode<T> {
   __format: ElementFormatType;
 
   constructor(format?: ElementFormatType, key?: NodeKey) {
@@ -31,21 +39,46 @@ export class DecoratorBlockNode<T> extends DecoratorNode<T> {
     this.__format = format || '';
   }
 
+  afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__format = prevNode.__format;
+  }
+
+  exportJSON(): SerializedDecoratorBlockNode {
+    return {
+      ...super.exportJSON(),
+      format: this.__format || '',
+    };
+  }
+
+  updateFromJSON(
+    serializedNode: LexicalUpdateJSON<SerializedDecoratorBlockNode>
+  ): this {
+    return super
+      .updateFromJSON(serializedNode)
+      .setFormat(serializedNode.format || '');
+  }
+
   canIndent(): false {
     return false;
   }
 
-  createDOM(_config?: EditorConfig): HTMLElement {
+  createDOM(): HTMLElement {
     return document.createElement('div');
   }
 
-  updateDOM(): boolean {
+  updateDOM(): false {
     return false;
   }
 
-  setFormat(format: ElementFormatType): void {
+  setFormat(format: ElementFormatType): this {
     const self = this.getWritable();
     self.__format = format;
+    return self;
+  }
+
+  getFormat(): ElementFormatType {
+    return this.getLatest().__format;
   }
 
   isInline(): false {
@@ -53,8 +86,8 @@ export class DecoratorBlockNode<T> extends DecoratorNode<T> {
   }
 }
 
-export function $isDecoratorBlockNode<T>(
+export function $isDecoratorBlockNode(
   node: LexicalNode | null | undefined
-): node is DecoratorBlockNode<T> {
+): node is DecoratorBlockNode<unknown> {
   return node instanceof DecoratorBlockNode;
 }

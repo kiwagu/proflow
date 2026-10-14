@@ -1,7 +1,10 @@
 import './prism-global.js';
 
 import { $convertToMarkdownString } from '@lexical/markdown';
-import { createEditingSession, loadSnapshot } from '@workspace/ai-ops/ai-toolkit';
+import {
+  createEditingSession,
+  loadSnapshot,
+} from '@workspace/ai-ops/ai-toolkit';
 import { DocumentCrdt, type SerializedTree } from '@workspace/doc-crdt';
 import { INTERNAL_TRANSFORMERS } from '@workspace/lexical-nodes/transformers';
 import type { SerializedEditorState } from 'lexical';
@@ -42,7 +45,9 @@ export function treeToMarkdown(tree: SerializedTree | null): string {
   const session = createEditingSession();
   // The tree is structurally an editor state root; the domain type describes
   // the same JSON without depending on the editor library.
-  loadSnapshot(session, { root: tree.root } as unknown as SerializedEditorState);
+  loadSnapshot(session, {
+    root: tree.root,
+  } as unknown as SerializedEditorState);
   return session.editor
     .getEditorState()
     .read(() => $convertToMarkdownString(INTERNAL_TRANSFORMERS));

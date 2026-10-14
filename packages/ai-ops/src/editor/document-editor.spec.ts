@@ -330,14 +330,19 @@ describe('DocumentEditor — structure & refs', () => {
   it('media / inline creators', () => {
     const e = ed();
     const img = e.insertImage('b1', {
-      srcType: 'url',
-      url: 'http://i',
+      hash: 'sha256-abc',
+      mime: 'image/png',
       alt: 'a',
     });
     expect(typeof img).toBe('string');
     expect(e.drain()[0]).toMatchObject({
       kind: 'insertNode',
-      spec: { block: 'image', srcType: 'url', url: 'http://i', alt: 'a' },
+      spec: {
+        block: 'image',
+        hash: 'sha256-abc',
+        mime: 'image/png',
+        alt: 'a',
+      },
     });
   });
 
@@ -389,43 +394,47 @@ describe('DocumentEditor — eager validation (EditError)', () => {
   });
 });
 
-describe('DocumentEditor — mention methods push insertInline ops', () => {
-  it('every mention method pushes an insertInline op with the right mention kind', () => {
-    const eu = ed();
-    eu.mentionUser('b1', 0, { userId: 'u', email: 'e' });
-    expect(eu.drain()[0]).toMatchObject({
+describe('DocumentEditor — insertMention pushes insertInline ops', () => {
+  it('carries the resource spec through unchanged, whatever the kind', () => {
+    const e = ed();
+    e.insertMention('b1', 0, {
+      resourceId: 'r1',
+      kind: 'document',
+      label: 'Design notes',
+    });
+    expect(e.drain()[0]).toMatchObject({
       kind: 'insertInline',
+      node: 'b1',
+      at: 0,
       spec: {
         inline: 'mention',
-        mention: { kind: 'user', userId: 'u', email: 'e' },
+        mention: { resourceId: 'r1', kind: 'document', label: 'Design notes' },
       },
     });
-    const eg = ed();
-    eg.mentionGroup('b1', 0, { groupAlias: 'g' });
-    expect(eg.drain()[0]).toMatchObject({
+  });
+
+  it('accepts an unlisted kind, display mode and params', () => {
+    const e = ed();
+    e.insertMention('b1', 3, {
+      resourceId: 'r2',
+      kind: 'spreadsheet',
+      label: 'Q3',
+      display: 'card',
+      params: { sheet: '2' },
+    });
+    expect(e.drain()[0]).toMatchObject({
       kind: 'insertInline',
-      spec: { inline: 'mention', mention: { kind: 'group', groupAlias: 'g' } },
-    });
-    const ec = ed();
-    ec.mentionContact('b1', 0, {
-      contactId: 'c',
-      name: 'n',
-      emailOrDomain: 'd',
-      isCompany: false,
-    });
-    expect(ec.drain()[0]).toMatchObject({
-      kind: 'insertInline',
-      spec: { inline: 'mention', mention: { kind: 'contact' } },
-    });
-    const ed2 = ed();
-    ed2.mentionDocument('b1', 0, {
-      documentId: 'd',
-      documentName: 'n',
-      blockName: 'b',
-    });
-    expect(ed2.drain()[0]).toMatchObject({
-      kind: 'insertInline',
-      spec: { inline: 'mention', mention: { kind: 'document' } },
+      at: 3,
+      spec: {
+        inline: 'mention',
+        mention: {
+          resourceId: 'r2',
+          kind: 'spreadsheet',
+          label: 'Q3',
+          display: 'card',
+          params: { sheet: '2' },
+        },
+      },
     });
   });
 });
@@ -639,14 +648,15 @@ describe('DocumentEditor — scope defaults', () => {
   });
 });
 
-describe('DocumentEditor — mention methods require a valid block id', () => {
-  it('each mention method throws EditError for an unknown id', () => {
+describe('DocumentEditor — insertMention requires a valid block id', () => {
+  it('throws EditError for an unknown id', () => {
     expect(() =>
-      ed().mentionUser('nope', 0, { userId: 'u', email: 'e' })
+      ed().insertMention('nope', 0, {
+        resourceId: 'r1',
+        kind: 'document',
+        label: 'l',
+      })
     ).toThrow(/nope/);
-    expect(() => ed().mentionGroup('nope', 0, { groupAlias: 'g' })).toThrow(
-      /nope/
-    );
   });
 });
 

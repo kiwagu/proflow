@@ -1,3 +1,13 @@
+// The package is consumed as SOURCE (exports point at src/*.ts), so a
+// consumer's tsc compiles this file inside the CONSUMER's program, where the
+// sibling css.d.ts ambient declaration is not part of the program. The
+// triple-slash reference pins it to this file so the `*.css` module shape
+// travels with every consumer. The lint rule's "use import instead" advice
+// cannot apply: css.d.ts is a global script declaring a wildcard module,
+// which an `import` would turn into a module and silently drop the
+// declaration.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="./css.d.ts" />
 import './styles.css';
 import type { EditorThemeClasses } from 'lexical';
 
@@ -75,7 +85,6 @@ export const theme: EditorThemeClasses = {
     'table-container': 'my-4 max-w-full',
   },
   codeHighlight,
-  'inline-search': 'md-inline-search bg-hover text-ink-muted rounded-sm p-0.5',
 
   table: 'md-table',
   tableAddColumns: 'md-table-add-columns',

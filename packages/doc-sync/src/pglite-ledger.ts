@@ -12,8 +12,15 @@ export interface LedgerDb {
 }
 
 /**
- * The per-document sync ledger over the local `document_sync` table
- * (migration 005 of the local schema).
+ * How far below the space cursor each pass re-reads. Two heads stamped in
+ * the same instant, one after the cursor was taken, would otherwise be
+ * invisible forever; re-reading a window costs a few ledger reads.
+ */
+export const HEADS_OVERLAP_MS = 5_000;
+
+/**
+ * The per-document sync ledger over the local `document_sync` table, and
+ * the space feed cursor over `document_sync_space`.
  */
 export function createPgliteLedger(db: LedgerDb): SyncLedger {
   return {
@@ -53,6 +60,27 @@ export function createPgliteLedger(db: LedgerDb): SyncLedger {
            set pulled_seq = greatest(document_sync.pulled_seq, excluded.pulled_seq),
                updated_at = now()`,
         [documentId, pulledSeq]
+      );
+    },
+
+    async headsCursor(spaceId) {
+      const { rows } = await db.query<{ heads_cursor: string | Date | null }>(
+        'select heads_cursor from document_sync_space where space_id = $1',
+        [spaceId]
+      );
+      const raw = rows[0]?.heads_cursor ?? null;
+      if (raw === null) return null;
+      return new Date(new Date(raw).getTime() - HEADS_OVERLAP_MS);
+    },
+
+    async advanceHeadsCursor(spaceId, cursor) {
+      await db.query(
+        `insert into document_sync_space (space_id, heads_cursor)
+         values ($1, $2)
+         on conflict (space_id) do update
+           set heads_cursor = greatest(document_sync_space.heads_cursor, excluded.heads_cursor),
+               updated_at = now()`,
+        [spaceId, cursor]
       );
     },
   };

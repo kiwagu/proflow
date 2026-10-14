@@ -47,7 +47,7 @@ export function registerTableSelectAll(editor: LexicalEditor) {
       const [tableMap] = $computeTableMapSkipCellCheck(tableNode, null, null);
       const lastRow = tableMap[tableMap.length - 1];
       if (!lastRow) return false;
-      const firstCell = tableMap[0][0]?.cell;
+      const firstCell = tableMap[0]?.[0]?.cell;
       const lastCell = lastRow[lastRow.length - 1]?.cell;
       if (!firstCell || !lastCell) return false;
 

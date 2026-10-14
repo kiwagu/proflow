@@ -1,6 +1,7 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { fromByteaHex, toByteaHex } from './bytea.js';
+import { DocumentNotRegisteredError } from './errors.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from './types.js';
 
 /**
@@ -12,16 +13,31 @@ export function createSupabaseTransport(
   client: SupabaseClient<Database>
 ): SyncTransport {
   return {
-    async ensureDocument(docId, spaceId) {
+    async ensureDocument(docId, spaceId, resourceId = null) {
       const user = await client.auth.getClaims();
       const uid = user.data?.claims.sub;
       if (!uid) throw new Error('no authenticated session for document sync');
-      const { error } = await client
+      // A row that exists needs nothing from this device, and a device that
+      // is not the one that registered it (a collaborator with the right to
+      // edit) has no business naming an owner: ask before inserting.
+      const found = await client
         .from('crdt_documents')
-        .upsert(
-          { id: docId, space_id: spaceId, created_by: uid },
-          { onConflict: 'id', ignoreDuplicates: true }
-        );
+        .select('id')
+        .eq('id', docId)
+        .maybeSingle();
+      if (found.error)
+        throw new Error(`ensureDocument failed: ${found.error.message}`);
+      if (found.data) return;
+      if (resourceId === null) throw new DocumentNotRegisteredError(docId);
+      const { error } = await client.from('crdt_documents').upsert(
+        {
+          id: docId,
+          space_id: spaceId,
+          created_by: uid,
+          resource_id: resourceId,
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
       if (error) throw new Error(`ensureDocument failed: ${error.message}`);
     },
 
@@ -103,6 +119,48 @@ export function createSupabaseTransport(
             schema: 'public',
             table: 'crdt_updates',
             filter: `doc_id=eq.${docId}`,
+          },
+          () => onNudge()
+        )
+        .subscribe();
+      return () => {
+        if (channel) void client.removeChannel(channel);
+        channel = null;
+      };
+    },
+
+    async heads(spaceId, since, limit, offset) {
+      let query = client
+        .from('crdt_documents')
+        .select('id, head_seq, updated_at')
+        .eq('space_id', spaceId)
+        // Id as tiebreaker: equal timestamps must order deterministically
+        // or offset pages could overlap or skip between requests.
+        .order('updated_at', { ascending: true })
+        .order('id', { ascending: true })
+        // One extra row answers "is there more?" without a count query.
+        .range(offset, offset + limit);
+      if (since) query = query.gte('updated_at', since.toISOString());
+      const { data, error } = await query;
+      if (error) throw new Error(`heads query failed: ${error.message}`);
+      const rows = (data ?? []).map((row) => ({
+        docId: row.id,
+        headSeq: Number(row.head_seq),
+        updatedAt: new Date(row.updated_at),
+      }));
+      return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+    },
+
+    subscribeSpace(spaceId, onNudge) {
+      let channel: RealtimeChannel | null = client
+        .channel(`doc-sync:space:${spaceId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'crdt_documents',
+            filter: `space_id=eq.${spaceId}`,
           },
           () => onNudge()
         )

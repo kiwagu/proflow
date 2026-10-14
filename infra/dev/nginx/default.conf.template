@@ -17,6 +17,30 @@ map $http_origin $supabase_cors_origin {
 # Docker embedded DNS — required when proxy_pass uses a variable (runtime resolve for host.docker.internal)
 resolver 127.0.0.11 valid=10s ipv6=off;
 
+# How many requests one kept-alive connection may carry before the edge
+# recycles it. The built-in default is 1000 and, since nginx 1.19.7, it applies
+# to HTTP/2 too: at request 1001 nginx sends GOAWAY and closes.
+#
+# That default is sized for ordinary page traffic. It is far too small in front
+# of a module-per-request dev server: the SPA's unbundled module graph is ~1150
+# requests for a SINGLE page load (measured from a Playwright trace), so the
+# recycle boundary lands INSIDE a page load rather than between them. The
+# browser is mid-way through fetching the module graph when the connection goes;
+# the refused module scripts come back as `net::ERR_FAILED`, the graph never
+# finishes, and the app is stuck on its boot screen forever — the same screen a
+# genuine start-up failure shows.
+#
+# Measured on this edge: `keepalive_requests 50` makes the workbench specs fail
+# that way even one file at a time, and the built-in 1000 makes them fail only
+# once enough earlier traffic has pushed a page load across the boundary — which
+# is exactly why the failure looked like an undeterministic flake with a
+# different victim each run, rather than a broken spec.
+#
+# A local dev edge serves one browser on a trusted host, so the resource
+# argument the default protects against does not apply here; the number only
+# has to sit far above any single page's module count.
+keepalive_requests 100000;
+
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -70,7 +94,7 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    # KB media large uploads (ADR-0026 amendment / slice-14): the edge must allow a
+    # KB media large uploads: the edge must allow a
     # request body up to the 5 GiB HARD cap, else nginx's DEFAULT 1 MB limit 413s the
     # resumable (TUS) POST/PATCH before it reaches Kong→storage-api. Resumable chunks
     # are ~6 MiB, but creation-with-upload can carry a whole small-but->1 MB file in
@@ -88,8 +112,17 @@ server {
             # browser blocks every chunk on preflight (the creation POST — which sends
             # only upload-length/upload-metadata — would still 201, so the symptom is
             # "create OK, chunks CORS-error, upload never finishes"). Node (e2e) skips
-            # CORS, which is why this only bites the real browser client (slice-14).
-            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
+            # CORS, which is why this only bites the real browser client.
+            #
+            # accept-profile / content-profile are the same class of bug one layer up:
+            # postgrest-js sends `accept-profile` on every READ and `content-profile` on
+            # every WRITE whenever a schema is configured, so a browser client talking to
+            # /rest/v1 is blocked on preflight before a single row moves. Measured on the
+            # SPA's graph replication: the setting arrived, the client was built, the GET
+            # left the page, and Chrome refused it with "Request header field
+            # accept-profile is not allowed by Access-Control-Allow-Headers". Node (e2e)
+            # again skips CORS, so only the real browser sees it.
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type, apikey, X-Client-Info, X-Supabase-Api-Version, Accept, Accept-Profile, Content-Profile, Prefer, Range, x-upsert, tus-resumable, upload-length, upload-offset, upload-metadata, upload-concat, upload-defer-length, x-http-method-override, cache-control";
             add_header Access-Control-Allow-Credentials true;
             add_header Access-Control-Max-Age 86400;
             return 204;

@@ -1,12 +1,9 @@
 import { isTouchDevice } from '../../support/environment';
 import { openExternalUrl } from '../../support/url';
 import {
-  $createAutoLinkNode,
   $createLinkNode,
-  $isAutoLinkNode,
   $isLinkNode,
   $toggleLink,
-  type AutoLinkNode,
   type LinkNode,
 } from '@lexical/link';
 import {
@@ -14,24 +11,52 @@ import {
   $wrapNodeInElement,
   mergeRegister,
 } from '@lexical/utils';
-import { $createUnlinkedTextNode } from '@workspace/lexical-nodes';
-import type { LexicalEditor } from 'lexical';
+import type { LexicalEditor, LexicalNode } from 'lexical';
 import {
   $createParagraphNode,
   $createTextNode,
   $getSelection,
+  $getState,
   $insertNodes,
   $isRangeSelection,
   $isRootOrShadowRoot,
   $isTextNode,
   $setSelection,
+  $setState,
   COMMAND_PRIORITY_NORMAL,
   createCommand,
+  createState,
   FORMAT_TEXT_COMMAND,
   PASTE_COMMAND,
   TextNode,
 } from 'lexical';
 import linkify, { type Match } from 'linkify-it';
+
+/**
+ * The vocabulary registers `LinkNode` and no auto-link subclass, so the two
+ * facts the auto-linker used to read off a node class are carried as node
+ * state instead:
+ *
+ * - `autoLinked` — this link was made by the matcher, so it may still grow as
+ *   the user types and it becomes an ordinary link once the URL ends.
+ * - `unlinked` — this text is URL-shaped and the user took the link off it, so
+ *   the matcher must leave it alone. Node state is cloned across
+ *   `splitText` and blocks a merge with a differently-stated sibling, which is
+ *   exactly the reach the marker needs: it follows the text through editing
+ *   and does not bleed into the text typed next to it.
+ */
+const autoLinkedState = createState('autoLinked', {
+  parse: (value) => value === true,
+});
+
+const unlinkedState = createState('unlinked', {
+  parse: (value) => value === true,
+});
+
+/** A link the matcher created and has not yet finished. */
+function $isGrowingAutoLink(node: LexicalNode | null): node is LinkNode {
+  return $isLinkNode(node) && $getState(node, autoLinkedState);
+}
 
 const strictLinkifier = new linkify(undefined, {
   fuzzyLink: false,
@@ -94,7 +119,7 @@ function cleanURL(input: string) {
 
   const [basePath, ...queryParts] = url.split(/([#?])/);
 
-  const encodedBase = basePath
+  const encodedBase = (basePath ?? '')
     .split('/')
     .map((segment) => (segment.includes(':') ? segment : encodeURI(segment)))
     .join('/');
@@ -174,6 +199,7 @@ export function findNextAutoLinkMatch(
   const match = linkifier.match(text);
   if (!match) return null;
   const firstMatch = match[0];
+  if (firstMatch === undefined) return null;
   if (firstMatch.schema === '') {
     firstMatch.url = cleanURL(firstMatch.raw);
   }
@@ -181,17 +207,15 @@ export function findNextAutoLinkMatch(
 }
 
 function $handleAppendToMatch(
-  prevSibling: AutoLinkNode,
+  prevSibling: LinkNode,
   textNode: TextNode,
   autoLinkMatchMode: AutoLinkMatchMode
 ) {
   const prevText = prevSibling.getTextContent();
   const nodeText = textNode.getTextContent();
 
-  if (prevSibling.getIsUnlinked()) return;
-
   if (nodeText.includes(' ')) {
-    $convertAutoLinkToLinkNode(prevSibling);
+    $finishAutoLink(prevSibling);
     return;
   }
 
@@ -233,29 +257,37 @@ function $matchAndCreateAutoLink(
 
   const matchOffset = matchedLink.index;
   const matchLength = matchedLink.raw.length;
-  let matchedNode;
+  let matchedNode: TextNode | undefined;
 
   if (matchOffset === 0) {
-    [matchedNode, currentNode] = currentNode.splitText(matchLength);
+    const [matched, rest] = currentNode.splitText(matchLength);
+    matchedNode = matched;
+    if (rest !== undefined) currentNode = rest;
   } else {
-    [, matchedNode, currentNode] = currentNode.splitText(
+    const [, matched, rest] = currentNode.splitText(
       matchOffset,
       matchOffset + matchLength
     );
+    matchedNode = matched;
+    if (rest !== undefined) currentNode = rest;
   }
 
-  const linkNode = $createAutoLinkNode(matchedLink.url);
+  if (matchedNode === undefined) {
+    return;
+  }
+
+  const linkNode = $createLinkNode(matchedLink.url);
+  $setState(linkNode, autoLinkedState, true);
   linkNode.append($createTextNode(matchedLink.text));
   matchedNode.replace(linkNode);
 }
 
-function $convertAutoLinkToLinkNode(node: AutoLinkNode): LinkNode {
-  const url = node.getURL();
-  const text = node.getTextContent();
-  const linkNode = $createLinkNode(url);
-  linkNode.append($createTextNode(text));
-  node.replace(linkNode);
-  return linkNode;
+/**
+ * The URL is complete: the link stops being the matcher's and becomes an
+ * ordinary one, so later typing next to it no longer extends its URL.
+ */
+function $finishAutoLink(node: LinkNode): void {
+  $setState(node, autoLinkedState, false);
 }
 
 // TODO (seamus): Improve this logic. This function should correctly dissolve any links that
@@ -283,21 +315,16 @@ function $unlinkSelection(): boolean {
     const parent = node.getParent();
     if (!node || !parent) return;
 
-    if ($isAutoLinkNode(parent)) {
-      parent.setIsUnlinked(true);
-      parent.markDirty();
-      unlinkSuccess = true;
-      return;
-    }
-
     if ($isLinkNode(parent)) {
       unlinkSuccess = true;
-      let newNode;
       const text = node.getTextContent();
+      const newNode = $createTextNode(text);
       if (strictLinkifier.test(text)) {
-        newNode = $createUnlinkedTextNode(text);
-      } else {
-        newNode = $createTextNode(text);
+        // URL-shaped text would be re-linked by the auto-link transform the
+        // moment it becomes plain text, undoing the unlink the user just
+        // asked for. The marker rides on the text node itself so it survives
+        // splitting and follows the text as it is edited.
+        $setState(newNode, unlinkedState, true);
       }
       if (node.getKey() === anchor.key) {
         anchor.key = newNode.getKey();
@@ -464,33 +491,30 @@ function registerLinksPlugin(editor: LexicalEditor, props: LinkPluginProps) {
     }),
 
     editor.registerNodeTransform(TextNode, (textNode: TextNode) => {
-      const parent = textNode.getParentOrThrow();
       const prevSibling = textNode.getPreviousSibling();
 
-      if (!textNode.isSimpleText() || $isAutoLinkNode(parent)) {
+      if (!textNode.isSimpleText()) {
         return;
       }
       if (textNode.hasFormat('code')) {
         return;
       }
+      // The user took the link off this exact text; leave it plain.
+      if ($getState(textNode, unlinkedState)) {
+        return;
+      }
 
       // Avoid autolinking when any ancestor is already a link
-      const insideAnyLink =
-        $findMatchingParent(
-          textNode,
-          (n) => $isLinkNode(n) || $isAutoLinkNode(n)
-        ) !== null;
+      const insideAnyLink = $findMatchingParent(textNode, $isLinkNode) !== null;
       if (insideAnyLink) {
         return;
       }
 
-      if (prevSibling && $isAutoLinkNode(prevSibling)) {
+      if ($isGrowingAutoLink(prevSibling)) {
         $handleAppendToMatch(prevSibling, textNode, autoLinkMatchMode);
       }
 
-      if (!insideAnyLink) {
-        $matchAndCreateAutoLink(textNode, autoLinkMatchMode);
-      }
+      $matchAndCreateAutoLink(textNode, autoLinkMatchMode);
     }),
 
     editor.registerCommand(
@@ -544,9 +568,11 @@ function registerLinksPlugin(editor: LexicalEditor, props: LinkPluginProps) {
         const nodes = selection.getNodes();
         nodes.forEach((node) => {
           const parent = node.getParent();
-          if ($isAutoLinkNode(parent) || $isLinkNode(parent)) {
+          if ($isLinkNode(parent)) {
             didUpdate = true;
             parent.setURL(url);
+            // A URL the user typed is final, whatever created the link.
+            $finishAutoLink(parent);
           }
         });
 
@@ -573,7 +599,7 @@ function registerLinksPlugin(editor: LexicalEditor, props: LinkPluginProps) {
         const nodes = selection.getNodes();
         nodes.forEach((node) => {
           const parent = node.getParent();
-          if ($isAutoLinkNode(parent) || $isLinkNode(parent)) {
+          if ($isLinkNode(parent)) {
             parentLinkNodes.add(parent);
           }
         });

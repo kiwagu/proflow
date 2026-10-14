@@ -40,6 +40,9 @@ function $handleIndentWithLimit(): boolean {
   const nodes = selection.getNodes();
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
+    if (node === undefined) {
+      continue;
+    }
     const key = node.getKey();
     if (alreadyHandled.has(key)) {
       continue;

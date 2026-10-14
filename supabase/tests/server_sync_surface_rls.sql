@@ -41,7 +41,10 @@ declare
   u_alice uuid := gen_random_uuid();
   u_adam  uuid := gen_random_uuid();
   u_mal   uuid := gen_random_uuid();
-  r_admin text; r_author text;
+  -- bob: an ordinary member of space A who owns nothing there. the body fence
+  -- is about him: membership alone must open no private body.
+  u_bob   uuid := gen_random_uuid();
+  r_admin text; r_author text; r_member text;
   v_doc_a text; v_doc_b text;
 begin
   insert into public.organizations (name, slug) values ('T14 Org', 't14-org-' || substr(md5(random()::text),1,8)) returning id into v_org;
@@ -51,23 +54,26 @@ begin
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
   values (u_alice, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'alice-'||u_alice||'@t14.invalid', '', now(), now(), now()),
          (u_adam,  '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'adam-'||u_adam||'@t14.invalid', '', now(), now(), now()),
-         (u_mal,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mal-'||u_mal||'@t14.invalid', '', now(), now(), now());
+         (u_mal,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mal-'||u_mal||'@t14.invalid', '', now(), now(), now()),
+         (u_bob,   '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'bob-'||u_bob||'@t14.invalid', '', now(), now(), now());
 
   insert into public.profiles (user_id, email, display_name)
-  values (u_alice, 'alice@t14.invalid', 'Alice'), (u_adam, 'adam@t14.invalid', 'Adam'), (u_mal, 'mallory@t14.invalid', 'Mallory')
+  values (u_alice, 'alice@t14.invalid', 'Alice'), (u_adam, 'adam@t14.invalid', 'Adam'), (u_mal, 'mallory@t14.invalid', 'Mallory'), (u_bob, 'bob@t14.invalid', 'Bob')
   on conflict (user_id) do nothing;
 
   insert into public.space_memberships (space_id, user_id, status) values
-    (v_a, u_alice, 'active'), (v_a, u_adam, 'active'), (v_b, u_mal, 'active');
+    (v_a, u_alice, 'active'), (v_a, u_adam, 'active'), (v_b, u_mal, 'active'), (v_a, u_bob, 'active');
 
   select id into r_admin  from public.roles where key='admin'  and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
   select id into r_author from public.roles where key='author' and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
+  select id into r_member from public.roles where key='member' and role_kind='system' and owner_organization_id is null and archived_at is null limit 1;
 
   -- user_role_check: a space-scoped grant carries space_id only (organization_id null).
   insert into public.user_role (user_id, role_id, space_id, organization_id) values
     (u_alice, r_author, v_a, null),
     (u_adam,  r_admin,  v_a, null),
-    (u_mal,   r_admin,  v_b, null);
+    (u_mal,   r_admin,  v_b, null),
+    (u_bob,   r_member, v_a, null);
 
   -- one document + update log in EACH space, seeded as owner (bypasses RLS on purpose)
   insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into v_doc_a;
@@ -89,7 +95,7 @@ begin
     (v_doc_b, v_b, 0, 0, 'mallory grocery list',          array_fill(0.1::real, array[384])::extensions.vector(384), 'test-model');
 
   insert into t14_ids values ('org',v_org),('space_a',v_a),('space_b',v_b),
-    ('alice',u_alice::text),('adam',u_adam::text),('mallory',u_mal::text),
+    ('alice',u_alice::text),('adam',u_adam::text),('mallory',u_mal::text),('bob',u_bob::text),
     ('doc_a',v_doc_a),('doc_b',v_doc_b);
 end
 $fixture$;
@@ -115,7 +121,7 @@ end $$;
 
 do $probe$
 declare
-  v_a text; v_b text; u_alice uuid; u_adam uuid; u_mal uuid; d_a text; d_b text;
+  v_a text; v_b text; u_alice uuid; u_adam uuid; u_mal uuid; d_a text; d_b text; res_k text;
   n int; b boolean; txt text;
 begin
   select v into v_a from t14_ids where k='space_a';
@@ -534,13 +540,676 @@ begin
   exception when others then perform pg_temp.t14_report('K2 alice compacts own doc','true','ERR '||sqlerrm); end;
   reset role;
 
+  -- a delete needs the row visible, and a body is visible through its
+  -- resource: the admin deletes a document that is shared at the space floor
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'K shared note', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_a))
+  returning id into res_k;
+  update public.crdt_documents set resource_id = res_k where id = d_a;
+
   begin perform pg_temp.t14_as(u_adam);
     delete from public.crdt_documents where id = d_a;
     get diagnostics n = row_count;
-    perform pg_temp.t14_report('K3 admin deletes document', '1', n::text);
-  exception when others then perform pg_temp.t14_report('K3 admin deletes document','1','ERR '||sqlerrm); end;
+    perform pg_temp.t14_report('K3 admin deletes a shared document', '1', n::text);
+  exception when others then perform pg_temp.t14_report('K3 admin deletes a shared document','1','ERR '||sqlerrm); end;
   reset role;
 end
 $probe$;
+
+-- ---------------------------------------------------------------------------
+-- M. atomic move: one canonical parent, explicit refusal, cycle rollback
+-- ---------------------------------------------------------------------------
+do $move$
+declare
+  v_a text; v_b text; u_alice uuid; u_mal uuid;
+  f1 text; f2 text; leaf text; child_of_leaf text;
+  n int; parent_id text;
+begin
+  select v into v_a from t14_ids where k='space_a';
+  select v into v_b from t14_ids where k='space_b';
+  select v::uuid into u_alice from t14_ids where k='alice';
+  select v::uuid into u_mal   from t14_ids where k='mallory';
+
+  raise notice '=== M. atomic move_knowledge_resource ===';
+
+  -- fixture as owner: two folders, a leaf under f1, a grandchild under leaf.
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M f1', u_alice, u_alice) returning id into f1;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M f2', u_alice, u_alice) returning id into f2;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'folder', 'M leaf', u_alice, u_alice) returning id into leaf;
+  insert into public.knowledge_resources (space_id, kind, title, created_by, owner_user_id)
+  values (v_a, 'text', 'M grandchild', u_alice, u_alice) returning id into child_of_leaf;
+  insert into public.knowledge_edges (space_id, from_id, to_id, relation_type, position, created_by)
+  values (v_a, f1, leaf, 'contains', 0, u_alice),
+         (v_a, leaf, child_of_leaf, 'contains', 0, u_alice);
+
+  -- (a) move into a folder: exactly one incoming contains, from f2
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 3);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M1 move into folder: one parent = target', '1:'||f2, n::text||':'||coalesce(parent_id,'null'));
+  exception when others then perform pg_temp.t14_report('M1 move into folder','1:'||f2,'ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (c) same call again: state unchanged
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 3);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains' and from_id = f2;
+    perform pg_temp.t14_report('M2 redelivered move is a no-op', '1', n::text);
+  exception when others then perform pg_temp.t14_report('M2 redelivered move','1','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (d) two sequential moves: the later one wins, still one parent
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f1, 0);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 0);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M3 later move wins, one parent', '1:'||f2, n::text||':'||coalesce(parent_id,'null'));
+  exception when others then perform pg_temp.t14_report('M3 later move wins','1:'||f2,'ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (b) move to top level: no incoming contains
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, null, 0);
+    select count(*) into n from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+    perform pg_temp.t14_report('M4 move to top level: zero parents', '0', n::text);
+  exception when others then perform pg_temp.t14_report('M4 move to top level','0','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- re-attach under f1 in its own block: the probes below start from a known parent
+  -- and must not share a subtransaction with a probe that is expected to raise
+  -- (a raise rolls the whole begin..exception block back).
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, f1, 0);
+  exception when others then perform pg_temp.t14_report('M5a re-attach under f1','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (e) a direct second contains edge is refused by the index
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.knowledge_edges (space_id, from_id, to_id, relation_type, position, created_by)
+    values (v_a, f2, leaf, 'contains', 0, u_alice);
+    perform pg_temp.t14_report('M5 second contains edge refused by index', 'DENIED', 'ALLOWED');
+  exception when unique_violation then perform pg_temp.t14_report('M5 second contains edge refused by index', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M5 second contains edge','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (f) cross-space caller: explicit refusal, graph untouched
+  begin perform pg_temp.t14_as(u_mal);
+    perform public.move_knowledge_resource(v_a, leaf, f2, 0);
+    perform pg_temp.t14_report('M6 cross-space move refused', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('M6 cross-space move refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M6 cross-space move','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+  perform pg_temp.t14_report('M6b graph unchanged after refusal', f1, coalesce(parent_id,'null'));
+
+  -- (g) cycle: moving leaf under its own grandchild is refused and the old parent survives
+  begin perform pg_temp.t14_as(u_alice);
+    perform public.move_knowledge_resource(v_a, leaf, child_of_leaf, 0);
+    perform pg_temp.t14_report('M7 cycle refused', 'DENIED', 'ALLOWED');
+  exception when raise_exception then perform pg_temp.t14_report('M7 cycle refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('M7 cycle','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select from_id into parent_id from public.knowledge_edges where to_id = leaf and relation_type = 'contains';
+  perform pg_temp.t14_report('M7b prior parent kept after cycle rollback', f1, coalesce(parent_id,'null'));
+end
+$move$;
+
+-- ---------------------------------------------------------------------------
+-- N. the body fence: a space member reaches a document body only through the
+--    resource that owns it, with the floor and grants the resource has.
+--    reads follow the resource read rule; writes follow the resource update
+--    rule (creator, or readable through the resource AND the space update
+--    verb — a member holds read but not that verb).
+--    the section builds its own documents: earlier sections delete and
+--    compact the fixture ones. counts use the two rows seeded by alice so a
+--    probe that unexpectedly writes cannot shift a later count; such stray
+--    rows are removed at once.
+-- ---------------------------------------------------------------------------
+do $fence$
+declare
+  v_a text; v_b text; u_alice uuid; u_adam uuid; u_bob uuid; u_mal uuid;
+  d_f text; d_x text; d_orphan text; res_f text; ver_f text; forged text; new_doc text;
+  d_reg text; d_reg2 text; d_own text; res_own text; d_xs text; res_xs text; d_sq text; res_sq text; res_sq_bob text; d_priv text; res_reg text; res_reg2 text; res_priv text; res_bob text;
+  n int; b boolean;
+begin
+  select v into v_a from t14_ids where k='space_a';
+  select v into v_b from t14_ids where k='space_b';
+  select v::uuid into u_alice from t14_ids where k='alice';
+  select v::uuid into u_adam  from t14_ids where k='adam';
+  select v::uuid into u_bob   from t14_ids where k='bob';
+  select v::uuid into u_mal   from t14_ids where k='mallory';
+
+  -- alice's PRIVATE resource owns d_f, the only legitimate link to its body
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_f;
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values
+    (d_f, '\x01'::bytea, 'inst-alice', u_alice),
+    (d_f, '\x02'::bytea, 'inst-alice', u_alice);
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice private note', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_f))
+  returning id into res_f;
+  -- the document names the resource that owns it (written by its creator at
+  -- registration; the fixture is built as the table owner)
+  update public.crdt_documents set resource_id = res_f where id = d_f;
+  -- a named version, and the server search rows, follow the same fence
+  insert into public.crdt_document_versions (doc_id, label, kind, frontiers, created_by)
+  values (d_f, 'v1', 'manual', '[]'::jsonb, u_alice) returning id into ver_f;
+  insert into public.server_document_index_state (document_id, space_id, title, indexed_watermark, model_id)
+  values (d_f, v_a, 'Alice fenced note', 2, 'test-model');
+  insert into public.server_document_chunk (document_id, space_id, ord, char_start, text, embedding, model_id)
+  values (d_f, v_a, 0, 0, 'alice fenced note body', array_fill(0.1::real, array[384])::extensions.vector(384), 'test-model');
+  -- a body with NO resource row at all (its resource create was refused or has
+  -- not been pushed yet): visible to its creator only
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_orphan;
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x09'::bytea, 'inst-alice', u_alice);
+
+  raise notice '=== N. body fence (bob: member in A, owns nothing) ===';
+
+  -- (1) private resource: bob reads nothing and writes nothing
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N1 private body: crdt_documents hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N1 private body: crdt_documents hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N2 private body: crdt_updates hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb0'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N3 private body: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N3 private body: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.server_document_chunk where document_id = d_f;
+    perform pg_temp.t14_report('N4 private body: search chunks hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N4 private body: search chunks hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.server_document_index_state where document_id = d_f;
+    perform pg_temp.t14_report('N5 private body: index state hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N5 private body: index state hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_document_versions where id = ver_f;
+    perform pg_temp.t14_report('N6 private body: versions hidden from member', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N6 private body: versions hidden from member','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (2) the owner shares the resource at the space floor: reading follows
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'space' where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N7 space floor: crdt_documents visible to member', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N7 space floor: crdt_documents visible to member','1','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member', '2', n::text);
+  exception when others then perform pg_temp.t14_report('N8 space floor: crdt_updates visible to member','2','ERR '||sqlerrm); end;
+  reset role;
+
+  -- ...but writing needs the resource update rule: a member reads a shared
+  -- document and does not edit it; an admin does
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb1'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N9 space floor: member cannot push an update', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N9 space floor: member cannot push an update','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    perform pg_temp.t14_report('N9b space floor: admin can push an update', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N9b space floor: admin can push an update','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (3) back to private: the member loses the body again
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'private' where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N10 back to private: crdt_updates hidden again','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- an admin holds the delete verb but does not see a private body, and a
+  -- delete only reaches rows the caller can see: the document stays
+  begin perform pg_temp.t14_as(u_adam);
+    delete from public.crdt_documents where id = d_f;
+    get diagnostics n = row_count;
+    perform pg_temp.t14_report('N10b private body: admin cannot delete it', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N10b private body: admin cannot delete it','0','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (4) a per-user grant is a READ grant: bob reads, bob does not write
+  insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (res_f, u_bob, u_alice);
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee', '2', n::text);
+  exception when others then perform pg_temp.t14_report('N11 per-user grant: crdt_updates visible to grantee','2','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xb2'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N12 per-user grant: grantee cannot push','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-bob';
+
+  delete from public.knowledge_resource_user_grants where resource_id = res_f and user_id = u_bob;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_f and writer = 'inst-alice';
+    perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N13 grant revoked: crdt_updates hidden again','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (5) a forged link: bob's OWN resource naming alice's document grants nothing
+  --     (a resource counts as the body's owner only when the document names it
+  --     too, and only the document's creator names a document's resource)
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob forged link', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_f))
+  returning id into forged;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N14 forged body_ref by another owner grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N14 forged body_ref by another owner grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
+
+  -- (6) an orphan body (no resource row at all): its creator only
+  begin perform pg_temp.t14_as(u_alice);
+    select count(*) into n from public.crdt_updates where doc_id = d_orphan;
+    perform pg_temp.t14_report('N15a orphan body: creator reads it', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N15a orphan body: creator reads it','1','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x0a'::bytea, 'inst-alice-2', u_alice);
+    perform pg_temp.t14_report('N15b orphan body: creator pushes to it', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N15b orphan body: creator pushes to it','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_updates where doc_id = d_orphan;
+    perform pg_temp.t14_report('N15c orphan body: member sees nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N15c orphan body: member sees nothing','0','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (7) compaction, the one destructive write, follows the write side
+  begin perform pg_temp.t14_as(u_bob);
+    select public.rpc_compact_document(d_f, '\xff'::bytea, 1) into b;
+    perform pg_temp.t14_report('N16a private body: member cannot compact', 'DENIED', 'ALLOWED ('||coalesce(b::text,'null')||')');
+  exception when raise_exception then perform pg_temp.t14_report('N16a private body: member cannot compact', 'DENIED', 'DENIED ('||sqlerrm||')');
+          when others then perform pg_temp.t14_report('N16a private body: member cannot compact','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    select public.rpc_compact_document(d_f, '\xff'::bytea, 2) into b;
+    perform pg_temp.t14_report('N16b private body: creator compacts', 'true', coalesce(b::text,'null'));
+  exception when others then perform pg_temp.t14_report('N16b private body: creator compacts','true','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (8) purge of the resource: the body falls back to its creator only
+  perform pg_temp.t14_as(u_alice);
+  update public.knowledge_resources set visibility = 'space' where id = res_f;
+  delete from public.knowledge_resources where id = res_f;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N17a resource purged: member loses the body', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N17a resource purged: member loses the body','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N17b resource purged: creator keeps the body', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N17b resource purged: creator keeps the body','1','ERR '||sqlerrm); end;
+  reset role;
+
+  -- (9) the same-space clause, isolated: a document of space A that names a
+  --     resource of space B, which points back at it and is opened to bob (not
+  --     a member of B) by a per-user grant. the mutual link is complete and
+  --     the grant alone would let bob read the resource, so only the
+  --     same-space condition keeps the body shut. a grant needs an active
+  --     member of the resource's space, so bob joins B for this probe.
+  insert into public.space_memberships (space_id, user_id, status) values (v_b, u_bob, 'active');
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Alice resource in B', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_x))
+  returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
+  insert into public.knowledge_resource_user_grants (resource_id, user_id, granted_by) values (forged, u_bob, u_alice);
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N18 a complete link to a resource of another space grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N18 a complete link to a resource of another space grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resource_user_grants where resource_id = forged;
+  delete from public.knowledge_resources where id = forged;
+  delete from public.space_memberships where space_id = v_b and user_id = u_bob;
+
+  -- (10) regression guard: an admin of space B with a space-floor resource of
+  --      her own naming the document still reads nothing of space A
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Mallory forged link', 'space', u_mal, u_mal, jsonb_build_object('doc_id', d_f))
+  returning id into forged;
+
+  begin perform pg_temp.t14_as(u_mal);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N18b cross-space admin with a forged link reads nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N18b cross-space admin with a forged link reads nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
+
+  -- (11) the statements PostgREST really sends. an INSERT ... RETURNING makes
+  --      the new row pass the SELECT policy too, and a policy that fetches
+  --      the row by id cannot see a row its own statement is inserting: the
+  --      creator's first push must work through the policies, not only as the
+  --      table owner.
+  new_doc := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice registers through the policies', 'space', u_alice, u_alice, jsonb_build_object('doc_id', new_doc))
+  returning id into forged;
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (new_doc, v_a, u_alice, forged) returning id into new_doc;
+    perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19a creator inserts a document and reads it back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_orphan, '\x07'::bytea, 'inst-alice-3', u_alice) returning seq into n;
+    perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19b creator pushes an update and reads its seq back (insert returning)','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- a second registration of an id that already exists, by someone who may
+  -- edit its resource (the upsert that ignores duplicates), must not error
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id)
+    values (new_doc, v_a, u_adam, forged) on conflict (id) do nothing returning id into forged;
+    perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N19c registering an existing document id again is a quiet no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- (12) the link must be unforgeable by anyone but the document's creator.
+  --      route 1: a member creates a resource of HIS OWN making (created_by is
+  --      checked by the insert policy) but names alice as its owner, shares it
+  --      at the space floor and points it at alice's private document.
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+    values (v_a, 'text', 'Bob names alice as owner', 'space', u_bob, u_alice, jsonb_build_object('doc_id', d_f));
+  exception when others then perform pg_temp.t14_report('N20 setup: forged resource insert','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N20 a resource created by someone else that names the creator as owner grants nothing', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N20 a resource created by someone else that names the creator as owner grants nothing','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where title = 'Bob names alice as owner';
+
+  --      route 2: an admin who may update a space-floor resource of alice's
+  --      repoints its body_ref at another document of alice's.
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_a, 'text', 'Alice shared note without a body', 'space', u_alice, u_alice) returning id into forged;
+  begin perform pg_temp.t14_as(u_adam);
+    update public.knowledge_resources set body_ref = jsonb_build_object('doc_id', d_f) where id = forged;
+    get diagnostics n = row_count;
+    -- the probes below mean nothing unless the rewrite really happened
+    perform pg_temp.t14_report('N21 setup: the admin rewrote the body_ref of a shared resource', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N21 setup: the admin rewrote the body_ref of a shared resource','1','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_adam);
+    select count(*) into n from public.crdt_documents where id = d_f;
+    perform pg_temp.t14_report('N21a repointing a readable resource at another body does not open that body (read)', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N21a repointing a readable resource at another body does not open that body (read)','0','ERR '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_f, '\xad'::bytea, 'inst-adam', u_adam);
+    perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N21b repointing a readable resource at another body does not open that body (write)','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_updates where doc_id = d_f and writer = 'inst-adam';
+  delete from public.knowledge_resources where id = forged;
+
+  -- (13) the link is mutual: a document that names a resource the resource
+  --      does not point back at is not owned by it, even when ANOTHER readable
+  --      resource of the same creator points at the document.
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_a, 'text', 'Alice shared, not pointing back', 'space', u_alice, u_alice) returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, pointing but not named', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_x));
+
+  begin perform pg_temp.t14_as(u_bob);
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N22 a link counts only when both sides name each other', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N22 a link counts only when both sides name each other','0','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where space_id = v_a and title like 'Alice shared, %';
+
+  -- (14) ownership of the resource moves, the body follows the resource: the
+  --      new owner reads a private body whose creator is somebody else.
+  insert into public.crdt_documents (space_id, created_by) values (v_a, u_alice) returning id into d_x;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice note handed to adam', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_x))
+  returning id into forged;
+  update public.crdt_documents set resource_id = forged where id = d_x;
+  update public.knowledge_resources set owner_user_id = u_adam where id = forged;
+
+  begin perform pg_temp.t14_as(u_adam);
+    select count(*) into n from public.crdt_documents where id = d_x;
+    perform pg_temp.t14_report('N23 the new owner of a resource reads its private body', '1', n::text);
+  exception when others then perform pg_temp.t14_report('N23 the new owner of a resource reads its private body','1','ERR '||sqlerrm); end;
+  reset role;
+  delete from public.knowledge_resources where id = forged;
+
+  -- (15) the binding is written once, by the creator, and never again: the
+  --      table has no update policy, so neither a plain update nor the
+  --      upsert that merges duplicates can move it, not even for the creator.
+  begin perform pg_temp.t14_as(u_alice);
+    update public.crdt_documents set resource_id = 'knr_rebound' where id = d_orphan;
+    get diagnostics n = row_count;
+    perform pg_temp.t14_report('N24a the creator cannot rebind a document with an update', '0', n::text);
+  exception when others then perform pg_temp.t14_report('N24a the creator cannot rebind a document with an update','0','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id)
+    values (d_orphan, v_a, u_alice, 'knr_rebound')
+    on conflict (id) do update set resource_id = excluded.resource_id;
+    perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N24b the creator cannot rebind a document with a merge-duplicates upsert','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  select count(*) into n from public.crdt_documents where id = d_orphan and resource_id is null;
+  perform pg_temp.t14_report('N24c the document is still unbound afterwards', '1', n::text);
+
+  -- (16) who may create a body row at all. the first one to register a
+  --      document becomes its creator and the only one the server will
+  --      accept registration from; a member who can see a shared node but
+  --      holds no right to edit it must not be able to take the body first.
+  --      alice's shared note: its node is on the server, its body is not.
+  d_reg := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, body not registered yet', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_reg))
+  returning id into res_reg;
+  d_priv := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice private, body not registered yet', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_priv))
+  returning id into res_priv;
+  -- bob's own note, pointing at some other document
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob own note', 'private', u_bob, u_bob, jsonb_build_object('doc_id', public.entity_id_generate('doc')))
+  returning id into res_bob;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, null);
+    perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25a a member cannot register a shared document with no owner named','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_reg);
+    perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25b a member who may read but not edit the node cannot register its body','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, 'knr_not_on_the_server');
+    perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25c a body cannot be registered naming a node the server does not know','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_bob);
+    perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25d a body cannot be registered under a node of one''s own that points at another document','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_reg;
+
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_priv, v_a, u_adam, res_priv);
+    perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25e an admin cannot register the body of a node he cannot even read','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_priv;
+
+  -- the entitled can: the owner, and an admin who may edit a readable node
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_alice, res_reg);
+    perform pg_temp.t14_report('N25f the owner of the node registers its body', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25f the owner of the node registers its body','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  d_reg2 := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared too', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_reg2))
+  returning id into res_reg2;
+  begin perform pg_temp.t14_as(u_adam);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg2, v_a, u_adam, res_reg2);
+    perform pg_temp.t14_report('N25g an admin who may edit a readable node registers its body', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25g an admin who may edit a readable node registers its body','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  -- a creator whose node later changed hands keeps repeating his own
+  -- registration harmlessly; a stranger repeating someone else's does not.
+  d_own := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob own, later handed away', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_own))
+  returning id into res_own;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_own, v_a, u_bob, res_own);
+    perform pg_temp.t14_report('N25h a member registers the body of his own node', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25h a member registers the body of his own node','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  update public.knowledge_resources set owner_user_id = u_alice where id = res_own;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_own, v_a, u_bob, res_own)
+      on conflict (id) do nothing;
+    perform pg_temp.t14_report('N25i the creator repeating his registration after the node was handed away is a no-op', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25i the creator repeating his registration after the node was handed away is a no-op','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_reg, v_a, u_bob, res_reg)
+      on conflict (id) do nothing;
+    perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25j a stranger repeating the registration of a document someone else registered is refused','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  select count(*) into n from public.crdt_documents where id = d_reg and created_by = u_alice and resource_id = res_reg;
+  perform pg_temp.t14_report('N25k the registered document still names its first owner', '1', n::text);
+
+  -- the node must live in the document's own space, even for its owner
+  d_xs := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_b, 'text', 'Alice node in the other space', 'private', u_alice, u_alice, jsonb_build_object('doc_id', d_xs))
+  returning id into res_xs;
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_xs, v_a, u_alice, res_xs);
+    perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25l a body cannot be registered under a node of another space','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_xs;
+
+  -- the squat the named-node rule alone does not stop: a member who can see
+  -- a shared node knows its document's id, makes a node of his own pointing
+  -- at that same id, and registers the body naming it. one node per
+  -- document is the only owner the server can tell from a copy, so a second
+  -- pointer leaves the document unregistrable by anyone until it is gone.
+  d_sq := public.entity_id_generate('doc');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Alice shared, to be squatted', 'space', u_alice, u_alice, jsonb_build_object('doc_id', d_sq))
+  returning id into res_sq;
+  perform pg_temp.t14_as(u_bob);
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id, body_ref)
+  values (v_a, 'text', 'Bob copy of the pointer', 'private', u_bob, u_bob, jsonb_build_object('doc_id', d_sq))
+  returning id into res_sq_bob;
+  reset role;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_bob, res_sq_bob);
+    perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25m a member cannot register a shared document under a node of his own that points at it too','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_sq;
+
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_alice, res_sq);
+    perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N25n with two nodes pointing at one document nobody can register it','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  delete from public.crdt_documents where id = d_sq;
+
+  delete from public.knowledge_resources where id = res_sq_bob;
+  begin perform pg_temp.t14_as(u_alice);
+    insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d_sq, v_a, u_alice, res_sq);
+    perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+end
+$fence$;
 
 rollback;

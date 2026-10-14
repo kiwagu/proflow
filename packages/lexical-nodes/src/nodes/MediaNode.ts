@@ -1,250 +1,230 @@
-import type {
-  LexicalNode,
-  NodeKey,
-  SerializedLexicalNode,
-  Spread,
+/**
+ * @file Media over the blob store.
+ *
+ * The document references bytes by content hash and never by URL. This is not
+ * a detail: a URL is a location, and a location goes stale, breaks when the
+ * bucket moves, and leaks an origin into a document that may be exported. A
+ * hash is what the bytes *are*, so the reference stays valid wherever the
+ * bytes are stored.
+ *
+ * A displayable URL is therefore a transient object URL the decorator mints
+ * from the blob store and revokes when it unmounts — it exists only inside a
+ * render, never as a document value.
+ */
+import {
+  type DOMExportOutput,
+  type LexicalNode,
+  type NodeKey,
+  type Spread,
 } from 'lexical';
-import type { DecoratorComponent } from '../decoratorRegistry';
-import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
-import { calculateEffectiveDimensions } from '../utils/media';
-import { DecoratorBlockNode } from './DecoratorBlockNode';
+import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
+import {
+  DecoratorBlockNode,
+  type SerializedDecoratorBlockNode,
+} from './DecoratorBlockNode';
 
-export type MediaType = 'image' | 'video';
-
+/** What the document stores about a piece of media. */
 export type MediaInfo = {
-  srcType: string;
-  id: string;
-  url: string;
+  /** SHA-256 of the bytes; the blob store's key. Empty while in flight. */
+  hash: string;
+  mime: string;
+  /** Intrinsic dimensions, recorded at insert time. */
   width: number;
   height: number;
-  scale: number;
+};
+
+/** Display-only overrides; they never change what the bytes are. */
+export type MediaDisplay = {
+  scale?: number;
   constrainedWidth?: number;
   constrainedHeight?: number;
 };
 
-export type SerializedMediaNode<T = {}> = Spread<
-  MediaInfo & T,
-  SerializedLexicalNode
+export type SerializedMediaNode = Spread<
+  MediaInfo & MediaDisplay,
+  SerializedDecoratorBlockNode
 >;
 
+export type MediaDecoratorProps = MediaInfo & MediaDisplay & { key: NodeKey };
+
+export type Dimensions = { width: number; height: number };
+
+/**
+ * Fit intrinsic dimensions inside optional bounds, preserving aspect ratio.
+ *
+ * Specified rather than inherited, because the exact rounding and the
+ * never-enlarge clamp are what make a resize idempotent — without the clamp,
+ * re-opening a small image inside a wide column would silently upscale it and
+ * the document would render differently than when it was written.
+ */
+export function fitDimensions(
+  intrinsic: Dimensions,
+  bounds: { maxWidth?: number; maxHeight?: number } = {}
+): Dimensions {
+  const { width, height } = intrinsic;
+  // Nothing sensible to scale: hand back what we were given.
+  if (width <= 0 || height <= 0) return { width, height };
+
+  const ratios: number[] = [];
+  if (bounds.maxWidth && bounds.maxWidth > 0) {
+    ratios.push(bounds.maxWidth / width);
+  }
+  if (bounds.maxHeight && bounds.maxHeight > 0) {
+    ratios.push(bounds.maxHeight / height);
+  }
+  // A missing constraint contributes no bound at all.
+  if (ratios.length === 0) return { width, height };
+
+  const scale = Math.min(...ratios);
+  // Constraints shrink; they never enlarge.
+  if (scale >= 1) return { width, height };
+
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
+
 export abstract class MediaNode<
-  T extends object = {},
-> extends DecoratorBlockNode<DecoratorComponent<MediaInfo & T> | undefined> {
-  __srcType: string;
-  __id: string;
-  __url: string;
+  P extends MediaDecoratorProps = MediaDecoratorProps,
+> extends DecoratorBlockNode<DecoratorComponent<P> | undefined> {
+  __hash: string;
+  __mime: string;
   __width: number;
   __height: number;
-  __constrainedWidth?: number;
-  __constrainedHeight?: number;
-  __componentDirty: boolean;
-  __scale: number;
-  __cachedDecoratorComponent: DecoratorComponent<MediaInfo & T> | null;
-
-  constructor(
-    srcType: string,
-    id: string,
-    url: string,
-    width: number,
-    height: number,
-    constrainedWidth?: number,
-    constrainedHeight?: number,
-    scale?: number,
-    key?: NodeKey
-  ) {
-    super('center', key);
-    this.__srcType = srcType;
-    this.__id = id;
-    this.__url = url;
-    this.__width = width;
-    this.__height = height;
-    this.__constrainedWidth = constrainedWidth;
-    this.__constrainedHeight = constrainedHeight;
-    this.__scale = scale || 1;
-    this.__componentDirty = true;
-    this.__cachedDecoratorComponent = null;
-  }
-
-  abstract getMediaType(): MediaType;
-  abstract getDOMElement(): HTMLElement;
-  protected abstract getExtraProps(): T;
-  protected abstract applyExtraPropsFromJSON(json: Partial<T>): void;
-
-  isKeyboardSelectable(): true {
-    return true;
-  }
-
-  getSrcType() {
-    return this.__srcType;
-  }
-  setSrcType(srcType: string, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__srcType = srcType;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getId() {
-    return this.__id;
-  }
-  setId(id: string, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__id = id;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getUrl() {
-    return this.__url;
-  }
-  setUrl(url: string, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__url = url;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getWidth() {
-    return this.__width;
-  }
-  setWidth(width: number, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__width = width;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getHeight() {
-    return this.__height;
-  }
-  setHeight(height: number, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__height = height;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getScale() {
-    return this.__scale;
-  }
-  setScale(scale: number, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__scale = scale;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getConstrainedWidth() {
-    return this.__constrainedWidth;
-  }
-  setConstrainedWidth(width: number | undefined, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__constrainedWidth = width;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
-
-  getConstrainedHeight() {
-    return this.__constrainedHeight;
-  }
-  setConstrainedHeight(height: number | undefined, rerender = true): this {
-    const writable = this.getWritable();
-    writable.__constrainedHeight = height;
-    if (rerender) writable.__componentDirty = true;
-    return writable;
-  }
+  __scale: number | undefined;
+  __constrainedWidth: number | undefined;
+  __constrainedHeight: number | undefined;
 
   /**
-   * Calculates the effective width and height based on the more constrained dimension.
-   * Returns the width/height that should be used, respecting aspect ratio.
+   * The resolved decorator, cached so a drag-resize does not rebuild the
+   * component tree on every pointer move. Every setter that changes what is
+   * rendered clears it.
    */
-  getEffectiveDimensions(): { width: number; height: number } {
-    return calculateEffectiveDimensions(
-      this.__width,
-      this.__height,
-      this.__constrainedWidth,
-      this.__constrainedHeight
+  __decorator: DecoratorComponent<P> | undefined | null = null;
+
+  constructor(info: MediaInfo & MediaDisplay, key?: NodeKey) {
+    super('', key);
+    this.__hash = info.hash;
+    this.__mime = info.mime;
+    this.__width = info.width;
+    this.__height = info.height;
+    this.__scale = info.scale;
+    this.__constrainedWidth = info.constrainedWidth;
+    this.__constrainedHeight = info.constrainedHeight;
+  }
+
+  afterCloneFrom(prevNode: this): void {
+    super.afterCloneFrom(prevNode);
+    this.__hash = prevNode.__hash;
+    this.__mime = prevNode.__mime;
+    this.__width = prevNode.__width;
+    this.__height = prevNode.__height;
+    this.__scale = prevNode.__scale;
+    this.__constrainedWidth = prevNode.__constrainedWidth;
+    this.__constrainedHeight = prevNode.__constrainedHeight;
+    this.__decorator = prevNode.__decorator;
+  }
+
+  getMediaInfo(): MediaInfo & MediaDisplay {
+    return {
+      hash: this.__hash,
+      mime: this.__mime,
+      width: this.__width,
+      height: this.__height,
+      ...(this.__scale === undefined ? {} : { scale: this.__scale }),
+      ...(this.__constrainedWidth === undefined
+        ? {}
+        : { constrainedWidth: this.__constrainedWidth }),
+      ...(this.__constrainedHeight === undefined
+        ? {}
+        : { constrainedHeight: this.__constrainedHeight }),
+    };
+  }
+
+  getHash(): string {
+    return this.getLatest().__hash;
+  }
+
+  setHash(hash: string): this {
+    const writable = this.getWritable();
+    writable.__hash = hash;
+    writable.__decorator = null;
+    return writable;
+  }
+
+  getMime(): string {
+    return this.getLatest().__mime;
+  }
+
+  getIntrinsicDimensions(): Dimensions {
+    const latest = this.getLatest();
+    return { width: latest.__width, height: latest.__height };
+  }
+
+  /** The size this node should render at, applying its own constraints. */
+  getRenderedDimensions(): Dimensions {
+    const latest = this.getLatest();
+    return fitDimensions(
+      { width: latest.__width, height: latest.__height },
+      {
+        ...(latest.__constrainedWidth === undefined
+          ? {}
+          : { maxWidth: latest.__constrainedWidth }),
+        ...(latest.__constrainedHeight === undefined
+          ? {}
+          : { maxHeight: latest.__constrainedHeight }),
+      }
     );
   }
 
-  createDOM(): HTMLElement {
-    return document.createElement('div');
+  setConstrainedDimensions(width?: number, height?: number): this {
+    const writable = this.getWritable();
+    writable.__constrainedWidth = width;
+    writable.__constrainedHeight = height;
+    writable.__decorator = null;
+    return writable;
+  }
+
+  setScale(scale: number | undefined): this {
+    const writable = this.getWritable();
+    writable.__scale = scale;
+    writable.__decorator = null;
+    return writable;
   }
 
   updateDOM(): false {
     return false;
   }
 
-  exportDOM() {
-    const wrapper = document.createElement('div');
-    const element = this.getDOMElement();
-    const { width, height } = this.getEffectiveDimensions();
-    element.setAttribute('src', this.__url);
-    element.setAttribute('width', width.toString());
-    element.setAttribute('height', height.toString());
-    element.setAttribute('data-src-type', this.__srcType);
-    element.setAttribute(`data-${this.getMediaType()}-id`, this.__id);
-    element.setAttribute('data-scale', this.__scale.toString());
-    if (this.__constrainedWidth != null) {
-      element.setAttribute(
-        'data-constrained-width',
-        this.__constrainedWidth.toString()
-      );
+  isKeyboardSelectable(): true {
+    return true;
+  }
+
+  /** The node class the decorator registry is keyed on. */
+  protected abstract decoratorKey(): Parameters<typeof getDecorator>[0];
+
+  /** Props handed to the decorator; subclasses add their own fields. */
+  protected abstract decoratorProps(): P;
+
+  decorate(): DecoratorComponent<P> | undefined {
+    if (this.__decorator !== null) return this.__decorator;
+    const decorator = getDecorator<P>(this.decoratorKey());
+    if (!decorator) {
+      this.__decorator = undefined;
+      return undefined;
     }
-    if (this.__constrainedHeight != null) {
-      element.setAttribute(
-        'data-constrained-height',
-        this.__constrainedHeight.toString()
-      );
-    }
-    wrapper.appendChild(element);
-    return { element: wrapper };
+    const props = this.decoratorProps();
+    const bound = () => decorator(props);
+    this.__decorator = bound as unknown as DecoratorComponent<P>;
+    return this.__decorator;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  decorate(): DecoratorComponent<any> | undefined {
-    return undefined;
-  }
-
-  updateFromJSON(serializedNode: SerializedMediaNode<{}>): this {
-    const self = super
-      .updateFromJSON(serializedNode)
-      .setSrcType(serializedNode.srcType)
-      .setId(serializedNode.id)
-      .setUrl(serializedNode.url)
-      .setWidth(serializedNode.width)
-      .setHeight(serializedNode.height)
-      .setScale(serializedNode.scale || 1)
-      .setConstrainedWidth(serializedNode.constrainedWidth, false)
-      .setConstrainedHeight(serializedNode.constrainedHeight, false);
-
-    $applyIdFromSerialized(self, serializedNode);
-    return self;
-  }
-
-  exportJSON(): SerializedMediaNode<{}> {
-    return {
-      ...super.exportJSON(),
-      srcType: this.__srcType,
-      id: this.__id,
-      url: this.__url,
-      width: this.__width,
-      height: this.__height,
-      scale: this.__scale,
-      constrainedWidth: this.__constrainedWidth,
-      constrainedHeight: this.__constrainedHeight,
-    } as SerializedMediaNode<{}>;
-  }
+  abstract exportDOM(): DOMExportOutput;
 }
 
-export function createMediaTypeGuard<T extends MediaNode<any>>(
-  nodeClass: new (...args: any[]) => T
-) {
-  return (node: LexicalNode): node is T => node instanceof nodeClass;
-}
-
-export function createSerializedMediaTypeGuard(mediaType: MediaType) {
-  return (node: SerializedLexicalNode): node is SerializedMediaNode => {
-    return node.type === mediaType;
-  };
+export function $isMediaNode(
+  node: LexicalNode | null | undefined
+): node is MediaNode {
+  return node instanceof MediaNode;
 }

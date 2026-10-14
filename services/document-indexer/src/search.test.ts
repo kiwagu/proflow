@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { clampLimit, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT } from './search.js';
+import {
+  clampLimit,
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MAX_LIMIT,
+} from './search.js';
 
 describe('clampLimit', () => {
   it('defaults when unset or not a number', () => {

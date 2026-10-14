@@ -1,4 +1,5 @@
 import {
+  $createCodeNode,
   $isCodeHighlightNode,
   $isCodeNode,
   CodeNode,
@@ -6,12 +7,8 @@ import {
 } from '@lexical/code';
 import { $findMatchingParent, mergeRegister } from '@lexical/utils';
 import {
-  $createCustomCodeNode,
-  $isCustomCodeNode,
-  CustomCodeNode,
-} from '@workspace/lexical-nodes';
-import {
   $createParagraphNode,
+  $createTextNode,
   $getSelection,
   $insertNodes,
   $isLineBreakNode,
@@ -31,6 +28,7 @@ import {
 import type { SetStoreFunction } from '../../reactive/store';
 import { createElement } from 'react';
 import { CodeBoxAccessory } from '../../component/accessory/CodeBoxAccessory';
+import type { CodeBoxAccessoryLabels } from '../../component/accessory/codeBoxAccessoryLabels';
 import { type AccessoryStore, nodeAccessoryPlugin } from '../node-accessory';
 
 enum CodeCaretPosition {
@@ -40,23 +38,24 @@ enum CodeCaretPosition {
   Collapsed = 'collapsed',
 }
 
-function $isCode(node: any): node is CodeNode | CustomCodeNode {
-  return $isCodeNode(node) || $isCustomCodeNode(node);
+function $isCode(node: LexicalNode | null | undefined): node is CodeNode {
+  return $isCodeNode(node);
 }
 
-function $getCodeAncestor(node: LexicalNode): CodeNode | CustomCodeNode | null {
+function $getCodeAncestor(node: LexicalNode): CodeNode | null {
   const target = $findMatchingParent(node, $isCode);
   return $isCode(target) ? target : null;
 }
 
-function $getNodeKeysByLine(
-  node: CodeNode | CustomCodeNode
-): Array<Set<NodeKey>> {
+function $getNodeKeysByLine(node: CodeNode): Array<Set<NodeKey>> {
   const lines: Array<Set<NodeKey>> = [];
   let currentLine = new Set<NodeKey>();
   const children = node.getChildren();
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
+    if (child === undefined) {
+      continue;
+    }
     if ($isLineBreakNode(child)) {
       lines.push(currentLine);
       currentLine = new Set<NodeKey>();
@@ -69,7 +68,7 @@ function $getNodeKeysByLine(
 }
 
 function $getSelectionInfo(
-  node: CodeNode | CustomCodeNode,
+  node: CodeNode,
   selection: RangeSelection
 ): {
   line: CodeCaretPosition | null;
@@ -92,6 +91,12 @@ function $getSelectionInfo(
 
   const firstLine = lines[0];
   const lastLine = lines[lines.length - 1];
+  if (firstLine === undefined || lastLine === undefined) {
+    return {
+      line: CodeCaretPosition.Collapsed,
+      positionOnLine: CodeCaretPosition.Collapsed,
+    };
+  }
   const focusKey = selection.focus.key;
   const focusOffset = selection.focus.offset;
 
@@ -158,6 +163,7 @@ function $getSelectionInfo(
 type CodePluginProps = {
   accessories: AccessoryStore;
   setAccessories: SetStoreFunction<AccessoryStore>;
+  labels?: CodeBoxAccessoryLabels;
 };
 
 type CodePreviewInfo = {
@@ -173,20 +179,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
 
   cleanups.push(registerCodeHighlighting(editor));
 
-  if (editor.hasNode(CustomCodeNode)) {
-    const codeAccessory = nodeAccessoryPlugin({
-      klass: CustomCodeNode,
-      store: props.accessories,
-      setStore: props.setAccessories,
-      component: ({ mountRef, nodeKey }) =>
-        createElement(CodeBoxAccessory, {
-          floatRef: mountRef,
-          editor,
-          nodeKey,
-        }),
-    });
-    cleanups.push(codeAccessory(editor));
-  } else if (editor.hasNode(CodeNode)) {
+  if (editor.hasNode(CodeNode)) {
     const codeAccessory = nodeAccessoryPlugin({
       klass: CodeNode,
       store: props.accessories,
@@ -196,6 +189,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
           floatRef: mountRef,
           editor,
           nodeKey,
+          labels: props.labels,
         }),
     });
     cleanups.push(codeAccessory(editor));
@@ -203,7 +197,7 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
 
   const runCleanups = () => {
     for (let i = 0; i < cleanups.length; i++) {
-      cleanups[i]();
+      cleanups[i]?.();
     }
     cleanups.length = 0;
   };
@@ -215,10 +209,9 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
       INSERT_CODE_PREVIEW_COMMAND,
       (payload) => {
         editor.update(() => {
-          const node = $createCustomCodeNode(payload.language);
-          node.setCode(payload.language, payload.code);
+          const node = $createCodeNode(payload.language);
+          node.append($createTextNode(payload.code));
           $insertNodes([node]);
-          return true;
         });
         return true;
       },
@@ -275,12 +268,10 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
         const { line, positionOnLine } = $getSelectionInfo(target, selection);
 
         if (key === 'ArrowDown') {
-          if (
-            !(
-              line === CodeCaretPosition.Collapsed ||
-              line === CodeCaretPosition.Last
-            )
-          ) {
+          if (!(
+            line === CodeCaretPosition.Collapsed ||
+            line === CodeCaretPosition.Last
+          )) {
             return false;
           }
           queueMicrotask(() => {
@@ -300,12 +291,10 @@ function registerCodePlugin(editor: LexicalEditor, props: CodePluginProps) {
             });
           });
         } else {
-          if (
-            !(
-              line === CodeCaretPosition.Collapsed ||
-              line === CodeCaretPosition.First
-            )
-          ) {
+          if (!(
+            line === CodeCaretPosition.Collapsed ||
+            line === CodeCaretPosition.First
+          )) {
             return false;
           }
           queueMicrotask(() => {
