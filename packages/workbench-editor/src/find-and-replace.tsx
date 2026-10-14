@@ -1,6 +1,6 @@
 'use client';
 
-import { useLexicalWrapper } from '@workspace/lexical-react';
+import { useEditorEditable, useLexicalWrapper } from '@workspace/lexical-react';
 import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
 import { Input } from '@workspace/ui/components/input';
@@ -53,7 +53,9 @@ export function FindAndReplace({
 }: FindAndReplaceProps) {
   const wrapper = useLexicalWrapper();
   const editor = wrapper.editor;
-  const disabled = !wrapper.isInteractable();
+  // Live: rights can go while the panel is open with its fields filled in.
+  const editable = useEditorEditable(editor);
+  const disabled = !editable || !wrapper.isInteractable();
 
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
@@ -97,7 +99,7 @@ export function FindAndReplace({
   };
 
   const replaceCurrent = () => {
-    if (!replacement || currentIndex === -1) return;
+    if (!editor.isEditable() || !replacement || currentIndex === -1) return;
     const match = matches[currentIndex];
     if (!match) return;
     replaceMatch(editor, match.id, replacement);
@@ -109,7 +111,7 @@ export function FindAndReplace({
   };
 
   const replaceAll = () => {
-    if (!replacement || matches.length === 0) return;
+    if (!editor.isEditable() || !replacement || matches.length === 0) return;
     replaceAllMatches(editor, matches, replacement);
     setMatches([]);
     setCurrentIndex(-1);

@@ -1,14 +1,15 @@
 'use client';
 
 import {
-  NODE_TRANSFORM,
-  UNLINK_COMMAND,
-  UPDATE_LINK_COMMAND,
-  useLexicalWrapper,
-  useStore,
   defaultSelectionData,
+  NODE_TRANSFORM,
   type NodeTransformType,
   type SelectionData,
+  UNLINK_COMMAND,
+  UPDATE_LINK_COMMAND,
+  useEditorEditable,
+  useLexicalWrapper,
+  useStore,
 } from '@workspace/lexical-react';
 import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
@@ -130,7 +131,9 @@ export function FormatTools({
   }, [wrapper]);
   const selection = useStore(wrapper.selection ?? emptySelectionStore);
   const editor = wrapper.editor;
-  const disabled = !wrapper.isInteractable();
+  // Live: the tools grey out the moment the editor stops taking input.
+  const editable = useEditorEditable(wrapper.editor);
+  const disabled = !editable || !wrapper.isInteractable();
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');

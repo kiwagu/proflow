@@ -8,7 +8,7 @@
  * set when the ref lands, and everything is torn down on unmount.
  */
 import type { EditorType } from '@workspace/lexical-nodes';
-import type { EditorThemeClasses } from 'lexical';
+import type { EditorThemeClasses, LexicalEditor } from 'lexical';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
@@ -125,16 +125,7 @@ export function EditorMount({
 
   // The page's editable follows the editor's: a read-only editor must not
   // leave the browser accepting keystrokes into its surface.
-  const subscribeEditable = useCallback(
-    (notify: () => void) =>
-      wrapper.editor.registerEditableListener(() => notify()),
-    [wrapper]
-  );
-  const isEditable = useSyncExternalStore(
-    subscribeEditable,
-    () => wrapper.editor.isEditable(),
-    () => wrapper.editor.isEditable()
-  );
+  const isEditable = useEditorEditable(wrapper.editor);
 
   return (
     <LexicalWrapperContext.Provider value={wrapper}>
@@ -147,5 +138,22 @@ export function EditorMount({
       />
       {children}
     </LexicalWrapperContext.Provider>
+  );
+}
+
+/**
+ * Whether the editor takes input, live: a component that offers editing
+ * (tools, find and replace) re-renders the moment it changes, rather than
+ * on its next unrelated render.
+ */
+export function useEditorEditable(editor: LexicalEditor): boolean {
+  const subscribe = useCallback(
+    (notify: () => void) => editor.registerEditableListener(() => notify()),
+    [editor]
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => editor.isEditable(),
+    () => editor.isEditable()
   );
 }

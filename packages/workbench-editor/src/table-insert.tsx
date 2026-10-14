@@ -2,6 +2,7 @@
 
 import {
   TRY_INSERT_TABLE_PICKER_COMMAND,
+  useEditorEditable,
   useLexicalWrapper,
 } from '@workspace/lexical-react';
 import { Button } from '@workspace/ui/components/button';
@@ -43,7 +44,9 @@ export function TableInsert({
 }: TableInsertProps) {
   const wrapper = useLexicalWrapper();
   const editor = wrapper.editor;
-  const disabled = !wrapper.isInteractable();
+  // Live: the tools grey out the moment the editor stops taking input.
+  const editable = useEditorEditable(wrapper.editor);
+  const disabled = !editable || !wrapper.isInteractable();
 
   const [open, setOpen] = useState(false);
   // Hovered size; the grid highlights the rows×columns rectangle up-left of it.
