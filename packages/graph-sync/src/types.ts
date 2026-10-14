@@ -160,14 +160,20 @@ export interface GraphRowTransport {
 
   /**
    * A nudge that rows may have changed in this space — never the delivery
-   * itself. Payloads are ignored: a dropped nudge costs latency, the poll
-   * makes catch-up inevitable. `onDelete` fires for a deletion nudge, which
-   * the engine answers with an immediate inventory sweep instead of waiting
-   * out the interval.
+   * itself. Payloads are ignored: a dropped nudge costs latency, the
+   * heartbeat of whoever composes the engine makes catch-up inevitable.
+   * `onDelete` fires for a deletion nudge, worth an inventory sweep now
+   * rather than at the next full pass. `onStatus` says whether the channel
+   * is subscribed (true) or not (false: an error, a timeout, a close), so a
+   * composition can tighten its heartbeat while nudges cannot arrive.
    */
   subscribe(
     spaceId: SpaceId,
-    handlers: { onChange: () => void; onDelete: () => void }
+    handlers: {
+      onChange: () => void;
+      onDelete: () => void;
+      onStatus?: (up: boolean) => void;
+    }
   ): () => void;
 }
 

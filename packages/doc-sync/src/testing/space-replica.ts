@@ -40,8 +40,6 @@ export async function createSpaceReplica(
   name: string,
   transport: SyncTransport,
   options: {
-    pollIntervalMs?: number;
-    fullPassIntervalMs?: number;
     blocked?: DocumentId[];
     onRefused?: (refusal: DocumentRefusal) => void;
   } = {}
@@ -55,8 +53,6 @@ export async function createSpaceReplica(
     journal: createPgliteJournal(local),
     writer: entityIdRegistry.factories.writerIdFactory.create(),
     compaction: false,
-    pollIntervalMs: options.pollIntervalMs ?? 25,
-    fullPassIntervalMs: options.fullPassIntervalMs,
     onRefused: options.onRefused,
   });
   const docs = new Map<

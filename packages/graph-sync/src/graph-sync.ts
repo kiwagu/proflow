@@ -52,19 +52,11 @@ const PULL_PAGE_SIZE = 500;
 /** Ops drained per push pass. */
 const PUSH_BATCH_SIZE = 100;
 
-/**
- * How often an open space re-polls. Realtime is a nudge and is allowed to
- * lapse silently, so correctness never depends on it: the nudge makes
- * catch-up prompt, the poll makes it inevitable.
- */
-const POLL_INTERVAL_MS = 15_000;
-
 export interface GraphSyncOptions {
   transport: GraphRowTransport;
   replica: GraphReplica;
   /** Whose identity the pushed rows carry — the authenticated session's user. */
   identity: PushIdentity;
-  pollIntervalMs?: number;
   pullPageSize?: number;
   /** Fired once per reconciliation, for the non-modal "refreshed from server" notice. */
   onReconciled?: (event: {
@@ -75,7 +67,6 @@ export interface GraphSyncOptions {
 
 export function createGraphSync(options: GraphSyncOptions) {
   const { transport, replica, identity } = options;
-  const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const pageSize = options.pullPageSize ?? PULL_PAGE_SIZE;
 
   /** One pull at a time per space; concurrent requests coalesce onto the chain. */
@@ -295,11 +286,16 @@ export function createGraphSync(options: GraphSyncOptions) {
   }
 
   /**
-   * Keep one checked-out space converged: an immediate catch-up, a nudge
-   * subscription, and a poll that makes progress even when every nudge is
-   * lost. A deletion nudge sweeps the inventory immediately rather than
-   * waiting out the interval — that is the only case where the payload's
-   * mere existence tells us something a watermark scan cannot.
+   * Keep one checked-out space converged, one cycle per kick. A cycle is a
+   * push, then a pull of every table (sweeping when asked to). The engine
+   * keeps no clock and listens to nothing: whoever composes it decides when
+   * a cycle is worth running — a heartbeat that saw a change, a nudge, a
+   * local write — and kicks. Checkout is the one cycle it runs by itself,
+   * and it sweeps, because a space that was open on another machine may
+   * have lost rows while this one was away.
+   *
+   * Cycles never overlap. A kick during a cycle queues exactly one more,
+   * whatever the number of kicks; a sweep any of them asked for is kept.
    */
   function watch(
     spaceId: SpaceId,
@@ -308,11 +304,14 @@ export function createGraphSync(options: GraphSyncOptions) {
       onPush?: (outcome: PushOutcome) => void;
       onError?: (error: unknown) => void;
     } = {}
-  ): () => void {
+  ): GraphWatch {
     let stopped = false;
+    let running = false;
+    /** The cycle asked for while one was running; null when none was. */
+    let queued: { sweep: boolean } | null = null;
 
     const cycle = (sweep: boolean) => {
-      if (stopped) return;
+      running = true;
       // Push before pull: a local proposal the server accepts comes back in
       // the same catch-up, so the replica lands on the server's version of
       // the change rather than showing its own optimistic one for a beat.
@@ -326,22 +325,33 @@ export function createGraphSync(options: GraphSyncOptions) {
         })
         .catch((error: unknown) => {
           if (!stopped) hooks.onError?.(error);
+        })
+        .finally(() => {
+          running = false;
+          const next = queued;
+          queued = null;
+          if (next && !stopped) cycle(next.sweep);
         });
     };
 
-    const unsubscribe = transport.subscribe(spaceId, {
-      onChange: () => cycle(false),
-      onDelete: () => cycle(true),
-    });
-    const timer = setInterval(() => cycle(false), pollIntervalMs);
-    // Checkout: the first pass always sweeps, because a space that was open
-    // on another machine may have lost rows while this one was away.
-    cycle(true);
+    const kick = (opts: { sweep?: boolean } = {}) => {
+      if (stopped) return;
+      const sweep = opts.sweep === true;
+      if (running) {
+        queued = { sweep: (queued?.sweep ?? false) || sweep };
+        return;
+      }
+      cycle(sweep);
+    };
 
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-      unsubscribe();
+    kick({ sweep: true });
+
+    return {
+      stop() {
+        stopped = true;
+        queued = null;
+      },
+      kick,
     };
   }
 
@@ -355,3 +365,10 @@ export function createGraphSync(options: GraphSyncOptions) {
 }
 
 export type GraphSync = ReturnType<typeof createGraphSync>;
+
+/** One checked-out space, kept converged one cycle per kick. */
+export interface GraphWatch {
+  stop(): void;
+  /** Run a cycle now, or once more after the one running; `sweep` forces the inventory sweep. */
+  kick(opts?: { sweep?: boolean }): void;
+}

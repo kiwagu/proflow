@@ -125,3 +125,50 @@ describe('supabase transport — write verdicts', () => {
     );
   });
 });
+
+describe('supabase transport — nudge channel state', () => {
+  function channelClient() {
+    let report: ((status: string) => void) | undefined;
+    const channel = {
+      on: () => channel,
+      subscribe: (callback: (status: string) => void) => {
+        report = callback;
+        return channel;
+      },
+    };
+    const client = {
+      channel: () => channel,
+      removeChannel: () => Promise.resolve('ok'),
+    };
+    return {
+      transport: createSupabaseGraphRowTransport(
+        client as unknown as Parameters<
+          typeof createSupabaseGraphRowTransport
+        >[0]
+      ),
+      report: (status: string) => report?.(status),
+    };
+  }
+
+  it('says the channel is up only once it is subscribed, and down on an error, a timeout or a close', () => {
+    const { transport, report } = channelClient();
+    const states: boolean[] = [];
+    const unsubscribe = transport.subscribe(
+      'spc_0000000000000001.0000000000' as Parameters<
+        typeof transport.subscribe
+      >[0],
+      {
+        onChange: () => undefined,
+        onDelete: () => undefined,
+        onStatus: (up) => states.push(up),
+      }
+    );
+    report('SUBSCRIBED');
+    report('CHANNEL_ERROR');
+    report('SUBSCRIBED');
+    report('TIMED_OUT');
+    report('CLOSED');
+    expect(states).toEqual([true, false, true, false, false]);
+    unsubscribe();
+  });
+});

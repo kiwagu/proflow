@@ -159,13 +159,14 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
         const client = createBrowserClient<Database>(config.url, config.key, {
           cookieOptions: { name: config.cookie },
         });
+        const transport = createSupabaseGraphRowTransport(client);
         const sync = createGraphSync({
-          transport: createSupabaseGraphRowTransport(client),
+          transport,
           replica: replicaOver(db),
           identity: { userId: identity.userId },
           onReconciled: options.onReconciled,
         });
-        const stop = sync.watch(identity.spaceId, {
+        const watch = sync.watch(identity.spaceId, {
           onPush: (outcome) => {
             if (outcome.stalled) options.onStalled?.();
             else options.onSettled?.();
@@ -178,6 +179,16 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
           },
           onError: (error: unknown) => options.onError?.(error),
         });
+        // A nudge is only a kick: what changed is read by the pull. A
+        // deletion is worth a sweep now, which a watermark pull cannot do.
+        const unsubscribe = transport.subscribe(identity.spaceId, {
+          onChange: () => watch.kick(),
+          onDelete: () => watch.kick({ sweep: true }),
+        });
+        const stop = () => {
+          unsubscribe();
+          watch.stop();
+        };
         // Disposal may have landed while the settings read was in flight.
         if (disposed) {
           stop();

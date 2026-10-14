@@ -105,6 +105,7 @@ export function startDocumentSync(
   let engine: DocumentSync | null = null;
   let space: SpaceWatch | null = null;
   let unsubscribeChanges: (() => void) | null = null;
+  let unsubscribeNudges: (() => void) | null = null;
   const timers = new Map<DocumentId, ReturnType<typeof setTimeout>>();
   /**
    * Pushes that failed in this session. The catch-up query finds changed
@@ -247,8 +248,9 @@ export function startDocumentSync(
         const client = createBrowserClient<Database>(config.url, config.key, {
           cookieOptions: { name: config.cookie },
         });
+        const transport = createSupabaseTransport(client);
         engine = createDocumentSync({
-          transport: createSupabaseTransport(client),
+          transport,
           ledger: createPgliteLedger(db),
           journal: store.syncJournal,
           writer,
@@ -262,6 +264,10 @@ export function startDocumentSync(
           onPass: () => options.onPassSettled?.(),
           onError: (error) => options.onPassFailed?.(error),
         });
+        // A nudge is only a kick: what moved is read by the heads pass.
+        unsubscribeNudges = transport.subscribeSpace(identity.spaceId, () =>
+          space?.kick()
+        );
         unsubscribeChanges = store.onChanged((event) => {
           // The local store's own document ids: its table CHECKs them.
           if (event.source === 'local' || event.localEdits)
@@ -301,6 +307,7 @@ export function startDocumentSync(
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       unsubscribeChanges?.();
+      unsubscribeNudges?.();
       space?.stop();
       space = null;
       engine = null;

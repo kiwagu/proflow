@@ -111,29 +111,6 @@ export function createSupabaseTransport(
       return data === true;
     },
 
-    subscribeInserts(docId, onNudge) {
-      // The payload is deliberately ignored: realtime is a nudge, never the
-      // delivery mechanism. A dropped message costs latency (the poll still
-      // runs), never data.
-      let channel: RealtimeChannel | null = client
-        .channel(`doc-sync:${docId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'crdt_updates',
-            filter: `doc_id=eq.${docId}`,
-          },
-          () => onNudge()
-        )
-        .subscribe();
-      return () => {
-        if (channel) void client.removeChannel(channel);
-        channel = null;
-      };
-    },
-
     async heads(spaceId, since, limit, offset) {
       let query = client
         .from('crdt_documents')
@@ -156,7 +133,9 @@ export function createSupabaseTransport(
       };
     },
 
-    subscribeSpace(spaceId, onNudge) {
+    subscribeSpace(spaceId, onNudge, onStatus) {
+      // The payload is deliberately ignored: realtime is a nudge, never the
+      // delivery mechanism. A dropped message costs latency, never data.
       let channel: RealtimeChannel | null = client
         .channel(`doc-sync:space:${spaceId}`)
         .on(
@@ -169,7 +148,8 @@ export function createSupabaseTransport(
           },
           () => onNudge()
         )
-        .subscribe();
+        // SUBSCRIBED is the only state in which nudges arrive.
+        .subscribe((status) => onStatus?.(status === 'SUBSCRIBED'));
       return () => {
         if (channel) void client.removeChannel(channel);
         channel = null;

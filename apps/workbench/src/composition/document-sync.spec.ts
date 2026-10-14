@@ -60,11 +60,12 @@ const {
         watchSpace,
         push,
         pull,
-        watch: vi.fn(),
         proposeCompaction: vi.fn(),
       })
     ),
-    createSupabaseTransport: vi.fn((_client: unknown) => ({})),
+    createSupabaseTransport: vi.fn((_client: unknown) => ({
+      subscribeSpace: vi.fn(() => vi.fn()),
+    })),
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
     createBrowserClient: vi.fn(
       (_url: string, _key: string, _options?: unknown) => ({})

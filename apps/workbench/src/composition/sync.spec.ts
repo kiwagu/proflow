@@ -22,8 +22,10 @@ const {
   createBrowserClient,
 } = vi.hoisted(() => {
   const watch = vi.fn(
-    (_spaceId: string, _options?: { onError?: (error: unknown) => void }) =>
-      vi.fn()
+    (_spaceId: string, _options?: { onError?: (error: unknown) => void }) => ({
+      stop: vi.fn(),
+      kick: vi.fn(),
+    })
   );
   return {
     watch,
@@ -33,7 +35,9 @@ const {
       push: vi.fn(),
       pendingCount: vi.fn(),
     })),
-    createSupabaseGraphRowTransport: vi.fn((_client: unknown) => ({})),
+    createSupabaseGraphRowTransport: vi.fn((_client: unknown) => ({
+      subscribe: vi.fn(() => vi.fn()),
+    })),
     createBrowserClient: vi.fn(
       (_url: string, _key: string, _options?: unknown) => ({})
     ),
@@ -283,7 +287,7 @@ describe('starting graph replication', () => {
 
   it('stops watching when disposed and never starts afterwards', async () => {
     const dispose = vi.fn();
-    watch.mockReturnValueOnce(dispose);
+    watch.mockReturnValueOnce({ stop: dispose, kick: vi.fn() });
     const stop = startGraphSync({
       db: {} as AppDb,
       settings: settingsHolding(CONFIGURED),

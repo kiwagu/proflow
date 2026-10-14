@@ -2,6 +2,7 @@ export {
   createGraphSync,
   type GraphSync,
   type GraphSyncOptions,
+  type GraphWatch,
 } from './graph-sync.js';
 export { planWrites, type PushIdentity } from './push-plan.js';
 export {

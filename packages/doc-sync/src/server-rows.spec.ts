@@ -50,7 +50,11 @@ describe('server rows are parsed at the transport', () => {
     });
     const watch = reader.watchSpace({ onPass: (o) => passes.push(o) });
     await expect.poll(() => reader.text(DOC_B)).toBe('beta');
-    await expect.poll(() => passes.length).toBeGreaterThan(3);
+    // Pass after pass meets the same refused document.
+    for (const expected of [2, 3, 4]) {
+      watch.kick({ full: true });
+      await expect.poll(() => passes.length).toBe(expected);
+    }
     watch.stop();
 
     expect(reader.text(DOC_A)).toBe('');
@@ -104,7 +108,10 @@ describe('server rows are parsed at the transport', () => {
       onError: (e) => errors.push(e),
     });
     await expect.poll(() => reader.text(DOC_B)).toBe('beta');
-    await expect.poll(() => passes.length).toBeGreaterThan(3);
+    for (const expected of [2, 3, 4]) {
+      watch.kick({ full: true });
+      await expect.poll(() => passes.length).toBe(expected);
+    }
     watch.stop();
 
     expect(errors).toEqual([]);
@@ -179,5 +186,45 @@ describe('the production transport parses the same way', () => {
     // @ts-expect-error a plain string is not a document id
     void transport.tail('doc_x', 0);
     void transport.tail(DOC_ID, 0);
+  });
+});
+
+describe('the production transport reports its nudge channel', () => {
+  it('says the space channel is up only once it is subscribed', () => {
+    let report: ((status: string) => void) | undefined;
+    const channel = {
+      on: () => channel,
+      subscribe: (callback: (status: string) => void) => {
+        report = callback;
+        return channel;
+      },
+    };
+    const transport = createSupabaseTransport({
+      channel: () => channel,
+      removeChannel: () => Promise.resolve('ok'),
+    } as unknown as Parameters<typeof createSupabaseTransport>[0]);
+    const states: boolean[] = [];
+    const unsubscribe = transport.subscribeSpace(
+      SPACE_ID,
+      () => undefined,
+      (up) => states.push(up)
+    );
+    for (const status of [
+      'SUBSCRIBED',
+      'CHANNEL_ERROR',
+      'SUBSCRIBED',
+      'TIMED_OUT',
+      'CLOSED',
+    ])
+      report?.(status);
+    expect(states).toEqual([true, false, true, false, false]);
+    unsubscribe();
+  });
+
+  it('has no per-document nudge any more', () => {
+    const transport = createSupabaseTransport(
+      {} as unknown as Parameters<typeof createSupabaseTransport>[0]
+    );
+    expect('subscribeInserts' in transport).toBe(false);
   });
 });

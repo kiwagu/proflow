@@ -207,7 +207,9 @@ export function createSupabaseGraphRowTransport(
             else handlers.onChange();
           }
         )
-        .subscribe();
+        // SUBSCRIBED is the only state in which nudges arrive; an error, a
+        // timeout or a close all mean they cannot.
+        .subscribe((status) => handlers.onStatus?.(status === 'SUBSCRIBED'));
       return () => {
         if (channel) void client.removeChannel(channel);
         channel = null;

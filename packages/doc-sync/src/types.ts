@@ -118,11 +118,6 @@ export interface SyncTransport {
     coversSeq: number
   ): Promise<boolean>;
   /**
-   * A nudge — nothing more — that new rows may exist. Delivery is not
-   * trusted: every nudge triggers the same watermark query a poll would.
-   */
-  subscribeInserts(docId: DocumentId, onNudge: () => void): () => void;
-  /**
    * Heads of the space's documents changed at or after `since` (null = all
    * of them), oldest first with the id as tiebreaker, `limit` at a time
    * from `offset`. At-least-once like everything else here: the caller
@@ -135,8 +130,17 @@ export interface SyncTransport {
     limit: number,
     offset: number
   ): Promise<SyncHeadsPage>;
-  /** A nudge that some document of the space moved — the same contract as `subscribeInserts`. */
-  subscribeSpace(spaceId: SpaceId, onNudge: () => void): () => void;
+  /**
+   * A nudge — nothing more — that some document of the space moved.
+   * Delivery is not trusted: a nudge is answered with the same heads pass a
+   * heartbeat would run. `onStatus` says whether the channel is subscribed
+   * (true) or not (false: an error, a timeout, a close).
+   */
+  subscribeSpace(
+    spaceId: SpaceId,
+    onNudge: () => void,
+    onStatus?: (up: boolean) => void
+  ): () => void;
 }
 
 /**
