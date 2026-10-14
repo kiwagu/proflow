@@ -47,7 +47,14 @@ export interface GraphSyncTableDescriptor {
   direction: 'both' | 'down';
 }
 
-/** In the order a checkout pulls them: nodes first, then everything hanging off them. */
+/**
+ * In the order rows LEAVE the replica: nodes first, then what hangs off
+ * them. An inventory sweep and a reconciliation evict table by table, and
+ * the file tree is a live query over nodes joined to their containment
+ * edge, so a node whose edge went first would show up at the top level for
+ * a moment before it went too. Rows ARRIVE in the opposite order, see
+ * `ARRIVAL_ORDER`.
+ */
 export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
   [
     {
@@ -113,3 +120,19 @@ export function describeTable(
   if (!descriptor) throw new Error(`not a replicated table: ${table}`);
   return descriptor;
 }
+
+/**
+ * In the order rows ARRIVE: edges before nodes, the rest as listed. Each
+ * table lands in its own transaction and the tree re-renders in between; an
+ * edge whose node has not arrived shows nothing, because the tree starts
+ * from nodes, while a node whose edge has not arrived has no parent and is
+ * drawn at the top level until the edge lands. The replica keeps no foreign
+ * key between the two, so either order applies cleanly. This covers what
+ * the server already holds together; a node the server itself holds without
+ * its edge yet (the creating device writes them one after the other)
+ * arrives alone whatever the order here.
+ */
+export const ARRIVAL_ORDER: readonly GraphSyncTableDescriptor[] = [
+  ...GRAPH_SYNC_TABLE_DESCRIPTORS.filter((d) => d.local === 'knowledge_edges'),
+  ...GRAPH_SYNC_TABLE_DESCRIPTORS.filter((d) => d.local !== 'knowledge_edges'),
+];

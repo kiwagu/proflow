@@ -1,5 +1,6 @@
 import { planWrites, type PushIdentity } from './push-plan.js';
 import {
+  ARRIVAL_ORDER,
   GRAPH_SYNC_TABLE_DESCRIPTORS,
   type GraphSyncTableName,
 } from './tables.js';
@@ -122,8 +123,14 @@ export function createGraphSync(options: GraphSyncOptions) {
     let applied = 0;
     let evicted = 0;
     const swept: GraphSyncTableName[] = [];
-    for (const descriptor of GRAPH_SYNC_TABLE_DESCRIPTORS) {
+    // Arrivals first, in the order that keeps a node's place known before
+    // the node shows; then departures, in the order that keeps a node gone
+    // before its place is. Interleaving the two per table would do one of
+    // them in the wrong order.
+    for (const descriptor of ARRIVAL_ORDER) {
       applied += await pullTable(spaceId, descriptor.local);
+    }
+    for (const descriptor of GRAPH_SYNC_TABLE_DESCRIPTORS) {
       const removed = await sweepTable(
         spaceId,
         descriptor.local,
@@ -159,7 +166,10 @@ export function createGraphSync(options: GraphSyncOptions) {
     nodeIds: string[]
   ): Promise<void> {
     if (nodeIds.length === 0) return;
-    for (const descriptor of GRAPH_SYNC_TABLE_DESCRIPTORS) {
+    // The same two orders as a pull pass: everything arrives first, then
+    // what the server no longer returns leaves, nodes before their edges.
+    const stale = new Map<GraphSyncTableName, string[]>();
+    for (const descriptor of ARRIVAL_ORDER) {
       if (descriptor.nodeKey === null) continue;
       const held = await replica.rowIdsForNodes(descriptor.local, nodeIds);
       const rows = await transport.pullByNodes(
@@ -169,8 +179,14 @@ export function createGraphSync(options: GraphSyncOptions) {
       );
       await replica.applyPullBatch(descriptor.local, rows);
       const returned = new Set(rows.map((row) => row.id));
-      const stale = held.filter((id) => !returned.has(id));
-      if (stale.length > 0) await replica.deleteRows(descriptor.local, stale);
+      stale.set(
+        descriptor.local,
+        held.filter((id) => !returned.has(id))
+      );
+    }
+    for (const descriptor of GRAPH_SYNC_TABLE_DESCRIPTORS) {
+      const ids = stale.get(descriptor.local) ?? [];
+      if (ids.length > 0) await replica.deleteRows(descriptor.local, ids);
     }
   }
 
