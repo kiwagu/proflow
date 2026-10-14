@@ -191,12 +191,14 @@ afterEach(() => {
 describe('starting document replication', () => {
   it('materializes, watches the space, pulls what awaits and catches up what changed here', async () => {
     const { store, syncable, waitEnded } = stubStore();
+    const onSettled = vi.fn();
     listAwaitingDocuments.mockResolvedValueOnce(['doc-awaiting']);
     const handle = startDocumentSync({
       db,
       client: CLIENT,
       store,
       identity: IDENTITY,
+      onSettled,
     });
     await settled();
     expect(createSupabaseTransport).toHaveBeenCalledWith(CLIENT);
@@ -209,8 +211,9 @@ describe('starting document replication', () => {
     expect(pull).toHaveBeenCalledWith('doc-awaiting', { id: 'doc-awaiting' });
     // The wait is over whether or not the server held a body: a pull that
     // found nothing merges nothing, and the pane showing the wait must be
-    // told to look again.
+    // told to look again — here, and in the other tabs.
     expect(waitEnded).toHaveBeenCalledWith('doc-awaiting');
+    expect(onSettled).toHaveBeenCalledWith('doc-awaiting');
     expect(syncable).toHaveBeenCalledWith('doc-held');
     expect(push).toHaveBeenCalledWith(
       'doc-held',

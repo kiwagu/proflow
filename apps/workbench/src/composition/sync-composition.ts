@@ -144,6 +144,10 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       identity,
       peers: options.documentPeers,
       onChannel: (up) => setChannel('documents', up),
+      onSettled: (id) => {
+        options.documents?.onSettled?.(id);
+        peers.announceSettled(id);
+      },
     });
     const graph = startGraphSync({
       ...options.graph,
@@ -287,6 +291,12 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     else if (!leader) peers.announceGraphJournal();
   });
   const offPeers = peers.on((message) => {
+    // Every tab, leader or not: a pane here may be waiting on the pull the
+    // leader just finished.
+    if (message.type === 'settled') {
+      options.store.settled(message.id);
+      return;
+    }
     if (!running) return;
     if (message.type === 'graph-journal') running.graph.kick();
     else if (message.type === 'visible') running.cadence.peerVisible();

@@ -1,3 +1,4 @@
+import { entityIdRegistry } from '@workspace/entity-id';
 import { describe, expect, it, vi } from 'vitest';
 import { createSyncPeers, type SyncPeerMessage } from './sync-peers';
 import { fakeChannelBus } from './testing/sync-fakes';
@@ -33,6 +34,32 @@ describe('the sync peers', () => {
       { type: 'kick' },
     ]);
     expect(heardByA).toEqual([]);
+  });
+
+  it("a document's first pull settling reaches the other tab with the document's id", async () => {
+    const { a, heardByB } = pair();
+    a.announceSettled(
+      entityIdRegistry.factories.documentIdFactory.brand(
+        'doc_0000000000000001.0000000000'
+      )
+    );
+    await settle();
+    expect(heardByB).toEqual([
+      { type: 'settled', id: 'doc_0000000000000001.0000000000' },
+    ]);
+  });
+
+  it('ignores a settled message whose id is not a canonical document id', async () => {
+    const bus = fakeChannelBus();
+    const raw = bus.open('n');
+    const peers = createSyncPeers({ name: 'n', channel: bus.open('n') });
+    const heard = vi.fn();
+    peers.on(heard);
+    raw.postMessage({ type: 'settled' });
+    raw.postMessage({ type: 'settled', id: 'knr_0000000000000001.0000000000' });
+    raw.postMessage({ type: 'settled', id: 'DOC_0000000000000001.0000000000' });
+    await settle();
+    expect(heard).not.toHaveBeenCalled();
   });
 
   it('ignores anything that is not one of its messages', async () => {

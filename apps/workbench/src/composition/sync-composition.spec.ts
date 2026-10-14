@@ -351,6 +351,31 @@ describe('what reaches the leader', () => {
   });
 });
 
+describe('a pull settling a document', () => {
+  it('the leader says so to the other tabs, and a tab that hears it tells its own panes', async () => {
+    const b = browser();
+    const leaderStore = { settled: vi.fn() };
+    const otherStore = { settled: vi.fn() };
+    const leader = b.tab({
+      store: leaderStore as unknown as DocumentCrdtStore,
+    });
+    const other = b.tab({ store: otherStore as unknown as DocumentCrdtStore });
+    await flush();
+    const documents = startDocumentSync.mock.calls[0]![0] as {
+      onSettled?: (id: string) => void;
+    };
+    documents.onSettled?.('doc_0000000000000001.0000000000');
+    await flush();
+    expect(otherStore.settled).toHaveBeenCalledWith(
+      'doc_0000000000000001.0000000000'
+    );
+    // Its own panes were told by its own pull.
+    expect(leaderStore.settled).not.toHaveBeenCalled();
+    leader.handle.stop();
+    other.handle.stop();
+  });
+});
+
 describe('the channel and the cadence', () => {
   it('is down until both channels are up, and down again when either drops', async () => {
     const b = browser();

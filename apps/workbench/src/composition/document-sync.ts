@@ -84,6 +84,12 @@ export interface StartDocumentSyncOptions {
   mayWrite?: (row: { owner_user_id: string | null }) => boolean;
   /** Whether the space's nudge channel is subscribed. */
   onChannel?: (up: boolean) => void;
+  /**
+   * The first pull of a document known only from the graph ended, with a
+   * body or without one, and this tab's panes were told. Panes in the other
+   * tabs of the browser wait on their own stores and have to be told too.
+   */
+  onSettled?: (documentId: DocumentId) => void;
 }
 
 export interface DocumentSyncHandle {
@@ -229,6 +235,7 @@ export function startDocumentSync(
       // as a merge; an empty answer merges nothing and would leave a pane
       // that opened a moment earlier waiting for ever.
       store.settled(id);
+      options.onSettled?.(id);
     }
   };
 
