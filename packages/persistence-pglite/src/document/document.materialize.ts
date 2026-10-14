@@ -1,5 +1,6 @@
 import { DocumentCrdt } from '@workspace/doc-crdt';
 import type { AppDb } from '../db/db.js';
+import { GRAPH_OPS } from '../graph/graph.repository.js';
 
 /**
  * The pull watermark of a document this device knows only from the graph
@@ -77,6 +78,60 @@ export async function materializeDocuments(
     return rows.length;
   });
   return added ?? 0;
+}
+
+/**
+ * The node that owns a document's body, asked for when the body is first
+ * registered with the server. The server fences a body through that
+ * resource, and takes the name only at that first registration, so it has to
+ * be the creator's own and it has to be settled before the body goes.
+ *
+ * A document created here carries the node it was created with, written in
+ * the transaction that made both. A document the graph brought in — the same
+ * person's second device — has none, and gets it from what the device holds
+ * now: the one node the signed-in user made that points at it. Other
+ * people's nodes pointing at the same id are claims anyone can make and are
+ * never taken, however early or visible; with none of the user's own, or
+ * more than one, nobody is named and the body stays visible to its creator
+ * only. It is asked for here and not when the document row is made, because
+ * a row can be made before the user's own node has arrived.
+ */
+export async function resourceIdForDocument(
+  db: AppDb,
+  documentId: string,
+  userId: string
+): Promise<string | null> {
+  const { rows } = await db.query<{ resource_id: string | null }>(
+    `select coalesce(
+              d.resource_id,
+              (select case when count(*) = 1 then min(m.id) end
+               from knowledge_resources m
+               where m.body_ref ->> 'doc_id' = d.id and m.created_by = $2)
+            ) as resource_id
+     from document d where d.id = $1`,
+    [documentId, userId]
+  );
+  return rows[0]?.resource_id ?? null;
+}
+
+/**
+ * Whether the node's creation is still waiting in the journal to reach the
+ * server. The server takes the name of a body's owner only after checking
+ * that node there, so a body is not registered before the node's creation
+ * has gone through; the graph's own push is what ends the wait.
+ */
+export async function nodeAwaitsServer(
+  db: AppDb,
+  nodeId: string
+): Promise<boolean> {
+  const { rows } = await db.query<{ waits: boolean }>(
+    `select exists (
+       select 1 from graph_op_journal
+       where op = $2 and node_ids @> array[$1]::text[]
+     ) as waits`,
+    [nodeId, GRAPH_OPS.createNode]
+  );
+  return rows[0]?.waits ?? false;
 }
 
 /** Documents still waiting for their first pull: what a sync start pulls by name. */

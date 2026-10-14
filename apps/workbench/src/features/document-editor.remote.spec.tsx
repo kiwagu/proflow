@@ -68,8 +68,10 @@ function stubServices(load: { markdown: string } | 'awaiting') {
 function feed(): {
   changes: DocumentChanges;
   emit: (e: DocumentChange) => void;
+  settle: (id: string) => void;
 } {
   const listeners = new Set<(e: DocumentChange) => void>();
+  const settledListeners = new Set<(id: string) => void>();
   return {
     changes: {
       onChanged(listener) {
@@ -78,9 +80,18 @@ function feed(): {
           listeners.delete(listener);
         };
       },
+      onSettled(listener) {
+        settledListeners.add(listener);
+        return () => {
+          settledListeners.delete(listener);
+        };
+      },
     },
     emit: (event) => {
       for (const listener of listeners) listener(event);
+    },
+    settle: (id) => {
+      for (const listener of settledListeners) listener(id);
     },
   };
 }
@@ -322,5 +333,101 @@ describe('a remote change in the open editor', () => {
     expect(screen.queryByTestId('document-awaiting')).toBeNull();
     await pause(500);
     expect(save).not.toHaveBeenCalled();
+  }, 10_000);
+
+  /**
+   * The first pull of a document the graph brought in found nothing on the
+   * server — its body is simply empty, nobody has typed in it yet. No merge
+   * happens, so nothing arrives; the pane would wait for ever. The store
+   * says the wait is over, and the pane asks again.
+   */
+  it('leaves the wait when the first pull finds nothing on the server', async () => {
+    const waiting = {
+      isErr: () => false,
+      value: { meta: DOCUMENT, content: null, awaitingSync: true },
+    };
+    const settled = {
+      isErr: () => false,
+      value: { meta: DOCUMENT, content: null, awaitingSync: false },
+    };
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(waiting)
+      .mockResolvedValue(settled);
+    const { services } = stubServices('awaiting');
+    (services.documents as unknown as { load: typeof load }).load = load;
+    const { changes, settle } = feed();
+    render(
+      <AppServicesProvider services={services}>
+        <DocumentChangesProvider value={changes}>
+          <DocumentEditor document={DOCUMENT} />
+        </DocumentChangesProvider>
+      </AppServicesProvider>
+    );
+    await screen.findByTestId('document-awaiting');
+
+    act(() => settle(DOCUMENT.id));
+    await waitFor(() =>
+      expect(screen.queryByTestId('document-awaiting')).toBeNull()
+    );
+    expect(load).toHaveBeenCalledTimes(2);
+  }, 10_000);
+
+  it('asks again when the wait ended while the first answer was still on its way', async () => {
+    let answerStale: (value: unknown) => void = () => {};
+    const stale = new Promise((resolve) => {
+      answerStale = resolve;
+    });
+    const settled = {
+      isErr: () => false,
+      value: { meta: DOCUMENT, content: null, awaitingSync: false },
+    };
+    const load = vi.fn().mockReturnValueOnce(stale).mockResolvedValue(settled);
+    const { services } = stubServices('awaiting');
+    (services.documents as unknown as { load: typeof load }).load = load;
+    const { changes, settle } = feed();
+    render(
+      <AppServicesProvider services={services}>
+        <DocumentChangesProvider value={changes}>
+          <DocumentEditor document={DOCUMENT} />
+        </DocumentChangesProvider>
+      </AppServicesProvider>
+    );
+
+    // The pull finished and said so before the first read answered; that
+    // read began before the pull and still says "waiting".
+    act(() => settle(DOCUMENT.id));
+    await act(async () => {
+      answerStale({
+        isErr: () => false,
+        value: { meta: DOCUMENT, content: null, awaitingSync: true },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByTestId('document-awaiting')).toBeNull()
+    );
+  }, 10_000);
+
+  it('does not reread a document that is already open', async () => {
+    const { services } = stubServices({ markdown: 'Open body.' });
+    const load = vi.spyOn(services.documents, 'load');
+    const { changes, settle } = feed();
+    render(
+      <AppServicesProvider services={services}>
+        <DocumentChangesProvider value={changes}>
+          <DocumentEditor document={DOCUMENT} />
+        </DocumentChangesProvider>
+      </AppServicesProvider>
+    );
+    await screen.findByText('Open body.');
+    const calls = load.mock.calls.length;
+
+    act(() => settle(DOCUMENT.id));
+    await pause(300);
+    expect(load.mock.calls.length).toBe(calls);
+    expect(screen.getByText('Open body.')).toBeTruthy();
   }, 10_000);
 });

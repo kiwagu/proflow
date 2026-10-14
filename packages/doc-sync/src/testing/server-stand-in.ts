@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { DocumentNotRegisteredError } from '../errors.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
 
 /**
@@ -17,6 +18,8 @@ import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
 export interface ServerStandIn extends SyncTransport {
   /** Rows currently in the update log — the compaction gauge under test. */
   updateCount(docId: string): Promise<number>;
+  /** The resource the document was registered with, or null. */
+  resourceIdOf(docId: string): Promise<string | null>;
   /** Delivers a blob a second time, as an at-least-once retry would. */
   resend(docId: string, bytes: Uint8Array, writer: string): Promise<number>;
   /** Number of nudges dispatched to live subscriptions. */
@@ -37,6 +40,7 @@ const SCHEMA = `
 create table crdt_documents (
   id           text primary key,
   space_id     text not null,
+  resource_id  text,
   snapshot     bytea,
   snapshot_seq bigint not null default 0,
   head_seq     bigint not null default 0,
@@ -147,12 +151,26 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   }
 
   return {
-    async ensureDocument(docId, spaceId) {
-      await db.query(
-        `insert into crdt_documents (id, space_id) values ($1, $2)
-         on conflict (id) do nothing`,
-        [docId, spaceId]
+    async ensureDocument(docId, spaceId, resourceId = null) {
+      const { rows } = await db.query(
+        'select 1 from crdt_documents where id = $1',
+        [docId]
       );
+      if (rows.length > 0) return;
+      if (resourceId === null) throw new DocumentNotRegisteredError(docId);
+      await db.query(
+        `insert into crdt_documents (id, space_id, resource_id) values ($1, $2, $3)
+         on conflict (id) do nothing`,
+        [docId, spaceId, resourceId]
+      );
+    },
+
+    async resourceIdOf(docId) {
+      const { rows } = await db.query<{ resource_id: string | null }>(
+        'select resource_id from crdt_documents where id = $1',
+        [docId]
+      );
+      return rows[0]?.resource_id ?? null;
     },
 
     async head(docId): Promise<SyncHead> {

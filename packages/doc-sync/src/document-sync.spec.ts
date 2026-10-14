@@ -5,6 +5,7 @@ import {
 } from './testing/server-stand-in.js';
 import { PGlite } from '@electric-sql/pglite';
 import { createDocumentSync } from './document-sync.js';
+import { DocumentNotRegisteredError } from './errors.js';
 import { createPgliteJournal, createPgliteLedger } from './pglite-ledger.js';
 import type { SyncTransport } from './types.js';
 import {
@@ -12,6 +13,7 @@ import {
   DOC_ID,
   LOCAL_SCHEMA,
   type Replica,
+  RESOURCE_ID,
   SPACE_ID,
   TextDocument,
 } from './testing/replica.js';
@@ -60,6 +62,45 @@ describe('document sync', () => {
     await a.pull();
     expect(a.text()).toBe('Hello from A. And B replies. ');
     expect(a.versionHex()).toBe(b.versionHex());
+  });
+
+  it('registers a document with the resource that owns it', async () => {
+    const a = await replica('client-a');
+    await a.edit('owned. ');
+    await a.push();
+
+    // The server fences a body through the resource that owns it, and only
+    // the document's creator can say which that is: it is written once, at
+    // registration, from what the replica knows locally.
+    expect(await server.resourceIdOf(DOC_ID)).toBe(RESOURCE_ID);
+  });
+
+  it('does not register a document whose owner this device does not know', async () => {
+    const a = await createReplica('client-a', server, { resourceId: null });
+    replicas.push(a);
+    await a.edit('orphan. ');
+
+    // Registering fixes who owns the body for good, and the server takes it
+    // only from someone who can name the resource: a device that cannot waits.
+    await expect(a.push()).rejects.toBeInstanceOf(DocumentNotRegisteredError);
+    expect(await server.resourceIdOf(DOC_ID)).toBeNull();
+    expect(await server.updateCount(DOC_ID)).toBe(0);
+    expect((await a.ledger()).pushedVv).toBeNull();
+  });
+
+  it('pushes to a document another device registered without naming an owner', async () => {
+    const a = await replica('client-a');
+    await a.edit('registered by its creator. ');
+    await a.push();
+
+    const b = await createReplica('client-b', server, { resourceId: null });
+    replicas.push(b);
+    await b.pull();
+    await b.edit('and edited by a collaborator. ');
+    await b.push();
+
+    expect(await server.resourceIdOf(DOC_ID)).toBe(RESOURCE_ID);
+    expect(await server.updateCount(DOC_ID)).toBe(2);
   });
 
   it('pushes nothing when the ledger already covers the document', async () => {

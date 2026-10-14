@@ -1,4 +1,5 @@
 export { fromByteaHex, toByteaHex } from './bytea.js';
+export { DocumentNotRegisteredError } from './errors.js';
 export {
   createDocumentSync,
   type DocumentSync,

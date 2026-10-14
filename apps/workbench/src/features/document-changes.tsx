@@ -21,6 +21,13 @@ export interface DocumentChange {
 
 export interface DocumentChanges {
   onChanged(listener: (event: DocumentChange) => void): () => void;
+  /**
+   * A document that was waiting for its first pull heard from the server:
+   * whatever it held is merged in, or nothing was there. A pull that finds
+   * nothing merges nothing, so no change arrives for it — this is how the
+   * surface that showed the wait learns the wait is over.
+   */
+  onSettled(listener: (documentId: string) => void): () => void;
 }
 
 const Ctx = createContext<DocumentChanges | null>(null);
@@ -43,4 +50,7 @@ export function useDocumentChanges(): DocumentChanges {
   return useContext(Ctx) ?? NONE;
 }
 
-const NONE: DocumentChanges = { onChanged: () => () => {} };
+const NONE: DocumentChanges = {
+  onChanged: () => () => {},
+  onSettled: () => () => {},
+};

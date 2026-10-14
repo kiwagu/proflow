@@ -56,6 +56,8 @@ export interface StartGraphSyncOptions {
   onStalled?: () => void;
   /** A pull applied rows: a consumer that derives from them may run now. */
   onPulled?: (outcome: { applied: number }) => void;
+  /** A push got changes accepted: a consumer that waited for them may run now. */
+  onPushed?: (outcome: { accepted: number }) => void;
 }
 
 export function parseSyncSettings(raw: string | null): SyncSettings | null {
@@ -135,8 +137,11 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
           onReconciled: options.onReconciled,
         });
         const stop = sync.watch(identity.spaceId, {
-          onPush: (outcome) =>
-            outcome.stalled ? options.onStalled?.() : options.onSettled?.(),
+          onPush: (outcome) => {
+            if (outcome.stalled) options.onStalled?.();
+            else options.onSettled?.();
+            if (outcome.accepted > 0) options.onPushed?.(outcome);
+          },
           onPull: (outcome) => options.onPulled?.(outcome),
           onError: (error: unknown) => options.onError?.(error),
         });

@@ -130,9 +130,13 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   /** One pull at a time per document; concurrent requests coalesce. */
   const pullChain = new Map<string, Promise<PullResult>>();
 
-  async function ensureDocument(docId: string, spaceId: string) {
+  async function ensureDocument(
+    docId: string,
+    spaceId: string,
+    resourceId: string | null
+  ) {
     if (ensured.has(docId)) return;
-    await transport.ensureDocument(docId, spaceId);
+    await transport.ensureDocument(docId, spaceId, resourceId);
     ensured.add(docId);
   }
 
@@ -162,7 +166,8 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   async function push(
     docId: string,
     doc: SyncableDocument,
-    spaceId: string
+    spaceId: string,
+    resourceId: string | null = null
   ): Promise<PushResult> {
     const { pushedVv } = await ledger.read(docId);
     const current = doc.versionBytes();
@@ -173,7 +178,7 @@ export function createDocumentSync(options: DocumentSyncOptions) {
       return { pushedSeq: null, compacted: false };
     }
     const blob = doc.exportUpdatesSince(pushedVv);
-    await ensureDocument(docId, spaceId);
+    await ensureDocument(docId, spaceId, resourceId);
     const seq = await transport.pushUpdate(docId, blob, writer);
     // Only after the insert succeeded — a crash before this line re-sends
     // the same span next time, and every importer no-ops on it.

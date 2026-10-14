@@ -6,7 +6,12 @@ import {
 } from '../document-sync.js';
 import { createPgliteJournal, createPgliteLedger } from '../pglite-ledger.js';
 import type { SyncTransport } from '../types.js';
-import { LOCAL_SCHEMA, SPACE_ID, TextDocument } from './replica.js';
+import {
+  LOCAL_SCHEMA,
+  RESOURCE_ID,
+  SPACE_ID,
+  TextDocument,
+} from './replica.js';
 
 /**
  * A client replica holding any number of documents of one space — what the
@@ -90,7 +95,7 @@ export async function createSpaceReplica(
       document.doc.commit({ message: JSON.stringify({ user: name }) });
       await settled();
     },
-    push: (docId) => sync.push(docId, open(docId), SPACE_ID),
+    push: (docId) => sync.push(docId, open(docId), SPACE_ID, RESOURCE_ID),
     watchSpace: (hooks = {}) =>
       sync.watchSpace(SPACE_ID, {
         ...hooks,

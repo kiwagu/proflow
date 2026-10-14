@@ -26,6 +26,8 @@ import { createPgliteDocumentRepository } from './document.repository.js';
  */
 const AUTHOR = { user: 'tester', src: 'human' as const };
 const SPACE = testId('spc');
+/** The node that owns the body: the server takes a registration only with one. */
+const NODE = testId('knr');
 
 const treeOf = (markdown: string): SerializedTree =>
   markdownToState(markdown).state as unknown as SerializedTree;
@@ -92,7 +94,7 @@ async function device(name: string, server: ServerStandIn): Promise<Device> {
         preview: '',
         author: AUTHOR,
       }),
-    push: async (id) => engine.push(id, await syncable(id), SPACE),
+    push: async (id) => engine.push(id, await syncable(id), SPACE, NODE),
     pull: async (id) => engine.pull(id, await syncable(id)),
     journalRows: async (id) =>
       (

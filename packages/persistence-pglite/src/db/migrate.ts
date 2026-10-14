@@ -16,6 +16,7 @@ import documentSync from './migrations/005_document_sync.sql?raw';
 import graph from './migrations/006_graph.sql?raw';
 import documentSyncSpace from './migrations/007_document_sync_space.sql?raw';
 import documentVersion from './migrations/008_document_version.sql?raw';
+import documentResource from './migrations/009_document_resource.sql?raw';
 
 type Executor = {
   query: <T = unknown>(
@@ -39,6 +40,7 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
   { version: 6, sql: graph },
   { version: 7, sql: documentSyncSpace },
   { version: 8, sql: documentVersion },
+  { version: 9, sql: documentResource },
 ];
 
 /**

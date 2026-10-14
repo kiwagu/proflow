@@ -395,6 +395,8 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
     onPulled: (outcome) => {
       if (outcome.applied > 0) documentSync.graphPulled();
     },
+    // A node made here is on the server now: its document can be registered.
+    onPushed: () => documentSync.graphPushed(),
   });
   const check = async () => {
     if (checking || document.visibilityState === 'hidden') return;

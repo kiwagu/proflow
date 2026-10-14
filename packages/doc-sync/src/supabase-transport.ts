@@ -1,6 +1,7 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { fromByteaHex, toByteaHex } from './bytea.js';
+import { DocumentNotRegisteredError } from './errors.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from './types.js';
 
 /**
@@ -12,16 +13,31 @@ export function createSupabaseTransport(
   client: SupabaseClient<Database>
 ): SyncTransport {
   return {
-    async ensureDocument(docId, spaceId) {
+    async ensureDocument(docId, spaceId, resourceId = null) {
       const user = await client.auth.getClaims();
       const uid = user.data?.claims.sub;
       if (!uid) throw new Error('no authenticated session for document sync');
-      const { error } = await client
+      // A row that exists needs nothing from this device, and a device that
+      // is not the one that registered it (a collaborator with the right to
+      // edit) has no business naming an owner: ask before inserting.
+      const found = await client
         .from('crdt_documents')
-        .upsert(
-          { id: docId, space_id: spaceId, created_by: uid },
-          { onConflict: 'id', ignoreDuplicates: true }
-        );
+        .select('id')
+        .eq('id', docId)
+        .maybeSingle();
+      if (found.error)
+        throw new Error(`ensureDocument failed: ${found.error.message}`);
+      if (found.data) return;
+      if (resourceId === null) throw new DocumentNotRegisteredError(docId);
+      const { error } = await client.from('crdt_documents').upsert(
+        {
+          id: docId,
+          space_id: spaceId,
+          created_by: uid,
+          resource_id: resourceId,
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
       if (error) throw new Error(`ensureDocument failed: ${error.message}`);
     },
 

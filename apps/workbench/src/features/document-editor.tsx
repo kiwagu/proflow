@@ -126,6 +126,12 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
   >(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   /**
+   * How many times the document has been asked for again because the wait
+   * for its first pull ended; each bump drops an answer still on its way,
+   * which began before the pull and may still say "waiting".
+   */
+  const [loads, setLoads] = useState(0);
+  /**
    * A body that arrived from another device before an editor mounted. The
    * load may have read the document just before it landed and answer only
    * afterwards; its older answer must not replace what already arrived.
@@ -161,7 +167,7 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     return () => {
       cancelled = true;
     };
-  }, [documents, document.id]);
+  }, [documents, document.id, loads]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const versionTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -247,6 +253,28 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
     [persist]
   );
 
+  const changes = useDocumentChanges();
+
+  /**
+   * The first pull of a document known only from the graph ended. When the
+   * server held a body, the merge reaches the effect below; when it held
+   * nothing there is no merge, and the pane — still on "waiting", or still
+   * reading — asks again. A pane already showing a body is left alone.
+   */
+  const waiting = initial === null || 'awaiting' in initial;
+  const waitingRef = useRef(waiting);
+  useEffect(() => {
+    waitingRef.current = waiting;
+  }, [waiting]);
+  useEffect(
+    () =>
+      changes.onSettled((id) => {
+        if (id === document.id && waitingRef.current)
+          setLoads((count) => count + 1);
+      }),
+    [changes, document.id]
+  );
+
   /**
    * A merge from another device. The store folded this editor's tree in
    * before merging, so the merged tree is what this editor should now
@@ -255,7 +283,6 @@ function OpenDocument({ document }: { document: DocumentMeta }) {
    * has moved past. A document still waiting for its first pull opens with
    * the body instead.
    */
-  const changes = useDocumentChanges();
   useEffect(
     () =>
       changes.onChanged((event) => {
