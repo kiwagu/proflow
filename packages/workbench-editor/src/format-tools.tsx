@@ -1,14 +1,15 @@
 'use client';
 
 import {
-  NODE_TRANSFORM,
-  UNLINK_COMMAND,
-  UPDATE_LINK_COMMAND,
-  useLexicalWrapper,
-  useStore,
   defaultSelectionData,
+  NODE_TRANSFORM,
   type NodeTransformType,
   type SelectionData,
+  UNLINK_COMMAND,
+  UPDATE_LINK_COMMAND,
+  useEditorEditable,
+  useLexicalWrapper,
+  useStore,
 } from '@workspace/lexical-react';
 import { Button } from '@workspace/ui/components/button';
 import { Hint } from '@workspace/ui/components/hint';
@@ -66,12 +67,14 @@ function FormatToggle({
   label,
   format,
   active,
+  disabled,
   onFormat,
 }: {
   icon: LucideIcon;
   label: string;
   format: TextFormatType;
   active: boolean;
+  disabled: boolean;
   onFormat: (format: TextFormatType) => void;
 }) {
   return (
@@ -82,6 +85,7 @@ function FormatToggle({
         size="icon-sm"
         aria-label={label}
         aria-pressed={active}
+        disabled={disabled}
         className={cn(active && 'bg-accent text-foreground')}
         // Pointer-down instead of click so the editor selection is not lost
         // to the button's own focus before the command reads it.
@@ -130,13 +134,22 @@ export function FormatTools({
   }, [wrapper]);
   const selection = useStore(wrapper.selection ?? emptySelectionStore);
   const editor = wrapper.editor;
-  const disabled = !wrapper.isInteractable();
+  // Live: the tools grey out the moment the editor stops taking input.
+  const editable = useEditorEditable(wrapper.editor);
+  const disabled = !editable || !wrapper.isInteractable();
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  // A link form left open when the editor stops taking input closes with it.
+  if (disabled && linkOpen) setLinkOpen(false);
 
+  // Every change re-checks at the moment it is asked for: a control rendered
+  // a frame before the editor turned read-only must not still write.
+  const whenEditable = (change: () => void) => {
+    if (editor.isEditable()) change();
+  };
   const dispatchFormat = (format: TextFormatType) => {
-    editor.dispatchCommand(FORMAT_TEXT_COMMAND, format);
+    whenEditable(() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, format));
   };
 
   const blockValue = blockValueOf(selection);
@@ -159,7 +172,7 @@ export function FormatTools({
           disabled={disabled}
           onPointerDown={(e) => {
             e.preventDefault();
-            editor.dispatchCommand(UNDO_COMMAND, undefined);
+            whenEditable(() => editor.dispatchCommand(UNDO_COMMAND, undefined));
           }}
         >
           <Undo2 aria-hidden />
@@ -174,7 +187,7 @@ export function FormatTools({
           disabled={disabled}
           onPointerDown={(e) => {
             e.preventDefault();
-            editor.dispatchCommand(REDO_COMMAND, undefined);
+            whenEditable(() => editor.dispatchCommand(REDO_COMMAND, undefined));
           }}
         >
           <Redo2 aria-hidden />
@@ -187,8 +200,10 @@ export function FormatTools({
         value={blockValue}
         disabled={disabled}
         onValueChange={(next) => {
-          editor.dispatchCommand(NODE_TRANSFORM, next as NodeTransformType);
-          editor.focus();
+          whenEditable(() => {
+            editor.dispatchCommand(NODE_TRANSFORM, next as NodeTransformType);
+            editor.focus();
+          });
         }}
       >
         <SelectTrigger size="sm" className="w-36" aria-label={labels.blockType}>
@@ -210,6 +225,7 @@ export function FormatTools({
         label={labels.bold}
         format="bold"
         active={selection.bold}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
       <FormatToggle
@@ -217,6 +233,7 @@ export function FormatTools({
         label={labels.italic}
         format="italic"
         active={selection.italic}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
       <FormatToggle
@@ -224,6 +241,7 @@ export function FormatTools({
         label={labels.underline}
         format="underline"
         active={selection.underline}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
       <FormatToggle
@@ -231,6 +249,7 @@ export function FormatTools({
         label={labels.strikethrough}
         format="strikethrough"
         active={selection.strikethrough}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
       <FormatToggle
@@ -238,6 +257,7 @@ export function FormatTools({
         label={labels.code}
         format="code"
         active={selection.code}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
       <FormatToggle
@@ -245,6 +265,7 @@ export function FormatTools({
         label={labels.highlight}
         format="highlight"
         active={selection.highlight}
+        disabled={disabled}
         onFormat={dispatchFormat}
       />
 
@@ -271,10 +292,12 @@ export function FormatTools({
               e.preventDefault();
               const url = linkUrl.trim();
               if (!url) return;
-              editor.dispatchCommand(UPDATE_LINK_COMMAND, {
-                url,
-                linkText: url,
-              });
+              whenEditable(() =>
+                editor.dispatchCommand(UPDATE_LINK_COMMAND, {
+                  url,
+                  linkText: url,
+                })
+              );
               setLinkUrl('');
               setLinkOpen(false);
               editor.focus();
@@ -298,7 +321,9 @@ export function FormatTools({
               size="sm"
               className="text-destructive mt-2 w-full"
               onClick={() => {
-                editor.dispatchCommand(UNLINK_COMMAND, undefined);
+                whenEditable(() =>
+                  editor.dispatchCommand(UNLINK_COMMAND, undefined)
+                );
                 setLinkOpen(false);
                 editor.focus();
               }}

@@ -170,6 +170,51 @@ describe('reading the session', () => {
     await expect(readSession()).resolves.toBeNull();
   });
 
+  const answer = (body: Record<string, unknown>) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+    );
+  const identity = {
+    userId: '00000000-0000-4000-8000-000000000001',
+    email: 'someone@example.test',
+    spaceId: 'spc_0000000000000001.0000000000',
+    spaceName: 'Space',
+  };
+  const scope = {
+    'node.create': 'all',
+    'node.update': { own: ['owner_user_id'] },
+    'node.move': { own: ['parent_edge_created_by'] },
+    'node.trash': { own: ['owner_user_id'] },
+    'node.purge': { own: ['owner_user_id'] },
+    'node.star': 'all',
+    'body.write': { own: ['owner_user_id'] },
+  };
+
+  it('carries the write scope the server stated', async () => {
+    answer({ ...identity, writeScope: scope });
+    expect((await readSession())?.writeScope).toEqual(scope);
+  });
+
+  it('drops a write scope it cannot read, without failing the session', async () => {
+    answer({ ...identity, writeScope: 'nope' });
+    const session = await readSession();
+    expect(session?.userId).toBe(identity.userId);
+    expect(session && 'writeScope' in session).toBe(false);
+  });
+
+  it('reads a session that states no write scope', async () => {
+    answer(identity);
+    const session = await readSession();
+    expect(session?.userId).toBe(identity.userId);
+    expect(session?.writeScope).toBeUndefined();
+  });
+
   it('does not call a bad answer unreachable', async () => {
     vi.stubGlobal(
       'fetch',

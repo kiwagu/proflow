@@ -18,6 +18,8 @@ export function testNode(
     blobHash: 'hash-' + partial.id,
     documentId: null,
     starred: false,
+    ownerUserId: null,
+    parentEdgeCreatedBy: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
     ...partial,

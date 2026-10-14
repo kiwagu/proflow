@@ -134,6 +134,26 @@ export async function nodeAwaitsServer(
   return rows[0]?.waits ?? false;
 }
 
+/**
+ * Who owns the node a document belongs to: the owner of the one live node
+ * that points at it, or null when there is none, or more than one. The
+ * write scope decides from this whether the person may write the body; with
+ * no single owner to go by, the answer is the safe one, "not mine".
+ */
+export async function nodeOwnerOfDocument(
+  db: AppDb,
+  documentId: string
+): Promise<string | null> {
+  const { rows } = await db.query<{ owner: string | null }>(
+    `select case when count(*) = 1 then min(r.owner_user_id::text) end as owner
+       from knowledge_resources r
+      where r.body_ref ->> 'doc_id' = $1
+        and r.deleted_at is null`,
+    [documentId]
+  );
+  return rows[0]?.owner ?? null;
+}
+
 /** Documents still waiting for their first pull: what a sync start pulls by name. */
 export async function listAwaitingDocuments(db: AppDb): Promise<string[]> {
   const { rows } = await db.query<{ id: string }>(

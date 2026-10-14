@@ -9,7 +9,8 @@ import {
   useTrashLens,
 } from '@workspace/workbench-graph';
 import { useCallback, useMemo, useState } from 'react';
-import { useServices } from '../../composition/app-services';
+import { allowed } from '@workspace/knowledge-contracts';
+import { useServices, useWriteScope } from '../../composition/app-services';
 import { useWorkbenchTranslator } from '../../i18n';
 
 /** Trash is a configuration of the shared result list, not another renderer. */
@@ -17,7 +18,8 @@ export function TrashPanel() {
   const { nodes, isEmpty } = useTrashLens();
   const { containment } = useDriveData();
   const mutations = useDriveMutations(containment);
-  const { storageMaintenance, reportError } = useServices();
+  const { storageMaintenance, reportError, identity } = useServices();
+  const scope = useWriteScope();
   const t = useWorkbenchTranslator();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
@@ -27,6 +29,12 @@ export function TrashPanel() {
   const [freed, setFreed] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const selected = nodes.find((node) => node.id === selectedId);
+  // Offered only where the server would let it through: someone else's node
+  // in the trash is theirs to restore or delete for good.
+  const mine = { owner_user_id: selected?.ownerUserId ?? null };
+  const userId = identity?.userId ?? '';
+  const mayRestore = !selected || allowed(scope, 'node.trash', mine, userId);
+  const mayPurge = !selected || allowed(scope, 'node.purge', mine, userId);
   const confirmTargetPresent =
     confirmation !== null && nodes.some((node) => node.id === confirmation.id);
   // A live update may remove or restore the target while its modal is open.
@@ -107,27 +115,31 @@ export function TrashPanel() {
         </CommandList>
       </Command>
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!selected || busy}
-          onClick={() => void run(false)}
-          data-testid="trash-restore"
-        >
-          {restore}
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          disabled={!selected || busy}
-          onClick={() => {
-            if (selected)
-              setConfirmation({ id: selected.id, title: selected.title });
-          }}
-          data-testid="trash-purge"
-        >
-          {purge}
-        </Button>
+        {mayRestore ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!selected || busy}
+            onClick={() => void run(false)}
+            data-testid="trash-restore"
+          >
+            {restore}
+          </Button>
+        ) : null}
+        {mayPurge ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={!selected || busy}
+            onClick={() => {
+              if (selected)
+                setConfirmation({ id: selected.id, title: selected.title });
+            }}
+            data-testid="trash-purge"
+          >
+            {purge}
+          </Button>
+        ) : null}
       </div>
       {freed !== null ? (
         <p

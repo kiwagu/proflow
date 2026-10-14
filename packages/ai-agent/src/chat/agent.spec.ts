@@ -34,6 +34,8 @@ const node = (
   blobHash: kind === 'blob' ? 'hash' : null,
   documentId: kind === 'document' ? `doc-${id}` : null,
   starred: false,
+  ownerUserId: null,
+  parentEdgeCreatedBy: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });

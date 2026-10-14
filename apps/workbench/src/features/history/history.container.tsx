@@ -30,6 +30,7 @@ import {
   useServices,
 } from '../../composition/app-services';
 import { useDocumentRevision } from '../document-revision';
+import { useMayWriteDocument } from '../document-write';
 
 /** How often the open panel re-reads the document's versions. */
 const VERSION_POLL_MS = 5_000;
@@ -44,6 +45,9 @@ export function HistoryPanelContainer({
   const versionStore = useDocumentVersions();
   const documents = useDocuments();
   const { identity, reportError } = useServices();
+  // A restore is a write: it is offered only to someone who may write the
+  // body, and asked again at the moment it runs.
+  const mayWrite = useMayWriteDocument(documentId);
   const { reload } = useDocumentRevision();
 
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
@@ -98,6 +102,7 @@ export function HistoryPanelContainer({
 
   const restore = useCallback(
     async (version: DocumentVersion) => {
+      if (!mayWrite) return;
       const result = await versionStore.restore({
         documentId,
         ref: version.ref,
@@ -114,6 +119,7 @@ export function HistoryPanelContainer({
       reload();
     },
     [
+      mayWrite,
       versionStore,
       documents,
       documentId,
@@ -140,7 +146,7 @@ export function HistoryPanelContainer({
         ) : null
       }
       onPreview={(version) => void preview(version)}
-      onRestore={(version) => void restore(version)}
+      onRestore={mayWrite ? (version) => void restore(version) : undefined}
     />
   );
 }

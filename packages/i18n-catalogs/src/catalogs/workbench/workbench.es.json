@@ -115,6 +115,7 @@
   "workbench.app.awaitingDevice": "Todavía no está en este dispositivo. Se cargará cuando se pueda conectar con el servidor.",
   "workbench.app.saving": "Guardando…",
   "workbench.app.saved": "Guardado",
+  "workbench.app.readOnly": "Solo lectura: puedes ver este documento",
   "workbench.app.editorFailed": "No se pudo abrir el editor para este documento.",
   "workbench.app.boot.starting": "Iniciando el espacio de trabajo…",
   "workbench.app.boot.stillStarting": "Todavía iniciando…",

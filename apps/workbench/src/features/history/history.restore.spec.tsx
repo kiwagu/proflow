@@ -170,3 +170,47 @@ describe('restoring a version from the history panel', () => {
     expect(screen.getByTestId('history-preview')).toBeTruthy();
   });
 });
+
+describe('history of a document the person may not write', () => {
+  it('previews a version but offers no restore, and the store is never asked to restore', async () => {
+    const { services, store } = stubWorld();
+    const member = {
+      'node.create': 'all',
+      'node.update': { own: ['owner_user_id'] },
+      'node.move': { own: ['parent_edge_created_by'] },
+      'node.trash': { own: ['owner_user_id'] },
+      'node.purge': { own: ['owner_user_id'] },
+      'node.star': 'all',
+      'body.write': { own: ['owner_user_id'] },
+    };
+    const withScope = {
+      ...services,
+      writeScope: {
+        current: () => member,
+        subscribe: () => () => {},
+        accept: () => {},
+      },
+      fileTree: {
+        watchAll: (cb: (nodes: unknown[]) => void) => {
+          cb([
+            {
+              id: 'knr-1',
+              documentId: DOCUMENT_ID,
+              ownerUserId: 'someone-else',
+            },
+          ]);
+          return () => {};
+        },
+      },
+    } as unknown as AppServices;
+    mount(withScope);
+
+    await screen.findByText('v1 v2');
+    const rows = await screen.findAllByTestId('history-version');
+    fireEvent.click(rows[1]!);
+    await screen.findByTestId('history-preview');
+
+    expect(screen.queryByTestId('history-restore')).toBeNull();
+    expect(store.restore).not.toHaveBeenCalled();
+  });
+});

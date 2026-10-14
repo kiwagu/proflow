@@ -68,6 +68,11 @@ export function createOptimisticFiles(deps: {
   documents: IDocumentRepository;
   documentList: IDocumentListReader;
   onError?: (message: string) => void;
+  /**
+   * Who is acting. A row shown before the write lands is theirs and placed
+   * by them, so it must not look like someone else's node in the meantime.
+   */
+  userId?: string;
 }): {
   files: IFileRepository;
   tree: IFileTreeReader;
@@ -120,6 +125,10 @@ export function createOptimisticFiles(deps: {
                 blobHash: null,
                 documentId: null,
                 starred: false,
+                ownerUserId: deps.userId ?? null,
+                parentEdgeCreatedBy: input.parentId
+                  ? (deps.userId ?? null)
+                  : null,
                 createdAt: at,
                 updatedAt: at,
               },
@@ -215,6 +224,10 @@ export function createOptimisticFiles(deps: {
                 blobHash: null,
                 documentId: id,
                 starred: false,
+                ownerUserId: deps.userId ?? null,
+                parentEdgeCreatedBy: input?.parentId
+                  ? (deps.userId ?? null)
+                  : null,
                 createdAt: at,
                 updatedAt: at,
               },

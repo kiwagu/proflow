@@ -6,7 +6,12 @@ import { fireEvent, render, screen, waitFor } from '../../test-utils';
 import { TrashPanel } from './trash.panel';
 
 const mocks = vi.hoisted(() => ({
-  nodes: [{ id: 'file-1', kind: 'file', title: 'Archived file' }],
+  nodes: [{ id: 'file-1', kind: 'file', title: 'Archived file' }] as Array<{
+    id: string;
+    kind: string;
+    title: string;
+    ownerUserId?: string;
+  }>,
   restoreNode: vi.fn(async () => true),
   purgeNode: vi.fn(async () => true),
 }));
@@ -115,5 +120,54 @@ describe('trash actions', () => {
       expect(reportError).toHaveBeenCalledWith('storage unavailable')
     );
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('trash actions the person may not take', () => {
+  // One object for the life of the store, as the real one keeps it: a
+  // snapshot that changes on every read would never let React settle.
+  const member = {
+    'node.create': 'all',
+    'node.update': { own: ['owner_user_id'] },
+    'node.move': { own: ['parent_edge_created_by'] },
+    'node.trash': { own: ['owner_user_id'] },
+    'node.purge': { own: ['owner_user_id'] },
+    'node.star': 'all',
+    'body.write': { own: ['owner_user_id'] },
+  };
+  const memberScope = {
+    current: () => member,
+    subscribe: () => () => {},
+    accept: () => {},
+  };
+
+  function mountWithScope(ownerUserId: string) {
+    mocks.nodes = [
+      { id: 'file-1', kind: 'file', title: 'Archived file', ownerUserId },
+    ];
+    const services = {
+      storageMaintenance: { freeUnused: vi.fn(async () => ok(0)) },
+      reportError: vi.fn(),
+      writeScope: memberScope,
+      identity: { userId: 'user-1', spaceId: 'space-1' },
+    } as unknown as AppServices;
+    render(
+      <AppServicesProvider services={services}>
+        <TrashPanel />
+      </AppServicesProvider>
+    );
+    fireEvent.click(screen.getByText('Archived file'));
+  }
+
+  it("offers neither restore nor delete forever for someone else's node", () => {
+    mountWithScope('user-2');
+    expect(screen.queryByTestId('trash-restore')).toBeNull();
+    expect(screen.queryByTestId('trash-purge')).toBeNull();
+  });
+
+  it("offers both for the person's own node", () => {
+    mountWithScope('user-1');
+    expect(screen.queryByTestId('trash-restore')).toBeTruthy();
+    expect(screen.queryByTestId('trash-purge')).toBeTruthy();
   });
 });

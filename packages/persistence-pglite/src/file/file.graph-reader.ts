@@ -40,7 +40,9 @@ export type GraphFileRow = Omit<FileNodeRow, 'kind'> & { kind: string };
 export const GRAPH_FILE_SELECT = `
   r.id, e.from_id as parent_id, r.kind, r.title as name,
   f.mime, f.size, f.blob_hash, r.body_ref ->> 'doc_id' as document_id,
-  coalesce(s.starred, false) as starred, r.created_at, r.updated_at
+  coalesce(s.starred, false) as starred,
+  r.owner_user_id, e.created_by as parent_edge_created_by,
+  r.created_at, r.updated_at
   from knowledge_resources r
   left join knowledge_edges e on e.to_id = r.id
     and e.space_id = r.space_id and e.relation_type = 'contains'

@@ -10,6 +10,8 @@ export type FileNodeRow = {
   blob_hash: string | null;
   document_id: string | null;
   starred: boolean;
+  owner_user_id?: string | null;
+  parent_edge_created_by?: string | null;
   created_at: string | Date;
   updated_at: string | Date;
 };
@@ -26,6 +28,8 @@ export function toFileNode(row: FileNodeRow): FileNode {
     blobHash: row.blob_hash,
     documentId: row.document_id,
     starred: row.starred,
+    ownerUserId: row.owner_user_id ?? null,
+    parentEdgeCreatedBy: row.parent_edge_created_by ?? null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };

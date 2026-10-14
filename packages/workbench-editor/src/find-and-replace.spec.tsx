@@ -21,12 +21,16 @@ afterEach(() => {
 function renderFindAndReplace() {
   let wrapper: LexicalWrapper | undefined;
   let setOpen: (next: boolean) => void = () => {};
+  let setReadOnly: (next: boolean) => void = () => {};
   function Wrapped() {
     const [open, setOpenState] = useState(true);
+    const [readOnly, setReadOnlyState] = useState(false);
     setOpen = setOpenState;
+    setReadOnly = setReadOnlyState;
     return (
       <TooltipProvider>
         <DocumentView
+          readOnly={readOnly}
           onWrapper={(w: LexicalWrapper) => {
             wrapper = w;
           }}
@@ -38,7 +42,12 @@ function renderFindAndReplace() {
   }
   const utils = render(<Wrapped />);
   if (!wrapper) throw new Error('wrapper not captured');
-  return { wrapper, setOpen, ...utils };
+  return {
+    wrapper,
+    setOpen,
+    setReadOnly: (next: boolean) => act(() => setReadOnly(next)),
+    ...utils,
+  };
 }
 
 function loadParagraph(wrapper: LexicalWrapper, text: string) {
@@ -106,6 +115,30 @@ describe('FindAndReplace', () => {
       .getEditorState()
       .read(() => $getRoot().getTextContent());
     expect(text).toBe('dog cat cat');
+  });
+
+  it('stops replacing the moment the document turns read-only, with the panel still open', async () => {
+    const { wrapper, setReadOnly } = renderFindAndReplace();
+    loadParagraph(wrapper, 'cat cat cat');
+    fireEvent.change(screen.getByPlaceholderText('Find…'), {
+      target: { value: 'cat' },
+    });
+    await waitFor(() => screen.getByText('1 of 3'));
+    fireEvent.change(screen.getByPlaceholderText('Replace with…'), {
+      target: { value: 'dog' },
+    });
+
+    // The rights went away while the panel stayed open with its fields set:
+    // the replace row goes with them, search stays.
+    setReadOnly(true);
+
+    expect(screen.queryByLabelText('Replace')).toBeNull();
+    expect(screen.queryByLabelText('Replace all')).toBeNull();
+    expect(screen.getByPlaceholderText('Find…')).toBeTruthy();
+    const text = wrapper.editor
+      .getEditorState()
+      .read(() => $getRoot().getTextContent());
+    expect(text).toBe('cat cat cat');
   });
 
   it('replaces every match with replace-all', async () => {

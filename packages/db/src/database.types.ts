@@ -1607,6 +1607,7 @@ export type Database = {
           watermark: number
         }[]
       }
+      rpc_my_write_scope: { Args: { p_space_id: string }; Returns: Json }
       rpc_outbox_claim_jobs: {
         Args: { p_channels?: string[]; p_consumer: string; p_limit?: number }
         Returns: {

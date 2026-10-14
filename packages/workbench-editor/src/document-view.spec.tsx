@@ -104,6 +104,28 @@ describe('DocumentView', () => {
     expect(wrapper.isInteractable()).toBe(false);
   });
 
+  it('takes typing away while read-only, and gives it back without a remount', () => {
+    const capture = lastWrapper();
+    const { rerender } = render(
+      <DocumentView readOnly onWrapper={capture.onWrapper} />
+    );
+    const editor = capture.ref().editor;
+    const surface = () =>
+      document
+        .querySelector('[data-lexical-editor]')
+        ?.getAttribute('contenteditable');
+    // A reader's keystrokes never reach the document: the editable itself
+    // refuses them, not only the tools around it — in the editor and in the
+    // page, where the browser decides whether typing lands at all.
+    expect(editor.isEditable()).toBe(false);
+    expect(surface()).toBe('false');
+
+    rerender(<DocumentView readOnly={false} onWrapper={capture.onWrapper} />);
+    expect(capture.ref().editor).toBe(editor);
+    expect(editor.isEditable()).toBe(true);
+    expect(surface()).toBe('true');
+  });
+
   it('registers table support so a table command produces a table', () => {
     const capture = lastWrapper();
     render(<DocumentView onWrapper={capture.onWrapper} />);

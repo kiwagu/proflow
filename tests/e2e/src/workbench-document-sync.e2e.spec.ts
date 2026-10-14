@@ -315,8 +315,10 @@ test.describe('Workbench document sync across devices', () => {
       const rows = deviceB.getByTestId('files-section').getByTestId('file-row');
       await expect(rows).toHaveCount(1, { timeout: 60_000 });
       await rows.first().click();
-      const editorB = deviceB.locator('[contenteditable="true"]').first();
+      // A member reads it; the pane is read-only for them.
+      const editorB = deviceB.locator('[data-lexical-editor]').first();
       await expect(editorB).toHaveText('Shared note', { timeout: 60_000 });
+      await expect(editorB).toHaveAttribute('contenteditable', 'false');
 
       const editorA = owner.locator('[contenteditable="true"]').first();
       await editorA.click();

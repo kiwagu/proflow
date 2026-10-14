@@ -115,6 +115,7 @@
   "workbench.app.awaitingDevice": "Not on this device yet. It loads once the server can be reached.",
   "workbench.app.saving": "Saving…",
   "workbench.app.saved": "Saved",
+  "workbench.app.readOnly": "Read only: you can view this document",
   "workbench.app.editorFailed": "The editor could not open this document.",
   "workbench.app.boot.starting": "Starting the workbench…",
   "workbench.app.boot.stillStarting": "Still starting…",

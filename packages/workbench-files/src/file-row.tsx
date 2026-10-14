@@ -46,9 +46,12 @@ export interface FileRowProps {
   expanded?: boolean;
   onToggle?: () => void;
   onOpen: () => void;
-  onRename: (name: string) => void;
-  onDelete: () => void;
-  onStar: (starred: boolean) => void;
+  /** Absent when the person may not rename the node: no rename is offered. */
+  onRename?: (name: string) => void;
+  /** Absent when the person may not move the node to the trash. */
+  onDelete?: () => void;
+  /** Absent when the person may not star nodes. */
+  onStar?: (starred: boolean) => void;
   /**
    * For an archive: whether it has been unpacked. Undefined until the
    * answer is known, so a row never claims "still packed" while looking.
@@ -90,7 +93,7 @@ export function FileRow(props: FileRowProps) {
   const commit = () => {
     const name = draft.trim();
     setEditing(false);
-    if (name && name !== props.node.name) props.onRename(name);
+    if (name && name !== props.node.name) props.onRename?.(name);
   };
 
   const isArchive = categoryOf(props.node.mime) === 'archive';
@@ -116,7 +119,7 @@ export function FileRow(props: FileRowProps) {
         )}
         style={{ paddingLeft: `${0.5 + props.depth * 0.9}rem` }}
         onClick={() => props.onOpen()}
-        onDoubleClick={startRename}
+        onDoubleClick={props.onRename ? startRename : undefined}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -202,20 +205,24 @@ export function FileRow(props: FileRowProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>
-              <DropdownMenuItem className="gap-2" onSelect={startRename}>
-                <Pencil className="size-4" />
-                <span className="text-xs">{labels.row.rename}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="gap-2"
-                data-testid="file-star"
-                onSelect={() => props.onStar(!props.node.starred)}
-              >
-                <Star className="size-4" />
-                <span className="text-xs">
-                  {props.node.starred ? labels.row.unstar : labels.row.star}
-                </span>
-              </DropdownMenuItem>
+              {props.onRename ? (
+                <DropdownMenuItem className="gap-2" onSelect={startRename}>
+                  <Pencil className="size-4" />
+                  <span className="text-xs">{labels.row.rename}</span>
+                </DropdownMenuItem>
+              ) : null}
+              {props.onStar ? (
+                <DropdownMenuItem
+                  className="gap-2"
+                  data-testid="file-star"
+                  onSelect={() => props.onStar?.(!props.node.starred)}
+                >
+                  <Star className="size-4" />
+                  <span className="text-xs">
+                    {props.node.starred ? labels.row.unstar : labels.row.star}
+                  </span>
+                </DropdownMenuItem>
+              ) : null}
               {props.onExport ? (
                 <DropdownMenuItem
                   className="gap-2"
@@ -285,15 +292,17 @@ export function FileRow(props: FileRowProps) {
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               ) : null}
-              <DropdownMenuItem
-                variant="destructive"
-                className="gap-2"
-                data-testid="file-delete"
-                onSelect={() => props.onDelete()}
-              >
-                <Trash2 className="size-4" />
-                <span className="text-xs">{labels.row.delete}</span>
-              </DropdownMenuItem>
+              {props.onDelete ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  className="gap-2"
+                  data-testid="file-delete"
+                  onSelect={() => props.onDelete?.()}
+                >
+                  <Trash2 className="size-4" />
+                  <span className="text-xs">{labels.row.delete}</span>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>

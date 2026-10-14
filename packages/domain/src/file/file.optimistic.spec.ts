@@ -28,6 +28,8 @@ function node(partial: Partial<FileNode> & { id: string }): FileNode {
     blobHash: 'h',
     documentId: null,
     starred: false,
+    ownerUserId: null,
+    parentEdgeCreatedBy: null,
     createdAt: at(0),
     updatedAt: at(0),
     ...partial,
@@ -60,7 +62,7 @@ const meta = (id: string, title: string): DocumentMeta => ({
   updatedAt: at(0),
 });
 
-function harness() {
+function harness(userId?: string) {
   let onTree: ((nodes: FileNode[]) => void) | undefined;
   let onDocuments: ((docs: DocumentMeta[]) => void) | undefined;
   const commands = {
@@ -98,6 +100,7 @@ function harness() {
       watchContent: () => () => {},
     } as IDocumentListReader,
     onError,
+    userId,
   });
   const nodes: FileNode[][] = [];
   const documents: DocumentMeta[][] = [];
@@ -171,6 +174,29 @@ describe('optimistic files', () => {
         .map((n) => n.name)
         .indexOf('a.txt')
     );
+  });
+
+  it("shows what it creates as the acting user's own, placed by them, before the write lands", async () => {
+    const h = harness('u1');
+    h.deliverTree(tree());
+
+    await h.files.createFolder({ parentId: 'docs', name: 'Papers' });
+    await h.files.createFolder({ parentId: null, name: 'Top' });
+    await h.documents.create({ title: 'Draft', parentId: 'docs' });
+
+    const byName = new Map(h.nodes().map((n) => [n.name, n]));
+    expect(byName.get('Papers')).toMatchObject({
+      ownerUserId: 'u1',
+      parentEdgeCreatedBy: 'u1',
+    });
+    expect(byName.get('Top')).toMatchObject({
+      ownerUserId: 'u1',
+      parentEdgeCreatedBy: null,
+    });
+    expect(byName.get('Draft')).toMatchObject({
+      ownerUserId: 'u1',
+      parentEdgeCreatedBy: 'u1',
+    });
   });
 
   it('renames a document node in the tree and in the document list at once', async () => {

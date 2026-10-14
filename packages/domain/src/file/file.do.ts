@@ -23,6 +23,14 @@ export interface FileNode {
   /** The `document` this node stands for, for native documents. */
   documentId: string | null;
   starred: boolean;
+  /**
+   * Who owns the node, as the server says: one of the columns the write
+   * scope's "own" verdicts name. Null where it is not known (a local file
+   * the graph does not hold).
+   */
+  ownerUserId: string | null;
+  /** Who created the containment edge that places the node; null at the top level. */
+  parentEdgeCreatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

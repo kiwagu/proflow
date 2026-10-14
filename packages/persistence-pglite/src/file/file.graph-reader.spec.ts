@@ -174,3 +174,55 @@ it('watches the scoped graph, containment, own stars and blob metadata', async (
     await db.query('select 1');
   }
 });
+
+it('says who owns each row and who placed it, the columns the write scope asks about', async () => {
+  const spaceId = testId('spc');
+  const graph = createPgliteGraphRepository(db);
+  const folder = (
+    await graph.createNode({
+      spaceId,
+      kind: 'folder',
+      title: 'Placed by the other user',
+      createdBy: OTHER_USER,
+      parentId: null,
+    })
+  )._unsafeUnwrap().id;
+  const inside = (
+    await graph.createNode({
+      spaceId,
+      kind: 'text',
+      title: 'Mine, filed by the other user',
+      createdBy: TEST_USER,
+      parentId: null,
+    })
+  )._unsafeUnwrap().id;
+  // The edge is the other user's: they filed my node into their folder.
+  (
+    await graph.moveNode(
+      { spaceId, nodeId: inside, targetParentId: folder, position: 0 },
+      OTHER_USER
+    )
+  )._unsafeUnwrap();
+
+  let rows: FileNode[] = [];
+  const stop = createGraphFileTreeReader(db, spaceId, TEST_USER).watchAll(
+    (value) => {
+      rows = value;
+    }
+  );
+  try {
+    await expect.poll(() => rows.length).toBe(2);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get(folder)).toMatchObject({
+      ownerUserId: OTHER_USER,
+      parentEdgeCreatedBy: null,
+    });
+    expect(byId.get(inside)).toMatchObject({
+      ownerUserId: TEST_USER,
+      parentEdgeCreatedBy: OTHER_USER,
+    });
+  } finally {
+    stop();
+    await db.query('select 1');
+  }
+});

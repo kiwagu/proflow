@@ -20,6 +20,7 @@
     }
   },
   "dependencies": {
+    "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/domain": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
     "@workspace/persistence-pglite": "workspace:*",

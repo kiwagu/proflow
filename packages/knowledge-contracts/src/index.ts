@@ -154,3 +154,14 @@ export {
   parseMoveKnowledgeResourceInput,
   type MoveKnowledgeResourceInput,
 } from './knowledge-resource-move.schema.js';
+
+export {
+  allowed,
+  parseWriteScope,
+  writeActionSchema,
+  writeScopeSchema,
+  writeVerdictSchema,
+  type WriteAction,
+  type WriteScope,
+  type WriteVerdict,
+} from './write-scope.schema.js';

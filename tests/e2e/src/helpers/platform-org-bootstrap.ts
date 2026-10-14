@@ -436,6 +436,48 @@ export async function bootstrapSpaceMemberForUser(input: {
   }
 }
 
+/**
+ * Give a member of a space another system role there, in place: the user's
+ * role row in that space is replaced. What a running workbench learns from
+ * it arrives with its next session check.
+ */
+export async function setSpaceRoleForUser(input: {
+  spaceId: string;
+  userId: string;
+  role: 'member' | 'author' | 'admin';
+}): Promise<void> {
+  const supabase = serviceSupabase();
+  const { data: role, error: roleErr } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('role_kind', 'system')
+    .eq('key', input.role)
+    .is('owner_organization_id', null)
+    .is('archived_at', null)
+    .maybeSingle();
+  if (roleErr || !role?.id) {
+    throw new Error(
+      `setSpaceRoleForUser: ${input.role} role missing: ${roleErr?.message ?? 'no row'}`
+    );
+  }
+  const { error: removeErr } = await supabase
+    .from('user_role')
+    .delete()
+    .eq('user_id', input.userId)
+    .eq('space_id', input.spaceId);
+  if (removeErr) {
+    throw new Error(`setSpaceRoleForUser: ${removeErr.message}`);
+  }
+  const { error: insertErr } = await supabase.from('user_role').insert({
+    user_id: input.userId,
+    space_id: input.spaceId,
+    role_id: role.id,
+  });
+  if (insertErr) {
+    throw new Error(`setSpaceRoleForUser: ${insertErr.message}`);
+  }
+}
+
 export async function deleteOrganizationCascade(
   organizationId: string
 ): Promise<void> {

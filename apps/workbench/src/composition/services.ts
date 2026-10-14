@@ -22,6 +22,7 @@ import type {
 import type { DocumentChanges } from '../features/document-changes';
 import type { LiveDocuments } from '../features/live-documents';
 import type { ReportError } from '../shell/operation-errors';
+import type { WriteScopeStore } from './write-scope';
 
 /**
  * Everything the workbench surfaces reach for, built once by the composition
@@ -55,6 +56,8 @@ export interface AppServices {
   chatMessages: IChatMessageRepository;
   /** Server-verified session and checked-out space. */
   identity: { userId: string; spaceId: string };
+  /** What the person may change in the space, as each session check restates it. */
+  writeScope: WriteScopeStore;
   /**
    * Where a failure is reported so the user sees it. A report under a key
    * replaces the earlier one under that key; `resolveError` withdraws it

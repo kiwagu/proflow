@@ -3,7 +3,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { ReactNode } from 'react';
 import type { ISettingsStore } from '@workspace/domain';
 import { createWorkerEmbedder } from '@workspace/embedding';
-import { createPgliteSemanticSearch } from '@workspace/persistence-pglite';
+import {
+  createPgliteSemanticSearch,
+  nodeOwnerOfDocument,
+} from '@workspace/persistence-pglite';
 import {
   AgentProvider,
   startAgentWorker,
@@ -34,6 +37,8 @@ import {
 } from './shell/operation-errors';
 import { startDocumentSync } from './composition/document-sync';
 import { rememberSyncSettings, startGraphSync } from './composition/sync';
+import { allowed } from '@workspace/knowledge-contracts';
+import { guardDocumentWrites } from './composition/agent-documents';
 
 const container = requireRoot();
 
@@ -222,6 +227,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       return;
     }
     noteSyncTarget(latest);
+    services.writeScope.accept(latest.writeScope);
     if (
       latest.userId !== session.userId ||
       latest.spaceId !== session.spaceId
@@ -249,7 +255,11 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
   let agentClient: AgentWorkerClient | undefined;
   try {
     agentClient = startAgentWorker({
-      documents: services.documents,
+      documents: guardDocumentWrites(services.documents, {
+        scope: () => services.writeScope.current(),
+        userId: services.identity.userId,
+        ownerOfDocument: (id) => nodeOwnerOfDocument(services.db, id),
+      }),
       search: createPgliteSemanticSearch(services.db, createWorkerEmbedder()),
       listDocuments: () => firstOf(services.documentList.watchRecent),
       listFiles: () => firstOf(services.fileTree.watchAll),
@@ -359,6 +369,13 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       );
     },
     onPassSettled: () => resolveError('document-sync'),
+    mayWrite: (row) =>
+      allowed(
+        services.writeScope.current(),
+        'body.write',
+        row,
+        services.identity.userId
+      ),
   });
   startGraphSync({
     db: services.db,
@@ -425,6 +442,7 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
       verifiedCookies = authCookieFingerprint();
       noteSyncTarget(next);
       rememberSession(next);
+      services.writeScope.accept(next.writeScope);
       notice.style.display = 'none';
     } catch (error) {
       console.error('session verification failed', error);
