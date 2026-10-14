@@ -47,22 +47,31 @@ export interface GraphSyncTableDescriptor {
   direction: 'both' | 'down';
 }
 
-/** In the order a checkout pulls them: nodes first, then everything hanging off them. */
+/**
+ * In the order a pull applies them. Each table lands in its own
+ * transaction and the file tree is a live query over nodes joined to their
+ * containment edge, so what sits between two tables is what the tree shows
+ * for a moment. Edges go before nodes: an edge whose node has not arrived
+ * shows nothing (the tree starts from nodes), while a node whose edge has
+ * not arrived has no parent and is drawn at the top level until the edge
+ * lands. The replica keeps no foreign key between the two, so either order
+ * applies cleanly. Everything else hangs off nodes and follows them.
+ */
 export const GRAPH_SYNC_TABLE_DESCRIPTORS: readonly GraphSyncTableDescriptor[] =
   [
-    {
-      local: 'knowledge_resources',
-      schema: 'public',
-      remote: 'knowledge_resources',
-      nodeKey: 'id',
-      direction: 'both',
-    },
     {
       local: 'knowledge_edges',
       schema: 'public',
       remote: 'knowledge_edges',
       nodeKey: 'from_id',
       nodeKeySecondary: 'to_id',
+      direction: 'both',
+    },
+    {
+      local: 'knowledge_resources',
+      schema: 'public',
+      remote: 'knowledge_resources',
+      nodeKey: 'id',
       direction: 'both',
     },
     {
