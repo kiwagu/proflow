@@ -343,7 +343,9 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     if (!running) return;
     if (message.type === 'graph-journal') running.kickGraph();
     else if (message.type === 'visible') running.cadence.peerVisible();
-    else running.catchUp();
+    // Another tab was turned to: the same catch-up, echo included, as when
+    // this one is.
+    else running.cadence.catchUpNow();
   });
 
   // Every tab says when it is looked at; only the leader listens.

@@ -52,6 +52,12 @@ export interface SyncCadence {
   setChannelUp(up: boolean): void;
   /** Another tab of this browser is visible right now. */
   peerVisible(): void;
+  /**
+   * A catch-up now and again after the echo, as when this tab becomes
+   * visible — for another tab of the browser the person just turned to.
+   * The heartbeat stays where it was.
+   */
+  catchUpNow(): void;
 }
 
 export function createSyncCadence(
@@ -191,6 +197,9 @@ export function createSyncCadence(
       const wasVisible = browserVisible();
       lastPeerVisible = clock.now();
       if (live() && !wasVisible) armHeartbeat();
+    },
+    catchUpNow() {
+      if (live()) catchUp();
     },
   };
 }

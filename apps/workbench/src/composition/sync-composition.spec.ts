@@ -669,6 +669,32 @@ describe('the channel and the cadence', () => {
     leader.handle.stop();
   });
 
+  it('another tab turned to asks the leader for a catch-up now and again five seconds later', async () => {
+    const b = browser();
+    const leader = b.tab();
+    const other = b.tab({ visible: false });
+    await flush();
+    // Channel up (heartbeat a minute away), and every pass so far through.
+    const graph = startGraphSync.mock.calls[0]![0];
+    const documents = startDocumentSync.mock.calls[0]![0];
+    graph.onChannel?.(true);
+    documents.onChannel?.(true);
+    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    graph.onCycle?.({ ok: true, swept: true });
+    documents.onPass?.({ ok: true, full: true });
+    graphOf().kick.mockClear();
+    documentsOf().kick.mockClear();
+    other.setVisible(true);
+    await flush();
+    expect(graphOf().kick).toHaveBeenCalledTimes(1);
+    expect(documentsOf().kick).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(graphOf().kick).toHaveBeenCalledTimes(2);
+    expect(documentsOf().kick).toHaveBeenCalledTimes(2);
+    leader.handle.stop();
+    other.handle.stop();
+  });
+
   it('every tab says it is visible every 30 s while it is', async () => {
     const b = browser();
     const heard: unknown[] = [];

@@ -229,6 +229,41 @@ describe('the leader cadence', () => {
     cadence.stop();
   });
 
+  it('an explicit catch-up runs now and again five seconds later, and leaves the heartbeat where it was', async () => {
+    const a = actions();
+    const cadence = createSyncCadence(clock, a, {
+      visible: true,
+      channelUp: true,
+    });
+    cadence.start();
+    await vi.advanceTimersByTimeAsync(20 * SECOND);
+    a.catchUps.length = 0;
+    cadence.catchUpNow();
+    expect(a.catchUps).toEqual([20 * SECOND]);
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(a.catchUps).toEqual([20 * SECOND, 25 * SECOND]);
+    await vi.advanceTimersByTimeAsync(35 * SECOND);
+    expect(a.heartbeats.map((beat) => beat.at)).toEqual([60 * SECOND]);
+    cadence.stop();
+  });
+
+  it('a peer visible beat alone never catches up', async () => {
+    const a = actions();
+    const cadence = createSyncCadence(clock, a, {
+      visible: false,
+      channelUp: true,
+    });
+    cadence.start();
+    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    a.catchUps.length = 0;
+    cadence.peerVisible();
+    await vi.advanceTimersByTimeAsync(30 * SECOND);
+    cadence.peerVisible();
+    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    expect(a.catchUps).toEqual([]);
+    cadence.stop();
+  });
+
   it('a rejecting heartbeat does not stop the clock', async () => {
     const a = actions();
     a.heartbeat.mockRejectedValueOnce(new Error('probe failed'));
