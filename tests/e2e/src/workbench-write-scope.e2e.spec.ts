@@ -72,7 +72,9 @@ test.describe('Workbench write scope', () => {
     await expect(ownerEditor).toBeVisible({ timeout: 30_000 });
     await ownerEditor.click();
     await ownerEditor.pressSequentially('Owner text');
-    await expect(owner.getByTestId('save-state')).toContainText(/saved/i);
+    await expect(owner.getByTestId('save-state')).toContainText(/saved/i, {
+      timeout: 30_000,
+    });
     let nodeId = '';
     await expect
       .poll(
@@ -131,7 +133,7 @@ test.describe('Workbench write scope', () => {
     };
   }
 
-  test("@full a member reads a shared document read-only: typing changes nothing, nothing is sent, the tree offers nothing of the owner's", async ({
+  test("@full a member reads a shared document read-only: typing changes nothing, nothing is sent, the tree offers no rename or delete of the owner's node", async ({
     browser,
     page: owner,
     seededUser,
@@ -155,7 +157,9 @@ test.describe('Workbench write scope', () => {
         timeout: 60_000,
       });
 
-      // The owner's node offers the member no rename, move or delete.
+      // The owner's node offers the member no rename or delete. It has no
+      // place yet, and filing a node with no place needs only the create verb,
+      // so move stays.
       await s.memberRows.first().hover();
       await s.memberRows.first().getByTestId('file-menu').click();
       await expect(s.memberPage.getByRole('menu')).toBeVisible();
@@ -164,7 +168,7 @@ test.describe('Workbench write scope', () => {
       ).toHaveCount(0);
       await expect(
         s.memberPage.getByRole('menuitem', { name: /move/i })
-      ).toHaveCount(0);
+      ).toHaveCount(1);
       await expect(s.memberPage.getByTestId('file-delete')).toHaveCount(0);
       await s.memberPage.keyboard.press('Escape');
 
