@@ -96,7 +96,9 @@ export function createEditorDocumentBridge(
     },
     applyEdit: (documentId, result, partial) => {
       const current = held(documentId);
-      if (!current) return false;
+      // A read-only editor takes no edit from the assistant either: the
+      // refusal sends it to the document store, which refuses it too.
+      if (!current || !current.editor.isEditable()) return false;
       applyAgentState(current.editor, current.mapping, result.state, {
         partial,
       });

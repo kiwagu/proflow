@@ -3,7 +3,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { ReactNode } from 'react';
 import type { ISettingsStore } from '@workspace/domain';
 import { createWorkerEmbedder } from '@workspace/embedding';
-import { createPgliteSemanticSearch } from '@workspace/persistence-pglite';
+import {
+  createPgliteSemanticSearch,
+  nodeOwnerOfDocument,
+} from '@workspace/persistence-pglite';
 import {
   AgentProvider,
   startAgentWorker,
@@ -35,6 +38,7 @@ import {
 import { startDocumentSync } from './composition/document-sync';
 import { rememberSyncSettings, startGraphSync } from './composition/sync';
 import { allowed } from '@workspace/knowledge-contracts';
+import { guardDocumentWrites } from './composition/agent-documents';
 
 const container = requireRoot();
 
@@ -251,7 +255,11 @@ async function openWorkbench(session: WorkbenchSession, offline: boolean) {
   let agentClient: AgentWorkerClient | undefined;
   try {
     agentClient = startAgentWorker({
-      documents: services.documents,
+      documents: guardDocumentWrites(services.documents, {
+        scope: () => services.writeScope.current(),
+        userId: services.identity.userId,
+        ownerOfDocument: (id) => nodeOwnerOfDocument(services.db, id),
+      }),
       search: createPgliteSemanticSearch(services.db, createWorkerEmbedder()),
       listDocuments: () => firstOf(services.documentList.watchRecent),
       listFiles: () => firstOf(services.fileTree.watchAll),

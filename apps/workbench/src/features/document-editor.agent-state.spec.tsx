@@ -190,6 +190,23 @@ describe('the agent bridge over a live editor', () => {
     expect(after.root.children).toHaveLength(3);
   });
 
+  it('lands nothing in an editor the person may only read', () => {
+    const before = bridge.readState(DOCUMENT_ID);
+    const [heading] = blockIds(before!);
+    const outcome = runSession(before!, (editor) => {
+      editor.setText(heading!, 'Rewritten by the assistant');
+    });
+    wrapper.editor.setEditable(false);
+
+    let applied = true;
+    act(() => {
+      applied = bridge.applyEdit(DOCUMENT_ID, outcome, false);
+    });
+
+    expect(applied).toBe(false);
+    expect(text(wrapper)).not.toContain('Rewritten by the assistant');
+  });
+
   it('reconciles in place, keeping untouched blocks as the same nodes', () => {
     const before = bridge.readState(DOCUMENT_ID);
     const [heading, paragraph] = blockIds(before!);
