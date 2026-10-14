@@ -1209,6 +1209,23 @@ begin
     perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone', 'OK', 'OK');
   exception when others then perform pg_temp.t14_report('N25o the owner registers once the second pointer is gone','OK','ERR ('||sqlstate||') '||sqlerrm); end;
   reset role;
+
+  -- (17) writing a body follows the node's own update rule: its owner, or
+  --      the space update verb. bob is a member (no update verb); alice
+  --      hands him her shared node, whose body she registered herself.
+  update public.knowledge_resources set owner_user_id = u_bob where id = res_reg;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg, '\x05'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N26a the owner of the node writes its body without the update verb', 'OK', 'OK');
+  exception when others then perform pg_temp.t14_report('N26a the owner of the node writes its body without the update verb','OK','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  begin perform pg_temp.t14_as(u_bob);
+    insert into public.crdt_updates (doc_id, bytes, writer, created_by) values (d_reg2, '\x06'::bytea, 'inst-bob', u_bob);
+    perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused', 'DENIED', 'ALLOWED');
+  exception when insufficient_privilege then perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused', 'DENIED', 'DENIED ('||sqlstate||')');
+          when others then perform pg_temp.t14_report('N26b a member who owns neither the node nor the body is still refused','DENIED','ERR ('||sqlstate||') '||sqlerrm); end;
+  reset role;
+  update public.knowledge_resources set owner_user_id = u_alice where id = res_reg;
 end
 $fence$;
 
