@@ -19,6 +19,8 @@ const node = (partial: Partial<FileNode> & { id: string }): FileNode => ({
   blobHash: 'h',
   documentId: null,
   starred: false,
+  ownerUserId: null,
+  parentEdgeCreatedBy: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
   ...partial,

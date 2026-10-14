@@ -121,6 +121,7 @@ export async function createAppServices(
     documentList,
   } = createOptimisticFiles({
     entities: optimistic,
+    userId: session.userId,
     files: createGraphFileRepository(
       db,
       blobs,
