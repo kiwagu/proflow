@@ -22,7 +22,13 @@ import {
  * converges, on a 15 s heartbeat, and only this check tells the two apart.
  */
 
-const IDLE_MS = 60_000;
+/**
+ * Each idle window starts right after a heartbeat the leader was seen to
+ * send, and lasts a little longer than its one-minute interval: anchored
+ * at an arbitrary phase, a 60 s window could end a few milliseconds before
+ * the next beat (timer latency) and count none.
+ */
+const IDLE_MS = 65_000;
 const TYPING_MS = 30_000;
 /** Above the startup catch-up's five-second echo. */
 const SETTLE_MS = 7_000;
@@ -72,6 +78,14 @@ function expectHeartbeat(tally: Tally) {
   ).toBeGreaterThanOrEqual(1);
 }
 
+/** The leader's next change probe: where an idle window starts. */
+function nextHeartbeat(leader: Page) {
+  return leader.waitForRequest(
+    (request) => request.url().includes('/backend/rest/v1/rpc/sync_probe'),
+    { timeout: 90_000 }
+  );
+}
+
 async function channelUp(page: Page) {
   await expect
     .poll(
@@ -89,7 +103,7 @@ test.describe('Workbench sync traffic', () => {
     page,
     seededUser,
   }) => {
-    test.setTimeout(420_000);
+    test.setTimeout(600_000);
     const org = await bootstrapOrgSpaceAdminForUser(seededUser.id);
     const deviceB = await browser.newContext({ ignoreHTTPSErrors: true });
     try {
@@ -105,7 +119,8 @@ test.describe('Workbench sync traffic', () => {
       await channelUp(page);
       await page.waitForTimeout(SETTLE_MS);
 
-      // One tab, idle for a minute.
+      // One tab, idle for a minute (and the margin above).
+      await nextHeartbeat(page);
       const oneTab = record([page]);
       await page.waitForTimeout(IDLE_MS);
       const idleOneTab = oneTab.stop();
@@ -133,6 +148,7 @@ test.describe('Workbench sync traffic', () => {
         )
       ).toBeNull();
       await page.waitForTimeout(SETTLE_MS);
+      await nextHeartbeat(page);
       const twoTabs = record([page, second]);
       await page.waitForTimeout(IDLE_MS);
       const idleTwoTabs = twoTabs.stop();
