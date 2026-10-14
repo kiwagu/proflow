@@ -289,6 +289,9 @@ function withNodeIds(body: unknown): SerializedTree {
 /** Build a `SeedClient` that writes rows on behalf of one actor. */
 export function makeSeedClient(deps: SeedClientDeps): SeedClient {
   const { service, actor } = deps;
+  // The seed appends to a document's log as a client instance would: under
+  // a writer id of its own, the only kind of writer the log accepts.
+  const writer = entityIdRegistry.factories.writerIdFactory.create();
   const kb = service.schema('kb');
 
   async function insertNode(
@@ -512,7 +515,7 @@ export function makeSeedClient(deps: SeedClientDeps): SeedClient {
       const { error } = await service.from('crdt_updates').insert({
         doc_id: docId,
         bytes: toByteaHex(crdt.exportUpdatesSince(before)),
-        writer: `seed:${actor.userId}`,
+        writer,
         created_by: actor.userId,
       });
       if (error) fail(context, error.message);

@@ -3,7 +3,7 @@
  *
  * What these functions are
  * - public.entity_id_generate(prefix) mints "<prefix>_<rand16>.<ts10>": a
- *   lowercase prefix, 80 random bits and a millisecond timestamp, both in
+ *   lowercase prefix, a random segment and a millisecond timestamp, both in
  *   lowercase Crockford base32. Every id column default in this database
  *   calls it with its table's prefix.
  * - public.is_entity_id(value) and public.is_entity_id_with_prefix(value, prefix)
@@ -16,8 +16,10 @@
  *   package the application mints and checks ids with, taken verbatim from it,
  *   so an id minted in either place passes the other's checks.
  * - The generator now draws its randomness from the core gen_random_uuid()
- *   instead of pgcrypto's gen_random_bytes. Same signature, same output shape,
- *   same search_path; ids minted before stay valid.
+ *   instead of pgcrypto's gen_random_bytes: the random segment is the first
+ *   ten bytes of a version-4 UUID, whose version and variant bits are fixed,
+ *   so it carries 74 random bits where it carried 80. Same signature, same
+ *   output shape, same search_path; ids minted before stay valid.
  * - Ids also arrive as text from outside (RPC arguments, imports); the
  *   validators let a function or a CHECK refuse a malformed or wrong-kind id
  *   before it is used.
