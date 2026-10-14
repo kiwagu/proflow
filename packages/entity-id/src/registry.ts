@@ -1,15 +1,13 @@
 import {
-  type BrandedEntityId,
+  CANONICAL_ENTITY_ID_RE,
   defineEntityPrefixes,
-  type EntityId,
   type EntityIdOf,
   type EntityIdRegistry,
   type EntityIdSchema,
   prefixGatedEntityIdSchema,
-  strictEntityIdSchema,
   withSchemas,
 } from 'entity-id';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 /**
  * Central catalog of every entity-id prefix in the system — one prefix per
@@ -100,7 +98,7 @@ export const ENTITY_PREFIXES = {
  * package's process-wide validation mode, whose default checks only the
  * `<prefix>_` head. Nothing in the repo sets the mode; where full depth matters,
  * pass `{ mode: 'full' }` per call or parse with
- * {@link strictEntityIdSchemaFor}.
+ * {@link canonicalEntityIdSchemaFor}.
  */
 export const entityIdRegistry: EntityIdRegistry<typeof ENTITY_PREFIXES> =
   defineEntityPrefixes(ENTITY_PREFIXES);
@@ -115,27 +113,34 @@ export type EntityPrefix = (typeof ENTITY_PREFIXES)[EntityKind];
  * The package's zod members per kind: `entityIdSchemas.space.prefixSchema` is
  * the prefix gate the contracts use (a `spc_` head, any suffix — mode
  * independent). Its `.schema` follows the ambient validation mode; for the
- * full contract use {@link strictEntityIdSchemaFor}.
+ * full contract use {@link canonicalEntityIdSchemaFor}.
  */
 export const entityIdSchemas = withSchemas(entityIdRegistry);
 
 /**
- * Full-depth schema for one kind, whatever the package's validation mode: the
- * package's always-strict `strictEntityIdSchema` (whole
- * `<prefix>_<rand16>.<ts10>` contract, trimmed, normalized to lowercase) piped
- * into the kind's prefix gate. The package has no strict per-kind schema of
- * its own: its per-kind `schema` checks only the prefix head under the default
- * mode.
+ * The schema for a key already stored — an id read back from the server:
+ * the whole `<prefix>_<rand16>.<ts10>` contract, of this kind, in canonical
+ * lowercase, exactly as it arrives. Whatever the package's validation mode.
+ *
+ * Nothing is trimmed or lower-cased. A stored key in another spelling is a
+ * different key: rewriting it would merge two rows that differ only in case
+ * into one, or send a later write to a key the server does not hold. So it
+ * is refused. Ids the client mints are canonical already; ids typed in by
+ * someone are normalized with the package's `strictEntityIdSchema` /
+ * `normalizeEntityId` before they are stored.
+ *
+ * The package has no per-kind schema of this depth: its per-kind `schema`
+ * checks only the prefix head under the default mode.
  */
-export function strictEntityIdSchemaFor<K extends EntityKind>(
+export function canonicalEntityIdSchemaFor<K extends EntityKind>(
   kind: K
 ): EntityIdSchema<K> {
-  // The gate reads the strict schema's canonical output, so it is typed to
-  // accept an `EntityId` rather than the raw string it is declared with.
-  const gate = prefixGatedEntityIdSchema<K>(
-    ENTITY_PREFIXES[kind]
-  ) as unknown as z.ZodType<BrandedEntityId<K>, EntityId>;
-  return strictEntityIdSchema.pipe(gate);
+  return z
+    .string()
+    .regex(CANONICAL_ENTITY_ID_RE, {
+      message: 'Not a canonical "<prefix>_<rand16>.<ts10>" entity id',
+    })
+    .pipe(prefixGatedEntityIdSchema<K>(ENTITY_PREFIXES[kind]));
 }
 
 type Ids = typeof ENTITY_PREFIXES;

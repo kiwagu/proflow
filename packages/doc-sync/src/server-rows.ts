@@ -4,7 +4,7 @@ import {
   ENTITY_PREFIXES,
   type EntityKind,
   prefixGatedEntityIdSchema,
-  strictEntityIdSchemaFor,
+  canonicalEntityIdSchemaFor,
   type WriterId,
 } from '@workspace/entity-id';
 import type { SyncDocumentHead } from './types.js';
@@ -15,7 +15,8 @@ import type { SyncDocumentHead } from './types.js';
  * engine has been checked the same way on either.
  *
  * A document id is a key, so it must be a well-formed id of its kind — the
- * full `<prefix>_<rand16>.<ts10>` contract. A writer is only ever compared
+ * full `<prefix>_<rand16>.<ts10>` contract, in canonical lowercase, exactly
+ * as stored; a key is never rewritten. A writer is only ever compared
  * with this client's own, to skip its own pushes, so a writer is checked by
  * its `wrt_` head alone: a legacy writer with a non-canonical tail is
  * someone else's push and is taken in. What fails is refused for its own
@@ -40,7 +41,7 @@ function parseId<K extends EntityKind>(
   kind: K,
   value: unknown
 ): BrandedEntityId<K> {
-  const parsed = strictEntityIdSchemaFor(kind).safeParse(value);
+  const parsed = canonicalEntityIdSchemaFor(kind).safeParse(value);
   if (!parsed.success) throw new MalformedServerRowError(table, column, value);
   return parsed.data;
 }

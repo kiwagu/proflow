@@ -1,7 +1,7 @@
 import {
   type EntityId,
   type EntityKind,
-  strictEntityIdSchemaFor,
+  canonicalEntityIdSchemaFor,
 } from '@workspace/entity-id';
 import { describeTable, type GraphSyncTableName } from './tables.js';
 import type { RowRecord } from './types.js';
@@ -12,7 +12,10 @@ import type { RowRecord } from './types.js';
  * stand-in alike.
  *
  * Each id column a table declares must hold a well-formed id of its kind —
- * the full `<prefix>_<rand16>.<ts10>` contract — or the row is refused. A
+ * the full `<prefix>_<rand16>.<ts10>` contract, in canonical lowercase,
+ * exactly as stored — or the row is refused. A key is never rewritten: two
+ * rows whose keys differ only in case are two rows, and a key changed here
+ * would send a later write to one the server does not hold. A
  * refusal is per row: the rest of its page is applied as usual, so one row
  * the server should never have held cannot stop a table from syncing. The
  * replica's own CHECKs would refuse such a row too, but deep inside a batch,
@@ -47,7 +50,7 @@ function parseId(
   kind: EntityKind,
   value: unknown
 ): EntityId {
-  const parsed = strictEntityIdSchemaFor(kind).safeParse(value);
+  const parsed = canonicalEntityIdSchemaFor(kind).safeParse(value);
   if (!parsed.success) throw new MalformedServerRowError(table, column, value);
   return parsed.data;
 }
@@ -113,7 +116,7 @@ export function parseServerIds(
 ): EntityId[] {
   const kind = describeTable(table).idColumns['id'];
   if (!kind) throw new Error(`no id kind declared for ${table}`);
-  const schema = strictEntityIdSchemaFor(kind);
+  const schema = canonicalEntityIdSchemaFor(kind);
   const ids: EntityId[] = [];
   for (const value of raw) {
     const parsed = schema.safeParse(value);

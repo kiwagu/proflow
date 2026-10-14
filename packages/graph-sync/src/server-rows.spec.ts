@@ -98,6 +98,27 @@ describe('server rows are parsed at the transport', () => {
     expect(await localIds(alice)).toEqual([]);
   });
 
+  it('keeps two rows whose ids differ only in case apart: the canonical one lands, the other is refused', async () => {
+    const lower = 'knr_000000000000000a.0000000000';
+    const upper = 'knr_000000000000000A.0000000000';
+    await seedNode(upper, 'Upper');
+
+    const first = await alice.sync.pull(SPACE);
+    expect(first.refused.map((row) => row.id)).toEqual([upper]);
+    // Never rewritten into the key it resembles.
+    expect(await localIds(alice)).toEqual([]);
+
+    await seedNode(lower, 'Lower');
+    const second = await alice.sync.pull(SPACE);
+    expect(second.applied).toBe(1);
+    const rows = await alice.rows<{ id: string; title: string }>(
+      'knowledge_resources'
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({ id: lower, title: 'Lower' }),
+    ]);
+  });
+
   it('leaves a malformed id out of an inventory and out of a targeted re-pull', async () => {
     await seedNode(GOOD, 'Fine');
     await seedNode('knr_not-an-id', 'Broken');
@@ -163,13 +184,10 @@ describe('the production transport parses the same way', () => {
     );
   });
 
-  it('hands back canonical ids', async () => {
+  it('refuses a stored key that is not canonical instead of rewriting it', async () => {
     const transport = clientAnswering([
-      {
-        id: 'knr_000000000000000A.0000000000',
-        space_id: SPACE,
-        from_id: GOOD,
-      },
+      { id: 'knr_000000000000000A.0000000000', space_id: SPACE },
+      { id: GOOD, space_id: ` ${SPACE}` },
     ]);
     const page = await transport.pullSince(
       'knowledge_resources',
@@ -178,7 +196,11 @@ describe('the production transport parses the same way', () => {
       10,
       0
     );
-    expect(page.rows[0]?.id).toBe('knr_000000000000000a.0000000000');
+    expect(page.rows).toEqual([]);
+    expect(page.refused.map((row) => row.error.column)).toEqual([
+      'id',
+      'space_id',
+    ]);
   });
 
   it('types its parameters as ids of their kind', () => {

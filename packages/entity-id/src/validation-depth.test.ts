@@ -7,8 +7,8 @@ import {
   isEntityId,
   normalizeEntityId,
   parseEntityId,
+  canonicalEntityIdSchemaFor,
   strictEntityIdSchema,
-  strictEntityIdSchemaFor,
   type ValidationMode,
   withValidationMode,
 } from './index.js';
@@ -21,7 +21,7 @@ import {
  * only shows on the weaker ones.
  *
  * What a trust boundary may rely on whatever the mode: `strictEntityIdSchema`,
- * `strictEntityIdSchemaFor(kind)`, `normalizeEntityId`, and the imperative
+ * `canonicalEntityIdSchemaFor(kind)`, `normalizeEntityId`, and the imperative
  * guards with a per-call `{ mode: 'full' }`. What it may not: the per-kind
  * `entityIdSchemas.<kind>.schema` and the imperative guards without the
  * override — pinned below so a package upgrade that changes either shows up.
@@ -81,7 +81,7 @@ describe('the full-depth surface does not follow the mode', () => {
           inMode(() => {
             expect(strictEntityIdSchema.safeParse(value).success).toBe(false);
             expect(
-              strictEntityIdSchemaFor('user').safeParse(value).success
+              canonicalEntityIdSchemaFor('user').safeParse(value).success
             ).toBe(false);
             expect(isEntityId(value, FULL)).toBe(false);
             expect(userIdFactory.is(value, FULL)).toBe(false);
@@ -95,7 +95,7 @@ describe('the full-depth surface does not follow the mode', () => {
       test('rejects an id of the wrong kind in a kind-specific slot', () => {
         inMode(() => {
           expect(
-            strictEntityIdSchemaFor('user').safeParse(wrongKind).success
+            canonicalEntityIdSchemaFor('user').safeParse(wrongKind).success
           ).toBe(false);
           expect(userIdFactory.is(wrongKind, FULL)).toBe(false);
           expect(() => userIdFactory.assert(wrongKind, FULL)).toThrow();
@@ -105,13 +105,22 @@ describe('the full-depth surface does not follow the mode', () => {
       test('normalizes mixed case and padding to the canonical id', () => {
         inMode(() => {
           expect(String(strictEntityIdSchema.parse(` ${upper} `))).toBe(good);
-          expect(String(strictEntityIdSchemaFor('user').parse(upper))).toBe(
-            good
-          );
           expect(String(userIdFactory.assert(upper, FULL))).toBe(good);
           expect(String(normalizeEntityId(upper))).toBe(good);
           const parsed = parseEntityId(upper, FULL);
           expect(`${parsed.prefix}_${parsed.rand}.${parsed.ts}`).toBe(good);
+        });
+      });
+
+      test('takes a stored key only exactly as stored: canonical, never rewritten', () => {
+        inMode(() => {
+          const stored = canonicalEntityIdSchemaFor('user');
+          expect(String(stored.parse(good))).toBe(good);
+          // A key in another spelling is a different key: refused, not
+          // lower-cased or trimmed into the one it resembles.
+          expect(stored.safeParse(upper).success).toBe(false);
+          expect(stored.safeParse(` ${good}`).success).toBe(false);
+          expect(stored.safeParse(`${good}\n`).success).toBe(false);
         });
       });
     });

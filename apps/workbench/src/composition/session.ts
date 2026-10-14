@@ -1,4 +1,4 @@
-import { type SpaceId, strictEntityIdSchemaFor } from '@workspace/entity-id';
+import { type SpaceId, canonicalEntityIdSchemaFor } from '@workspace/entity-id';
 import {
   parseWriteScope,
   type WriteScope,
@@ -92,13 +92,14 @@ export async function readSession(): Promise<WorkbenchSession | null> {
 }
 
 /**
- * The space a session names, checked where it enters: null for no space, a
- * canonical space id for a well-formed one, undefined for anything else —
- * which fails the session it came with rather than open storage under it.
+ * The space a session names, checked where it enters: null for no space, the
+ * space id exactly as the server holds it when that is a canonical space id,
+ * undefined for anything else — which fails the session it came with rather
+ * than open storage or address the server under a key it does not hold.
  */
 function parseSpaceId(value: unknown): SpaceId | null | undefined {
   if (value === null) return null;
-  const parsed = strictEntityIdSchemaFor('space').safeParse(value);
+  const parsed = canonicalEntityIdSchemaFor('space').safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 

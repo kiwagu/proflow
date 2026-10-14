@@ -225,13 +225,21 @@ describe('reading the session', () => {
     }
   });
 
-  it('reads the space as a canonical space id, and no space as none', async () => {
-    answer({ ...identity, spaceId: 'spc_000000000000000A.0000000000' });
-    expect((await readSession())?.spaceId).toBe(
-      'spc_000000000000000a.0000000000'
-    );
+  it('takes the space exactly as the server holds it, and no space as none', async () => {
+    answer(identity);
+    expect((await readSession())?.spaceId).toBe(identity.spaceId);
     answer({ ...identity, spaceId: null });
     expect((await readSession())?.spaceId).toBeNull();
+  });
+
+  it('refuses a space id in another spelling rather than rewrite it', async () => {
+    for (const spaceId of [
+      'spc_000000000000000A.0000000000',
+      ` ${identity.spaceId}`,
+    ]) {
+      answer({ ...identity, spaceId });
+      await expect(readSession()).rejects.toThrow('Invalid session response');
+    }
   });
 
   it('carries the write scope the server stated', async () => {

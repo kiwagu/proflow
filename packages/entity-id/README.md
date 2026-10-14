@@ -10,13 +10,15 @@ whole and adds only what is proflow's own (`src/registry.ts`):
   (`entityIdRegistry.factories.spaceIdFactory.create()`);
 - the id vocabulary as types (`SpaceId`, `DocumentId`, `WriterId`, …);
 - `entityIdSchemas` — the package's `withSchemas(entityIdRegistry)`;
-- `strictEntityIdSchemaFor(kind)` — a full-depth per-kind schema (see below).
+- `canonicalEntityIdSchemaFor(kind)` — the schema for a stored key of one kind
+  (see below).
 
 **Validation depth is a mode.** The package's default (`mixed`) checks only the
 `<prefix>_` head in `isEntityId`, the factories' `is`/`assert`, `parseEntityId` and
 the per-kind `entityIdSchemas.<kind>.schema`. Nothing in the repo sets the mode. Where
-the full contract matters, use `strictEntityIdSchema` / `strictEntityIdSchemaFor(kind)`
-or pass `{ mode: 'full' }` per call. Contract fields default to the prefix gate
+the full contract matters, use `strictEntityIdSchema` (normalizes: for ids typed in)
+or `canonicalEntityIdSchemaFor(kind)` (takes a stored key only exactly as stored,
+never rewrites it), or pass `{ mode: 'full' }` per call. Contract fields default to the prefix gate
 `entityIdSchemas.<kind>.prefixSchema`, which is mode-independent.
 
 The format is optimized for **operator / developer DX** while staying equivalent
@@ -108,7 +110,7 @@ See the published package's README for the full API. The common calls:
 - `createEntityId(prefix)` → `<prefix>_<rand>.<ts>`
 - `parseEntityId(value, { mode: 'full' })` → `{ prefix, rand, ts, ulid, timeMs, iso }`
 - `isEntityId(value, { mode: 'full' })` and `normalizeEntityId(value)` (always full)
-- `entityIdSchemas.<kind>.prefixSchema`, `strictEntityIdSchemaFor(kind)`,
+- `entityIdSchemas.<kind>.prefixSchema`, `canonicalEntityIdSchemaFor(kind)`,
   `strictEntityIdSchema`
 
 ## Operator tooling (CLI)

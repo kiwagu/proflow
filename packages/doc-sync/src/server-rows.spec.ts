@@ -154,6 +154,18 @@ describe('the production transport parses the same way', () => {
     );
   });
 
+  it('refuses a head whose document id is not canonical instead of rewriting it', async () => {
+    const at = new Date().toISOString();
+    const transport = clientAnswering([
+      { id: 'doc_000000000000000A.0000000000', head_seq: 1, updated_at: at },
+    ]);
+    const page = await transport.heads(SPACE_ID, null, 10, 0);
+    expect(page.rows).toEqual([]);
+    expect(page.refused.map((head) => head.id)).toEqual([
+      'doc_000000000000000A.0000000000',
+    ]);
+  });
+
   it('takes a writer by its wrt_ head, as the server holds it', async () => {
     const transport = clientAnswering([
       { seq: 1, bytes: '\\x00', writer: 'wrt_Legacy-Writer' },
