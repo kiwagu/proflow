@@ -23,6 +23,7 @@
     "@workspace/gateway-auth": "workspace:*",
     "@workspace/graph-sync": "workspace:*",
     "@workspace/i18n-catalogs": "workspace:*",
+    "@workspace/knowledge-contracts": "workspace:*",
     "@workspace/lexical-nodes": "workspace:*",
     "@workspace/lexical-react": "workspace:*",
     "@workspace/package-kinds": "workspace:*",

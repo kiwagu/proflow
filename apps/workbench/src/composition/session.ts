@@ -1,3 +1,8 @@
+import {
+  parseWriteScope,
+  type WriteScope,
+} from '@workspace/knowledge-contracts';
+
 export interface WorkbenchSession {
   userId: string;
   email: string;
@@ -11,6 +16,12 @@ export interface WorkbenchSession {
    * has none. Absent when the server is not configured for replication.
    */
   sync?: { url: string; key: string };
+  /**
+   * What the person may change in the space, as the server derives it from
+   * the role verbs its write policies use. A hint for the interface; absent
+   * when the server did not state one, or stated one this build cannot read.
+   */
+  writeScope?: WriteScope;
 }
 
 export const platformPath =
@@ -69,7 +80,13 @@ export async function readSession(): Promise<WorkbenchSession | null> {
   ) {
     throw new Error('Invalid session response');
   }
-  return value as WorkbenchSession;
+  // The scope is a hint: one this build cannot read is dropped rather than
+  // trusted, and it never fails the session it rides on.
+  const { writeScope, ...session } = value as WorkbenchSession & {
+    writeScope?: unknown;
+  };
+  const scope = parseWriteScope(writeScope);
+  return scope ? { ...session, writeScope: scope } : session;
 }
 
 function isSyncTarget(value: unknown): value is { url: string; key: string } {

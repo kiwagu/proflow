@@ -39,6 +39,13 @@ export async function GET(request: NextRequest) {
     readActiveSpaceIdFromCookies(request.cookies)
   );
   const sync = syncTarget();
+  // What the person may change there, so the workbench offers no control
+  // the server would refuse. Derived by the database from the same verbs its
+  // write policies use; a failed call only leaves it out.
+  const writeScope = spaceId
+    ? ((await supabase.rpc('rpc_my_write_scope', { p_space_id: spaceId }))
+        .data ?? null)
+    : null;
   const response = NextResponse.json(
     {
       userId: data.user.id,
@@ -46,6 +53,7 @@ export async function GET(request: NextRequest) {
       spaceId,
       spaceName: spaces.find((space) => space.id === spaceId)?.name ?? null,
       ...(sync ? { sync } : {}),
+      ...(writeScope ? { writeScope } : {}),
     },
     { headers }
   );
