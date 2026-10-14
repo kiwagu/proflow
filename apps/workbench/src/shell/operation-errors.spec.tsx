@@ -112,6 +112,17 @@ describe('the failures as the user sees them', () => {
     );
   });
 
+  it('names what the server sent that could not be taken in', () => {
+    const t = (key: string, vars?: Record<string, string | number>) =>
+      `${key}${vars ? ' ' + JSON.stringify(vars) : ''}`;
+    expect(failureText({ kind: 'refused', id: 'knr_not-an-id' }, t)).toBe(
+      'workbench.errors.refused {"id":"knr_not-an-id"}'
+    );
+    expect(
+      failureText({ kind: 'refused', id: 'knr_not-an-id' }, null)
+    ).toContain('“knr_not-an-id”');
+  });
+
   it('offers a retry when the operation can be repeated, and clears the failure once it succeeds', async () => {
     const errors = createOperationErrors();
     let attempts = 0;

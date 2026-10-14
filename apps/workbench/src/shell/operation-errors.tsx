@@ -32,7 +32,8 @@ export type FailureText =
   | { kind: 'sync'; reason: string }
   | { kind: 'sync-stalled' }
   | { kind: 'push'; title: string; reason: string }
-  | { kind: 'pull'; reason: string };
+  | { kind: 'pull'; reason: string }
+  | { kind: 'refused'; id: string };
 
 export interface ReportOptions {
   /** One notice per key: a later report replaces, `resolve` withdraws. */
@@ -139,6 +140,10 @@ export function failureText(
       return t
         ? t('workbench.errors.pull', { reason: message.reason })
         : `Could not get the latest changes from the server: ${message.reason}. Trying again automatically.`;
+    case 'refused':
+      return t
+        ? t('workbench.errors.refused', { id: message.id })
+        : `The server holds “${message.id}”, which is not a valid id, so it was left out here. Everything else keeps syncing.`;
   }
 }
 

@@ -22,8 +22,10 @@ const {
   nodeAwaitsServer,
   nodeOwnerOfDocument,
   DocumentNotRegisteredError,
+  MalformedServerRowError,
 } = vi.hoisted(() => {
   class DocumentNotRegisteredError extends Error {}
+  class MalformedServerRowError extends Error {}
   const kick = vi.fn();
   const watchSpace = vi.fn((_spaceId: string, _hooks: unknown) => ({
     stop: vi.fn(),
@@ -50,13 +52,18 @@ const {
     kick,
     push,
     pull,
-    createDocumentSync: vi.fn((_options: { writer: string }) => ({
-      watchSpace,
-      push,
-      pull,
-      watch: vi.fn(),
-      proposeCompaction: vi.fn(),
-    })),
+    createDocumentSync: vi.fn(
+      (_options: {
+        writer: string;
+        onRefused?: (refusal: { documentId: string; error: Error }) => void;
+      }) => ({
+        watchSpace,
+        push,
+        pull,
+        watch: vi.fn(),
+        proposeCompaction: vi.fn(),
+      })
+    ),
     createSupabaseTransport: vi.fn((_client: unknown) => ({})),
     createPgliteLedger: vi.fn((_db: unknown) => ({})),
     createBrowserClient: vi.fn((_url: string, _key: string) => ({})),
@@ -87,11 +94,13 @@ const {
         id === 'doc-theirs' ? 'user-2' : 'user-1'
     ),
     DocumentNotRegisteredError,
+    MalformedServerRowError,
   };
 });
 
 vi.mock('@workspace/doc-sync', () => ({
   DocumentNotRegisteredError,
+  MalformedServerRowError,
   createDocumentSync,
   createSupabaseTransport,
   createPgliteLedger,
@@ -518,6 +527,49 @@ describe('starting document replication', () => {
     change('doc-typed', 'local');
     await vi.advanceTimersByTimeAsync(PUSH_DEBOUNCE_MS);
     expect(onPushed).toHaveBeenCalledWith('doc-typed');
+    handle.stop();
+  });
+
+  it('hands a document the server sent something unreadable for to the composition', async () => {
+    const { store } = stubStore();
+    const onRefused = vi.fn();
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onRefused,
+    });
+    await settled();
+    const error = new MalformedServerRowError('writer "tab-1"');
+    createDocumentSync.mock.calls[0]?.[0].onRefused?.({
+      documentId: 'doc-bad',
+      error,
+    });
+    expect(onRefused).toHaveBeenCalledWith('doc-bad', error);
+    handle.stop();
+  });
+
+  it('a document refused on its first pull does not hold back the others awaiting theirs', async () => {
+    const { store, waitEnded } = stubStore();
+    const onPassFailed = vi.fn();
+    listAwaitingDocuments.mockResolvedValueOnce(['doc-bad', 'doc-good']);
+    pull.mockImplementationOnce(async () => {
+      throw new MalformedServerRowError('writer "tab-1"');
+    });
+    const handle = startDocumentSync({
+      db,
+      settings: settingsHolding(CONFIGURED),
+      store,
+      identity: IDENTITY,
+      onPassFailed,
+    });
+    await settled();
+    expect(pull).toHaveBeenCalledWith('doc-good', { id: 'doc-good' });
+    expect(waitEnded).toHaveBeenCalledWith('doc-good');
+    // Its body is on the server, unread: the pane keeps saying so.
+    expect(waitEnded).not.toHaveBeenCalledWith('doc-bad');
+    expect(onPassFailed).not.toHaveBeenCalled();
     handle.stop();
   });
 

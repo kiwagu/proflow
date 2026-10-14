@@ -2,7 +2,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { fromByteaHex, toByteaHex } from './bytea.js';
 import { DocumentNotRegisteredError } from './errors.js';
-import { parseDocumentId, parseWriterId } from './server-rows.js';
+import { parseHeadRows, parseWriterId } from './server-rows.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from './types.js';
 
 /**
@@ -151,11 +151,7 @@ export function createSupabaseTransport(
       const rows = data ?? [];
       // The extra row only answers "is there more?"; the next page reads it.
       return {
-        rows: rows.slice(0, limit).map((row) => ({
-          docId: parseDocumentId(row.id),
-          headSeq: Number(row.head_seq),
-          updatedAt: new Date(row.updated_at),
-        })),
+        ...parseHeadRows(rows.slice(0, limit)),
         hasMore: rows.length > limit,
       };
     },

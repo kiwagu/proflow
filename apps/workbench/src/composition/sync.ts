@@ -6,6 +6,7 @@ import {
   createGraphSync,
   createSupabaseGraphRowTransport,
   type GraphReplica,
+  type RefusedServerRow,
 } from '@workspace/graph-sync';
 import {
   createPgliteGraphReplicaWriter,
@@ -63,6 +64,11 @@ export interface StartGraphSyncOptions {
   onStalled?: () => void;
   /** A pull applied rows: a consumer that derives from them may run now. */
   onPulled?: (outcome: { applied: number }) => void;
+  /**
+   * Rows the server sent that could not be taken in — a malformed id. They
+   * were left out and the rest applied; each is handed over once.
+   */
+  onRefused?: (rows: RefusedServerRow[]) => void;
   /** A push got changes accepted: a consumer that waited for them may run now. */
   onPushed?: (outcome: { accepted: number }) => void;
 }
@@ -149,7 +155,11 @@ export function startGraphSync(options: StartGraphSyncOptions): () => void {
             else options.onSettled?.();
             if (outcome.accepted > 0) options.onPushed?.(outcome);
           },
-          onPull: (outcome) => options.onPulled?.(outcome),
+          onPull: (outcome) => {
+            if (outcome.refused.length > 0)
+              options.onRefused?.(outcome.refused);
+            options.onPulled?.(outcome);
+          },
           onError: (error: unknown) => options.onError?.(error),
         });
         // Disposal may have landed while the settings read was in flight.

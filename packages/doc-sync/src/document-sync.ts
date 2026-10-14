@@ -4,6 +4,7 @@ import type {
   SpaceId,
   WriterId,
 } from '@workspace/entity-id';
+import { MalformedServerRowError } from './server-rows.js';
 import type {
   PullResult,
   PushResult,
@@ -52,6 +53,20 @@ export interface SpacePassOutcome {
   pulled: number;
   /** Heads the hook could not open: no local row for them yet. */
   skipped: number;
+  /** Documents the server sent something for that could not be taken in. */
+  refused: number;
+}
+
+/**
+ * A document the server sent something for that could not be taken in: a
+ * malformed head, or a log row whose writer is not a writer id. Nothing of
+ * it is applied, so its bytes stay on the server, unread, until the row is
+ * corrected — which is why it has to be said, once.
+ */
+export interface DocumentRefusal {
+  /** The document id as the server holds it — possibly the malformed value. */
+  documentId: string;
+  error: MalformedServerRowError;
 }
 
 export interface SpaceWatchHooks {
@@ -96,6 +111,11 @@ export interface DocumentSyncOptions {
   pollIntervalMs?: number;
   /** How often `watchSpace` reads every head instead of those past its cursor. */
   fullPassIntervalMs?: number;
+  /**
+   * A document refused (see `DocumentRefusal`): called the first time this
+   * engine meets it, never again, however many passes meet it after that.
+   */
+  onRefused?: (refusal: DocumentRefusal) => void;
 }
 
 function bytesEqual(a: Uint8Array | null, b: Uint8Array | null): boolean {
@@ -135,6 +155,14 @@ export function createDocumentSync(options: DocumentSyncOptions) {
   const tailByteGauge = new Map<DocumentId, number>();
   /** One pull at a time per document; concurrent requests coalesce. */
   const pullChain = new Map<DocumentId, Promise<PullResult>>();
+  /** Documents whose refusal has been reported: once each, not once per pass. */
+  const refusedReported = new Set<string>();
+
+  function refuse(documentId: string, error: MalformedServerRowError) {
+    if (refusedReported.has(documentId)) return;
+    refusedReported.add(documentId);
+    options.onRefused?.({ documentId, error });
+  }
 
   async function ensureDocument(
     docId: DocumentId,
@@ -210,7 +238,12 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     // the tail read, it is in the head read after; landing after it, the
     // tail still had every row. The other order would miss both — rows the
     // tail no longer returns, under a head read before they were folded.
-    const rows = await transport.tail(docId, start);
+    const rows = await transport.tail(docId, start).catch((error: unknown) => {
+      // A row this document cannot take in refuses its whole tail — the rows
+      // after it build on it — and the watermark stays where it is.
+      if (error instanceof MalformedServerRowError) refuse(docId, error);
+      throw error;
+    });
     const head = await transport.head(docId);
     const incoming: Uint8Array[] = [];
     let floor = start;
@@ -322,12 +355,20 @@ export function createDocumentSync(options: DocumentSyncOptions) {
     const since = full ? null : await ledger.headsCursor(spaceId);
     let newest: Date | null = null;
     const due: SyncDocumentHead[] = [];
+    let refused = 0;
     for (let offset = 0; ; offset += HEADS_PAGE) {
       const page = await transport.heads(spaceId, since, HEADS_PAGE, offset);
       for (const head of page.rows) {
         if (!newest || head.updatedAt > newest) newest = head.updatedAt;
         const { pulledSeq } = await ledger.read(head.docId);
         if (head.headSeq > pulledSeq) due.push(head);
+      }
+      // A refused head moves the cursor like any other: left behind it, it
+      // would hold the cursor back for every document after it.
+      for (const head of page.refused) {
+        if (!newest || head.updatedAt > newest) newest = head.updatedAt;
+        refuse(head.id, head.error);
+        refused += 1;
       }
       if (!page.hasMore) break;
     }
@@ -339,14 +380,22 @@ export function createDocumentSync(options: DocumentSyncOptions) {
         skipped += 1;
         continue;
       }
-      const result = await pull(head.docId, doc);
+      let result: PullResult;
+      try {
+        result = await pull(head.docId, doc);
+      } catch (error) {
+        // Refused for this document alone: the others in the pass go on.
+        if (!(error instanceof MalformedServerRowError)) throw error;
+        refused += 1;
+        continue;
+      }
       if (result.imported > 0) {
         pulled += 1;
         hooks.onPulled?.(head.docId, result);
       }
     }
     if (newest) await ledger.advanceHeadsCursor(spaceId, newest);
-    return { pulled, skipped };
+    return { pulled, skipped, refused };
   }
 
   /**

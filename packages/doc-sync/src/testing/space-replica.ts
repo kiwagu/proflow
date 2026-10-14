@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { type DocumentId, entityIdRegistry } from '@workspace/entity-id';
 import {
   createDocumentSync,
+  type DocumentRefusal,
   type DocumentSync,
   type SpaceWatchHooks,
 } from '../document-sync.js';
@@ -42,6 +43,7 @@ export async function createSpaceReplica(
     pollIntervalMs?: number;
     fullPassIntervalMs?: number;
     blocked?: DocumentId[];
+    onRefused?: (refusal: DocumentRefusal) => void;
   } = {}
 ): Promise<SpaceReplica> {
   const local = await PGlite.create();
@@ -55,6 +57,7 @@ export async function createSpaceReplica(
     compaction: false,
     pollIntervalMs: options.pollIntervalMs ?? 25,
     fullPassIntervalMs: options.fullPassIntervalMs,
+    onRefused: options.onRefused,
   });
   const docs = new Map<
     DocumentId,

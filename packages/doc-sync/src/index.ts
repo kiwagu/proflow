@@ -2,6 +2,7 @@ export { fromByteaHex, toByteaHex } from './bytea.js';
 export { DocumentNotRegisteredError } from './errors.js';
 export {
   createDocumentSync,
+  type DocumentRefusal,
   type DocumentSync,
   type DocumentSyncOptions,
   type SpacePassOutcome,
@@ -17,7 +18,9 @@ export {
 export {
   MalformedServerRowError,
   parseDocumentId,
+  parseHeadRows,
   parseWriterId,
+  type RefusedHead,
 } from './server-rows.js';
 export { createSupabaseTransport } from './supabase-transport.js';
 export type {

@@ -5,7 +5,7 @@ import type {
   WriterId,
 } from '@workspace/entity-id';
 import { DocumentNotRegisteredError } from '../errors.js';
-import { parseDocumentId, parseWriterId } from '../server-rows.js';
+import { parseHeadRows, parseWriterId } from '../server-rows.js';
 import type { SyncHead, SyncTailRow, SyncTransport } from '../types.js';
 
 /**
@@ -260,11 +260,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         [spaceId, since, limit + 1, offset]
       );
       return {
-        rows: rows.slice(0, limit).map((r) => ({
-          docId: parseDocumentId(r.id),
-          headSeq: Number(r.head_seq),
-          updatedAt: new Date(r.updated_at),
-        })),
+        ...parseHeadRows(rows.slice(0, limit)),
         hasMore: rows.length > limit,
       };
     },

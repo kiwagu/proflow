@@ -9,6 +9,7 @@ import {
   GRAPH_SYNC_TABLE_DESCRIPTORS,
   type GraphSyncTableName,
 } from './tables.js';
+import type { RefusedServerRow } from './server-rows.js';
 import {
   GraphWriteError,
   type GraphReplica,
@@ -81,12 +82,29 @@ export function createGraphSync(options: GraphSyncOptions) {
   const pullChain = new Map<string, Promise<PullOutcome>>();
   /** Same for pushes: two drains of one journal would replay the same op twice. */
   const pushChain = new Map<string, Promise<PushOutcome>>();
+  /**
+   * Refused rows already reported. A refused row stays on the server, so
+   * every later pass meets it again — inside the overlap window, on a full
+   * re-pull, after a reload of the engine's caller — and saying so each time
+   * would turn one bad row into a notice on every poll.
+   */
+  const reported = new Set<string>();
+
+  function firstSeen(refused: RefusedServerRow[]): RefusedServerRow[] {
+    return refused.filter((row) => {
+      const key = `${row.table}:${row.id}`;
+      if (reported.has(key)) return false;
+      reported.add(key);
+      return true;
+    });
+  }
 
   async function pullTable(
     spaceId: SpaceId,
     table: GraphSyncTableName
-  ): Promise<number> {
+  ): Promise<{ applied: number; refused: RefusedServerRow[] }> {
     let applied = 0;
+    const refused: RefusedServerRow[] = [];
     // The cursor is read ONCE per pass and pages advance by OFFSET within
     // it: rows sharing one instant (bulk imports, the trash cascade) are
     // common, so a cursor-only pager could never get past a page of equal
@@ -105,12 +123,23 @@ export function createGraphSync(options: GraphSyncOptions) {
         pageSize,
         offset
       );
-      if (page.rows.length === 0) return applied;
-      const watermark = await replica.applyPullBatch(table, page.rows);
+      const served = page.rows.length + page.refused.length;
+      if (served === 0) return { applied, refused };
+      let watermark =
+        page.rows.length > 0
+          ? await replica.applyPullBatch(table, page.rows)
+          : null;
       applied += page.rows.length;
+      // A refused row moves the cursor like an applied one: left behind it,
+      // it would be read again on every pass for as long as it stays there.
+      for (const row of page.refused) {
+        if (row.updatedAt && (!watermark || row.updatedAt > watermark))
+          watermark = row.updatedAt;
+      }
+      refused.push(...page.refused);
       if (watermark) await replica.advanceCursor(spaceId, table, watermark);
-      if (!page.hasMore) return applied;
-      offset += page.rows.length;
+      if (!page.hasMore) return { applied, refused };
+      offset += served;
     }
   }
 
@@ -131,12 +160,15 @@ export function createGraphSync(options: GraphSyncOptions) {
     let applied = 0;
     let evicted = 0;
     const swept: GraphSyncTableName[] = [];
+    const refused: RefusedServerRow[] = [];
     // Arrivals first, in the order that keeps a node's place known before
     // the node shows; then departures, in the order that keeps a node gone
     // before its place is. Interleaving the two per table would do one of
     // them in the wrong order.
     for (const descriptor of ARRIVAL_ORDER) {
-      applied += await pullTable(spaceId, descriptor.local);
+      const table = await pullTable(spaceId, descriptor.local);
+      applied += table.applied;
+      refused.push(...table.refused);
     }
     for (const descriptor of GRAPH_SYNC_TABLE_DESCRIPTORS) {
       const removed = await sweepTable(
@@ -149,7 +181,7 @@ export function createGraphSync(options: GraphSyncOptions) {
         swept.push(descriptor.local);
       }
     }
-    return { applied, evicted, swept };
+    return { applied, evicted, swept, refused: firstSeen(refused) };
   }
 
   function pull(
@@ -180,7 +212,9 @@ export function createGraphSync(options: GraphSyncOptions) {
     for (const descriptor of ARRIVAL_ORDER) {
       if (descriptor.nodeKey === null) continue;
       const held = await replica.rowIdsForNodes(descriptor.local, nodeIds);
-      const rows = await transport.pullByNodes(
+      // A row refused here is left out like any other the server did not
+      // return; the pull that follows the push reports it.
+      const { rows } = await transport.pullByNodes(
         descriptor.local,
         spaceId,
         nodeIds

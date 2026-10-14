@@ -4,11 +4,7 @@ import type {
   SupabaseClient,
 } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
-import {
-  parseServerIds,
-  parseServerRow,
-  parseServerRows,
-} from './server-rows.js';
+import { parseServerIds, parseServerRows } from './server-rows.js';
 import { describeTable, type GraphSyncTableName } from './tables.js';
 import {
   GraphWriteError,
@@ -104,7 +100,7 @@ export function createSupabaseGraphRowTransport(
       const page: PullPage = {
         // The extra row only answers "is there more?" and is never applied,
         // so it is not checked either: the next page checks it.
-        rows: parseServerRows(name, rows.slice(0, limit)),
+        ...parseServerRows(name, rows.slice(0, limit)),
         hasMore: rows.length > limit,
       };
       return page;
@@ -126,7 +122,7 @@ export function createSupabaseGraphRowTransport(
 
     async pullByNodes(name, spaceId, nodeIds) {
       const descriptor = describeTable(name);
-      if (descriptor.nodeKey === null) return [];
+      if (descriptor.nodeKey === null) return { rows: [], refused: [] };
       let query = table(name).select('*').eq('space_id', spaceId);
       query = descriptor.nodeKeySecondary
         ? query.or(
@@ -136,9 +132,7 @@ export function createSupabaseGraphRowTransport(
         : query.in(descriptor.nodeKey, nodeIds);
       const { data, error } = await query;
       if (error) throw classify(error);
-      return ((data ?? []) as Record<string, unknown>[]).map((row) =>
-        parseServerRow(name, row)
-      );
+      return parseServerRows(name, (data ?? []) as Record<string, unknown>[]);
     },
 
     async write(write) {

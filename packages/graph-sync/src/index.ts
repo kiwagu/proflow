@@ -9,6 +9,7 @@ export {
   parseServerIds,
   parseServerRow,
   parseServerRows,
+  type RefusedServerRow,
 } from './server-rows.js';
 export { createSupabaseGraphRowTransport } from './supabase-transport.js';
 export {

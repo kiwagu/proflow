@@ -3,6 +3,7 @@ import type {
   KnowledgeResourceId,
   SpaceId,
 } from '@workspace/entity-id';
+import type { RefusedServerRow } from './server-rows.js';
 import type { GraphSyncTableName } from './tables.js';
 
 /**
@@ -99,7 +100,14 @@ export class GraphWriteError extends Error {
 }
 
 export interface PullPage {
+  /** The rows of the page that can be applied. */
   rows: RowRecord[];
+  /**
+   * Rows of the page that were refused, each on its own. They count toward
+   * the page like any other row: the caller pages past them and moves its
+   * cursor over them, and reports them.
+   */
+  refused: RefusedServerRow[];
   /**
    * True when the server had more rows than the page limit. The caller pulls
    * again from the advanced watermark rather than assuming one page is the
@@ -141,7 +149,7 @@ export interface GraphRowTransport {
     table: GraphSyncTableName,
     spaceId: SpaceId,
     nodeIds: readonly KnowledgeResourceId[]
-  ): Promise<RowRecord[]>;
+  ): Promise<{ rows: RowRecord[]; refused: RefusedServerRow[] }>;
 
   /**
    * Apply one write. Throws `GraphWriteError` classified as `refused` or
@@ -217,6 +225,11 @@ export interface PullOutcome {
   evicted: number;
   /** Tables whose inventory was swept in this pass. */
   swept: GraphSyncTableName[];
+  /**
+   * Rows the server sent that were not applied, each reported in the first
+   * pass that met it and never again by this engine.
+   */
+  refused: RefusedServerRow[];
 }
 
 export interface PushOutcome {

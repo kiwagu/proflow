@@ -152,7 +152,7 @@ describe('the space feed', () => {
     const outcomes: SpacePassOutcome[] = [];
     const watch = b.watchSpace({ onPass: (o) => outcomes.push(o) });
     await expect.poll(() => outcomes.length).toBeGreaterThan(0);
-    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1 });
+    expect(outcomes[0]).toEqual({ pulled: 1, skipped: 1, refused: 0 });
     expect(b.text(DOC_A)).toBe('alpha. ');
     expect(b.has(DOC_B)).toBe(false);
     // A head this device has no row for is the materializer's to bring in

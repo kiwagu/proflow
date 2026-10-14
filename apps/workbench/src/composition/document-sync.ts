@@ -6,6 +6,7 @@ import {
   createSupabaseTransport,
   DocumentNotRegisteredError,
   type DocumentSync,
+  MalformedServerRowError,
   type SpaceWatch,
 } from '@workspace/doc-sync';
 import type { ISettingsStore } from '@workspace/domain';
@@ -64,6 +65,12 @@ export interface StartDocumentSyncOptions {
   onPassFailed?: (error: unknown) => void;
   /** A pass completed. */
   onPassSettled?: () => void;
+  /**
+   * The server holds something for a document that cannot be taken in — a
+   * malformed id or writer. Nothing of it is applied; said once per document.
+   * The id is as the server holds it, so possibly the malformed value.
+   */
+  onRefused?: (documentId: string, error: unknown) => void;
   /**
    * Whether the person may write a document's body, asked with the owner of
    * the node it belongs to. A document they may only read is never pushed:
@@ -198,7 +205,15 @@ export function startDocumentSync(
       if (!engine || disposed) return;
       const doc = await store.syncable(id);
       if (!doc) continue;
-      await engine.pull(id, doc);
+      try {
+        await engine.pull(id, doc);
+      } catch (error) {
+        // Refused for this document alone, and already reported: its body
+        // stays on the server unread, so its pane keeps waiting, and the
+        // documents after it still get theirs.
+        if (error instanceof MalformedServerRowError) continue;
+        throw error;
+      }
       // The wait is over, with a body or without one. A body is announced
       // as a merge; an empty answer merges nothing and would leave a pane
       // that opened a moment earlier waiting for ever.
@@ -235,6 +250,8 @@ export function startDocumentSync(
           ledger: createPgliteLedger(db),
           journal: store.syncJournal,
           writer,
+          onRefused: ({ documentId, error }) =>
+            options.onRefused?.(documentId, error),
         });
         await materializeDocuments(db, identity.spaceId);
         if (disposed) return;

@@ -1,10 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import type { SpaceId } from '@workspace/entity-id';
-import {
-  parseServerIds,
-  parseServerRow,
-  parseServerRows,
-} from '../server-rows.js';
+import { parseServerIds, parseServerRows } from '../server-rows.js';
 import { describeTable, type GraphSyncTableName } from '../tables.js';
 import {
   GraphWriteError,
@@ -539,7 +535,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         // Through the same parser as the production adapter: what reaches
         // the engine has been checked the same way on both.
         const page: PullPage = {
-          rows: parseServerRows(table, rows.slice(0, limit)),
+          ...parseServerRows(table, rows.slice(0, limit)),
           hasMore: rows.length > limit,
         };
         return page;
@@ -559,7 +555,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
 
       async pullByNodes(table, spaceId, nodeIds) {
         const descriptor = describeTable(table);
-        if (descriptor.nodeKey === null) return [];
+        if (descriptor.nodeKey === null) return { rows: [], refused: [] };
         const fence = visibilityPredicate(table, '$3');
         const keys = descriptor.nodeKeySecondary
           ? `(t."${descriptor.nodeKey}" = any ($2::text[]) or t."${descriptor.nodeKeySecondary}" = any ($2::text[]))`
@@ -569,7 +565,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
             where t.space_id = $1 and ${keys} and ${fence}`,
           [spaceId, nodeIds, session.userId]
         );
-        return rows.map((row) => parseServerRow(table, row));
+        return parseServerRows(table, rows);
       },
 
       write: (write) => guardedWrite(session, write),

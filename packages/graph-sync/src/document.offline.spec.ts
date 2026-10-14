@@ -55,13 +55,13 @@ it('keeps an offline-created document openable after push, pull and inventory', 
       });
     },
     async pullSince() {
-      return { rows: accepted, hasMore: false };
+      return { rows: accepted, refused: [], hasMore: false };
     },
     async inventory() {
       return accepted.map((row) => row.id);
     },
     async pullByNodes() {
-      return accepted;
+      return { rows: accepted, refused: [] };
     },
     subscribe() {
       return () => {};

@@ -4,6 +4,7 @@ import type {
   SpaceId,
   WriterId,
 } from '@workspace/entity-id';
+import type { RefusedHead } from './server-rows.js';
 
 /**
  * The seams of the sync layer, as interfaces.
@@ -64,6 +65,8 @@ export interface SyncDocumentHead {
 
 export interface SyncHeadsPage {
   rows: SyncDocumentHead[];
+  /** Heads of the page that were refused, each on its own. */
+  refused: RefusedHead[];
   hasMore: boolean;
 }
 

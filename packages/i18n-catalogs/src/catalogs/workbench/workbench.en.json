@@ -173,5 +173,6 @@
   "workbench.errors.sync": "Changes made here could not be sent to the server: {reason}. They stay on this device and are sent again automatically.",
   "workbench.errors.push": "Could not send “{title}” to the server: {reason}. It stays on this device and is sent again automatically.",
   "workbench.errors.pull": "Could not get the latest changes from the server: {reason}. Trying again automatically.",
-  "workbench.errors.syncStalled": "Changes made here are waiting to be sent: the server cannot be reached. They stay on this device and are sent automatically once it answers."
+  "workbench.errors.syncStalled": "Changes made here are waiting to be sent: the server cannot be reached. They stay on this device and are sent automatically once it answers.",
+  "workbench.errors.refused": "The server holds “{id}”, which is not a valid id, so it was left out here. Everything else keeps syncing."
 }
