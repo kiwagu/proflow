@@ -38,7 +38,8 @@ import {
 } from '@workspace/workbench-editor';
 import { History, ListTree, MessageSquare, Search, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
-import { useServices } from './composition/app-services';
+import { allowed } from '@workspace/knowledge-contracts';
+import { useServices, useWriteScope } from './composition/app-services';
 import {
   CHAT_PANEL_HOTKEY,
   CHAT_PANEL_WIDTH,
@@ -87,6 +88,7 @@ import { SIDEBAR_WIDTH } from './shell/layout';
 export function App() {
   const services = useServices();
 
+  const scope = useWriteScope();
   const fileServices = useMemo<FileServices>(
     () => ({
       files: services.files,
@@ -95,8 +97,19 @@ export function App() {
       packages: services.packages,
       packageList: services.packageList,
       onError: services.reportError,
+      // The tree offers only what the server would let through.
+      may: (action, node) =>
+        allowed(
+          scope,
+          action,
+          {
+            owner_user_id: node?.ownerUserId ?? null,
+            parent_edge_created_by: node?.parentEdgeCreatedBy ?? null,
+          },
+          services.identity.userId
+        ),
     }),
-    [services]
+    [services, scope]
   );
 
   const graphServices = useMemo<GraphServices>(

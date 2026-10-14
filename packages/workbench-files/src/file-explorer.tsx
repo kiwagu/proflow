@@ -10,7 +10,12 @@ import { FilePlus, FolderPlus, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollapsibleSection } from './collapsible-section.js';
 import { FileRow, PendingRow } from './file-row.js';
-import { useFiles, usePackages, useReportError } from './file-services.js';
+import {
+  useFiles,
+  useMay,
+  usePackages,
+  useReportError,
+} from './file-services.js';
 import {
   defaultFileExplorerLabels,
   type FileExplorerLabels,
@@ -90,6 +95,8 @@ export function FileExplorer({
   labels?: FileExplorerLabels;
 }) {
   const files = useFiles();
+  const may = useMay();
+  const mayCreate = may('node.create', null);
   const packages = usePackages();
   const reportError = useReportError();
   const { openFileId, setOpenFileId } = useFileSelection();
@@ -280,7 +287,7 @@ export function FileExplorer({
    * swallowing it for an affordance it does not have.
    */
   useHotkey(NEW_DOCUMENT_HOTKEY, () => void createDocument(), {
-    enabled: Boolean(documents),
+    enabled: Boolean(documents) && mayCreate,
   });
 
   const createFolder = async () => {
@@ -355,6 +362,7 @@ export function FileExplorer({
   // target folder is read at drop time, so a drop on the empty tree with
   // a file selected still imports beside it.
   const onDropped = (list: File[]) => {
+    if (!mayCreate) return;
     const current = nodes.find((n) => n.id === openFileId);
     const parentId = !current
       ? null
@@ -389,12 +397,24 @@ export function FileExplorer({
             expanded={expanded.has(node.id)}
             onToggle={() => toggle(node.id)}
             onOpen={() => open(node)}
-            onRename={(name) => void files.rename(node.id, name)}
-            onDelete={() => {
-              if (openFileId === node.id) setOpenFileId(undefined);
-              void files.softDelete(node.id);
-            }}
-            onStar={(starred) => void files.setStarred(node.id, starred)}
+            onRename={
+              may('node.update', node)
+                ? (name) => void files.rename(node.id, name)
+                : undefined
+            }
+            onDelete={
+              may('node.trash', node)
+                ? () => {
+                    if (openFileId === node.id) setOpenFileId(undefined);
+                    void files.softDelete(node.id);
+                  }
+                : undefined
+            }
+            onStar={
+              may('node.star', node)
+                ? (starred) => void files.setStarred(node.id, starred)
+                : undefined
+            }
             unpacked={isUnpacked(node)}
             onUnpack={packages ? () => void unpack(node) : undefined}
             onDiscardUnpacked={
@@ -402,11 +422,19 @@ export function FileExplorer({
             }
             onApproach={() => prefetch(node.documentId)}
             onExport={exportFor(node)}
-            moveTargets={moveTargetsFor(nodes, node.id)}
-            onMove={(parentId) => {
-              void files.move(node.id, parentId);
-              if (parentId) reveal(parentId, nodes);
-            }}
+            moveTargets={
+              may('node.move', node)
+                ? moveTargetsFor(nodes, node.id)
+                : undefined
+            }
+            onMove={
+              may('node.move', node)
+                ? (parentId) => {
+                    void files.move(node.id, parentId);
+                    if (parentId) reveal(parentId, nodes);
+                  }
+                : undefined
+            }
             labels={labels}
           />
           {node.kind === 'folder' && expanded.has(node.id)
@@ -423,7 +451,7 @@ export function FileExplorer({
       {...handlers}
     >
       <div className="flex items-center gap-0.5 px-2 pt-2 pb-1">
-        {documents ? (
+        {documents && mayCreate ? (
           <Hint
             label={labels.newDocument}
             keys={hotkeyLabel(NEW_DOCUMENT_HOTKEY)}
@@ -439,39 +467,43 @@ export function FileExplorer({
             </Button>
           </Hint>
         ) : null}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title={labels.newFolder}
-          aria-label={labels.newFolder}
-          data-testid="new-folder"
-          onClick={() => void createFolder()}
-        >
-          <FolderPlus className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title={labels.uploadFiles}
-          aria-label={labels.uploadFiles}
-          data-testid="upload-files"
-          onClick={() => picker.current?.click()}
-        >
-          <Upload className="size-4" />
-        </Button>
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          className="hidden"
-          aria-label={labels.uploadFiles}
-          data-testid="file-input"
-          onChange={(e) => {
-            const list = Array.from(e.target.files ?? []);
-            e.target.value = '';
-            void importFiles(list, targetFolder());
-          }}
-        />
+        {mayCreate ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title={labels.newFolder}
+              aria-label={labels.newFolder}
+              data-testid="new-folder"
+              onClick={() => void createFolder()}
+            >
+              <FolderPlus className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title={labels.uploadFiles}
+              aria-label={labels.uploadFiles}
+              data-testid="upload-files"
+              onClick={() => picker.current?.click()}
+            >
+              <Upload className="size-4" />
+            </Button>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              className="hidden"
+              aria-label={labels.uploadFiles}
+              data-testid="file-input"
+              onChange={(e) => {
+                const list = Array.from(e.target.files ?? []);
+                e.target.value = '';
+                void importFiles(list, targetFolder());
+              }}
+            />
+          </>
+        ) : null}
         {importing.length > 0 ? (
           <span
             className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums"
@@ -511,12 +543,24 @@ export function FileExplorer({
                   setOpenFileId(node.id);
                   reveal(node.id, nodes);
                 }}
-                onRename={(name) => void files.rename(node.id, name)}
-                onDelete={() => {
-                  if (openFileId === node.id) setOpenFileId(undefined);
-                  void files.softDelete(node.id);
-                }}
-                onStar={(starred) => void files.setStarred(node.id, starred)}
+                onRename={
+                  may('node.update', node)
+                    ? (name) => void files.rename(node.id, name)
+                    : undefined
+                }
+                onDelete={
+                  may('node.trash', node)
+                    ? () => {
+                        if (openFileId === node.id) setOpenFileId(undefined);
+                        void files.softDelete(node.id);
+                      }
+                    : undefined
+                }
+                onStar={
+                  may('node.star', node)
+                    ? (starred) => void files.setStarred(node.id, starred)
+                    : undefined
+                }
                 onApproach={() => prefetch(node.documentId)}
                 onExport={exportFor(node)}
                 labels={labels}

@@ -776,6 +776,7 @@
       "dependencies": {
         "@workspace/domain": "workspace:*",
         "@workspace/i18n-catalogs": "workspace:*",
+        "@workspace/knowledge-contracts": "workspace:*",
         "@workspace/persistence-pglite": "workspace:*",
         "@workspace/ui": "workspace:*",
         "lucide-react": "catalog:",

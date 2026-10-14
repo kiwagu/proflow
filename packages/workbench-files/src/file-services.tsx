@@ -6,7 +6,9 @@ import type {
   IFileTreeReader,
   IPackageReader,
   IPackageRepository,
+  FileNode,
 } from '@workspace/domain';
+import type { WriteAction } from '@workspace/knowledge-contracts';
 import { createContext, useContext, type ReactNode } from 'react';
 
 /**
@@ -33,6 +35,12 @@ export interface FileServices {
    * at them and never swallows: a host without a toaster still gets told.
    */
   onError?: (message: string) => void;
+  /**
+   * Whether the person may take an action on a node (null: on the tree as a
+   * whole, for creating). The surface leaves out what this says no to;
+   * absent, everything is offered, and the server stays the fence either way.
+   */
+  may?: (action: WriteAction, node: FileNode | null) => boolean;
 }
 
 const FileServicesContext = createContext<FileServices | null>(null);
@@ -68,4 +76,13 @@ export const usePackageList = () => useFileServices().packageList;
 export function useReportError(): (message: string) => void {
   const { onError } = useFileServices();
   return (message: string) => onError?.(message);
+}
+
+/** What the host says the person may do; yes to everything when it says nothing. */
+export function useMay(): (
+  action: WriteAction,
+  node: FileNode | null
+) => boolean {
+  const may = useFileServices().may;
+  return (action, node) => may?.(action, node) ?? true;
 }
