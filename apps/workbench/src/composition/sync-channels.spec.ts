@@ -4,6 +4,7 @@ import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRealtimeSyncChannels,
+  SIGNAL_WINDOW_MAX_MS,
   type SpaceChannelHandlers,
   spaceTopic,
 } from './sync-channels';
@@ -137,6 +138,22 @@ describe('joining a space over Realtime', () => {
     ])
       f.opened[0]!.deliver('changed', payload);
     expect(h.calls).toEqual([]);
+    leave();
+  });
+
+  it('holds a window to the 30 s the server can state at most, so no timer outgrows what a browser can count', () => {
+    const f = fakeClient();
+    const h = recorder();
+    const leave = createRealtimeSyncChannels(f.client).joinSpace(TOPIC, h);
+    for (const window_ms of [30_000, 30_001, 2 ** 31, Number.MAX_SAFE_INTEGER])
+      f.opened[0]!.deliver('changed', { kind: 'documents', window_ms });
+    expect(h.calls).toEqual([
+      ['signal', { kind: 'documents', windowMs: 30_000 }],
+      ['signal', { kind: 'documents', windowMs: 30_000 }],
+      ['signal', { kind: 'documents', windowMs: 30_000 }],
+      ['signal', { kind: 'documents', windowMs: 30_000 }],
+    ]);
+    expect(SIGNAL_WINDOW_MAX_MS).toBe(30_000);
     leave();
   });
 

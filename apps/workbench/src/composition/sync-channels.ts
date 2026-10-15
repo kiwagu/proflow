@@ -22,6 +22,14 @@ export function spaceTopic(spaceId: SpaceId, epoch: number): string {
 }
 
 /**
+ * The longest throttle window the server states (its `window_max_ms`). A
+ * longer one is held to this rather than dropped, so a signal still kicks if
+ * the server's bound is raised, and no timer is ever set beyond what a
+ * browser can count (2^31 − 1 ms).
+ */
+export const SIGNAL_WINDOW_MAX_MS = 30_000;
+
+/**
  * "Something of this kind changed in the space", with the throttle window
  * the server is signaling at. The server may add fields of its own; they
  * are not read.
@@ -31,7 +39,10 @@ export const spaceSignalSchema = z
     kind: z.enum(['graph', 'graph-delete', 'documents']),
     window_ms: z.number().int().positive(),
   })
-  .transform(({ kind, window_ms }) => ({ kind, windowMs: window_ms }));
+  .transform(({ kind, window_ms }) => ({
+    kind,
+    windowMs: Math.min(window_ms, SIGNAL_WINDOW_MAX_MS),
+  }));
 export type SpaceSignal = z.infer<typeof spaceSignalSchema>;
 export type SpaceSignalKind = SpaceSignal['kind'];
 
