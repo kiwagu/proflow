@@ -358,17 +358,23 @@ exception when others then
   return -1;
 end $$;
 
--- Moves every mark and every signal stamp of a space two seconds into the
--- past: outside the one-second gate and outside a one-second window.
+-- Moves the whole change state of a space this far into the past, as if
+-- that much time had gone by since every mark and signal it holds.
+create or replace function pg_temp.st_shift(p_space text, p_by interval) returns void language plpgsql as $$
+declare v_sets text;
+begin
+  select string_agg(format('%I = %I - %L::interval', column_name, column_name, p_by), ', ')
+    into v_sets
+    from information_schema.columns
+   where table_schema = 'private' and table_name = 'space_sync_state'
+     and data_type = 'timestamp with time zone';
+  execute format('update private.space_sync_state set %s where space_id = %L', v_sets, p_space);
+end $$;
+
+-- Moves every mark and every signal of a space two seconds into the past:
+-- outside the one-second gate and outside a one-second window.
 create or replace function pg_temp.st_age_signals(p_space text) returns void language sql as $$
-  update private.space_sync_state
-     set graph_changed_at = graph_changed_at - interval '2 seconds',
-         graph_deleted_at = graph_deleted_at - interval '2 seconds',
-         documents_changed_at = documents_changed_at - interval '2 seconds',
-         graph_signaled_at = graph_signaled_at - interval '2 seconds',
-         graph_delete_signaled_at = graph_delete_signaled_at - interval '2 seconds',
-         documents_signaled_at = documents_signaled_at - interval '2 seconds'
-   where space_id = p_space
+  select pg_temp.st_shift(p_space, '2 seconds')
 $$;
 
 -- Present browsers: n people beating twice in the current minute each,
@@ -476,9 +482,11 @@ begin
     values (v_c, 'text', 'ST C three', 'space', u_m, u_m);
     perform pg_temp.st_check('M1 a change after the window signals again',
       pg_temp.st_signals(v_topic, 'graph') = 2, format('signals=%s', pg_temp.st_signals(v_topic)));
+    -- signaled just now: the kind stays silent for the window from here
     update private.space_sync_state
        set graph_changed_at = graph_changed_at - interval '2 seconds',
-           graph_signaled_at = clock_timestamp()
+           graph_signaled_at = clock_timestamp(),
+           graph_silent_until = clock_timestamp() + interval '1 second'
      where space_id = v_c;
     before := pg_temp.st_state(v_c);
     insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
@@ -694,5 +702,99 @@ begin
       and not has_table_privilege('authenticated', 'private.sync_config', 'select'));
 end
 $signals$;
+
+-- B1 the first change after a window signals, even inside the second of
+-- the mark it follows. With a 25-second window: a change at 0 signals; one
+-- at 24.5 is inside the window and does not; one at 25.2 is the first of
+-- the next window and must, though the mark it would move is 0.7 s old.
+do $edge$
+declare
+  v_org text := pg_temp.st_id('org');
+  u_m uuid := pg_temp.st_id('member')::uuid;
+  v_e text; v_f text; v_g text;
+  t_e text; t_f text; t_g text;
+  n text; d text; r1 text; r2 text; r3 text;
+  msg record;
+begin
+  update private.sync_config set value = 25000 where key in ('window_min_ms', 'window_max_ms');
+  insert into public.spaces (organization_id, name, slug) values (v_org, 'ST E', 'st-e-' || substr(md5(random()::text),1,8)) returning id into v_e;
+  insert into public.spaces (organization_id, name, slug) values (v_org, 'ST F', 'st-f-' || substr(md5(random()::text),1,8)) returning id into v_f;
+  insert into public.spaces (organization_id, name, slug) values (v_org, 'ST G', 'st-g-' || substr(md5(random()::text),1,8)) returning id into v_g;
+  t_e := 'space:' || v_e || ':0';
+  t_f := 'space:' || v_f || ':0';
+  t_g := 'space:' || v_g || ':0';
+
+  -- the graph
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_e, 'text', 'ST E one', 'space', u_m, u_m);
+  select payload into msg from realtime.messages where topic = t_e and event = 'changed' limit 1;
+  perform pg_temp.st_check('B1 graph: the first change signals, with the 25-second window',
+    pg_temp.st_signals(t_e, 'graph') = 1 and (msg.payload->>'window_ms')::int = 25000, format('%s', msg.payload));
+  perform pg_temp.st_shift(v_e, '24.5 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_e, 'text', 'ST E two', 'space', u_m, u_m);
+  perform pg_temp.st_check('B1 graph: a change inside the window does not',
+    pg_temp.st_signals(t_e, 'graph') = 1, format('signals=%s', pg_temp.st_signals(t_e, 'graph')));
+  perform pg_temp.st_shift(v_e, '0.7 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_e, 'text', 'ST E three', 'space', u_m, u_m);
+  perform pg_temp.st_check('B1 graph: the first change after the window does, inside the second of the last mark',
+    pg_temp.st_signals(t_e, 'graph') = 2, format('signals=%s', pg_temp.st_signals(t_e, 'graph')));
+
+  -- the documents
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_f, 'text', 'ST F doc', 'space', u_m, u_m) returning id into n;
+  d := public.entity_id_generate('doc');
+  update public.knowledge_resources set body_ref = jsonb_build_object('doc_id', d) where id = n;
+  insert into public.crdt_documents (id, space_id, created_by, resource_id) values (d, v_f, u_m, n);
+  perform pg_temp.st_check('B1 documents: the first change signals',
+    pg_temp.st_signals(t_f, 'documents') = 1, format('signals=%s', pg_temp.st_signals(t_f, 'documents')));
+  perform pg_temp.st_shift(v_f, '24.5 seconds');
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by)
+  values (d, '\x01'::bytea, public.entity_id_generate('wrt'), u_m);
+  perform pg_temp.st_check('B1 documents: a change inside the window does not',
+    pg_temp.st_signals(t_f, 'documents') = 1, format('signals=%s', pg_temp.st_signals(t_f, 'documents')));
+  perform pg_temp.st_shift(v_f, '0.7 seconds');
+  insert into public.crdt_updates (doc_id, bytes, writer, created_by)
+  values (d, '\x02'::bytea, public.entity_id_generate('wrt'), u_m);
+  perform pg_temp.st_check('B1 documents: the first change after the window does, inside the second of the last mark',
+    pg_temp.st_signals(t_f, 'documents') = 2, format('signals=%s', pg_temp.st_signals(t_f, 'documents')));
+
+  -- a deletion
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_g, 'text', 'ST G one', 'space', u_m, u_m) returning id into r1;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_g, 'text', 'ST G two', 'space', u_m, u_m) returning id into r2;
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_g, 'text', 'ST G three', 'space', u_m, u_m) returning id into r3;
+  delete from public.knowledge_resources where id = r1;
+  perform pg_temp.st_check('B1 graph-delete: the first deletion signals',
+    pg_temp.st_signals(t_g, 'graph-delete') = 1, format('signals=%s', pg_temp.st_signals(t_g, 'graph-delete')));
+  perform pg_temp.st_shift(v_g, '24.5 seconds');
+  delete from public.knowledge_resources where id = r2;
+  perform pg_temp.st_check('B1 graph-delete: a deletion inside the window does not',
+    pg_temp.st_signals(t_g, 'graph-delete') = 1, format('signals=%s', pg_temp.st_signals(t_g, 'graph-delete')));
+  perform pg_temp.st_shift(v_g, '0.7 seconds');
+  delete from public.knowledge_resources where id = r3;
+  perform pg_temp.st_check('B1 graph-delete: the first deletion after the window does, inside the second of the last mark',
+    pg_temp.st_signals(t_g, 'graph-delete') = 2, format('signals=%s', pg_temp.st_signals(t_g, 'graph-delete')));
+  perform pg_temp.st_check('B1 graph-delete: and still as the one signal of a deletion',
+    pg_temp.st_signals(t_g, 'graph') = 1, format('graph=%s', pg_temp.st_signals(t_g, 'graph')));
+
+  -- undo the config and the spaces; the verdicts above stay
+  raise exception 'st_undo';
+exception when others then
+  if sqlerrm <> 'st_undo' then
+    perform pg_temp.st_check('B1 the first change after a window signals', false, sqlerrm);
+  end if;
+end
+$edge$;
+
+do $after$
+begin
+  perform pg_temp.st_check('B1 the 25-second window was the test''s alone',
+    (select value from private.sync_config where key = 'window_max_ms') = 30000);
+end
+$after$;
 
 rollback;
