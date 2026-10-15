@@ -167,9 +167,16 @@ export interface FakeRealtimeChannel {
  * down to the two that make a quick close and reopen hard: `channel(topic)`
  * hands back the object it already holds for that topic until the removal
  * of that object has finished, and `subscribe(callback)` on an object that
- * is not closed does nothing at all. A removal finishes `leaveMs` later.
+ * is not closed does nothing at all. A removal finishes `leaveMs` later, as
+ * the next of `removals` says: `ok` closes the channel; `error` and `reject`
+ * leave it held and leaving (answering 'error', or rejecting); `hang` closes
+ * it but never answers.
  */
-export function fakeRealtimeClient(options: { leaveMs: number }) {
+export function fakeRealtimeClient(options: {
+  leaveMs: number;
+  removals?: ('ok' | 'error' | 'reject' | 'hang')[];
+}) {
+  const removals = [...(options.removals ?? [])];
   const registry = new Map<string, FakeRealtimeChannel>();
   const created: FakeRealtimeChannel[] = [];
 
@@ -226,10 +233,15 @@ export function fakeRealtimeClient(options: { leaveMs: number }) {
     },
     removeChannel(channel: ReturnType<typeof open>) {
       channel.state = 'leaving';
-      return new Promise<'ok'>((resolve) =>
+      const outcome = removals.shift() ?? 'ok';
+      return new Promise<'ok' | 'error'>((resolve, reject) =>
         setTimeout(() => {
-          channel.close();
-          resolve('ok');
+          if (outcome === 'error') resolve('error');
+          else if (outcome === 'reject') reject(new Error('leave failed'));
+          else {
+            channel.close();
+            if (outcome === 'ok') resolve('ok');
+          }
         }, options.leaveMs)
       );
     },

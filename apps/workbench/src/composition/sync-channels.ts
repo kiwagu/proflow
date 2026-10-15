@@ -91,6 +91,24 @@ const REFUSED = /unauthori[sz]ed|permission/i;
  */
 const leavesByClient = new WeakMap<object, Map<string, Promise<void>>>();
 
+/**
+ * How long a later join of a topic waits for its leave at most. The client
+ * gives a leave up after 10 s and closes the channel itself; a leave that
+ * never answers at all must not keep its topic from being joined again.
+ */
+export const LEAVE_WAIT_MAX_MS = 15_000;
+
+/** Settles when `work` does, or after `LEAVE_WAIT_MAX_MS`, whichever is first. */
+function boundedLeave(work: Promise<void>): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, LEAVE_WAIT_MAX_MS);
+    void work.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 export function createRealtimeSyncChannels(
   client: SupabaseClient<Database>
 ): SyncChannels {
@@ -100,6 +118,19 @@ export function createRealtimeSyncChannels(
     leavesByClient.set(client, leaves);
   }
   const pending = leaves;
+  /** One removal; true unless it failed (an answered timeout closed it). */
+  const removeOnce = (channel: RealtimeChannel) =>
+    client.removeChannel(channel).then(
+      (status) => status !== 'error',
+      () => false
+    );
+  /**
+   * A removal that failed may leave the channel held and leaving, and the
+   * next join would meet it again: it is tried once more first.
+   */
+  const remove = async (channel: RealtimeChannel) => {
+    if (!(await removeOnce(channel))) await removeOnce(channel);
+  };
   return {
     joinSpace(topic, handlers) {
       let live = true;
@@ -138,13 +169,8 @@ export function createRealtimeSyncChannels(
         live = false;
         // Joined already: removed now. Still waiting on an earlier leave:
         // it will never join, and there is nothing to remove after it.
-        const removal = channel
-          ? client.removeChannel(channel)
-          : joined.then(() => undefined);
-        const leaving: Promise<void> = removal.then(
-          () => undefined,
-          () => undefined
-        );
+        const removal = channel ? remove(channel) : joined;
+        const leaving = boundedLeave(removal.catch(() => undefined));
         left = leaving;
         pending.set(topic, leaving);
         void leaving.then(() => {

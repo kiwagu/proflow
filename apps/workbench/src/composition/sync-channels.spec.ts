@@ -4,6 +4,7 @@ import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRealtimeSyncChannels,
+  LEAVE_WAIT_MAX_MS,
   SIGNAL_WINDOW_MAX_MS,
   type SpaceChannelHandlers,
   spaceTopic,
@@ -268,5 +269,48 @@ describe('leaving a topic and joining it again', () => {
     expect(f.created).toHaveLength(1);
     expect(f.held(TOPIC)).toBeUndefined();
     expect(second.calls).toEqual([]);
+  });
+
+  it('a removal that failed is tried once more before the topic counts as released', async () => {
+    for (const failure of ['error', 'reject'] as const) {
+      vi.setSystemTime(0);
+      const f = fakeRealtimeClient({ leaveMs: 200, removals: [failure] });
+      const channels = createRealtimeSyncChannels(f.client);
+      const leaveFirst = channels.joinSpace(TOPIC, recorder());
+      f.created[0]!.accept();
+      void leaveFirst();
+      const second = recorder();
+      const leaveSecond = channels.joinSpace(TOPIC, second);
+      await vi.advanceTimersByTimeAsync(399);
+      // The first removal failed and the channel is still held: no join yet.
+      expect(f.created).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(f.created).toHaveLength(2);
+      f.created[1]!.accept();
+      expect(second.calls).toEqual([['subscribed']]);
+      const gone = leaveSecond();
+      await vi.advanceTimersByTimeAsync(200);
+      await gone;
+    }
+  });
+
+  it('a removal that never answers holds a later join of its topic for 15 s at most', async () => {
+    const f = fakeRealtimeClient({ leaveMs: 200, removals: ['hang'] });
+    const channels = createRealtimeSyncChannels(f.client);
+    const leaveFirst = channels.joinSpace(TOPIC, recorder());
+    f.created[0]!.accept();
+    void leaveFirst();
+    const second = recorder();
+    const leaveSecond = channels.joinSpace(TOPIC, second);
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(f.created).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.created).toHaveLength(2);
+    f.created[1]!.accept();
+    expect(second.calls).toEqual([['subscribed']]);
+    expect(LEAVE_WAIT_MAX_MS).toBe(15_000);
+    const gone = leaveSecond();
+    await vi.advanceTimersByTimeAsync(200);
+    await gone;
   });
 });
