@@ -32,10 +32,6 @@ export interface ServerStandIn extends SyncTransport {
     bytes: Uint8Array,
     writer: WriterId
   ): Promise<number>;
-  /** Number of space nudges dispatched to live space subscriptions. */
-  spaceNudgeCount(): number;
-  /** Stops delivering nudges. */
-  dropNudges(): void;
   /**
    * Moves a document's head back in time, as a commit stamped with the
    * start of a long-waiting transaction would land.
@@ -118,24 +114,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
 
-  const spaceSubscribers = new Map<string, Set<() => void>>();
-  let spaceNudges = 0;
-  let nudgesEnabled = true;
-
-  async function nudgeSpaceOf(docId: DocumentId) {
-    if (!nudgesEnabled) return;
-    const { rows } = await db.query<{ space_id: string }>(
-      'select space_id from crdt_documents where id = $1',
-      [docId]
-    );
-    const spaceId = rows[0]?.space_id;
-    if (!spaceId) return;
-    for (const cb of spaceSubscribers.get(spaceId) ?? []) {
-      spaceNudges += 1;
-      cb();
-    }
-  }
-
   async function insert(
     docId: DocumentId,
     bytes: Uint8Array,
@@ -146,9 +124,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
        values ($1, $2, $3) returning seq`,
       [docId, bytes, writer]
     );
-    const seq = Number(rows[0]?.seq);
-    await nudgeSpaceOf(docId);
-    return seq;
+    return Number(rows[0]?.seq);
   }
 
   return {
@@ -229,9 +205,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
         'select rpc_compact_document($1, $2, $3)',
         [docId, snapshot, coversSeq]
       );
-      const accepted = rows[0]?.rpc_compact_document === true;
-      if (accepted) await nudgeSpaceOf(docId);
-      return accepted;
+      return rows[0]?.rpc_compact_document === true;
     },
 
     async heads(spaceId, since, limit, offset) {
@@ -252,21 +226,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
       };
     },
 
-    subscribeSpace(spaceId, onNudge, onStatus) {
-      const set = spaceSubscribers.get(spaceId) ?? new Set();
-      set.add(onNudge);
-      spaceSubscribers.set(spaceId, set);
-      // A stand-in channel is subscribed the moment it is opened.
-      queueMicrotask(() => {
-        if (set.has(onNudge)) onStatus?.(true);
-      });
-      return () => set.delete(onNudge);
-    },
-
-    spaceNudgeCount: () => spaceNudges,
-    dropNudges: () => {
-      nudgesEnabled = false;
-    },
     async backdate(docId, ms) {
       await db.query(
         `update crdt_documents

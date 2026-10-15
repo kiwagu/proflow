@@ -49,13 +49,10 @@ import { createChangeProbe, type ProbeRow } from './sync-probe';
 /** How often a visible tab says so to the leader; the leader keeps it for 45 s. */
 export const PEER_VISIBLE_BEAT_MS = 30_000;
 
-type GraphHooks = Omit<
-  StartGraphSyncOptions,
-  'db' | 'client' | 'identity' | 'onChannel'
->;
+type GraphHooks = Omit<StartGraphSyncOptions, 'db' | 'client' | 'identity'>;
 type DocumentHooks = Omit<
   StartDocumentSyncOptions,
-  'db' | 'client' | 'store' | 'identity' | 'peers' | 'onChannel'
+  'db' | 'client' | 'store' | 'identity' | 'peers'
 >;
 
 export interface StartSyncOptions {
@@ -124,14 +121,6 @@ export function startSync(options: StartSyncOptions): SyncHandle {
   root.dataset.syncLeader = '0';
 
   const run = (client: SupabaseClient<Database>): Running => {
-    const channels = { graph: false, documents: false };
-    let cadence: SyncCadence | null = null;
-    const channelUp = () => channels.graph && channels.documents;
-    const setChannel = (which: keyof typeof channels, up: boolean) => {
-      channels[which] = up;
-      root.dataset.syncChannel = channelUp() ? 'up' : 'down';
-      cadence?.setChannelUp(channelUp());
-    };
     root.dataset.syncChannel = 'down';
 
     const documents = startDocumentSync({
@@ -141,7 +130,6 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       store: options.store,
       identity,
       peers: options.documentPeers,
-      onChannel: (up) => setChannel('documents', up),
       onSettled: (id) => {
         options.documents?.onSettled?.(id);
         peers.announceSettled(id);
@@ -162,7 +150,6 @@ export function startSync(options: StartSyncOptions): SyncHandle {
         options.graph?.onPushed?.(outcome);
         documents.graphPushed();
       },
-      onChannel: (up) => setChannel('graph', up),
     });
 
     const catchUp = () => {
@@ -189,7 +176,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     });
     /** The last heartbeat failed: the next one that does not catches up. */
     let failed = false;
-    cadence = createSyncCadence(
+    const cadence = createSyncCadence(
       {
         now: () => Date.now(),
         setTimeout: (run, ms) => window.setTimeout(run, ms),
@@ -231,16 +218,15 @@ export function startSync(options: StartSyncOptions): SyncHandle {
         },
         catchUp,
       },
-      { visible: page.visible(), channelUp: channelUp() }
+      { visible: page.visible(), channelUp: false }
     );
     cadence.start();
-    const started = cadence;
     return {
       graph,
-      cadence: started,
+      cadence,
       catchUp,
       stop() {
-        started.stop();
+        cadence.stop();
         graph.stop();
         documents.stop();
         delete root.dataset.syncChannel;

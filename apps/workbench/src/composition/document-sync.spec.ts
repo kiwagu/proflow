@@ -138,8 +138,10 @@ const IDENTITY = {
   userId: 'user-1',
   spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
 };
+const clientChannel = vi.fn();
 const CLIENT = {
   name: 'the leader client',
+  channel: clientChannel,
 } as unknown as SupabaseClient<Database>;
 const db = {} as AppDb;
 
@@ -639,26 +641,18 @@ describe('starting document replication', () => {
     handle.stop();
   });
 
-  it('a nudge on the space channel runs a heads pass, and the channel says whether it is up', async () => {
+  it("opens no channel: what the space signals is the composition's to hear", async () => {
     const { store } = stubStore();
-    const onChannel = vi.fn();
     const handle = startDocumentSync({
       db,
       client: CLIENT,
       store,
       identity: IDENTITY,
-      onChannel,
     });
     await settled();
-    expect(subscribeSpace).toHaveBeenCalledTimes(1);
-    const [space, onNudge, onStatus] = subscribeSpace.mock.calls[0]!;
-    expect(space).toBe('spc_abc.01m2');
-    kick.mockClear();
-    onNudge();
-    expect(kick).toHaveBeenCalledTimes(1);
-    onStatus?.(true);
-    onStatus?.(false);
-    expect(onChannel.mock.calls).toEqual([[true], [false]]);
+    expect(createDocumentSync).toHaveBeenCalledTimes(1);
+    expect(subscribeSpace).not.toHaveBeenCalled();
+    expect(clientChannel).not.toHaveBeenCalled();
     handle.stop();
   });
 

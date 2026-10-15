@@ -52,17 +52,12 @@ const { createBrowserClient, startGraphSync, startDocumentSync, clients } =
       startGraphSync: vi.fn(
         (_options: {
           client: unknown;
-          onChannel?: (up: boolean) => void;
           onPulled?: (outcome: { applied: number }) => void;
           onPushed?: (outcome: { accepted: number }) => void;
         }) => engine()
       ),
       startDocumentSync: vi.fn(
-        (_options: {
-          client: unknown;
-          peers?: unknown;
-          onChannel?: (up: boolean) => void;
-        }) => engine()
+        (_options: { client: unknown; peers?: unknown }) => engine()
       ),
     };
   });
@@ -434,32 +429,6 @@ describe('a pull settling a document', () => {
 });
 
 describe('the channel and the cadence', () => {
-  it('is down until both channels are up, and down again when either drops', async () => {
-    const b = browser();
-    const leader = b.tab();
-    await flush();
-    expect(leader.root.dataset.syncChannel).toBe('down');
-    const graph = startGraphSync.mock.calls[0]![0];
-    const documents = startDocumentSync.mock.calls[0]![0];
-    graph.onChannel?.(true);
-    expect(leader.root.dataset.syncChannel).toBe('down');
-    graphOf().kick.mockClear();
-    documentsOf().kick.mockClear();
-    documents.onChannel?.(true);
-    expect(leader.root.dataset.syncChannel).toBe('up');
-    // Subscribed: catch up now and again five seconds later.
-    expect(graphOf().kick).toHaveBeenCalledTimes(1);
-    expect(documentsOf().kick).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(5 * SECOND);
-    expect(graphOf().kick).toHaveBeenCalledTimes(2);
-    documents.onChannel?.(false);
-    expect(leader.root.dataset.syncChannel).toBe('down');
-    leader.handle.stop();
-    await flush();
-    expect(leader.root.dataset.syncChannel).toBeUndefined();
-    expect(leader.root.dataset.syncLeader).toBe('0');
-  });
-
   it('while the channel is down, it asks the server every 15 s', async () => {
     const b = browser();
     const leader = b.tab();
@@ -578,12 +547,7 @@ describe('the channel and the cadence', () => {
     const leader = b.tab();
     const other = b.tab({ visible: false });
     await flush();
-    // Channel up: the heartbeat is a minute away.
-    const graph = startGraphSync.mock.calls[0]![0];
-    const documents = startDocumentSync.mock.calls[0]![0];
-    graph.onChannel?.(true);
-    documents.onChannel?.(true);
-    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    await vi.advanceTimersByTimeAsync(7 * SECOND);
     graphOf().kick.mockClear();
     documentsOf().kick.mockClear();
     other.setVisible(true);

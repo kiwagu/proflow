@@ -63,9 +63,6 @@ it('keeps an offline-created document openable after push, pull and inventory', 
     async pullByNodes() {
       return { rows: accepted, refused: [] };
     },
-    subscribe() {
-      return () => {};
-    },
   };
   const sync = createGraphSync({
     transport,

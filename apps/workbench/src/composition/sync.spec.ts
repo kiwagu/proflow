@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The graph half of replication as the leader tab composes it: what the
- * engine is built from, what its outcomes are handed to, and how the nudge
- * channel maps onto kicks. The engine and the transport are mocked
+ * engine is built from, what its outcomes are handed to, and that it opens
+ * no channel of its own. The engine and the transport are mocked
  * wholesale — they are covered by their own package's suite against a real
  * PGlite on both sides. When replication starts at all (settings, network,
  * leadership) is the subject of sync-composition.spec.
@@ -82,8 +82,10 @@ const IDENTITY = {
   userId: 'user-1',
   spaceId: entityIdRegistry.factories.spaceIdFactory.brand('spc_abc.01m2'),
 };
+const clientChannel = vi.fn();
 const CLIENT = {
   name: 'the leader client',
+  channel: clientChannel,
 } as unknown as SupabaseClient<Database>;
 
 const CONFIGURED = JSON.stringify({
@@ -197,25 +199,10 @@ describe('graph replication on the leader client', () => {
     handle.stop();
   });
 
-  it('a nudge kicks the engine; a deletion nudge kicks it with a sweep', () => {
+  it("opens no channel: what the space signals is the composition's to hear", () => {
     const handle = start();
-    expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(subscribe.mock.calls[0]?.[0]).toBe('spc_abc.01m2');
-    const handlers = subscribe.mock.calls[0]![1];
-    handlers.onChange();
-    expect(kick).toHaveBeenLastCalledWith();
-    handlers.onDelete();
-    expect(kick).toHaveBeenLastCalledWith({ sweep: true });
-    handle.stop();
-  });
-
-  it('says whether its nudge channel is up', () => {
-    const onChannel = vi.fn();
-    const handle = start({ onChannel });
-    const handlers = subscribe.mock.calls[0]![1];
-    handlers.onStatus?.(true);
-    handlers.onStatus?.(false);
-    expect(onChannel.mock.calls).toEqual([[true], [false]]);
+    expect(subscribe).not.toHaveBeenCalled();
+    expect(clientChannel).not.toHaveBeenCalled();
     handle.stop();
   });
 
@@ -227,14 +214,10 @@ describe('graph replication on the leader client', () => {
     handle.stop();
   });
 
-  it('stops the engine and closes the channel when stopped', () => {
+  it('stops the engine when stopped', () => {
     const handle = start();
-    const unsubscribe = subscribe.mock.results[0]?.value as ReturnType<
-      typeof vi.fn
-    >;
     handle.stop();
     expect(stopWatch).toHaveBeenCalledTimes(1);
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 });
 

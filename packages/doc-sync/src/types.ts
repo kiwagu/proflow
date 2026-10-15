@@ -130,17 +130,6 @@ export interface SyncTransport {
     limit: number,
     offset: number
   ): Promise<SyncHeadsPage>;
-  /**
-   * A nudge — nothing more — that some document of the space moved.
-   * Delivery is not trusted: a nudge is answered with the same heads pass a
-   * heartbeat would run. `onStatus` says whether the channel is subscribed
-   * (true) or not (false: an error, a timeout, a close).
-   */
-  subscribeSpace(
-    spaceId: SpaceId,
-    onNudge: () => void,
-    onStatus?: (up: boolean) => void
-  ): () => void;
 }
 
 /**

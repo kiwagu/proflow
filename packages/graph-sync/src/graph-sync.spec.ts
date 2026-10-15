@@ -639,8 +639,8 @@ describe('graph row replication — watch', () => {
 
   /**
    * The engine keeps no clock and opens no subscription: whoever composes it
-   * decides when a cycle runs (a heartbeat, a nudge, a local write) and
-   * kicks it. What is pinned here is what a kick does, and that nothing
+   * decides when a cycle runs (a heartbeat, a change signal, a local write)
+   * and kicks it. What is pinned here is what a kick does, and that nothing
    * else ever starts one.
    */
   afterEach(() => {
@@ -658,7 +658,7 @@ describe('graph row replication — watch', () => {
       pullSince: new Set<number>(),
     };
     const unavailable = () => new Error('503 Service Unavailable');
-    const transport = {
+    const port = {
       pullSince: vi.fn(
         async (...args: Parameters<GraphRowTransport['pullSince']>) => {
           if (gate) await gate;
@@ -676,8 +676,10 @@ describe('graph row replication — watch', () => {
       ),
       pullByNodes: vi.fn(base.pullByNodes),
       write: vi.fn(base.write),
-      subscribe: vi.fn(base.subscribe),
     } satisfies GraphRowTransport;
+    // A channel the engine must never open: hearing that the space changed
+    // is its composer's business, which then kicks it.
+    const transport = Object.assign(port, { subscribe: vi.fn() });
     return {
       transport,
       failing,
@@ -748,11 +750,11 @@ describe('graph row replication — watch', () => {
     await w.replica.close();
   });
 
-  it('a sweep a deletion nudge asked for, failing after the checkout went through, stays owed as a sweep', async () => {
+  it('a sweep a deletion signal asked for, failing after the checkout went through, stays owed as a sweep', async () => {
     const w = await watched();
     await w.ended(1);
     w.failing.inventory.add(8);
-    // What the composition does with a deletion nudge.
+    // What the composition does with a deletion signal.
     w.watch.kick({ sweep: true });
     await w.ended(2);
     expect(w.watch.owed()).toEqual({ sweep: true });
@@ -816,9 +818,11 @@ describe('graph row replication — watch', () => {
     await w.replica.close();
   });
 
-  it('does not subscribe on its own', async () => {
+  it('opens no channel of its own, even on a transport that offers one', async () => {
     const w = await watched();
     await waitFor(async () => w.pulls.length === 1);
+    w.watch.kick({ sweep: true });
+    await w.ended(2);
     expect(w.transport.subscribe).not.toHaveBeenCalled();
     w.watch.stop();
     await w.replica.close();

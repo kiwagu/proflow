@@ -157,24 +157,6 @@ export interface GraphRowTransport {
    * assuming a refusal would throw the user's change away on a bug.
    */
   write(write: ServerWrite): Promise<void>;
-
-  /**
-   * A nudge that rows may have changed in this space — never the delivery
-   * itself. Payloads are ignored: a dropped nudge costs latency, the
-   * heartbeat of whoever composes the engine makes catch-up inevitable.
-   * `onDelete` fires for a deletion nudge, worth an inventory sweep now
-   * rather than at the next full pass. `onStatus` says whether the channel
-   * is subscribed (true) or not (false: an error, a timeout, a close), so a
-   * composition can tighten its heartbeat while nudges cannot arrive.
-   */
-  subscribe(
-    spaceId: SpaceId,
-    handlers: {
-      onChange: () => void;
-      onDelete: () => void;
-      onStatus?: (up: boolean) => void;
-    }
-  ): () => void;
 }
 
 /** One journaled structural command, as the engine replays it. */

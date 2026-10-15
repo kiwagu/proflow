@@ -178,8 +178,13 @@ describe('the space feed', () => {
       if (failing.has(calls)) throw new Error('503 Service Unavailable');
       return server.heads(...args);
     });
-    const subscribeSpace = vi.fn(server.subscribeSpace);
-    const transport: SyncTransport = { ...server, heads, subscribeSpace };
+    // A channel the feed must never open: hearing that the space changed is
+    // its composer's business, which then kicks it.
+    const subscribeSpace = vi.fn();
+    const transport: SyncTransport = Object.assign(
+      { ...server, heads },
+      { subscribeSpace }
+    );
     return {
       transport,
       heads,
@@ -220,12 +225,14 @@ describe('the space feed', () => {
     watch.stop();
   });
 
-  it('opens no nudge subscription of its own', async () => {
+  it('opens no channel of its own, even on a transport that offers one', async () => {
     const spy = recorded();
     const b = await replica('client-b', {}, spy.transport);
     let passes = 0;
     const watch = b.watchSpace({ onPass: () => (passes += 1) });
     await expect.poll(() => passes).toBe(1);
+    watch.kick({ full: true });
+    await expect.poll(() => passes).toBe(2);
     expect(spy.subscribeSpace).not.toHaveBeenCalled();
     watch.stop();
   });

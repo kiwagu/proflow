@@ -1,5 +1,5 @@
 import { entityIdRegistry, type WriterId } from '@workspace/entity-id';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MalformedServerRowError } from './index.js';
 import { createSupabaseTransport } from './supabase-transport.js';
 import { createReplica, DOC_ID, SPACE_ID } from './testing/replica.js';
@@ -189,36 +189,14 @@ describe('the production transport parses the same way', () => {
   });
 });
 
-describe('the production transport reports its nudge channel', () => {
-  it('says the space channel is up only once it is subscribed', () => {
-    let report: ((status: string) => void) | undefined;
-    const channel = {
-      on: () => channel,
-      subscribe: (callback: (status: string) => void) => {
-        report = callback;
-        return channel;
-      },
-    };
+describe('the production transport opens no channel', () => {
+  it("offers no space subscription: change signals are the composition's", () => {
+    const channel = vi.fn();
     const transport = createSupabaseTransport({
-      channel: () => channel,
-      removeChannel: () => Promise.resolve('ok'),
+      channel,
     } as unknown as Parameters<typeof createSupabaseTransport>[0]);
-    const states: boolean[] = [];
-    const unsubscribe = transport.subscribeSpace(
-      SPACE_ID,
-      () => undefined,
-      (up) => states.push(up)
-    );
-    for (const status of [
-      'SUBSCRIBED',
-      'CHANNEL_ERROR',
-      'SUBSCRIBED',
-      'TIMED_OUT',
-      'CLOSED',
-    ])
-      report?.(status);
-    expect(states).toEqual([true, false, true, false, false]);
-    unsubscribe();
+    expect('subscribeSpace' in transport).toBe(false);
+    expect(channel).not.toHaveBeenCalled();
   });
 
   it('has no per-document nudge any more', () => {

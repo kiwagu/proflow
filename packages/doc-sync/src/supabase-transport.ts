@@ -1,4 +1,4 @@
-import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { fromByteaHex, toByteaHex } from './bytea.js';
 import { DocumentNotRegisteredError } from './errors.js';
@@ -130,29 +130,6 @@ export function createSupabaseTransport(
       return {
         ...parseHeadRows(rows.slice(0, limit)),
         hasMore: rows.length > limit,
-      };
-    },
-
-    subscribeSpace(spaceId, onNudge, onStatus) {
-      // The payload is deliberately ignored: realtime is a nudge, never the
-      // delivery mechanism. A dropped message costs latency, never data.
-      let channel: RealtimeChannel | null = client
-        .channel(`doc-sync:space:${spaceId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'crdt_documents',
-            filter: `space_id=eq.${spaceId}`,
-          },
-          () => onNudge()
-        )
-        // SUBSCRIBED is the only state in which nudges arrive.
-        .subscribe((status) => onStatus?.(status === 'SUBSCRIBED'));
-      return () => {
-        if (channel) void client.removeChannel(channel);
-        channel = null;
       };
     },
   };

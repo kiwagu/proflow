@@ -76,8 +76,6 @@ export interface StartGraphSyncOptions {
   onRefused?: (rows: RefusedServerRow[]) => void;
   /** A push got changes accepted: a consumer that waited for them may run now. */
   onPushed?: (outcome: { accepted: number }) => void;
-  /** Whether the nudge channel is subscribed: nudges arrive only while it is. */
-  onChannel?: (up: boolean) => void;
 }
 
 export interface GraphSyncHandle {
@@ -132,16 +130,16 @@ export async function rememberSyncSettings(
 /**
  * Replicate the checked-out space over the client the leader built. The
  * engine checks the space out with one sweeping cycle and then runs a cycle
- * per kick: the composition's cadence, a local write, or a nudge from the
- * channel opened here — which is only ever a kick, never a delivery.
+ * per kick: the composition's cadence, a local write, or a signal the
+ * composition heard on the space's channel. Nothing here listens for
+ * changes; a kick is only ever a kick, never a delivery.
  */
 export function startGraphSync(
   options: StartGraphSyncOptions
 ): GraphSyncHandle {
   const { db, client, identity } = options;
-  const transport = createSupabaseGraphRowTransport(client);
   const sync = createGraphSync({
-    transport,
+    transport: createSupabaseGraphRowTransport(client),
     replica: replicaOver(db),
     identity: { userId: identity.userId },
     onReconciled: options.onReconciled,
@@ -158,17 +156,8 @@ export function startGraphSync(
     },
     onError: (error: unknown) => options.onError?.(error),
   });
-  // A deletion is worth a sweep now: a watermark pull cannot see it.
-  const unsubscribe = transport.subscribe(identity.spaceId, {
-    onChange: () => watch.kick(),
-    onDelete: () => watch.kick({ sweep: true }),
-    onStatus: (up) => options.onChannel?.(up),
-  });
   return {
-    stop() {
-      unsubscribe();
-      watch.stop();
-    },
+    stop: () => watch.stop(),
     kick: (opts) => watch.kick(opts),
     owed: () => watch.owed(),
   };

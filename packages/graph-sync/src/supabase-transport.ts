@@ -1,8 +1,4 @@
-import type {
-  PostgrestError,
-  RealtimeChannel,
-  SupabaseClient,
-} from '@supabase/supabase-js';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { parseServerIds, parseServerRows } from './server-rows.js';
 import { describeTable, type GraphSyncTableName } from './tables.js';
@@ -173,47 +169,6 @@ export function createSupabaseGraphRowTransport(
       }
       const { error } = await matchAll(builder.delete(), write.match);
       if (error) throw classify(error);
-    },
-
-    subscribe(spaceId, handlers) {
-      // The payload is deliberately ignored except for its event type: a
-      // nudge is not a delivery. What a DELETE tells us is only that a sweep
-      // is worth running now instead of at the next interval.
-      let channel: RealtimeChannel | null = client
-        .channel(`graph-sync:${spaceId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'knowledge_resources',
-            filter: `space_id=eq.${spaceId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'DELETE') handlers.onDelete();
-            else handlers.onChange();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'knowledge_edges',
-            filter: `space_id=eq.${spaceId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'DELETE') handlers.onDelete();
-            else handlers.onChange();
-          }
-        )
-        // SUBSCRIBED is the only state in which nudges arrive; an error, a
-        // timeout or a close all mean they cannot.
-        .subscribe((status) => handlers.onStatus?.(status === 'SUBSCRIBED'));
-      return () => {
-        if (channel) void client.removeChannel(channel);
-        channel = null;
-      };
     },
   };
 }

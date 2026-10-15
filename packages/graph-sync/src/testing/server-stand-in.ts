@@ -1,5 +1,4 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { SpaceId } from '@workspace/entity-id';
 import { parseServerIds, parseServerRows } from '../server-rows.js';
 import { describeTable, type GraphSyncTableName } from '../tables.js';
 import {
@@ -221,12 +220,6 @@ export interface ServerStandIn {
     sql: string,
     params?: unknown[]
   ): Promise<T[]>;
-  /** Fire a change nudge to every live subscription of a space. */
-  nudge(spaceId: SpaceId, kind?: 'change' | 'delete'): void;
-  /** Nudges delivered so far — the degradation the poll has to cover. */
-  nudgeCount(): number;
-  /** Stop delivering nudges entirely. */
-  dropNudges(): void;
   /** Refuse every write with an unavailability (the offline case). */
   setOffline(offline: boolean): void;
   close(): Promise<void>;
@@ -236,22 +229,7 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
   const db = await PGlite.create();
   await db.exec(SCHEMA);
 
-  const subscribers = new Map<
-    string,
-    Set<{ onChange: () => void; onDelete: () => void }>
-  >();
-  let nudges = 0;
-  let nudgesEnabled = true;
   let offline = false;
-
-  function nudge(spaceId: string, kind: 'change' | 'delete' = 'change') {
-    if (!nudgesEnabled) return;
-    for (const handlers of subscribers.get(spaceId) ?? []) {
-      nudges += 1;
-      if (kind === 'delete') handlers.onDelete();
-      else handlers.onChange();
-    }
-  }
 
   /**
    * The stand-in's fence. Only `knowledge_resources` carries visibility, so
@@ -341,7 +319,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
             where ${clauses.join(' and ')} and ${fence}`,
           params
         );
-        nudge(spaceOfWrite(write), 'delete');
         return;
       }
 
@@ -366,7 +343,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
           `graph write refused: no visible row in ${write.table}`
         );
       }
-      nudge(spaceOfWrite(write));
     } catch (error) {
       throw asWriteError(error);
     }
@@ -434,7 +410,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
     } catch (error) {
       throw asWriteError(error);
     }
-    nudge(spaceId);
   }
 
   async function upsert(
@@ -480,7 +455,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
        on conflict (${conflict}) ${action}`,
       columns.map((column) => row[column])
     );
-    nudge(String(row['space_id'] ?? ''));
   }
 
   /**
@@ -569,17 +543,6 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
       },
 
       write: (write) => guardedWrite(session, write),
-
-      subscribe(spaceId, handlers) {
-        const set = subscribers.get(spaceId) ?? new Set();
-        set.add(handlers);
-        subscribers.set(spaceId, set);
-        // A stand-in channel is subscribed the moment it is opened.
-        queueMicrotask(() => {
-          if (set.has(handlers)) handlers.onStatus?.(true);
-        });
-        return () => set.delete(handlers);
-      },
     };
   }
 
@@ -589,22 +552,11 @@ export async function createServerStandIn(): Promise<ServerStandIn> {
       const { rows } = await db.query<T>(sql, params);
       return rows;
     },
-    nudge,
-    nudgeCount: () => nudges,
-    dropNudges: () => {
-      nudgesEnabled = false;
-    },
     setOffline: (value) => {
       offline = value;
     },
     close: () => db.close(),
   };
-}
-
-function spaceOfWrite(write: ServerWrite): string {
-  if (write.kind === 'rpc') return String(write.args['p_space_id'] ?? '');
-  const source = write.kind === 'upsert' ? write.row : write.match;
-  return String(source['space_id'] ?? '');
 }
 
 /**

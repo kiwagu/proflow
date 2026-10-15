@@ -336,8 +336,8 @@ export function createGraphSync(options: GraphSyncOptions) {
    * Keep one checked-out space converged, one cycle per kick. A cycle is a
    * push, then a pull of every table (sweeping when asked to). The engine
    * keeps no clock and listens to nothing: whoever composes it decides when
-   * a cycle is worth running — a heartbeat that saw a change, a nudge, a
-   * local write — and kicks. Checkout is the one cycle it runs by itself,
+   * a cycle is worth running — a heartbeat that saw a change, a change
+   * signal, a local write — and kicks. Checkout is the one cycle it runs by itself,
    * and it sweeps, because a space that was open on another machine may
    * have lost rows while this one was away.
    *

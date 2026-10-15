@@ -82,8 +82,6 @@ export interface StartDocumentSyncOptions {
    * the server would refuse it. Absent, every document may be pushed.
    */
   mayWrite?: (row: { owner_user_id: string | null }) => boolean;
-  /** Whether the space's nudge channel is subscribed. */
-  onChannel?: (up: boolean) => void;
   /**
    * The first pull of a document known only from the graph ended, with a
    * body or without one, and this tab's panes were told. Panes in the other
@@ -122,7 +120,6 @@ export function startDocumentSync(
   let engine: DocumentSync | null = null;
   let space: SpaceWatch | null = null;
   let unsubscribeChanges: (() => void) | null = null;
-  let unsubscribeNudges: (() => void) | null = null;
   let unsubscribePeers: (() => void) | null = null;
   const timers = new Map<DocumentId, ReturnType<typeof setTimeout>>();
   /**
@@ -255,9 +252,8 @@ export function startDocumentSync(
     starting = true;
     void (async () => {
       try {
-        const transport = createSupabaseTransport(client);
         engine = createDocumentSync({
-          transport,
+          transport: createSupabaseTransport(client),
           ledger: createPgliteLedger(db),
           journal: store.syncJournal,
           writer,
@@ -271,12 +267,6 @@ export function startDocumentSync(
           onPass: () => options.onPassSettled?.(),
           onError: (error) => options.onPassFailed?.(error),
         });
-        // A nudge is only a kick: what moved is read by the heads pass.
-        unsubscribeNudges = transport.subscribeSpace(
-          identity.spaceId,
-          () => space?.kick(),
-          (up) => options.onChannel?.(up)
-        );
         unsubscribeChanges = store.onChanged((event) => {
           // The local store's own document ids: its table CHECKs them.
           if (event.source === 'local' || event.localEdits)
@@ -326,7 +316,6 @@ export function startDocumentSync(
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       unsubscribeChanges?.();
-      unsubscribeNudges?.();
       unsubscribePeers?.();
       space?.stop();
       space = null;
