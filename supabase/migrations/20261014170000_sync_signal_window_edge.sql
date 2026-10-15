@@ -29,6 +29,17 @@
  *   a deletion still signals `graph-delete` only, and silences `graph` with
  *   it: the sweep it asks for pulls every table first.
  *
+ * the silence a signal states is the silence the server keeps
+ *   a signal tells the listening browsers how long the space stays silent
+ *   for its kind, and they pull once more when that silence ends. the
+ *   server keeps exactly that silence: a change inside it is not signaled,
+ *   the first change after it is, with the window as it is then. a change
+ *   in presence therefore takes effect from the next signal, never inside a
+ *   silence already stated: when the space empties, the 25 seconds stated
+ *   still hold; when it fills, the next change after the 1 second stated
+ *   signals at once, stating the longer window, and the browsers time their
+ *   last pull by it.
+ *
  * existing rows need nothing: a kind with no silence recorded signals at
  * its next change.
  */

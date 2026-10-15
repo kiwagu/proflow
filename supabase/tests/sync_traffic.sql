@@ -797,4 +797,70 @@ begin
 end
 $after$;
 
+-- C1 the silence a signal states is the silence the server keeps: a change
+-- in presence takes effect from the next signal, never inside a silence
+-- already stated, so the browsers' follow-up, timed by the window they were
+-- told, always covers it.
+do $contract$
+declare
+  v_org text := pg_temp.st_id('org');
+  u_m uuid := pg_temp.st_id('member')::uuid;
+  v_h text; v_i text; t_h text; t_i text;
+  w integer;
+begin
+  insert into public.spaces (organization_id, name, slug) values (v_org, 'ST H', 'st-h-' || substr(md5(random()::text),1,8)) returning id into v_h;
+  insert into public.spaces (organization_id, name, slug) values (v_org, 'ST I', 'st-i-' || substr(md5(random()::text),1,8)) returning id into v_i;
+  t_h := 'space:' || v_h || ':0';
+  t_i := 'space:' || v_i || ':0';
+
+  -- shrink: a signal states 25 s, then the space empties
+  perform pg_temp.st_present(v_h, 5000);
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_h, 'text', 'ST H one', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 shrink: a busy space signals a 25-second window',
+    pg_temp.st_signals(t_h) = 1
+      and (select (payload->>'window_ms')::int from realtime.messages where topic = t_h and event = 'changed' limit 1) = 25000);
+  delete from private.sync_presence where space_id = v_h;
+  w := private.sync_window_ms(v_h);
+  perform pg_temp.st_shift(v_h, '2 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_h, 'text', 'ST H two', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 shrink: the window is 1 s now, and a change at 2 s is still inside the stated silence',
+    w = 1000 and pg_temp.st_signals(t_h) = 1, format('window=%s signals=%s', w, pg_temp.st_signals(t_h)));
+  perform pg_temp.st_shift(v_h, '23.2 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_h, 'text', 'ST H three', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 shrink: the change at 25.2 s signals, with the 1-second window',
+    pg_temp.st_signals(t_h) = 2
+      and exists (select 1 from realtime.messages where topic = t_h and event = 'changed' and (payload->>'window_ms')::int = 1000),
+    format('signals=%s', pg_temp.st_signals(t_h)));
+
+  -- grow: a signal states 1 s, then the space fills
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_i, 'text', 'ST I one', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 grow: a quiet space signals a 1-second window',
+    pg_temp.st_signals(t_i) = 1
+      and (select (payload->>'window_ms')::int from realtime.messages where topic = t_i and event = 'changed' limit 1) = 1000);
+  perform pg_temp.st_present(v_i, 5000);
+  perform pg_temp.st_shift(v_i, '2 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_i, 'text', 'ST I two', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 grow: the change at 2 s is past the stated silence and signals, with the 25-second window',
+    pg_temp.st_signals(t_i) = 2
+      and exists (select 1 from realtime.messages where topic = t_i and event = 'changed' and (payload->>'window_ms')::int = 25000),
+    format('signals=%s', pg_temp.st_signals(t_i)));
+  perform pg_temp.st_shift(v_i, '2 seconds');
+  insert into public.knowledge_resources (space_id, kind, title, visibility, created_by, owner_user_id)
+  values (v_i, 'text', 'ST I three', 'space', u_m, u_m);
+  perform pg_temp.st_check('C1 grow: a change at 4 s is inside the 25 seconds just stated',
+    pg_temp.st_signals(t_i) = 2, format('signals=%s', pg_temp.st_signals(t_i)));
+
+  raise exception 'st_undo';
+exception when others then
+  if sqlerrm <> 'st_undo' then
+    perform pg_temp.st_check('C1 the silence a signal states is the one kept', false, sqlerrm);
+  end if;
+end
+$contract$;
+
 rollback;
