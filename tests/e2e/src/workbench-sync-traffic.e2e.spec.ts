@@ -8,8 +8,9 @@ import {
 } from './helpers/platform-org-bootstrap.js';
 
 /**
- * What an open workbench costs the server while nothing happens, and what
- * a reader costs while someone types.
+ * What an open workbench costs the server while nothing happens, what a
+ * reader costs while someone types, and how a change on one device reaches
+ * another.
  *
  * Idle, one browser asks the server once a minute — the change probe, the
  * presence beat and the session check — plus a full pass every five
@@ -17,9 +18,18 @@ import {
  * its own session check. Every request of the replica goes to the backend
  * mount on the page's own origin, never to the API host.
  *
- * The nudge channel must be up before anything is counted: with a broken
- * edge (no WebSocket upgrade on the backend mount) the workbench still
+ * A change reaches the other devices of the space through the space's
+ * signal channel: the database signals "something of this kind changed" at
+ * most once per throttle window, and each listening browser pulls. The
+ * signal channel must be up before anything is counted: with a broken edge
+ * (no WebSocket upgrade on the backend mount) the workbench still
  * converges, on a 15 s heartbeat, and only this check tells the two apart.
+ *
+ * Not covered here: the channel closing while no tab of a browser is
+ * visible. A headless page cannot be hidden from inside the test (its
+ * visibility state is the browser's, and a page brought to the back stays
+ * `visible` headless), so that row of the cadence is pinned by the unit
+ * tests of the cadence and the composition instead.
  */
 
 /**
@@ -95,10 +105,18 @@ async function channelUp(page: Page) {
       }
     )
     .toBe('up');
+  // Joined on the space's current topic; no membership change has moved
+  // its epoch.
+  expect(
+    await page.evaluate(() => document.documentElement.dataset.syncEpoch)
+  ).toBe('0');
 }
 
+const rowsOn = (page: Page) =>
+  page.getByTestId('files-section').getByTestId('file-row');
+
 test.describe('Workbench sync traffic', () => {
-  test('@full an idle workbench costs under ten requests a minute, a second tab adds only its session check, and a reader converges while someone types', async ({
+  test('@full an idle workbench costs under ten requests a minute, a second tab adds only its session check, a reader converges while someone types, and changes reach another device through the space signal', async ({
     browser,
     page,
     seededUser,
@@ -172,10 +190,7 @@ test.describe('Workbench sync traffic', () => {
         timeout: 120_000,
       });
       await channelUp(reader);
-      const row = reader
-        .getByTestId('files-section')
-        .getByTestId('file-row')
-        .first();
+      const row = rowsOn(reader).first();
       await expect(row).toBeVisible({ timeout: 60_000 });
       await row.click();
       const readerEditor = reader.locator('[contenteditable="true"]').first();
@@ -202,11 +217,45 @@ test.describe('Workbench sync traffic', () => {
       const typed = 'Reader check.' + words.join('');
       await expect(readerEditor).toHaveText(typed, { timeout: 60_000 });
 
+      // The signal path: five new documents on this device, two seconds
+      // apart, reach the reader through the space's signals — kicks of its
+      // graph pull, not its minute heartbeat.
+      await reader.evaluate(() => {
+        delete document.documentElement.dataset.syncLastSignal;
+      });
+      const rowsBefore = await rowsOn(reader).count();
+      const signalPath = record([reader]);
+      for (let i = 0; i < 5; i++) {
+        await page.getByTestId('new-document').click();
+        await page.waitForTimeout(2_000);
+      }
+      await expect(rowsOn(reader)).toHaveCount(rowsBefore + 5, {
+        timeout: 30_000,
+      });
+      const signalPathReader = signalPath.stop();
+      console.log(
+        'signal path, reader:',
+        JSON.stringify(signalPathReader.buckets)
+      );
+      expect(
+        await reader.evaluate(
+          () => document.documentElement.dataset.syncLastSignal ?? null
+        )
+      ).toMatch(/^(graph|graph-delete|documents):[1-9]\d*$/);
+      expect(
+        signalPathReader.buckets['backend:knowledge_resources'] ?? 0
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        signalPathReader.urls.filter((url) => url.includes('api.proflow.local'))
+      ).toEqual([]);
+      await channelUp(reader);
+
       console.log(
         JSON.stringify({
           idleOneTab: idleOneTab.total,
           idleTwoTabs: idleTwoTabs.total,
           typing30sReaderRequests: typing30s.total,
+          signalPathReaderRequests: signalPathReader.total,
         })
       );
     } finally {

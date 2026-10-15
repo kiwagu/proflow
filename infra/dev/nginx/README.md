@@ -51,9 +51,12 @@ the name of the cookie the platform's own client keeps the session under
 Check it: `curl -sk -o /dev/null -w '%{http_code}\n' https://proflow.local/backend/rest/v1/`
 answers like `https://api.proflow.local/rest/v1/` (401 without a key), and a
 WebSocket upgrade to `/backend/realtime/v1/websocket?apikey=…` answers `101`.
-In the workbench, `<html data-sync-channel>` reads `up` once the nudge channel
-is subscribed; `down` means it is not (for example an edge without the upgrade
-headers) and replication has fallen back to a 15 s heartbeat.
+The WebSocket carries the space's change signals (private Broadcast topics
+the database writes to, at most once per throttle window per space), not row
+changes. In the workbench, `<html data-sync-channel>` reads `up` once the
+signal channel is subscribed (`data-sync-epoch` names the topic's epoch);
+`down` means it is not (for example an edge without the upgrade headers) and
+replication has fallen back to a 15 s heartbeat.
 
 The template is rendered when the container starts: after changing it or
 `PROFLOW_BACKEND_PATH`, recreate the container
