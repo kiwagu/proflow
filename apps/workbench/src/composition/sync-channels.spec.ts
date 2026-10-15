@@ -141,20 +141,29 @@ describe('joining a space over Realtime', () => {
     leave();
   });
 
-  it('holds a window to the 30 s the server can state at most, so no timer outgrows what a browser can count', () => {
+  it("takes a window as the server states it up to the server's ten-minute ceiling, and holds a longer one to it", () => {
     const f = fakeClient();
     const h = recorder();
     const leave = createRealtimeSyncChannels(f.client).joinSpace(TOPIC, h);
-    for (const window_ms of [30_000, 30_001, 2 ** 31, Number.MAX_SAFE_INTEGER])
+    for (const window_ms of [
+      60_000,
+      600_000,
+      600_001,
+      700_000,
+      2 ** 31,
+      Number.MAX_SAFE_INTEGER,
+    ])
       f.opened[0]!.deliver('changed', { kind: 'documents', window_ms });
-    expect(h.calls).toEqual([
-      ['signal', { kind: 'documents', windowMs: 30_000 }],
-      ['signal', { kind: 'documents', windowMs: 30_000 }],
-      ['signal', { kind: 'documents', windowMs: 30_000 }],
-      ['signal', { kind: 'documents', windowMs: 30_000 }],
+    expect(h.calls.map(([, signal]) => signal)).toEqual([
+      { kind: 'documents', windowMs: 60_000 },
+      { kind: 'documents', windowMs: 600_000 },
+      { kind: 'documents', windowMs: 600_000 },
+      { kind: 'documents', windowMs: 600_000 },
+      { kind: 'documents', windowMs: 600_000 },
+      { kind: 'documents', windowMs: 600_000 },
     ]);
-    expect(SIGNAL_WINDOW_MAX_MS).toBe(30_000);
-    leave();
+    expect(SIGNAL_WINDOW_MAX_MS).toBe(600_000);
+    void leave();
   });
 
   it('hands a rekey on with its epoch, and drops one it cannot read', () => {

@@ -40,6 +40,15 @@
  *   signals at once, stating the longer window, and the browsers time their
  *   last pull by it.
  *
+ * one ceiling for the window, shared with the browsers
+ *   private.sync_config's window bounds are owner-editable, so they are
+ *   held: the ceiling (window_max_ms) is at most ten minutes, the floor
+ *   (window_min_ms) at least a millisecond and never above the ceiling. the
+ *   browsers hold any window they are told to the same ten minutes, so the
+ *   last pull they time always covers the silence the server keeps. the
+ *   floor-under-ceiling check spans two rows, so it is a constraint trigger;
+ *   it can be deferred to change both bounds in two statements.
+ *
  * existing rows need nothing: a kind with no silence recorded signals at
  * its next change.
  */
@@ -163,3 +172,30 @@ end;
 $$;
 
 revoke all on function private.sync_mark(text, text) from public, anon, authenticated;
+
+-- the window bounds: at most ten minutes, and a floor that states a window
+alter table private.sync_config drop constraint if exists sync_config_window_bounds;
+alter table private.sync_config add constraint sync_config_window_bounds
+  check (key not in ('window_min_ms', 'window_max_ms') or (value >= 1 and value <= 600000));
+
+create or replace function private.sync_config_windows_ordered()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if (select c.value from private.sync_config c where c.key = 'window_min_ms')
+     > (select c.value from private.sync_config c where c.key = 'window_max_ms') then
+    raise exception 'sync_config: window_min_ms must not exceed window_max_ms';
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function private.sync_config_windows_ordered() from public, anon, authenticated;
+
+drop trigger if exists sync_config_windows_ordered on private.sync_config;
+create constraint trigger sync_config_windows_ordered
+  after insert or update on private.sync_config
+  deferrable initially immediate
+  for each row execute function private.sync_config_windows_ordered();

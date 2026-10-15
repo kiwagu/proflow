@@ -356,4 +356,31 @@ describe('the space signal channel', () => {
     expect(events.at(-1)).toBe('up 0');
     channel.close();
   });
+
+  it('a window the server stated above 30 s is followed up when it ends, not before', async () => {
+    const f = fakeRealtimeClient({ leaveMs: 200 });
+    const kicks: number[] = [];
+    const channel = createSpaceChannel({
+      channels: createRealtimeSyncChannels(f.client),
+      clock: {
+        now: () => Date.now(),
+        setTimeout: (run, ms) => setTimeout(run, ms),
+        clearTimeout: (handle) =>
+          clearTimeout(handle as ReturnType<typeof setTimeout>),
+        random: () => 0,
+      },
+      spaceId: SPACE,
+      epoch: async () => 0,
+      onKick: () => kicks.push(Date.now()),
+      onUp: () => undefined,
+      onDown: () => undefined,
+    });
+    channel.open();
+    await flush();
+    f.created[0]!.accept();
+    f.created[0]!.deliver('changed', { kind: 'graph', window_ms: 60_000 });
+    await vi.advanceTimersByTimeAsync(120 * SECOND);
+    expect(kicks).toEqual([0, 60 * SECOND]);
+    channel.close();
+  });
 });

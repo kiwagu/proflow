@@ -863,4 +863,33 @@ exception when others then
 end
 $contract$;
 
+-- C2 one ceiling for the window, shared with the browsers: the longest
+-- window the server may state is ten minutes, and the floor is not above it.
+create or replace function pg_temp.st_config_refusal(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  raise exception 'st_undo';
+exception when others then
+  return case when sqlerrm = 'st_undo' then null else sqlerrm end;
+end $$;
+
+do $ceiling$
+declare refused text;
+begin
+  refused := pg_temp.st_config_refusal($q$update private.sync_config set value = 700000 where key = 'window_max_ms'$q$);
+  perform pg_temp.st_check('C2 a window ceiling above ten minutes is refused', refused is not null, refused);
+  refused := pg_temp.st_config_refusal($q$update private.sync_config set value = 600000 where key = 'window_max_ms'$q$);
+  perform pg_temp.st_check('C2 ten minutes is accepted', refused is null, refused);
+  refused := pg_temp.st_config_refusal($q$update private.sync_config set value = 40000 where key = 'window_min_ms'$q$);
+  perform pg_temp.st_check('C2 a floor above the ceiling is refused', refused is not null, refused);
+  refused := pg_temp.st_config_refusal($q$update private.sync_config set value = 0 where key = 'window_min_ms'$q$);
+  perform pg_temp.st_check('C2 a floor of nothing is refused: a window must be stated', refused is not null, refused);
+  refused := pg_temp.st_config_refusal($q$update private.sync_config set value = case key when 'window_min_ms' then 60000 else 120000 end where key in ('window_min_ms', 'window_max_ms')$q$);
+  perform pg_temp.st_check('C2 floor and ceiling raised together in one statement are accepted', refused is null, refused);
+  perform pg_temp.st_check('C2 and nothing of the above stuck',
+    (select jsonb_object_agg(key, value) from private.sync_config where key like 'window_%')
+      = '{"window_min_ms": 1000, "window_max_ms": 30000}'::jsonb);
+end
+$ceiling$;
+
 rollback;
