@@ -70,6 +70,7 @@ describe('the change probe', () => {
       graph: true,
       graphDelete: false,
       documents: false,
+      epoch: 0,
     });
     expect(d.probe).toHaveBeenCalledWith(SPACE);
   });
@@ -89,6 +90,7 @@ describe('the change probe', () => {
       graph: false,
       graphDelete: false,
       documents: true,
+      epoch: 0,
     });
   });
 
@@ -104,6 +106,7 @@ describe('the change probe', () => {
       graph: true,
       graphDelete: true,
       documents: false,
+      epoch: 0,
     });
   });
 
@@ -179,6 +182,46 @@ describe('the change probe', () => {
     expect((await d.changes.heartbeat(SPACE, { visible: false })).graph).toBe(
       true
     );
+  });
+
+  it('states the epoch of the space the server answered with', async () => {
+    const d = device([row(SERVER, { epoch: 3 })]);
+    expect((await d.changes.heartbeat(SPACE, { visible: false })).epoch).toBe(
+      3
+    );
+  });
+
+  it('refuses an answer whose epoch is not a count', async () => {
+    for (const epoch of [-1, 1.5, Number.NaN, '1' as unknown as number]) {
+      const d = device([row(SERVER, { epoch })]);
+      await expect(
+        d.changes.heartbeat(SPACE, { visible: false })
+      ).rejects.toThrow(/epoch/);
+    }
+  });
+
+  it('beats presence at most once a minute, however often the heartbeat runs', async () => {
+    const answers = Array.from({ length: 9 }, (_, i) =>
+      row(SERVER + i * 15 * SECOND)
+    );
+    const d = device(answers);
+    for (let i = 0; i < 9; i++) {
+      await d.changes.heartbeat(SPACE, { visible: true });
+      d.wait(15 * SECOND);
+    }
+    // Heartbeats at 0, 15, … 120 s: beats at 0, 60 and 120 s.
+    expect(d.beat).toHaveBeenCalledTimes(3);
+  });
+
+  it('a beat that failed is sent again by the next heartbeat', async () => {
+    const d = device([row(SERVER), row(SERVER + 15 * SECOND)]);
+    d.beat.mockRejectedValueOnce(new Error('presence beat failed'));
+    await expect(d.changes.heartbeat(SPACE, { visible: true })).rejects.toThrow(
+      'presence beat failed'
+    );
+    d.wait(15 * SECOND);
+    await d.changes.heartbeat(SPACE, { visible: true });
+    expect(d.beat).toHaveBeenCalledTimes(2);
   });
 
   it('refuses an answer that carries no server time', async () => {

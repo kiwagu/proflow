@@ -21,10 +21,12 @@ function actions() {
   const heartbeats: { at: number; visible: boolean }[] = [];
   const fullPasses: number[] = [];
   const catchUps: number[] = [];
+  const channelLog: { at: number; open: boolean }[] = [];
   return {
     heartbeats,
     fullPasses,
     catchUps,
+    channelLog,
     heartbeat: vi.fn(async (input: { visible: boolean }) => {
       heartbeats.push({ at: Date.now(), visible: input.visible });
     }),
@@ -34,6 +36,9 @@ function actions() {
     catchUp: vi.fn(() => {
       catchUps.push(Date.now());
     }),
+    channels: vi.fn((open: boolean) => {
+      channelLog.push({ at: Date.now(), open });
+    }),
   };
 }
 
@@ -42,6 +47,7 @@ const clock = {
   setTimeout: (run: () => void, ms: number) => setTimeout(run, ms),
   clearTimeout: (handle: unknown) =>
     clearTimeout(handle as ReturnType<typeof setTimeout>),
+  random: () => 0.5,
 };
 
 beforeEach(() => {
@@ -227,6 +233,86 @@ describe('the leader cadence', () => {
       { at: 360 * SECOND, visible: false },
     ]);
     cadence.stop();
+  });
+
+  it('the channels open at start while the browser is visible, and stay closed while it is not', async () => {
+    const shown = actions();
+    const visible = createSyncCadence(clock, shown, {
+      visible: true,
+      channelUp: false,
+    });
+    visible.start();
+    expect(shown.channelLog).toEqual([{ at: 0, open: true }]);
+    visible.stop();
+
+    const hidden = actions();
+    const cadence = createSyncCadence(clock, hidden, {
+      visible: false,
+      channelUp: false,
+    });
+    cadence.start();
+    await vi.advanceTimersByTimeAsync(600 * SECOND);
+    expect(hidden.channelLog).toEqual([{ at: 0, open: false }]);
+    cadence.stop();
+  });
+
+  it('the channels close only once no tab of the browser is visible, and reopen when one is', async () => {
+    const a = actions();
+    const cadence = createSyncCadence(clock, a, {
+      visible: true,
+      channelUp: true,
+    });
+    cadence.start();
+    cadence.peerVisible();
+    await vi.advanceTimersByTimeAsync(10 * SECOND);
+    // This tab is hidden, but another was looked at 10 s ago: still open.
+    cadence.setVisible(false);
+    await vi.advanceTimersByTimeAsync(34 * SECOND);
+    expect(a.channelLog).toEqual([{ at: 0, open: true }]);
+    // The other tab's beat runs out at 45 s: nobody looks any more.
+    await vi.advanceTimersByTimeAsync(1 * SECOND);
+    expect(a.channelLog).toEqual([
+      { at: 0, open: true },
+      { at: 45 * SECOND, open: false },
+    ]);
+    // Another tab is turned to: open again.
+    await vi.advanceTimersByTimeAsync(15 * SECOND);
+    cadence.peerVisible();
+    // This one too: nothing changes for the browser.
+    cadence.setVisible(true);
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(a.channelLog).toEqual([
+      { at: 0, open: true },
+      { at: 45 * SECOND, open: false },
+      { at: 60 * SECOND, open: true },
+    ]);
+    cadence.setVisible(false);
+    await vi.advanceTimersByTimeAsync(39 * SECOND);
+    expect(a.channelLog).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(1 * SECOND);
+    expect(a.channelLog.at(-1)).toEqual({ at: 105 * SECOND, open: false });
+    cadence.stop();
+  });
+
+  it('a hidden leader keeps the channels open while another tab keeps being looked at', async () => {
+    const a = actions();
+    const cadence = createSyncCadence(clock, a, {
+      visible: false,
+      channelUp: false,
+    });
+    cadence.start();
+    cadence.peerVisible();
+    for (let i = 0; i < 8; i++) {
+      await vi.advanceTimersByTimeAsync(30 * SECOND);
+      cadence.peerVisible();
+    }
+    expect(a.channelLog).toEqual([
+      { at: 0, open: false },
+      { at: 0, open: true },
+    ]);
+    cadence.stop();
+    await vi.advanceTimersByTimeAsync(120 * SECOND);
+    expect(a.channelLog).toHaveLength(2);
   });
 
   it('an explicit catch-up runs now and again five seconds later, and leaves the heartbeat where it was', async () => {

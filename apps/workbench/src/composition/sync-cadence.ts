@@ -3,13 +3,14 @@
  * state machine over an injected clock.
  *
  * The engines keep no clock of their own; this decides when their cycles
- * are worth running. Three actions, three triggers:
+ * are worth running. Four actions:
  *
  *   heartbeat  the change probe (and the presence beat while someone looks
  *              at the space): every minute while a tab of this browser is
- *              visible and the nudge channel is up, every 15 s while the
- *              channel is down (nudges cannot arrive, so the probe is what
- *              keeps the space fresh), every 5 min while no tab is visible.
+ *              visible and the space's signal channel is up, every 15 s
+ *              while the channel is down (signals cannot arrive, so the
+ *              probe is what keeps the space fresh), every 5 min while no
+ *              tab is visible.
  *   full pass  every table pulled with an inventory sweep, every head read:
  *              every 5 min while visible; while hidden the 5-min heartbeat
  *              is the full pass. It closes what a probe cannot see (a commit
@@ -18,6 +19,9 @@
  *              this tab becomes visible and when the channel comes up. The
  *              echo exists because a channel reports itself subscribed a few
  *              seconds before changes start reaching it.
+ *   channels   open while some tab of the browser is visible, closed while
+ *              none is: said at start and whenever that changes. Nobody
+ *              looking needs no push; the 5-min heartbeat keeps the space.
  *
  * "Visible" is the browser's, not this tab's: another tab that is being
  * looked at says so every 30 s, and that keeps the visible cadence for 45 s.
@@ -34,6 +38,8 @@ export interface CadenceClock {
   now(): number;
   setTimeout(run: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  /** In [0, 1): what spreads the browsers of a space over a window. */
+  random(): number;
 }
 
 export interface CadenceActions {
@@ -41,6 +47,8 @@ export interface CadenceActions {
   heartbeat(input: { visible: boolean }): Promise<void>;
   fullPass(): void;
   catchUp(): void;
+  /** Some tab of the browser is visible (open) or none is (closed). */
+  channels(open: boolean): void;
 }
 
 export interface SyncCadence {
@@ -48,7 +56,7 @@ export interface SyncCadence {
   stop(): void;
   /** This tab became visible (true) or hidden (false). */
   setVisible(visible: boolean): void;
-  /** The nudge channel is subscribed (true) or not (false). */
+  /** The signal channel is subscribed (true) or not (false). */
   setChannelUp(up: boolean): void;
   /** Another tab of this browser is visible right now. */
   peerVisible(): void;
@@ -77,11 +85,39 @@ export function createSyncCadence(
   let heartbeatTimer: unknown = null;
   let fullPassTimer: unknown = null;
   let echoTimer: unknown = null;
+  /** When another tab's visible beat runs out, if this one is hidden. */
+  let peerExpiryTimer: unknown = null;
+  /** What `channels` was last told. */
+  let channelsOpen = false;
 
   const live = () => started && !stopped;
 
   const browserVisible = () =>
     ownVisible || clock.now() - lastPeerVisible < PEER_VISIBLE_TTL_MS;
+
+  /**
+   * Say whether the channels should be open, when that changed; and, while
+   * only another tab's beat keeps the browser visible, look again when the
+   * beat runs out.
+   */
+  const followVisibility = () => {
+    const visible = browserVisible();
+    if (visible !== channelsOpen) {
+      channelsOpen = visible;
+      actions.channels(visible);
+    }
+    clear(peerExpiryTimer);
+    peerExpiryTimer =
+      visible && !ownVisible
+        ? clock.setTimeout(
+            () => {
+              peerExpiryTimer = null;
+              if (live()) followVisibility();
+            },
+            Math.max(0, lastPeerVisible + PEER_VISIBLE_TTL_MS - clock.now())
+          )
+        : null;
+  };
 
   const interval = () =>
     !browserVisible()
@@ -162,6 +198,9 @@ export function createSyncCadence(
       started = true;
       anchor = clock.now();
       lastFullPass = clock.now();
+      channelsOpen = browserVisible();
+      actions.channels(channelsOpen);
+      followVisibility();
       catchUp();
       armHeartbeat();
       armFullPass();
@@ -171,12 +210,14 @@ export function createSyncCadence(
       clear(heartbeatTimer);
       clear(fullPassTimer);
       clear(echoTimer);
-      heartbeatTimer = fullPassTimer = echoTimer = null;
+      clear(peerExpiryTimer);
+      heartbeatTimer = fullPassTimer = echoTimer = peerExpiryTimer = null;
     },
     setVisible(visible) {
       if (visible === ownVisible) return;
       ownVisible = visible;
       if (!live()) return;
+      followVisibility();
       if (visible) {
         catchUp();
         anchor = clock.now();
@@ -196,7 +237,9 @@ export function createSyncCadence(
     peerVisible() {
       const wasVisible = browserVisible();
       lastPeerVisible = clock.now();
-      if (live() && !wasVisible) armHeartbeat();
+      if (!live()) return;
+      followVisibility();
+      if (!wasVisible) armHeartbeat();
     },
     catchUpNow() {
       if (live()) catchUp();

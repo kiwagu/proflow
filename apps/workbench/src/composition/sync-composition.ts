@@ -19,31 +19,41 @@ import {
   type StartGraphSyncOptions,
   SYNC_SETTINGS_KEY,
 } from './sync';
-import { createSyncCadence, type SyncCadence } from './sync-cadence';
+import {
+  type CadenceClock,
+  createSyncCadence,
+  type SyncCadence,
+} from './sync-cadence';
+import { createRealtimeSyncChannels } from './sync-channels';
 import { createSyncLeader } from './sync-leader';
 import { createSyncPeers } from './sync-peers';
 import { createChangeProbe, type ProbeRow } from './sync-probe';
+import { createSpaceChannel } from './sync-space-channel';
 
 /**
  * Replication of the checked-out space, per browser rather than per tab.
  *
  * One tab of the browser — the one holding the Web Lock named after the
- * user and the space — builds the client, runs both engines and keeps their
- * nudge channels open; it drives them on a cadence of its own (see
- * sync-cadence): a change probe once a minute, a full pass every five, a
- * catch-up whenever the person turns back or the channel comes up. The
- * other tabs build nothing: they say when they are looked at, and hand the
- * leader what they wrote (graph writes here; document writes through the
- * document store's own announcer). When the leader closes, the next tab in
- * line takes over.
+ * user and the space — builds the client, runs both engines and listens to
+ * the space's signal channel (see sync-space-channel): a signal that
+ * something of a kind changed kicks that kind's engine. It drives them on a
+ * cadence of its own too (see sync-cadence): a change probe once a minute, a
+ * full pass every five, a catch-up whenever the person turns back or the
+ * channel comes up; the channel is closed while no tab of the browser is
+ * visible. The other tabs build nothing: they say when they are looked at,
+ * and hand the leader what they wrote (graph writes here; document writes
+ * through the document store's own announcer). When the leader closes, the
+ * next tab in line takes over.
  *
  * Starting also needs a stored sync target (the session states it) and the
  * network; neither being met is a working state, not a failure — the editor
  * is local-first, and its changes wait in the journal.
  *
  * `<html data-sync-leader>` says whether this tab is the leader (1/0), and
- * on the leader `data-sync-channel` whether the nudge channel is up or down:
- * a broken edge shows up there rather than as silence.
+ * on the leader `data-sync-channel` whether the signal channel is up or
+ * down: a broken edge shows up there rather than as silence. Beside it, for
+ * diagnostics, `data-sync-epoch` is the epoch of the topic joined and
+ * `data-sync-last-signal` the last signal heard (`kind:window_ms`).
  */
 
 /** How often a visible tab says so to the leader; the leader keeps it for 45 s. */
@@ -122,6 +132,18 @@ export function startSync(options: StartSyncOptions): SyncHandle {
 
   const run = (client: SupabaseClient<Database>): Running => {
     root.dataset.syncChannel = 'down';
+    /** Built below; the channel reports to it only once it runs. */
+    const held: { cadence?: SyncCadence } = {};
+    const setChannel = (up: boolean) => {
+      root.dataset.syncChannel = up ? 'up' : 'down';
+      held.cadence?.setChannelUp(up);
+    };
+    const clock: CadenceClock = {
+      now: () => Date.now(),
+      setTimeout: (run, ms) => window.setTimeout(run, ms),
+      clearTimeout: (handle) => window.clearTimeout(handle as number),
+      random: () => Math.random(),
+    };
 
     const documents = startDocumentSync({
       ...options.documents,
@@ -156,16 +178,46 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       graph.kick();
       documents.kick();
     };
-    const probe = createChangeProbe({
-      probe: async (spaceId) => {
-        const { data, error } = await client.rpc('sync_probe', {
-          p_space_id: spaceId,
-        });
-        if (error) throw new Error(`change probe failed: ${error.message}`);
-        const row = (data as ProbeRow[] | null)?.[0];
-        if (!row) throw new Error('change probe failed: no answer');
-        return row;
+    const askProbe = async (spaceId: SpaceId): Promise<ProbeRow> => {
+      const { data, error } = await client.rpc('sync_probe', {
+        p_space_id: spaceId,
+      });
+      if (error) throw new Error(`change probe failed: ${error.message}`);
+      const row = (data as ProbeRow[] | null)?.[0];
+      if (!row) throw new Error('change probe failed: no answer');
+      return row;
+    };
+    /** The space's epoch as the probe last stated it. */
+    let lastEpoch: number | null = null;
+    const spaceChannel = createSpaceChannel({
+      channels: createRealtimeSyncChannels(client),
+      clock,
+      spaceId: identity.spaceId,
+      epoch: async ({ fresh }) => {
+        if (!fresh && lastEpoch !== null) return lastEpoch;
+        const { epoch } = await askProbe(identity.spaceId);
+        if (!Number.isInteger(epoch) || epoch < 0)
+          throw new Error('the change probe answered without an epoch');
+        lastEpoch = epoch;
+        return epoch;
       },
+      onKick: (kind) => {
+        // A deletion is worth a sweep: a watermark pull cannot see it.
+        if (kind === 'graph-delete') graph.kick({ sweep: true });
+        else if (kind === 'graph') graph.kick();
+        else documents.kick();
+      },
+      onUp: ({ epoch }) => {
+        root.dataset.syncEpoch = String(epoch);
+        setChannel(true);
+      },
+      onDown: () => setChannel(false),
+      onSignal: ({ kind, windowMs }) => {
+        root.dataset.syncLastSignal = `${kind}:${windowMs}`;
+      },
+    });
+    const probe = createChangeProbe({
+      probe: askProbe,
       beat: async (spaceId) => {
         const { error } = await client.rpc('sync_presence_beat', {
           p_space_id: spaceId,
@@ -177,17 +229,16 @@ export function startSync(options: StartSyncOptions): SyncHandle {
     /** The last heartbeat failed: the next one that does not catches up. */
     let failed = false;
     const cadence = createSyncCadence(
-      {
-        now: () => Date.now(),
-        setTimeout: (run, ms) => window.setTimeout(run, ms),
-        clearTimeout: (handle) => window.clearTimeout(handle as number),
-      },
+      clock,
       {
         heartbeat: async ({ visible }) => {
           try {
             const changed = await probe.heartbeat(identity.spaceId, {
               visible,
             });
+            // A rekey the channel missed: the probe names the topic too.
+            lastEpoch = changed.epoch;
+            spaceChannel.epochSeen(changed.epoch);
             // Recovered from a failed look: one pass of each, whose push
             // outcome is what withdraws the notice the failure left.
             const recovering = failed;
@@ -196,7 +247,7 @@ export function startSync(options: StartSyncOptions): SyncHandle {
             // probe says: the probe has already moved past the change that
             // pass was for, and would not ask again before the full pass.
             // The engines keep the account themselves — whoever asked (this
-            // heartbeat, a nudge, their own first pass) — so a sweep or a
+            // heartbeat, a signal, their own first pass) — so a sweep or a
             // full read stays owed until one of its kind goes through.
             const graphOwed = graph.owed();
             const documentsOwed = documents.owed();
@@ -217,9 +268,15 @@ export function startSync(options: StartSyncOptions): SyncHandle {
           documents.kick({ full: true });
         },
         catchUp,
+        // Nobody looks at the space: no push is worth a connection.
+        channels: (open) => {
+          if (open) spaceChannel.open();
+          else spaceChannel.close();
+        },
       },
       { visible: page.visible(), channelUp: false }
     );
+    held.cadence = cadence;
     cadence.start();
     return {
       graph,
@@ -227,9 +284,12 @@ export function startSync(options: StartSyncOptions): SyncHandle {
       catchUp,
       stop() {
         cadence.stop();
+        spaceChannel.close();
         graph.stop();
         documents.stop();
         delete root.dataset.syncChannel;
+        delete root.dataset.syncEpoch;
+        delete root.dataset.syncLastSignal;
       },
     };
   };

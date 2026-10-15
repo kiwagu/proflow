@@ -1,4 +1,5 @@
 import type { SpaceId } from '@workspace/entity-id';
+import { HEARTBEAT_UP_MS } from './sync-cadence';
 
 /**
  * The heartbeat's question to the server: did anything of each kind change
@@ -15,6 +16,11 @@ import type { SpaceId } from '@workspace/entity-id';
  * a five-second overlap. The overlap re-kicks a change marked just before a
  * look once more: a write inside the second the mark was taken leaves no new
  * mark, and may have committed after the pull the first kick ran.
+ *
+ * The answer also states the space's epoch, which names the topic its
+ * signals go to. Presence rides along with the probe while someone looks at
+ * the space, at most once a minute whatever the heartbeat's own interval:
+ * the server counts beats per minute, and a browser is one browser.
  */
 
 /** The probe's answer, as the server sends it. */
@@ -40,10 +46,12 @@ export interface ChangeProbe {
   heartbeat(
     spaceId: SpaceId,
     input: { visible: boolean }
-  ): Promise<ChangedKinds>;
+  ): Promise<ChangedKinds & { epoch: number }>;
 }
 
 export const PROBE_OVERLAP_MS = 5_000;
+/** A presence beat at most this often. */
+export const PRESENCE_BEAT_MS = HEARTBEAT_UP_MS;
 
 type Kind = keyof ChangedKinds;
 
@@ -59,19 +67,32 @@ export function createChangeProbe(deps: {
   const overlap = deps.overlapMs ?? PROBE_OVERLAP_MS;
   /** Server time of the last look, per kind; none before the first. */
   const lastLook = new Map<Kind, number>();
+  /** When presence last went out, on this device's clock. */
+  let lastBeat = -Infinity;
 
   return {
     async heartbeat(spaceId, { visible }) {
       const askedAt = now();
       // Presence only while someone looks at the space; it rides along with
       // the probe rather than after it.
+      const beat = visible && askedAt - lastBeat >= PRESENCE_BEAT_MS;
+      const beatBefore = lastBeat;
+      if (beat) lastBeat = askedAt;
       const [row] = await Promise.all([
         deps.probe(spaceId),
-        visible ? deps.beat(spaceId) : Promise.resolve(),
+        beat
+          ? deps.beat(spaceId).catch((error: unknown) => {
+              // Not counted: the next heartbeat beats again.
+              lastBeat = beatBefore;
+              throw error;
+            })
+          : Promise.resolve(),
       ]);
       const probedAt = Date.parse(row.probed_at);
       if (!Number.isFinite(probedAt))
         throw new Error('the change probe answered without a server time');
+      if (!Number.isInteger(row.epoch) || row.epoch < 0)
+        throw new Error('the change probe answered without an epoch');
       // Before the first look, "the last look" is when this page started:
       // the engines' first cycles read everything up to then. In server
       // time, that is the answer's time less how long the page has run.
@@ -95,7 +116,7 @@ export function createChangeProbe(deps: {
           at !== null && Number.isFinite(at) ? Math.max(at, probedAt) : probedAt
         );
       }
-      return changed;
+      return { ...changed, epoch: row.epoch };
     },
   };
 }

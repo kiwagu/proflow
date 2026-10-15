@@ -1,3 +1,5 @@
+import type { SpaceChannelHandlers, SyncChannels } from '../sync-channels';
+
 /**
  * In-memory stand-ins for the two browser primitives the sync composition
  * coordinates tabs with: Web Locks and BroadcastChannel. Each behaves the
@@ -97,5 +99,47 @@ export function fakeChannelBus() {
     /** One tab's end of the channel. */
     open: (name = 'bus') =>
       new FakeChannel(name) as unknown as BroadcastChannel,
+  };
+}
+
+/** One join of a space topic, as the fake channels recorded it. */
+export interface FakeSpaceJoin {
+  topic: string;
+  handlers: SpaceChannelHandlers;
+  left: boolean;
+}
+
+/**
+ * The channel seam with no network behind it: every join is recorded, and
+ * the test speaks for the server through the join's handlers. A left join
+ * hears nothing more, as the real seam promises.
+ */
+export function fakeSyncChannels() {
+  const joins: FakeSpaceJoin[] = [];
+  const channels: SyncChannels = {
+    joinSpace(topic, handlers) {
+      const join: FakeSpaceJoin = {
+        topic,
+        left: false,
+        handlers: {
+          onSignal: (signal) => !join.left && handlers.onSignal(signal),
+          onRekey: (next) => !join.left && handlers.onRekey(next),
+          onSubscribed: () => !join.left && handlers.onSubscribed(),
+          onDown: (reason) => !join.left && handlers.onDown(reason),
+        },
+      };
+      joins.push(join);
+      return () => {
+        join.left = true;
+      };
+    },
+  };
+  return {
+    channels,
+    joins,
+    /** The join still open, if any. */
+    live: () => joins.filter((join) => !join.left),
+    /** The last join made. */
+    last: () => joins[joins.length - 1],
   };
 }

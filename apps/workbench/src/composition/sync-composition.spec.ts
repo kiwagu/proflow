@@ -8,59 +8,73 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * a client; this covers who gets one, and the cadence around them.
  */
 
-const { createBrowserClient, startGraphSync, startDocumentSync, clients } =
-  vi.hoisted(() => {
-    type Rpc = (
-      fn: string,
-      args: Record<string, unknown>
-    ) => Promise<{ data: unknown; error: { message: string } | null }>;
-    const clients: { rpc: ReturnType<typeof vi.fn<Rpc>> }[] = [];
-    const engine = () => ({
-      stop: vi.fn(),
-      kick: vi.fn(),
-      graphPulled: vi.fn(),
-      graphPushed: vi.fn(),
-      /** What the engine's failed passes still owe; nothing by default. */
-      owed: vi.fn((): { sweep?: boolean; full?: boolean } | null => null),
-    });
-    return {
-      clients,
-      createBrowserClient: vi.fn(
-        (_url: string, _key: string, _options?: unknown) => {
-          const client = {
-            rpc: vi.fn<Rpc>(async (fn) =>
-              fn === 'sync_probe'
-                ? {
-                    data: [
-                      {
-                        epoch: 0,
-                        graph_changed_at: null,
-                        graph_deleted_at: null,
-                        documents_changed_at: null,
-                        probed_at: new Date().toISOString(),
-                      },
-                    ],
-                    error: null,
-                  }
-                : { data: null, error: null }
-            ),
-          };
-          clients.push(client);
-          return client;
-        }
-      ),
-      startGraphSync: vi.fn(
-        (_options: {
-          client: unknown;
-          onPulled?: (outcome: { applied: number }) => void;
-          onPushed?: (outcome: { accepted: number }) => void;
-        }) => engine()
-      ),
-      startDocumentSync: vi.fn(
-        (_options: { client: unknown; peers?: unknown }) => engine()
-      ),
-    };
+const {
+  createBrowserClient,
+  startGraphSync,
+  startDocumentSync,
+  clients,
+  probeEpoch,
+  channelFakes,
+} = vi.hoisted(() => {
+  type Rpc = (
+    fn: string,
+    args: Record<string, unknown>
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  const clients: { rpc: ReturnType<typeof vi.fn<Rpc>> }[] = [];
+  /** The space's epoch, as the server's probe states it. */
+  const probeEpoch = { value: 0 };
+  /** The channel seams the leaders built, one per client. */
+  const channelFakes: ReturnType<
+    typeof import('./testing/sync-fakes').fakeSyncChannels
+  >[] = [];
+  const engine = () => ({
+    stop: vi.fn(),
+    kick: vi.fn(),
+    graphPulled: vi.fn(),
+    graphPushed: vi.fn(),
+    /** What the engine's failed passes still owe; nothing by default. */
+    owed: vi.fn((): { sweep?: boolean; full?: boolean } | null => null),
   });
+  return {
+    clients,
+    probeEpoch,
+    channelFakes,
+    createBrowserClient: vi.fn(
+      (_url: string, _key: string, _options?: unknown) => {
+        const client = {
+          rpc: vi.fn<Rpc>(async (fn) =>
+            fn === 'sync_probe'
+              ? {
+                  data: [
+                    {
+                      epoch: probeEpoch.value,
+                      graph_changed_at: null,
+                      graph_deleted_at: null,
+                      documents_changed_at: null,
+                      probed_at: new Date().toISOString(),
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: null, error: null }
+          ),
+        };
+        clients.push(client);
+        return client;
+      }
+    ),
+    startGraphSync: vi.fn(
+      (_options: {
+        client: unknown;
+        onPulled?: (outcome: { applied: number }) => void;
+        onPushed?: (outcome: { accepted: number }) => void;
+      }) => engine()
+    ),
+    startDocumentSync: vi.fn((_options: { client: unknown; peers?: unknown }) =>
+      engine()
+    ),
+  };
+});
 
 vi.mock('@supabase/ssr', () => ({ createBrowserClient }));
 vi.mock('@workspace/graph-sync', () => ({}));
@@ -74,6 +88,17 @@ vi.mock('./document-sync', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./document-sync')>()),
   startDocumentSync,
 }));
+vi.mock('./sync-channels', async (importOriginal) => {
+  const { fakeSyncChannels } = await import('./testing/sync-fakes');
+  return {
+    ...(await importOriginal<typeof import('./sync-channels')>()),
+    createRealtimeSyncChannels: vi.fn(() => {
+      const fake = fakeSyncChannels();
+      channelFakes.push(fake);
+      return fake.channels;
+    }),
+  };
+});
 
 import { ok } from 'neverthrow';
 import type { ISettingsStore } from '@workspace/domain';
@@ -182,6 +207,8 @@ const flush = () => vi.advanceTimersByTimeAsync(0);
 beforeEach(() => {
   vi.clearAllMocks();
   clients.length = 0;
+  channelFakes.length = 0;
+  probeEpoch.value = 0;
   vi.useFakeTimers();
   setOnline(true);
 });
@@ -437,7 +464,8 @@ describe('the channel and the cadence', () => {
     const probes = clients[0]!.rpc.mock.calls.filter(
       ([fn]) => fn === 'sync_probe'
     );
-    expect(probes).toHaveLength(3);
+    // The first asked for the epoch the channel joins with.
+    expect(probes).toHaveLength(4);
     expect(probes[0]?.[1]).toEqual({ p_space_id: IDENTITY.spaceId });
     leader.handle.stop();
   });
@@ -585,5 +613,175 @@ describe('the channel and the cadence', () => {
     // Turned to: it says so, and asks the leader to catch up.
     expect(heard.slice(-2)).toEqual([{ type: 'visible' }, { type: 'kick' }]);
     other.handle.stop();
+  });
+});
+
+describe('the space signal channel', () => {
+  const TOPIC = (epoch: number) => `space:${IDENTITY.spaceId}:${epoch}`;
+  const channelOf = (call = 0) => channelFakes[call]!;
+
+  async function subscribedLeader() {
+    const b = browser();
+    const leader = b.tab();
+    await flush();
+    channelOf().last()!.handlers.onSubscribed();
+    await vi.advanceTimersByTimeAsync(6 * SECOND);
+    graphOf().kick.mockClear();
+    documentsOf().kick.mockClear();
+    return leader;
+  }
+
+  it('the leader joins the topic of the epoch its probe states, and says so once subscribed', async () => {
+    probeEpoch.value = 2;
+    const b = browser();
+    const leader = b.tab();
+    const other = b.tab();
+    await flush();
+    expect(channelFakes).toHaveLength(1);
+    expect(channelOf().joins.map((join) => join.topic)).toEqual([TOPIC(2)]);
+    expect(clients[0]!.rpc.mock.calls[0]).toEqual([
+      'sync_probe',
+      { p_space_id: IDENTITY.spaceId },
+    ]);
+    expect(leader.root.dataset.syncChannel).toBe('down');
+    expect(leader.root.dataset.syncEpoch).toBeUndefined();
+    channelOf().last()!.handlers.onSubscribed();
+    expect(leader.root.dataset.syncChannel).toBe('up');
+    expect(leader.root.dataset.syncEpoch).toBe('2');
+    expect(other.root.dataset.syncChannel).toBeUndefined();
+    leader.handle.stop();
+    other.handle.stop();
+  });
+
+  it('subscribed: a catch-up now and five seconds later, then the minute heartbeat', async () => {
+    const b = browser();
+    const leader = b.tab();
+    await flush();
+    await vi.advanceTimersByTimeAsync(2 * SECOND);
+    graphOf().kick.mockClear();
+    documentsOf().kick.mockClear();
+    channelOf().last()!.handlers.onSubscribed();
+    expect(graphOf().kick).toHaveBeenCalledTimes(1);
+    expect(documentsOf().kick).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(graphOf().kick).toHaveBeenCalledTimes(2);
+    const rpc = clients[0]!.rpc;
+    rpc.mockClear();
+    await vi.advanceTimersByTimeAsync(50 * SECOND);
+    expect(rpc).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(rpc.mock.calls.map(([fn]) => fn)).toContain('sync_probe');
+    leader.handle.stop();
+  });
+
+  it('a signal kicks the engine of its kind after the jitter, a deletion with a sweep, and is shown for diagnostics', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const leader = await subscribedLeader();
+    const join = channelOf().last()!;
+    join.handlers.onSignal({ kind: 'graph-delete', windowMs: 1000 });
+    expect(leader.root.dataset.syncLastSignal).toBe('graph-delete:1000');
+    await flush();
+    expect(graphOf().kick.mock.calls).toEqual([[{ sweep: true }]]);
+    join.handlers.onSignal({ kind: 'graph', windowMs: 1000 });
+    join.handlers.onSignal({ kind: 'documents', windowMs: 1000 });
+    await flush();
+    expect(graphOf().kick.mock.calls).toEqual([[{ sweep: true }], []]);
+    expect(documentsOf().kick.mock.calls).toEqual([[]]);
+    expect(leader.root.dataset.syncLastSignal).toBe('documents:1000');
+    // And once more after five seconds, each.
+    await vi.advanceTimersByTimeAsync(5 * SECOND);
+    expect(graphOf().kick.mock.calls).toEqual([
+      [{ sweep: true }],
+      [],
+      [{ sweep: true }],
+      [],
+    ]);
+    expect(documentsOf().kick).toHaveBeenCalledTimes(2);
+    leader.handle.stop();
+  });
+
+  it('a dropped channel shows down and the heartbeat tightens to 15 s; it comes back on its own', async () => {
+    const leader = await subscribedLeader();
+    const rpc = clients[0]!.rpc;
+    rpc.mockClear();
+    channelOf().last()!.handlers.onDown('error');
+    expect(leader.root.dataset.syncChannel).toBe('down');
+    await vi.advanceTimersByTimeAsync(1 * SECOND);
+    // Rejoined with the epoch it knew: no probe for it.
+    expect(channelOf().joins).toHaveLength(2);
+    expect(channelOf().last()!.topic).toBe(TOPIC(0));
+    await vi.advanceTimersByTimeAsync(44 * SECOND);
+    expect(
+      rpc.mock.calls.filter(([fn]) => fn === 'sync_probe').length
+    ).toBeGreaterThanOrEqual(2);
+    channelOf().last()!.handlers.onSubscribed();
+    expect(leader.root.dataset.syncChannel).toBe('up');
+    leader.handle.stop();
+  });
+
+  it('a refused join asks the probe for the epoch again before it retries', async () => {
+    const leader = await subscribedLeader();
+    const rpc = clients[0]!.rpc;
+    rpc.mockClear();
+    probeEpoch.value = 1;
+    channelOf().last()!.handlers.onDown('refused');
+    await vi.advanceTimersByTimeAsync(1 * SECOND);
+    expect(rpc.mock.calls.map(([fn]) => fn)).toEqual(['sync_probe']);
+    expect(channelOf().last()!.topic).toBe(TOPIC(1));
+    leader.handle.stop();
+  });
+
+  it('a heartbeat that states a newer epoch moves the channel to its topic', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const leader = await subscribedLeader();
+    probeEpoch.value = 3;
+    await vi.advanceTimersByTimeAsync(60 * SECOND);
+    expect(channelOf().joins[0]!.left).toBe(true);
+    expect(channelOf().last()!.topic).toBe(TOPIC(3));
+    leader.handle.stop();
+  });
+
+  it('closes while no tab of the browser is visible, kept open by another tab being looked at, and reopens with a catch-up', async () => {
+    const b = browser();
+    const leader = b.tab({ visible: false });
+    const other = b.tab({ visible: true });
+    await flush();
+    // The other tab's beat (every 30 s) is what opens the hidden leader's.
+    await vi.advanceTimersByTimeAsync(31 * SECOND);
+    expect(channelOf().live()).toHaveLength(1);
+    channelOf().last()!.handlers.onSubscribed();
+    expect(leader.root.dataset.syncChannel).toBe('up');
+    await vi.advanceTimersByTimeAsync(60 * SECOND);
+    expect(channelOf().live()).toHaveLength(1);
+
+    other.setVisible(false);
+    await vi.advanceTimersByTimeAsync(45 * SECOND);
+    expect(channelOf().live()).toHaveLength(0);
+    expect(leader.root.dataset.syncChannel).toBe('down');
+
+    graphOf().kick.mockClear();
+    other.setVisible(true);
+    await flush();
+    expect(channelOf().live()).toHaveLength(1);
+    // Turned to: the catch-up the other tab asks for, now and in 5 s.
+    expect(graphOf().kick).toHaveBeenCalled();
+    leader.handle.stop();
+    other.handle.stop();
+  });
+
+  it('the leader closes its channel when it stops leading', async () => {
+    const b = browser();
+    const first = b.tab();
+    const second = b.tab();
+    await flush();
+    channelOf(0).last()!.handlers.onSubscribed();
+    first.handle.stop();
+    await flush();
+    expect(channelOf(0).live()).toHaveLength(0);
+    expect(first.root.dataset.syncChannel).toBeUndefined();
+    expect(first.root.dataset.syncEpoch).toBeUndefined();
+    // The next leader joins on a client of its own.
+    expect(channelOf(1).joins).toHaveLength(1);
+    second.handle.stop();
   });
 });
