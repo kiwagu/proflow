@@ -184,3 +184,29 @@ with RLS enabled, no grants, and an explicit restrictive "no direct access"
 policy (which also keeps them out of `0008 rls_enabled_no_policy`). No new lint
 kind. Performance advisor: nothing on the new tables (`space_id` is the leading
 primary-key column, so the foreign keys are covered).
+
+## 2026-10-15 — space signals: no new security lint
+
+`20261014160000_sync_space_signals.sql` adds the throttled space signal (a
+broadcast on a private Realtime topic per space), its join check and the read
+policy on `realtime.messages`, and drops the replicated tables from the
+`supabase_realtime` publication. `get_advisors({ type: "security" })` afterward
+still returns **21 lints, ALL `0029`** — the same set as above.
+
+- `private.sync_can_join(text)` is `SECURITY DEFINER` and executable by
+  `authenticated` on purpose: the select policy on `realtime.messages` calls it
+  as the joining user. It lives in `private`, which the REST API does not
+  expose, so it is not an RPC and not flagged. It only reads, and answers
+  `false` for anything but a member asking for the space's current topic.
+- The select policy on `realtime.messages` (`authenticated` only) raises no
+  lint; there is deliberately no insert, update or delete policy, so nobody
+  signed in can publish on any topic.
+- `sync_emit`, `sync_window_ms`, `sync_active_all` and the reworked
+  `sync_mark` / `sync_active` stay revoked from `public`/`anon`/`authenticated`;
+  `private.sync_config` and the re-keyed `private.sync_presence` carry RLS with
+  the explicit restrictive "no direct access" policy.
+
+Performance advisor: no new kind. One new `unused_index` entry,
+`sync_presence_bucket_idx` — the deployment-wide presence count reads the last
+two minutes of every space through it, which the dev stand's handful of rows
+never makes worth a plan. Expected, not a finding.
