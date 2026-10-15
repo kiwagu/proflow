@@ -59,46 +59,86 @@ export interface SpaceChannelHandlers {
 export interface SyncChannels {
   /**
    * Join a space topic. Returns the leave function; once it is called,
-   * nothing more is heard from that join.
+   * nothing more is heard from that join, and the promise it returns
+   * settles when the channel is gone.
    */
-  joinSpace(topic: string, handlers: SpaceChannelHandlers): () => void;
+  joinSpace(topic: string, handlers: SpaceChannelHandlers): () => Promise<void>;
 }
 
 /** What Realtime answers a join its read policy turns down with. */
 const REFUSED = /unauthori[sz]ed|permission/i;
 
+/**
+ * Per client, the leaves of each topic still under way. The client hands
+ * back the channel it holds for a topic until that channel's removal has
+ * finished, and a channel that is not closed ignores a new subscription: a
+ * join made while its topic is still being left would never be answered.
+ * So a join waits for the leave of its topic before it asks for a channel.
+ * Kept per client, not per seam: a tab that leads again builds a new seam
+ * over the same client.
+ */
+const leavesByClient = new WeakMap<object, Map<string, Promise<void>>>();
+
 export function createRealtimeSyncChannels(
   client: SupabaseClient<Database>
 ): SyncChannels {
+  let leaves = leavesByClient.get(client);
+  if (!leaves) {
+    leaves = new Map();
+    leavesByClient.set(client, leaves);
+  }
+  const pending = leaves;
   return {
     joinSpace(topic, handlers) {
       let live = true;
-      const channel: RealtimeChannel = client
-        .channel(topic, { config: { private: true } })
-        .on('broadcast', { event: 'changed' }, ({ payload }) => {
-          if (!live) return;
-          const signal = spaceSignalSchema.safeParse(payload);
-          if (signal.success) handlers.onSignal(signal.data);
-        })
-        .on('broadcast', { event: 'rekey' }, ({ payload }) => {
-          if (!live) return;
-          const rekey = spaceRekeySchema.safeParse(payload);
-          if (rekey.success) handlers.onRekey(rekey.data);
-        })
-        .subscribe((status, error) => {
-          if (!live) return;
-          if (status === 'SUBSCRIBED') handlers.onSubscribed();
-          else if (status === 'CHANNEL_ERROR')
-            handlers.onDown(
-              error && REFUSED.test(error.message) ? 'refused' : 'error'
-            );
-          else if (status === 'TIMED_OUT') handlers.onDown('timeout');
-          else handlers.onDown('closed');
-        });
-      return () => {
+      let channel: RealtimeChannel | null = null;
+      let left: Promise<void> | null = null;
+      const subscribe = () => {
         if (!live) return;
+        channel = client
+          .channel(topic, { config: { private: true } })
+          .on('broadcast', { event: 'changed' }, ({ payload }) => {
+            if (!live) return;
+            const signal = spaceSignalSchema.safeParse(payload);
+            if (signal.success) handlers.onSignal(signal.data);
+          })
+          .on('broadcast', { event: 'rekey' }, ({ payload }) => {
+            if (!live) return;
+            const rekey = spaceRekeySchema.safeParse(payload);
+            if (rekey.success) handlers.onRekey(rekey.data);
+          })
+          .subscribe((status, error) => {
+            if (!live) return;
+            if (status === 'SUBSCRIBED') handlers.onSubscribed();
+            else if (status === 'CHANNEL_ERROR')
+              handlers.onDown(
+                error && REFUSED.test(error.message) ? 'refused' : 'error'
+              );
+            else if (status === 'TIMED_OUT') handlers.onDown('timeout');
+            else handlers.onDown('closed');
+          });
+      };
+      const before = pending.get(topic);
+      const joined = before ? before.then(subscribe) : Promise.resolve();
+      if (!before) subscribe();
+      return () => {
+        if (left) return left;
         live = false;
-        void client.removeChannel(channel);
+        // Joined already: removed now. Still waiting on an earlier leave:
+        // it will never join, and there is nothing to remove after it.
+        const removal = channel
+          ? client.removeChannel(channel)
+          : joined.then(() => undefined);
+        const leaving: Promise<void> = removal.then(
+          () => undefined,
+          () => undefined
+        );
+        left = leaving;
+        pending.set(topic, leaving);
+        void leaving.then(() => {
+          if (pending.get(topic) === leaving) pending.delete(topic);
+        });
+        return leaving;
       };
     },
   };

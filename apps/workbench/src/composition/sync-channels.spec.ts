@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@workspace/db';
 import { entityIdRegistry } from '@workspace/entity-id';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRealtimeSyncChannels,
   type SpaceChannelHandlers,
   spaceTopic,
 } from './sync-channels';
+import { fakeRealtimeClient } from './testing/sync-fakes';
 
 /**
  * The one place the workbench speaks Realtime: what a join asks for, what
@@ -187,5 +188,59 @@ describe('joining a space over Realtime', () => {
     f.opened[0]!.report('CLOSED');
     f.opened[0]!.deliver('changed', { kind: 'graph', window_ms: 1000 });
     expect(h.calls).toEqual([]);
+  });
+});
+
+describe('leaving a topic and joining it again', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a join while the topic is still being left waits for the removal, then hears the server on a fresh channel', async () => {
+    const f = fakeRealtimeClient({ leaveMs: 200 });
+    const channels = createRealtimeSyncChannels(f.client);
+    const first = recorder();
+    const leaveFirst = channels.joinSpace(TOPIC, first);
+    f.created[0]!.accept();
+    const left = leaveFirst();
+    const second = recorder();
+    const leaveSecond = channels.joinSpace(TOPIC, second);
+    await vi.advanceTimersByTimeAsync(199);
+    // Still being left: no second join on the closing channel.
+    expect(f.created).toHaveLength(1);
+    expect(f.created[0]!.state).toBe('leaving');
+    await vi.advanceTimersByTimeAsync(1);
+    await left;
+    expect(f.created).toHaveLength(2);
+    expect(f.created[1]!.state).toBe('joining');
+    f.created[1]!.accept();
+    f.created[1]!.deliver('changed', { kind: 'graph', window_ms: 1000 });
+    expect(second.calls).toEqual([
+      ['subscribed'],
+      ['signal', { kind: 'graph', windowMs: 1000 }],
+    ]);
+    expect(first.calls).toEqual([['subscribed']]);
+    const gone = leaveSecond();
+    await vi.advanceTimersByTimeAsync(200);
+    await gone;
+    expect(f.held(TOPIC)).toBeUndefined();
+  });
+
+  it('a queued join left before it was made opens nothing', async () => {
+    const f = fakeRealtimeClient({ leaveMs: 200 });
+    const channels = createRealtimeSyncChannels(f.client);
+    const leaveFirst = channels.joinSpace(TOPIC, recorder());
+    f.created[0]!.accept();
+    void leaveFirst();
+    const second = recorder();
+    const leaveSecond = channels.joinSpace(TOPIC, second);
+    void leaveSecond();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.created).toHaveLength(1);
+    expect(f.held(TOPIC)).toBeUndefined();
+    expect(second.calls).toEqual([]);
   });
 });

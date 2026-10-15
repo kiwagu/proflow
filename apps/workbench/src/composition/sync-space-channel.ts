@@ -69,7 +69,11 @@ export function createSpaceChannel(deps: {
   let opened = false;
   /** Bumped by every new intent; what an older one scheduled is void. */
   let generation = 0;
-  let leave: (() => void) | null = null;
+  /**
+   * Leaves the joined topic. The seam holds a later join of the same topic
+   * until the leave is through, so nothing here waits for it.
+   */
+  let leave: (() => Promise<void>) | null = null;
   let up = false;
   /** The epoch of the topic joined or being joined. */
   let joined: number | null = null;
@@ -90,7 +94,7 @@ export function createSpaceChannel(deps: {
   };
 
   const drop = () => {
-    leave?.();
+    void leave?.();
     leave = null;
   };
 

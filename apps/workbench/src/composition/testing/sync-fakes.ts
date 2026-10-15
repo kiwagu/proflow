@@ -1,3 +1,5 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@workspace/db';
 import type { SpaceChannelHandlers, SyncChannels } from '../sync-channels';
 
 /**
@@ -131,6 +133,7 @@ export function fakeSyncChannels() {
       joins.push(join);
       return () => {
         join.left = true;
+        return Promise.resolve();
       };
     },
   };
@@ -141,5 +144,101 @@ export function fakeSyncChannels() {
     live: () => joins.filter((join) => !join.left),
     /** The last join made. */
     last: () => joins[joins.length - 1],
+  };
+}
+
+type RealtimeListener = (message: { payload?: unknown }) => void;
+type RealtimeStatus = (status: string, error?: Error) => void;
+
+/** One channel object of the fake Realtime client, with the server's side. */
+export interface FakeRealtimeChannel {
+  topic: string;
+  state: 'closed' | 'joining' | 'joined' | 'errored' | 'leaving';
+  /** The server accepted the join. */
+  accept(): void;
+  /** The connection failed under the channel. */
+  fail(error?: Error): void;
+  /** The database broadcast this on the channel's topic. */
+  deliver(event: string, payload: unknown): void;
+}
+
+/**
+ * A Realtime client shaped by the parts of supabase-js the seam relies on,
+ * down to the two that make a quick close and reopen hard: `channel(topic)`
+ * hands back the object it already holds for that topic until the removal
+ * of that object has finished, and `subscribe(callback)` on an object that
+ * is not closed does nothing at all. A removal finishes `leaveMs` later.
+ */
+export function fakeRealtimeClient(options: { leaveMs: number }) {
+  const registry = new Map<string, FakeRealtimeChannel>();
+  const created: FakeRealtimeChannel[] = [];
+
+  function open(topic: string) {
+    const listeners = new Map<string, RealtimeListener[]>();
+    let status: RealtimeStatus | undefined;
+    const channel = {
+      topic,
+      state: 'closed' as FakeRealtimeChannel['state'],
+      on(_type: string, filter: { event: string }, listener: RealtimeListener) {
+        listeners.set(filter.event, [
+          ...(listeners.get(filter.event) ?? []),
+          listener,
+        ]);
+        return channel;
+      },
+      subscribe(callback: RealtimeStatus) {
+        if (channel.state !== 'closed') return channel;
+        channel.state = 'joining';
+        status = callback;
+        return channel;
+      },
+      accept() {
+        if (channel.state !== 'joining') return;
+        channel.state = 'joined';
+        status?.('SUBSCRIBED');
+      },
+      fail(error = new Error('socket closed: 1006')) {
+        channel.state = 'errored';
+        status?.('CHANNEL_ERROR', error);
+      },
+      deliver(event: string, payload: unknown) {
+        if (channel.state !== 'joined') return;
+        for (const listener of listeners.get(event) ?? [])
+          listener({ payload });
+      },
+      close() {
+        channel.state = 'closed';
+        status?.('CLOSED');
+        if (registry.get(topic) === channel) registry.delete(topic);
+      },
+    };
+    return channel;
+  }
+
+  const client = {
+    channel(topic: string, _options?: unknown) {
+      const held = registry.get(topic);
+      if (held) return held;
+      const channel = open(topic);
+      registry.set(topic, channel);
+      created.push(channel);
+      return channel;
+    },
+    removeChannel(channel: ReturnType<typeof open>) {
+      channel.state = 'leaving';
+      return new Promise<'ok'>((resolve) =>
+        setTimeout(() => {
+          channel.close();
+          resolve('ok');
+        }, options.leaveMs)
+      );
+    },
+  };
+  return {
+    client: client as unknown as SupabaseClient<Database>,
+    /** Every channel object made, in order. */
+    created,
+    /** The object the client holds for a topic now, if any. */
+    held: (topic: string) => registry.get(topic),
   };
 }

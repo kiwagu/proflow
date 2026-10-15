@@ -1,6 +1,9 @@
 import { entityIdRegistry } from '@workspace/entity-id';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SpaceSignalKind } from './sync-channels';
+import {
+  createRealtimeSyncChannels,
+  type SpaceSignalKind,
+} from './sync-channels';
 import {
   createSpaceChannel,
   REJOIN_BACKOFF_MAX_MS,
@@ -8,7 +11,7 @@ import {
   REKEY_JITTER_MS,
   SIGNAL_FOLLOW_UP_MIN_MS,
 } from './sync-space-channel';
-import { fakeSyncChannels } from './testing/sync-fakes';
+import { fakeRealtimeClient, fakeSyncChannels } from './testing/sync-fakes';
 
 /**
  * The leader's hold on its space's signal channel, against a fake clock, a
@@ -305,5 +308,52 @@ describe('the space signal channel', () => {
     resolve(0);
     await flush();
     expect(h.fake.joins).toHaveLength(0);
+  });
+
+  it('a quick close and reopen still joins: the reopen waits for the removal, hears signals, and recovers from a drop', async () => {
+    const f = fakeRealtimeClient({ leaveMs: 200 });
+    const kicks: SpaceSignalKind[] = [];
+    const events: string[] = [];
+    const channel = createSpaceChannel({
+      channels: createRealtimeSyncChannels(f.client),
+      clock: {
+        now: () => Date.now(),
+        setTimeout: (run, ms) => setTimeout(run, ms),
+        clearTimeout: (handle) =>
+          clearTimeout(handle as ReturnType<typeof setTimeout>),
+        random: () => 0,
+      },
+      spaceId: SPACE,
+      epoch: async () => 0,
+      onKick: (kind) => kicks.push(kind),
+      onUp: ({ epoch }) => events.push(`up ${epoch}`),
+      onDown: () => events.push('down'),
+    });
+    channel.open();
+    await flush();
+    f.created[0]!.accept();
+    expect(events).toEqual(['up 0']);
+
+    // Hidden and shown again before the first channel is gone.
+    channel.close();
+    channel.open();
+    await flush();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(f.created).toHaveLength(2);
+    f.created[1]!.accept();
+    expect(events).toEqual(['up 0', 'down', 'up 0']);
+
+    f.created[1]!.deliver('changed', { kind: 'graph', window_ms: 1000 });
+    await flush();
+    expect(kicks).toEqual(['graph']);
+
+    // A drop after that is noticed and retried as ever.
+    f.created[1]!.fail();
+    expect(events.at(-1)).toBe('down');
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(f.created).toHaveLength(3);
+    f.created[2]!.accept();
+    expect(events.at(-1)).toBe('up 0');
+    channel.close();
   });
 });
