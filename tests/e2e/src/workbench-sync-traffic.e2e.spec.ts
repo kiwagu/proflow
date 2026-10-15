@@ -218,30 +218,59 @@ test.describe('Workbench sync traffic', () => {
       await expect(readerEditor).toHaveText(typed, { timeout: 60_000 });
 
       // The signal path: five new documents on this device, two seconds
-      // apart, reach the reader through the space's signals — kicks of its
-      // graph pull, not its minute heartbeat.
+      // apart, reach the reader through the space's signals. The phase
+      // starts right after a heartbeat of the reader, so its next one is a
+      // minute away: within the 30 s measured nothing but a signal can kick
+      // its pull — no change probe and no full pass may fall inside.
       await reader.evaluate(() => {
-        delete document.documentElement.dataset.syncLastSignal;
+        const root = document.documentElement;
+        delete root.dataset.syncLastSignal;
+        const heard: string[] = [];
+        (window as unknown as { __signalsHeard: string[] }).__signalsHeard =
+          heard;
+        new MutationObserver((records) => {
+          // Each record holds the value before it; the last value is read
+          // from the page when asked.
+          for (const record of records)
+            if (record.oldValue) heard.push(record.oldValue);
+        }).observe(root, {
+          attributes: true,
+          attributeFilter: ['data-sync-last-signal'],
+          attributeOldValue: true,
+        });
       });
       const rowsBefore = await rowsOn(reader).count();
+      await nextHeartbeat(reader);
       const signalPath = record([reader]);
+      const firstChangeAt = Date.now();
       for (let i = 0; i < 5; i++) {
         await page.getByTestId('new-document').click();
         await page.waitForTimeout(2_000);
       }
       await expect(rowsOn(reader)).toHaveCount(rowsBefore + 5, {
-        timeout: 30_000,
+        timeout: Math.max(0, firstChangeAt + 30_000 - Date.now()),
       });
       const signalPathReader = signalPath.stop();
       console.log(
         'signal path, reader:',
         JSON.stringify(signalPathReader.buckets)
       );
+      // What reached the reader came by signal: no heartbeat and no full
+      // pass (an inventory sweep reads ids only) inside the interval.
+      expect(signalPathReader.buckets['backend:sync_probe'] ?? 0).toBe(0);
       expect(
-        await reader.evaluate(
-          () => document.documentElement.dataset.syncLastSignal ?? null
-        )
-      ).toMatch(/^(graph|graph-delete|documents):[1-9]\d*$/);
+        signalPathReader.urls.filter((url) => /[?&]select=id(&|$)/.test(url))
+      ).toEqual([]);
+      const heard = await reader.evaluate(() => [
+        ...(window as unknown as { __signalsHeard: string[] }).__signalsHeard,
+        ...(document.documentElement.dataset.syncLastSignal
+          ? [document.documentElement.dataset.syncLastSignal]
+          : []),
+      ]);
+      console.log('signals heard by the reader:', JSON.stringify(heard));
+      expect(heard.some((signal) => /^graph:[1-9]\d*$/.test(signal))).toBe(
+        true
+      );
       expect(
         signalPathReader.buckets['backend:knowledge_resources'] ?? 0
       ).toBeGreaterThanOrEqual(1);
